@@ -41,8 +41,11 @@ click-to-shatter can come later when someone's driving.)
 
 ## Acceptance checklist
 
-- [ ] Particle system with gravity + lifetime + fade (tested).
-- [ ] Instanced emissive cubes; ambient bursts over the terrain.
-- [ ] Windowed (animated) + headless (static frame) both show particles.
-- [ ] Snapshot to gallery + render to chat.
-- [ ] CI green; docs synced.
+- [x] Particle system with gravity + lifetime + fade (tested).
+- [x] Instanced emissive cubes; ambient bursts of debris fountain over the terrain.
+- [x] Windowed (animated) + headless (static frame) both show particles.
+- [x] Snapshot to gallery + render to chat.
+- [x] CI green; docs synced.
+
+> Status: **done** ✅. Burst/size/gravity are tuned constants — good candidates for
+> the D2 dials. Interactive click-to-shatter + world collision are later additions.

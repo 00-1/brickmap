@@ -97,7 +97,7 @@ thesis made literal — roughly a day's work for an immediate, distinctive face.
   the style.
 - **Why here:** nearly free, and rides along with M2's packed vertex.
 
-### ✨ E2 — Particles + destruction *(exploration)* ⏳
+### ✨ E2 — Particles + destruction *(exploration)* ✅ &nbsp;→ [`milestones/E2-particles.md`](milestones/E2-particles.md)
 Instanced point-sprite / cube **particles** in the forward pass, and **shattering**
 a chunk into flying, fading, emissive cubes — the cheapest path to "alive on
 screen" and a direct test of the §11 look (design §12).
@@ -188,6 +188,14 @@ display.
 - **Outcome:** a `screenshot` tool that captures the live scene to an image.
 - **Unlocks:** golden-image regression tests, and *supervised* autonomous runs
   (Claude can sanity-check its own renders instead of working blind).
+
+### D2 — Adjustable params (live dials) ⏳
+Make aesthetic/particle params (wobble, dither, gravity, spawn rate…) adjustable at
+runtime — web sliders driving a params uniform — instead of recompiling.
+
+### D3 — Auto-fly + mobile-friendly viewing ⏳
+A default **auto-fly orbit** so the build is watchable with no keyboard/mouse (mobile,
+or just hands-off). Manual input takes over on desktop; auto-fly resumes on toggle.
 
 ## What we're deliberately *not* doing
 

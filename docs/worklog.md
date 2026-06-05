@@ -48,4 +48,19 @@ pause for input; log decisions/questions here and keep moving.
   - **QUESTION (low):** dialled fairly subtle at 960×720; easy to push bolder if you
     want it more aggressive. Knobs are shader consts.
 
-- Next: **E2 — particles + destruction**, then M3. Renders to chat as they land.
+- **E2 — particles + destruction: done.** A CPU particle system + a second instanced
+  pipeline render ambient bursts of warm emissive cube debris fountaining off the
+  terrain (windowed animates; headless captures mid-burst). First "alive on screen."
+  - **DECISION:** ambient continuous bursts (not click-to-shatter), since the run is
+    unattended — every render is lively. Interactive shatter + world collision later.
+
+- **New asks from the human (queued):**
+  - **D2 — live dials:** make params (wobble/dither/gravity/spawn) adjustable at
+    runtime via web sliders, not recompiles. *(Requested while watching E1/E2.)*
+  - **D3 — auto-fly / mobile:** can't navigate without keyboard/mouse, and on-screen
+    sticks are fiddly. Plan: **auto-fly orbit on by default** (mobile just watches),
+    desktop input takes over, toggle to resume. **Doing D3 next** (it gates the human
+    being able to view the live build at all on mobile).
+
+- Next: **D3 (auto-fly)** → then D2 (dials) → then M3 (procedural world). Renders to
+  chat as they land.
