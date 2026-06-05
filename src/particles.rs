@@ -58,7 +58,7 @@ impl ParticleSystem {
             gravity: 16.0,
             rng: 0x9e37_79b9,
             spawn_timer: 0.0,
-            spawn_interval: 0.22,
+            spawn_interval: 0.16,
             cap: 4000,
         }
     }
@@ -102,16 +102,16 @@ impl ParticleSystem {
         }
         let pick = (self.rand() * self.emitters.len() as f32) as usize;
         let origin = self.emitters[pick.min(self.emitters.len() - 1)];
-        let count = 10 + (self.rand() * 8.0) as usize;
+        let count = 14 + (self.rand() * 10.0) as usize;
         for _ in 0..count {
             let angle = self.rand() * std::f32::consts::TAU;
-            let spread = self.rand() * 4.0;
-            let up = 8.0 + self.rand() * 7.0;
+            let spread = self.rand() * 5.0;
+            let up = 13.0 + self.rand() * 9.0;
             let vel = Vec3::new(angle.cos() * spread, up, angle.sin() * spread);
             // Warm ember colours (emissive).
             let color = Vec3::new(1.0, 0.45 + self.rand() * 0.45, 0.08 + self.rand() * 0.18);
-            let life = 1.4 + self.rand() * 1.1;
-            let size = 0.28 + self.rand() * 0.22;
+            let life = 1.6 + self.rand() * 1.2;
+            let size = 0.4 + self.rand() * 0.45;
             self.spawn(origin, vel, color, life, size);
         }
     }

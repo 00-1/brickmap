@@ -11,6 +11,7 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::mesh::pack;
+use crate::particles::{ParticleInstance, ParticleSystem, CUBE_INDICES, CUBE_POSITIONS};
 
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -231,6 +232,90 @@ pub fn capture(width: u32, height: u32, path: &str) {
         })
         .collect();
 
+    // Particles: simulate ~0.7 s so a burst is mid-flight, then build the instanced
+    // emissive-cube pipeline (shares the globals group).
+    let mut psys = ParticleSystem::new(crate::demo_emitters());
+    for _ in 0..78 {
+        psys.update(1.0 / 60.0);
+    }
+    let particle_instances = psys.instances();
+
+    let particle_shader = device.create_shader_module(wgpu::include_wgsl!("particles.wgsl"));
+    let particle_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("headless-particle-layout"),
+        bind_group_layouts: &[Some(&globals_bgl)],
+        immediate_size: 0,
+    });
+    let cube_layout = wgpu::VertexBufferLayout {
+        array_stride: (3 * std::mem::size_of::<f32>()) as wgpu::BufferAddress,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+    };
+    let inst_layout = wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<ParticleInstance>() as wgpu::BufferAddress,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &wgpu::vertex_attr_array![1 => Float32x3, 2 => Float32, 3 => Float32x3],
+    };
+    let particle_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("headless-particle-pipeline"),
+        layout: Some(&particle_layout),
+        vertex: wgpu::VertexState {
+            module: &particle_shader,
+            entry_point: Some("vs_main"),
+            buffers: &[cube_layout, inst_layout],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &particle_shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: COLOR_FORMAT,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    });
+    let cube_vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("cube-vertices"),
+        contents: bytemuck::bytes_of(&CUBE_POSITIONS),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+    let cube_ibuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("cube-indices"),
+        contents: bytemuck::bytes_of(&CUBE_INDICES),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+    let particle_vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("particle-instances"),
+        contents: bytemuck::cast_slice(if particle_instances.is_empty() {
+            &[ParticleInstance {
+                offset: [0.0; 3],
+                size: 0.0,
+                color: [0.0; 3],
+                _pad: 0.0,
+            }]
+        } else {
+            &particle_instances
+        }),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+
     // Row pitch must be aligned to 256 bytes for texture-to-buffer copies.
     let unpadded_bpr = width * 4;
     let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -275,6 +360,18 @@ pub fn capture(width: u32, height: u32, path: &str) {
             pass.set_vertex_buffer(0, d.vbuf.slice(..));
             pass.set_index_buffer(d.ibuf.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..d.n, 0, 0..1);
+        }
+        if !particle_instances.is_empty() {
+            pass.set_pipeline(&particle_pipeline);
+            pass.set_bind_group(0, &globals_bind_group, &[]);
+            pass.set_vertex_buffer(0, cube_vbuf.slice(..));
+            pass.set_vertex_buffer(1, particle_vbuf.slice(..));
+            pass.set_index_buffer(cube_ibuf.slice(..), wgpu::IndexFormat::Uint16);
+            pass.draw_indexed(
+                0..CUBE_INDICES.len() as u32,
+                0,
+                0..particle_instances.len() as u32,
+            );
         }
     }
     encoder.copy_texture_to_buffer(

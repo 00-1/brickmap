@@ -23,6 +23,7 @@ pub mod scene;
 pub mod world;
 use gfx::{ChunkInstance, State};
 use mesh::{greedy_mesh_section_with, Neighbors};
+use particles::ParticleSystem;
 use scene::{Action, Camera, CameraController};
 use world::{BlockId, Section, World};
 
@@ -51,6 +52,7 @@ struct App {
 
     camera: Camera,
     controller: CameraController,
+    particles: ParticleSystem,
     /// Timestamp of the previous frame, for frame-rate-independent movement.
     last_frame: Option<Instant>,
     /// Whether the pointer is captured (mouselook active).
@@ -163,11 +165,13 @@ impl ApplicationHandler<AppEvent> for App {
                     .unwrap_or(0.0);
                 self.last_frame = Some(now);
                 self.controller.update(&mut self.camera, dt);
+                self.particles.update(dt);
+                let particles = self.particles.instances();
 
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
                     // `render` handles lost/outdated/transient surfaces internally.
-                    state.render(view_proj);
+                    state.render(view_proj, &particles);
                     // Drive a continuous loop so held keys animate.
                     state.window().request_redraw();
                 }
@@ -229,6 +233,7 @@ pub fn run() {
         instances,
         camera,
         controller: CameraController::new(radius),
+        particles: ParticleSystem::new(demo_emitters()),
         last_frame: None,
         cursor_locked: false,
     };
@@ -263,6 +268,14 @@ fn demo_world() -> World {
         }
     }
     world
+}
+
+/// A handful of emitter points sitting on the terrain surface, for ambient debris.
+fn demo_emitters() -> Vec<Vec3> {
+    [(-10, 5), (20, -8), (38, 30), (5, 40), (50, 48), (15, 16)]
+        .iter()
+        .map(|&(x, z)| Vec3::new(x as f32, terrain_height(x, z) as f32 + 0.5, z as f32))
+        .collect()
 }
 
 /// Smooth pseudo-terrain height (no noise dependency yet — that's M3).

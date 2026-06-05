@@ -13,6 +13,7 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::mesh::{pack, ChunkMesh};
+use crate::particles::{ParticleInstance, CUBE_INDICES, CUBE_POSITIONS};
 use crate::scene::Frustum;
 
 /// One mesh instance to draw: a chunk mesh (chunk-local) at a world `origin`.
@@ -86,6 +87,13 @@ pub struct State {
     globals_buffer: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
+
+    // Particles (E2): an instanced emissive-cube pipeline + a growable instance buffer.
+    particle_pipeline: wgpu::RenderPipeline,
+    cube_vertex_buffer: wgpu::Buffer,
+    cube_index_buffer: wgpu::Buffer,
+    particle_instances: wgpu::Buffer,
+    particle_capacity: usize,
 
     /// Frame counter, used to throttle the stats log.
     frame_count: u64,
@@ -305,6 +313,77 @@ impl State {
             })
             .collect();
 
+        // --- Particles (E2): instanced emissive cubes, sharing the globals group ---
+        let particle_shader = device.create_shader_module(wgpu::include_wgsl!("particles.wgsl"));
+        let particle_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("particle-pipeline-layout"),
+                bind_group_layouts: &[Some(&globals_bgl)],
+                immediate_size: 0,
+            });
+        let cube_layout = wgpu::VertexBufferLayout {
+            array_stride: (3 * std::mem::size_of::<f32>()) as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+        };
+        let instance_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<ParticleInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &wgpu::vertex_attr_array![1 => Float32x3, 2 => Float32, 3 => Float32x3],
+        };
+        let particle_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("particle-pipeline"),
+            layout: Some(&particle_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &particle_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[cube_layout, instance_layout],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &particle_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("cube-vertices"),
+            contents: bytemuck::bytes_of(&CUBE_POSITIONS),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("cube-indices"),
+            contents: bytemuck::bytes_of(&CUBE_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let particle_capacity = 2048usize;
+        let particle_instances = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("particle-instances"),
+            size: (particle_capacity * std::mem::size_of::<ParticleInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let depth_view = create_depth_view(&device, &config);
 
         State {
@@ -318,6 +397,11 @@ impl State {
             globals_buffer,
             globals_bind_group,
             depth_view,
+            particle_pipeline,
+            cube_vertex_buffer,
+            cube_index_buffer,
+            particle_instances,
+            particle_capacity,
             frame_count: 0,
             window,
         }
@@ -348,15 +432,30 @@ impl State {
         self.resize(self.size);
     }
 
-    /// Draw the scene from the given view-projection. Chunk vertices are packed and
-    /// chunk-local; the shader adds each chunk's world origin (bind group 1).
-    pub fn render(&mut self, view_proj: Mat4) {
+    /// Draw the scene from the given view-projection, plus the live particles. Chunk
+    /// vertices are packed and chunk-local; the shader adds each chunk's world origin.
+    pub fn render(&mut self, view_proj: Mat4, particles: &[ParticleInstance]) {
         let globals = Globals {
             view_proj: view_proj.to_cols_array_2d(),
             palette: PALETTE,
         };
         self.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
+
+        // Upload particle instances (grow the buffer if needed) before the pass.
+        if !particles.is_empty() {
+            if particles.len() > self.particle_capacity {
+                self.particle_capacity = particles.len().next_power_of_two();
+                self.particle_instances = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("particle-instances"),
+                    size: (self.particle_capacity * std::mem::size_of::<ParticleInstance>()) as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            }
+            self.queue
+                .write_buffer(&self.particle_instances, 0, bytemuck::cast_slice(particles));
+        }
 
         use wgpu::CurrentSurfaceTexture as Cst;
         let frame = match self.surface.get_current_texture() {
@@ -430,9 +529,20 @@ impl State {
             self.frame_count += 1;
             if self.frame_count.is_multiple_of(120) {
                 log::info!(
-                    "drew {drawn}/{} chunks, {triangles} triangles",
-                    self.draws.len()
+                    "drew {drawn}/{} chunks, {triangles} triangles, {} particles",
+                    self.draws.len(),
+                    particles.len()
                 );
+            }
+
+            // Emissive particles on top, sharing the globals (group 0).
+            if !particles.is_empty() {
+                pass.set_pipeline(&self.particle_pipeline);
+                pass.set_bind_group(0, &self.globals_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
+                pass.set_vertex_buffer(1, self.particle_instances.slice(..));
+                pass.set_index_buffer(self.cube_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..particles.len() as u32);
             }
         }
 
