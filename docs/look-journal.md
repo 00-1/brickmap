@@ -25,6 +25,24 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## 2026-06-05 · E3 slice 4 — flood-fill block light (the fake-GI)
+
+**Crystals now *cast* light.** A BFS flood-fill bakes the crystal's cyan light into the
+mesh (−1/step per colour channel, spreading through air); each face samples the light
+of the air cell in front of it, and the shader adds it to the surface. So the crystal's
+colour spills onto the surrounding terrain, **pools** locally, fades with distance, and
+**bleeds around** the terrain folds — the cheap *fake GI*. **Keep — this is the one that
+makes emissive feel like *light* rather than a glowing decal.** (Bloom makes the crystal
+look bright; this makes it illuminate.) Kept **banded/blocky** on purpose (flat per-face
+light, quantised to 4 bits/channel) — the stepped pools are the §11 look, not a bug.
+
+Cost: the packed vertex grew from 4→8 bytes (design-sanctioned ≤8) to carry the light,
+and light discontinuities split greedy quads near crystals (more triangles in lit
+areas — fine, crystals are rare). Known v1 limit: light is per-section, so a crystal
+within ~15 voxels of a chunk border has its pool clipped at the border (cross-chunk
+light is a follow-up). Density matters again — overlapping pools wash the ground cyan,
+so crystals stay sparse (~0.2%).
+
 ## 2026-06-05 · E3 slice 3b — emissive crystals
 
 **Glowing crystal blocks.** Rare (~0.4% of columns) emissive cyan crystals perched on

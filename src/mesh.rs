@@ -4,8 +4,8 @@
 //! correctness oracle, and the **greedy** one (merge coplanar, same-material faces
 //! into big quads) used for real. Both are neighbour-aware (cull faces across chunk
 //! borders) and emit the [`ChunkMesh`] contract the renderer consumes; vertices
-//! pack to a single `u32` ([`pack`]) at upload. Pure CPU work: knows `world` types,
-//! nothing about wgpu.
+//! pack to two `u32`s (8 bytes, [`pack`]) at upload — position/dir/material/AO plus
+//! baked block light. Pure CPU work: knows `world` types, nothing about wgpu.
 
 use crate::world::{BlockId, Section};
 
@@ -20,21 +20,30 @@ pub struct ChunkVertex {
     pub material: u16,
     /// Baked ambient-occlusion level, `0` (darkest) .. `3` (unoccluded). M4.
     pub ao: u8,
+    /// Baked block-light colour, per channel `0..=15` (flood-fill, E3).
+    pub light: [u8; 3],
 }
 
 impl ChunkVertex {
-    /// A fully-lit vertex (`ao == 3`). The naïve oracle and tests use this; the
-    /// greedy mesher bakes real AO via [`ChunkVertex::with_ao`].
+    /// A fully-lit (`ao == 3`), unlit-by-blocks (`light == 0`) vertex. The naïve
+    /// oracle and tests use this; the greedy mesher bakes real AO + light.
     pub fn new(position: [f32; 3], normal: [f32; 3], material: u16) -> Self {
-        ChunkVertex::with_ao(position, normal, material, 3)
+        ChunkVertex::with_ao_light(position, normal, material, 3, [0; 3])
     }
 
-    pub fn with_ao(position: [f32; 3], normal: [f32; 3], material: u16, ao: u8) -> Self {
+    pub fn with_ao_light(
+        position: [f32; 3],
+        normal: [f32; 3],
+        material: u16,
+        ao: u8,
+        light: [u8; 3],
+    ) -> Self {
         ChunkVertex {
             position,
             normal,
             material,
             ao,
+            light,
         }
     }
 }
@@ -66,9 +75,9 @@ fn normal_to_dir(n: [f32; 3]) -> u32 {
     }
 }
 
-/// Pack a face vertex into one `u32` (design §9–10). Bit layout, LSB→MSB:
+/// Pack the first vertex word (design §9–10). Bit layout, LSB→MSB:
 /// `x:6 | y:6 | z:6 | dir:3 | material:9 | ao:2`. Chunk-local positions span
-/// `0..=32` (6 bits); `ao` is reserved (written 0) until M4.
+/// `0..=32` (6 bits). The second word ([`pack`]) carries baked block light.
 pub fn pack_vertex(pos: [u32; 3], dir: u32, material: u32, ao: u32) -> u32 {
     debug_assert!(
         pos[0] <= 32 && pos[1] <= 32 && pos[2] <= 32,
@@ -93,19 +102,25 @@ pub fn unpack_vertex(v: u32) -> ([u32; 3], u32, u32, u32) {
     )
 }
 
-/// Pack a CPU [`ChunkVertex`] for upload (rounds the local position to a grid line).
-pub fn pack(v: &ChunkVertex) -> u32 {
+/// Pack a CPU [`ChunkVertex`] for upload into **two** `u32`s (8 bytes, design §10):
+/// `word0 = x:6|y:6|z:6|dir:3|material:9|ao:2` (via [`pack_vertex`]);
+/// `word1 = lr:4|lg:4|lb:4` (baked block-light colour, `0..=15` per channel).
+pub fn pack(v: &ChunkVertex) -> [u32; 2] {
     let pos = [
         v.position[0].round() as u32,
         v.position[1].round() as u32,
         v.position[2].round() as u32,
     ];
-    pack_vertex(
+    let word0 = pack_vertex(
         pos,
         normal_to_dir(v.normal),
         v.material as u32,
         v.ao as u32 & 0x3,
-    )
+    );
+    let word1 = (v.light[0] as u32 & 0xF)
+        | ((v.light[1] as u32 & 0xF) << 4)
+        | ((v.light[2] as u32 & 0xF) << 8);
+    [word0, word1]
 }
 
 /// Axis-aligned bounding box of a mesh, in chunk-local space. Used later for
@@ -298,6 +313,106 @@ fn face_ao(
     ao
 }
 
+/// One exposed greedy-mask cell: the block plus its baked look (`[ao; 4]`, block
+/// `light`). Two cells merge only when these are all equal.
+type FaceCell = (BlockId, [u8; 4], [u8; 3]);
+
+/// Per-channel light emission (`0..=15`) of an emissive block, or `None`. Crystal
+/// (material 6) glows cyan; this is the seed for the flood-fill (E3).
+fn emission(block: BlockId) -> Option<[u8; 3]> {
+    match block.0 {
+        6 => Some([5, 14, 15]), // crystal: cyan
+        _ => None,
+    }
+}
+
+/// Flood-fill block light over a section: BFS from emitters, `−1`/step per channel,
+/// spreading through air (design backlog §C). Returns a per-cell light colour grid
+/// (`0..=15` per channel). v1: seeded only by emitters **inside this section** — a
+/// crystal within ~15 voxels of a chunk border has its glow clipped at the border
+/// (cross-chunk light is a follow-up). Blocky/banded on purpose (the §11 look).
+fn compute_light(section: &Section) -> Vec<[u8; 3]> {
+    use std::collections::VecDeque;
+    let n = Section::SIZE as usize;
+    let mut light = vec![[0u8; 3]; n * n * n];
+    let idx = |x: usize, y: usize, z: usize| x + y * n + z * n * n;
+
+    let mut queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
+    for z in 0..n {
+        for y in 0..n {
+            for x in 0..n {
+                if let Some(e) = emission(section.get(x as u32, y as u32, z as u32)) {
+                    light[idx(x, y, z)] = e;
+                    queue.push_back((x, y, z));
+                }
+            }
+        }
+    }
+
+    while let Some((x, y, z)) = queue.pop_front() {
+        let cur = light[idx(x, y, z)];
+        let spread = |nx: i32, ny: i32, nz: i32, light: &mut [[u8; 3]], q: &mut VecDeque<_>| {
+            if nx < 0 || ny < 0 || nz < 0 {
+                return;
+            }
+            let (nx, ny, nz) = (nx as usize, ny as usize, nz as usize);
+            if nx >= n || ny >= n || nz >= n {
+                return;
+            }
+            // Light only travels through air; solid faces read adjacent air light.
+            if !section.get(nx as u32, ny as u32, nz as u32).is_air() {
+                return;
+            }
+            let i = idx(nx, ny, nz);
+            let mut changed = false;
+            for c in 0..3 {
+                let v = cur[c].saturating_sub(1);
+                if v > light[i][c] {
+                    light[i][c] = v;
+                    changed = true;
+                }
+            }
+            if changed {
+                q.push_back((nx, ny, nz));
+            }
+        };
+        let (xi, yi, zi) = (x as i32, y as i32, z as i32);
+        spread(xi - 1, yi, zi, &mut light, &mut queue);
+        spread(xi + 1, yi, zi, &mut light, &mut queue);
+        spread(xi, yi - 1, zi, &mut light, &mut queue);
+        spread(xi, yi + 1, zi, &mut light, &mut queue);
+        spread(xi, yi, zi - 1, &mut light, &mut queue);
+        spread(xi, yi, zi + 1, &mut light, &mut queue);
+    }
+    light
+}
+
+/// Block light reaching one exposed face: the light of the air cell just outside it
+/// (`cell + sign` along axis `d`). Out-of-section (boundary) faces read `0` for v1.
+#[allow(clippy::too_many_arguments)]
+fn face_light(
+    light: &[[u8; 3]],
+    d: usize,
+    u: usize,
+    v: usize,
+    sign: i32,
+    s: i32,
+    i: i32,
+    j: i32,
+) -> [u8; 3] {
+    let n = Section::SIZE as i32;
+    let mut c = [0i32; 3];
+    c[d] = s + sign;
+    c[u] = i;
+    c[v] = j;
+    if (0..n).contains(&c[0]) && (0..n).contains(&c[1]) && (0..n).contains(&c[2]) {
+        let nn = Section::SIZE as usize;
+        light[c[0] as usize + c[1] as usize * nn + c[2] as usize * nn * nn]
+    } else {
+        [0; 3]
+    }
+}
+
 /// Mesh one section (naïve face culling — see module docs). Single-chunk
 /// convenience; boundary faces are drawn.
 pub fn mesh_section(section: &Section) -> ChunkMesh {
@@ -377,6 +492,9 @@ pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> Chu
     let mut vertices: Vec<ChunkVertex> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
 
+    // Flood-fill block light once for the section; faces sample it (E3).
+    let light_grid = compute_light(section);
+
     // For each principal axis `d` and each facing direction `sign`, sweep slices
     // and greedily merge the plane of exposed faces.
     for d in 0..3usize {
@@ -385,11 +503,10 @@ pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> Chu
 
         for sign in [1i32, -1i32] {
             for s in 0..n {
-                // mask[i + j*n] = Some((block, ao4)) where this slice has a face
-                // exposed in direction `sign` (solid here, air in the neighbour
-                // cell). The baked corner-AO is part of the key so merging only joins
-                // cells with an identical AO pattern.
-                let mut mask: Vec<Option<(BlockId, [u8; 4])>> = vec![None; (n * n) as usize];
+                // mask[i + j*n] = Some(face) where this slice has a face exposed in
+                // direction `sign`. Baked AO + block light are part of the key so
+                // merging only joins cells with an identical look.
+                let mut mask: Vec<Option<FaceCell>> = vec![None; (n * n) as usize];
                 for j in 0..n {
                     for i in 0..n {
                         let mut c = [0i32; 3];
@@ -404,7 +521,8 @@ pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> Chu
                         nb[d] = s + sign;
                         if is_air(section, neighbors, nb[0], nb[1], nb[2]) {
                             let ao = face_ao(section, neighbors, d, u, v, sign, s, i, j);
-                            mask[(i + j * n) as usize] = Some((block, ao));
+                            let lt = face_light(&light_grid, d, u, v, sign, s, i, j);
+                            mask[(i + j * n) as usize] = Some((block, ao, lt));
                         }
                     }
                 }
@@ -447,6 +565,7 @@ pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> Chu
                             h,
                             cell.0,
                             cell.1,
+                            cell.2,
                         );
 
                         for hh in 0..h {
@@ -487,6 +606,7 @@ fn emit_quad(
     h: i32,
     block: BlockId,
     ao: [u8; 4],
+    light: [u8; 3],
 ) {
     // The face plane sits at the +d boundary of the slice for +sign, else at -d.
     let plane = if sign > 0 { s + 1 } else { s };
@@ -512,7 +632,9 @@ fn emit_quad(
 
     let base = vertices.len() as u32;
     for (position, corner_ao) in quad {
-        vertices.push(ChunkVertex::with_ao(position, normal, block.0, corner_ao));
+        vertices.push(ChunkVertex::with_ao_light(
+            position, normal, block.0, corner_ao, light,
+        ));
     }
     // Split the quad along the diagonal between the *darker* pair of corners, so the
     // AO gradient doesn't interpolate a bright triangle across a dark edge. Culling is
@@ -779,10 +901,61 @@ mod tests {
     fn pack_maps_normals_to_the_right_direction() {
         for (dir, n) in FACE_NORMALS.iter().enumerate() {
             let v = ChunkVertex::new([1.0, 2.0, 3.0], *n, 7);
-            let (_, d, m, _) = unpack_vertex(pack(&v));
+            let (_, d, m, _) = unpack_vertex(pack(&v)[0]);
             assert_eq!(d as usize, dir);
             assert_eq!(m, 7);
         }
+    }
+
+    #[test]
+    fn pack_round_trips_block_light() {
+        let v = ChunkVertex::with_ao_light([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 3, 2, [5, 14, 15]);
+        let word1 = pack(&v)[1];
+        assert_eq!(word1 & 0xF, 5);
+        assert_eq!((word1 >> 4) & 0xF, 14);
+        assert_eq!((word1 >> 8) & 0xF, 15);
+    }
+
+    // --- Flood-fill block light (E3) ------------------------------------------
+
+    const CRYSTAL: BlockId = BlockId(6);
+
+    #[test]
+    fn a_crystal_lights_the_blocks_around_it() {
+        // A crystal sitting on a flat floor must light the floor's top faces near it,
+        // brightest adjacent and fading with distance.
+        let mut s = Section::new();
+        for z in 8..24 {
+            for x in 8..24 {
+                s.set(x, 5, z, STONE);
+            }
+        }
+        s.set(16, 6, 16, CRYSTAL); // crystal on the floor
+
+        let mesh = greedy_mesh_section(&s);
+        // Find lit top-face vertices (normal +y) and the brightest one.
+        let top_lit: Vec<&ChunkVertex> = mesh
+            .vertices
+            .iter()
+            .filter(|v| v.normal[1] > 0.5 && v.light != [0, 0, 0])
+            .collect();
+        assert!(!top_lit.is_empty(), "crystal lit no surrounding top faces");
+        // The light is cyan-ish (green/blue dominate red), matching the emitter.
+        let max_b = top_lit.iter().map(|v| v.light[2]).max().unwrap();
+        let max_r = top_lit.iter().map(|v| v.light[0]).max().unwrap();
+        assert!(max_b > max_r, "crystal light should read cyan (blue > red)");
+    }
+
+    #[test]
+    fn no_emitters_means_no_block_light() {
+        let mut s = Section::new();
+        for z in 0..Section::SIZE {
+            for x in 0..Section::SIZE {
+                s.set(x, 0, z, STONE);
+            }
+        }
+        let mesh = greedy_mesh_section(&s);
+        assert!(mesh.vertices.iter().all(|v| v.light == [0, 0, 0]));
     }
 
     // --- Baked AO (M4) --------------------------------------------------------

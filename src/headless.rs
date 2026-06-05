@@ -162,9 +162,9 @@ pub fn capture(width: u32, height: u32, path: &str) {
         immediate_size: 0,
     });
     let vertex_layout = wgpu::VertexBufferLayout {
-        array_stride: std::mem::size_of::<u32>() as wgpu::BufferAddress,
+        array_stride: (2 * std::mem::size_of::<u32>()) as wgpu::BufferAddress,
         step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &wgpu::vertex_attr_array![0 => Uint32],
+        attributes: &wgpu::vertex_attr_array![0 => Uint32, 1 => Uint32],
     };
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("headless-pipeline"),
@@ -243,7 +243,7 @@ pub fn capture(width: u32, height: u32, path: &str) {
         .iter()
         .filter(|i| !i.mesh.is_empty())
         .map(|inst| {
-            let packed: Vec<u32> = inst.mesh.vertices.iter().map(pack).collect();
+            let packed: Vec<[u32; 2]> = inst.mesh.vertices.iter().map(pack).collect();
             let origin = ChunkUniform {
                 origin: [inst.origin.x, inst.origin.y, inst.origin.z, 0.0],
             };

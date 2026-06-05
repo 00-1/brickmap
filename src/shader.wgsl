@@ -33,17 +33,24 @@ struct VsOut {
     @location(2) world_pos: vec3<f32>,
     @location(3) ao: f32,
     @location(4) @interpolate(flat) material: u32,
+    @location(5) block_light: vec3<f32>,
 };
 
 @vertex
-fn vs_main(@location(0) packed: u32) -> VsOut {
-    // Layout: x:6 | y:6 | z:6 | dir:3 | material:9 | ao:2
+fn vs_main(@location(0) packed: u32, @location(1) packed1: u32) -> VsOut {
+    // word0: x:6 | y:6 | z:6 | dir:3 | material:9 | ao:2
     let x = f32(packed & 63u);
     let y = f32((packed >> 6u) & 63u);
     let z = f32((packed >> 12u) & 63u);
     let dir = (packed >> 18u) & 7u;
     let material = (packed >> 21u) & 511u;
     let ao = (packed >> 30u) & 3u;
+    // word1: lr:4 | lg:4 | lb:4  — baked block light, 0..15 per channel.
+    let block_light = vec3<f32>(
+        f32(packed1 & 15u),
+        f32((packed1 >> 4u) & 15u),
+        f32((packed1 >> 8u) & 15u),
+    ) / 15.0;
 
     // Direction -> normal: 0:+X 1:-X 2:+Y 3:-Y 4:+Z 5:-Z.
     let axis = dir >> 1u;
@@ -73,6 +80,7 @@ fn vs_main(@location(0) packed: u32) -> VsOut {
     out.world_pos = world_pos;
     out.ao = f32(ao);
     out.material = material;
+    out.block_light = block_light;
     return out;
 }
 
@@ -88,7 +96,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sky_ambient = vec3<f32>(0.40, 0.48, 0.60);
     let ground_ambient = vec3<f32>(0.34, 0.28, 0.24);
     let sun = vec3<f32>(1.0, 0.94, 0.82) * (0.62 * diffuse);
-    let light = mix(ground_ambient, sky_ambient, up) + sun;
+    // Baked block light (flood-fill, E3): the crystal's colour spills onto nearby
+    // surfaces and bleeds around corners. Quadratic falloff for a tighter pool.
+    let block = in.block_light * in.block_light * 1.5;
+    let light = mix(ground_ambient, sky_ambient, up) + sun + block;
     // Baked ambient occlusion: corners (ao 0) sink to ~0.5 brightness, open faces
     // (ao 3) stay full. Multiplies the light.
     let ao_factor = 0.5 + 0.5 * (in.ao / 3.0);

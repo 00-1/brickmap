@@ -28,12 +28,13 @@ pub struct ChunkInstance {
     pub mesh: ChunkMesh,
 }
 
-/// Vertex buffer layout for the **packed** face vertex: one `u32` per vertex
-/// (design §9–10), unpacked in the shader.
+/// Vertex buffer layout for the **packed** face vertex: two `u32`s per vertex (8
+/// bytes, design §9–10) — word 0 = pos/dir/material/ao, word 1 = block light.
+/// Unpacked in the shader.
 const CHUNK_VERTEX_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-    array_stride: std::mem::size_of::<u32>() as wgpu::BufferAddress,
+    array_stride: (2 * std::mem::size_of::<u32>()) as wgpu::BufferAddress,
     step_mode: wgpu::VertexStepMode::Vertex,
-    attributes: &wgpu::vertex_attr_array![0 => Uint32],
+    attributes: &wgpu::vertex_attr_array![0 => Uint32, 1 => Uint32],
 };
 
 /// Per-frame globals (bind group 0): the camera, the material palette, and the live
@@ -615,7 +616,7 @@ fn build_chunk_draw(
     if inst.mesh.is_empty() {
         return None;
     }
-    let packed: Vec<u32> = inst.mesh.vertices.iter().map(pack).collect();
+    let packed: Vec<[u32; 2]> = inst.mesh.vertices.iter().map(pack).collect();
     let origin = ChunkUniform {
         origin: [inst.origin.x, inst.origin.y, inst.origin.z, 0.0],
     };

@@ -11,7 +11,7 @@ const SNOW: BlockId = BlockId(5);
 /// Rare emissive crystal that sits on the surface and glows (feeds bloom, E3).
 const CRYSTAL: BlockId = BlockId(6);
 /// Fraction of columns that sprout a surface crystal (rare — they should feel special).
-const CRYSTAL_CHANCE: f32 = 0.004;
+const CRYSTAL_CHANCE: f32 = 0.0022;
 
 /// Hash a lattice point to `[0, 1)`.
 fn hash(x: i32, z: i32, seed: u32) -> f32 {

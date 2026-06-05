@@ -59,7 +59,8 @@
 - [x] Sky gradient / horizon; fog tinted to match.
 - [x] Cheap bloom (bright-pass → ¼-res separable blur → composite) + emissive crystal
       blocks — both the ember particles and the crystals glow.
-- [ ] Flood-fill coloured light baked in the mesher; visible corner bleed.
+- [x] Flood-fill coloured light baked in the mesher; visible corner bleed. *(v1:
+      per-section, so light clips at chunk borders — cross-chunk light is a follow-up.)*
 - [ ] Runs native + web; look-journal entries per decision; snapshot + render.
 - [ ] CI green; docs synced (lockstep rule).
 
