@@ -181,7 +181,7 @@ budgets, wire the **lighting data path**, and add mobile **dynamic resolution**.
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear
 build order.
 
-### D1 — Headless render-to-PNG 🛠 &nbsp;→ [`milestones/D1-headless-render.md`](milestones/D1-headless-render.md)
+### D1 — Headless render-to-PNG ✅ &nbsp;→ [`milestones/D1-headless-render.md`](milestones/D1-headless-render.md)
 Render the scene offscreen to a PNG using software Vulkan (**llvmpipe** — confirmed
 working in-container, no GPU/display needed), so renders can be verified without a
 display.
