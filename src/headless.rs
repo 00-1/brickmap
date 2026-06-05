@@ -75,6 +75,19 @@ pub fn capture(width: u32, height: u32, path: &str) {
     let foliage_all: Vec<crate::foliage::SplatInstance> =
         instances.iter().flat_map(|i| i.foliage.clone()).collect();
 
+    // Draw front-to-back (M8): sort chunks by distance to the camera so early-Z rejects
+    // overdraw behind nearer ones. Opaque output is order-independent, so this is a pure
+    // perf change — the render is identical, which also verifies the windowed app's sort.
+    let mut instances = instances;
+    instances.sort_by(|a, b| {
+        let c = |i: &crate::gfx::ChunkInstance| {
+            (glam::Vec3::from(i.mesh.aabb.min) + glam::Vec3::from(i.mesh.aabb.max)) * 0.5 + i.origin
+        };
+        (c(a) - camera.position)
+            .length_squared()
+            .total_cmp(&(c(b) - camera.position).length_squared())
+    });
+
     let instance = wgpu::Instance::default();
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::default(),
@@ -414,7 +427,7 @@ pub fn capture(width: u32, height: u32, path: &str) {
                 view: &depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
+                    store: wgpu::StoreOp::Discard, // nothing reads depth after this pass (M8)
                 }),
                 stencil_ops: None,
             }),

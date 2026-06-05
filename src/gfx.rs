@@ -732,7 +732,9 @@ impl State {
                     view: &self.depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
+                        // Nothing reads depth after this single forward pass, so don't pay
+                        // to write it back to memory — free bandwidth on tiled GPUs (M8).
+                        store: wgpu::StoreOp::Discard,
                     }),
                     stencil_ops: None,
                 }),
@@ -779,17 +781,28 @@ impl State {
                 None
             };
 
+            // Build the visible draw list once (frustum + cave cull), then sort it
+            // **front-to-back** by distance to the camera (M8): nearer chunks rasterise
+            // first, so early-Z rejects the overdraw behind them — a real win on the
+            // bandwidth-bound target. The same sorted list feeds the foliage pass.
+            let mut visible_draws: Vec<&ChunkDraw> = self
+                .draws
+                .iter()
+                .filter(|(coord, draw)| {
+                    (!toggles.frustum_cull || frustum.intersects_aabb(draw.aabb_min, draw.aabb_max))
+                        && visible.as_ref().is_none_or(|vis| vis.contains(*coord))
+                })
+                .map(|(_, draw)| draw)
+                .collect();
+            visible_draws.sort_by(|a, b| {
+                let da = ((a.aabb_min + a.aabb_max) * 0.5 - camera_pos).length_squared();
+                let db = ((b.aabb_min + b.aabb_max) * 0.5 - camera_pos).length_squared();
+                da.total_cmp(&db)
+            });
+
             let mut drawn = 0u32;
             let mut triangles = 0u32;
-            for (coord, draw) in self.draws.iter() {
-                if toggles.frustum_cull && !frustum.intersects_aabb(draw.aabb_min, draw.aabb_max) {
-                    continue;
-                }
-                if let Some(vis) = &visible {
-                    if !vis.contains(coord) {
-                        continue; // sealed off from the camera — cave-culled
-                    }
-                }
+            for draw in &visible_draws {
                 pass.set_bind_group(1, &draw.origin_bind_group, &[]);
                 pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
                 pass.set_index_buffer(draw.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -798,27 +811,17 @@ impl State {
                 triangles += draw.num_indices / 3;
             }
 
-            // Foliage splats (E6): instanced billboards over the visible chunks, same
-            // frustum + cave cull as the terrain. One quad (6 verts) per instance, no
-            // index/vertex buffer. Drawn after terrain so depth rejects buried blades.
+            // Foliage splats (E6): instanced billboards over the same visible (sorted)
+            // chunks. One quad (6 verts) per instance, no index/vertex buffer. Drawn after
+            // terrain so depth rejects buried blades.
             let mut splats = 0u32;
             if toggles.foliage {
                 pass.set_pipeline(&self.splat_pipeline);
                 pass.set_bind_group(0, &self.globals_bind_group, &[]);
-                for (coord, draw) in self.draws.iter() {
+                for draw in &visible_draws {
                     let Some((buf, count)) = &draw.foliage else {
                         continue;
                     };
-                    if toggles.frustum_cull
-                        && !frustum.intersects_aabb(draw.aabb_min, draw.aabb_max)
-                    {
-                        continue;
-                    }
-                    if let Some(vis) = &visible {
-                        if !vis.contains(coord) {
-                            continue;
-                        }
-                    }
                     pass.set_vertex_buffer(0, buf.slice(..));
                     pass.draw(0..6, 0..*count);
                     splats += count;

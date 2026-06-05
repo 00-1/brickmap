@@ -278,7 +278,7 @@ sidestepping LOD seams, while extending the point-cloud look to the whole world.
 - **Deferred (perf):** the bounded-cost half — decimating distant chunks into actual point
   sets so *primitives* drop with distance (today fragments are discarded, geometry isn't).
 
-### M8 — Hit the budget (perf systems + profiling) ⏳
+### M8 — Hit the budget (perf systems + profiling) 🛠
 Two halves. **(a) Engine perf systems** (doable now, no special hardware; from research
 backlog §K): **vertex pooling + one shared static quad index buffer** (kills upload
 churn, enables multi-draw), **further vertex quantization + quad-expansion**,
@@ -292,6 +292,12 @@ wire the lighting data path, record real numbers. *(Skip: depth pre-pass, Hi-Z �
 - **De-risks:** turns "should be fast" into measured-fast.
 - **Acceptance:** perf systems landed + measured on the HUD; recorded frame times on both
   reference devices within budget; budgets in `design.md` §8 updated with real numbers.
+- **Landed (a, output-neutral):** front-to-back opaque sort (early-Z) + depth `storeOp:
+  Discard` (free tiler bandwidth) — verified byte-identical headless. *(Shared static quad
+  index buffer was evaluated and **rejected**: the greedy mesher flips each quad's diagonal
+  by AO, so a fixed index pattern would regress the AO look.)*
+- **Blocked (b):** profiling needs the reference iGPU + phone to measure — logged in
+  `docs/unattended-questions.md` for when the hardware's available.
 
 ## Dev tooling & process (D-series)
 
