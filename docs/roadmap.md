@@ -255,6 +255,8 @@ foliage pivot, since it's small, deterministic, and high-delight.)*
   guardrails.
 - **✨ E16 — Reactive audio** — seeded generative music + a weather/biome-reactive mix;
   `fundsp`+`kira` (native) / Web Audio (web); equalpower pan + one FDN reverb.
+  **Direction: dark/heavy doom-drone (Sleep — *Dopesmoker*)** — slow, downtuned, crushing
+  sustained drones, minor/Phrygian, sparse + hypnotic; per-seed dirge.
 
 ### M7 — Distance dissolve (LOD that's also the look) ⏳
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
@@ -370,6 +372,38 @@ sibling to the D4 Android APK. The native binary already builds; this is the
   Windows), so the Windows path is built blind and verified by the human; the Linux
   binary I *can* at least compile/headless-check.
 - **Fit:** straightforward CI packaging (much simpler than D4 — no NDK/entry shim).
+
+## Big future directions (beyond the ladder)
+
+Major scope shifts we want to move *toward* — planned at the skeleton level, de-risked by
+research before committing.
+
+### N1 — Multiple viewers (lightweight multiplayer) ⏳ &nbsp;*(big; research first)*
+Shared exploration: several people flying the **same world**, seeing each other (and,
+later, each other's edits and dynamic sim). A genuine scope shift — and the first thing
+that needs a **server** (GitHub Pages is static).
+- **Why it's *less* of a rewrite than it looks (the determinism dividend):** the world is a
+  pure function of the seed, so it **never has to be synced** — every client regenerates it
+  locally. Only **presence** (camera positions/avatars), **edits** (E14's seed+sparse
+  deltas), and **dynamic-sim divergence** (sand/CA) need to travel. So **E12 shareable
+  seeds and E14 edit-deltas are literally multiplayer's groundwork**, not a detour: a shared
+  link already puts everyone in the same world; multiplayer adds a thin layer that
+  broadcasts who's where + what changed.
+- **The server question ("separation"):** we'd need a small **relay / signaling** server
+  (a WebSocket relay, or WebRTC peer-to-peer + a signaling server) hosted *somewhere other
+  than Pages* (tiny Rust service / a managed realtime service). This is an **added thin
+  networking layer, not a client/server rewrite** — *provided* we keep the existing
+  `world`/`worldgen`/`sim` ↔ `gfx` seam clean and keep edits/sim **serializable** (which
+  E12/E14 already push us toward). That's the low-regret prep to do now; a full
+  authoritative-server rewrite is **not** warranted yet (premature, fights weak-hardware
+  solo-first).
+- **Open questions for a research pass:** transport (WebRTC vs WS relay) on weak/mobile +
+  web; hosting given static Pages; what authority model for dynamic sim (host-authoritative
+  vs deterministic lockstep — lockstep is tempting given determinism but fragile across
+  platforms, see E12's float caveat); presence/avatar representation (point-cloud blips?);
+  how many viewers realistically; cost.
+- **Stance:** record as a direction; keep the seam + serialization clean as we build E12/
+  E14/E11; **run a research pass to de-risk before any netcode is written.**
 
 ## What we're deliberately *not* doing
 

@@ -267,6 +267,10 @@ deterministic seed, the headless render-to-texture path, the JS↔wasm setter br
   *any* of these is scope-creep into a game; lead with **flyers** (no terrain query).
 
 ### P. Reactive audio (→ **E16**)
+- 🎯 **Direction: dark/heavy doom-drone** — think **Sleep — *Dopesmoker***: very slow,
+  downtuned, crushing sustained drones; minor / Phrygian-ish; sparse, hypnotic, room for
+  feedback/overtones; not pleasant-ambient. Seeded so each world has its own dirge. (This
+  steers the "generative music" below away from pentatonic-pretty toward heavy + tonal-dark.)
 - 🟢 **Seeded generative music** (pentatonic + sparse probabilistic triggers + incommensurate
   drones = endless, per-seed theme). 🟢 **reactive layer** mapping the global weather/biome/
   speed → smoothed params (`setTargetAtTime`/kira tweens). 🟢 **equalpower panning + one
