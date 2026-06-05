@@ -1,0 +1,329 @@
+//! Headless offscreen render → PNG (milestone D1). Native only; uses software
+//! Vulkan (Mesa **llvmpipe**) so it needs no GPU or display — install
+//! `mesa-vulkan-drivers` for the ICD. It renders the same demo scene with the same
+//! `shader.wgsl` and packed vertices as the windowed app; the pipeline setup is
+//! duplicated from `gfx` for now (sharing it via a common `Renderer` is a
+//! follow-up, see the D1 brief).
+
+use std::sync::mpsc;
+
+use bytemuck::{Pod, Zeroable};
+use wgpu::util::DeviceExt;
+
+use crate::mesh::pack;
+
+const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+const CLEAR: wgpu::Color = wgpu::Color {
+    r: 0.02,
+    g: 0.03,
+    b: 0.06,
+    a: 1.0,
+};
+
+// These must mirror `gfx` + `shader.wgsl`.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct Globals {
+    view_proj: [[f32; 4]; 4],
+    palette: [[f32; 4]; 8],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct ChunkUniform {
+    origin: [f32; 4],
+}
+
+const PALETTE: [[f32; 4]; 8] = [
+    [0.95, 0.10, 0.95, 1.0],
+    [0.55, 0.55, 0.58, 1.0],
+    [0.55, 0.40, 0.25, 1.0],
+    [0.40, 0.70, 0.35, 1.0],
+    [0.80, 0.78, 0.65, 1.0],
+    [0.95, 0.10, 0.95, 1.0],
+    [0.95, 0.10, 0.95, 1.0],
+    [0.95, 0.10, 0.95, 1.0],
+];
+
+/// Render the demo scene to a PNG at `path`. Panics on setup failure (it's a dev
+/// tool); the most likely cause is a missing software-Vulkan ICD.
+pub fn capture(width: u32, height: u32, path: &str) {
+    let instances = crate::build_world_meshes(&crate::demo_world());
+    let (camera, _radius) = crate::frame_camera(&instances);
+
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::default(),
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+    .expect("no headless GPU adapter — is mesa-vulkan-drivers installed?");
+    log::info!("headless adapter: {:?}", adapter.get_info());
+
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("headless-device"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::downlevel_defaults(),
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+        memory_hints: wgpu::MemoryHints::Performance,
+        trace: wgpu::Trace::Off,
+    }))
+    .expect("failed to create headless device");
+
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("headless-color"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: COLOR_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let depth = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("headless-depth"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+    let uniform_bgl = |vis| {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: vis,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
+    };
+    let globals_bgl = uniform_bgl(wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT);
+    let chunk_bgl = uniform_bgl(wgpu::ShaderStages::VERTEX);
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("headless-pipeline-layout"),
+        bind_group_layouts: &[Some(&globals_bgl), Some(&chunk_bgl)],
+        immediate_size: 0,
+    });
+    let vertex_layout = wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<u32>() as wgpu::BufferAddress,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &wgpu::vertex_attr_array![0 => Uint32],
+    };
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("headless-pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[vertex_layout],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: COLOR_FORMAT,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let globals = Globals {
+        view_proj: camera
+            .view_proj(width as f32 / height as f32)
+            .to_cols_array_2d(),
+        palette: PALETTE,
+    };
+    let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("globals"),
+        contents: bytemuck::bytes_of(&globals),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let globals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("globals-bg"),
+        layout: &globals_bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: globals_buffer.as_entire_binding(),
+        }],
+    });
+
+    struct Draw {
+        vbuf: wgpu::Buffer,
+        ibuf: wgpu::Buffer,
+        n: u32,
+        origin_bg: wgpu::BindGroup,
+    }
+    let draws: Vec<Draw> = instances
+        .iter()
+        .filter(|i| !i.mesh.is_empty())
+        .map(|inst| {
+            let packed: Vec<u32> = inst.mesh.vertices.iter().map(pack).collect();
+            let origin = ChunkUniform {
+                origin: [inst.origin.x, inst.origin.y, inst.origin.z, 0.0],
+            };
+            let origin_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("chunk-origin"),
+                contents: bytemuck::bytes_of(&origin),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+            Draw {
+                vbuf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("chunk-vertices"),
+                    contents: bytemuck::cast_slice(&packed),
+                    usage: wgpu::BufferUsages::VERTEX,
+                }),
+                ibuf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("chunk-indices"),
+                    contents: bytemuck::cast_slice(&inst.mesh.indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                }),
+                n: inst.mesh.indices.len() as u32,
+                origin_bg: device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("chunk-origin-bg"),
+                    layout: &chunk_bgl,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: origin_buffer.as_entire_binding(),
+                    }],
+                }),
+            }
+        })
+        .collect();
+
+    // Row pitch must be aligned to 256 bytes for texture-to-buffer copies.
+    let unpadded_bpr = width * 4;
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+    let padded_bpr = unpadded_bpr.div_ceil(align) * align;
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("readback"),
+        size: (padded_bpr * height) as u64,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("headless-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(CLEAR),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &globals_bind_group, &[]);
+        for d in &draws {
+            pass.set_bind_group(1, &d.origin_bg, &[]);
+            pass.set_vertex_buffer(0, d.vbuf.slice(..));
+            pass.set_index_buffer(d.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..d.n, 0, 0..1);
+        }
+    }
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padded_bpr),
+                rows_per_image: Some(height),
+            },
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit(std::iter::once(encoder.finish()));
+
+    // Map the readback buffer and wait for the GPU.
+    let (tx, rx) = mpsc::channel();
+    readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    rx.recv().expect("map channel").expect("buffer map failed");
+
+    let data = readback.slice(..).get_mapped_range();
+    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+    for row in 0..height {
+        let start = (row * padded_bpr) as usize;
+        rgba.extend_from_slice(&data[start..start + unpadded_bpr as usize]);
+    }
+    drop(data);
+    readback.unmap();
+
+    let file = std::fs::File::create(path).expect("create png");
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()
+        .expect("png header")
+        .write_image_data(&rgba)
+        .expect("png data");
+    log::info!("wrote {path} ({width}x{height}, {} chunks)", draws.len());
+}

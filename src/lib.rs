@@ -15,6 +15,8 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
 mod gfx;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod headless;
 pub mod mesh;
 pub mod scene;
 pub mod world;
@@ -218,27 +220,13 @@ pub fn run() {
         .expect("failed to build event loop");
 
     let instances = build_world_meshes(&demo_world());
-
-    // Frame the camera on the whole scene from the combined world bounds, then fly.
-    let mut min = Vec3::splat(f32::INFINITY);
-    let mut max = Vec3::splat(f32::NEG_INFINITY);
-    for inst in &instances {
-        min = min.min(Vec3::from(inst.mesh.aabb.min) + inst.origin);
-        max = max.max(Vec3::from(inst.mesh.aabb.max) + inst.origin);
-    }
-    if instances.is_empty() {
-        min = Vec3::ZERO;
-        max = Vec3::splat(Section::SIZE as f32);
-    }
-    let center = (min + max) * 0.5;
-    let radius = ((max - min).length() * 0.5).max(1.0);
-    let eye = center + Vec3::new(1.0, 0.6, 1.3).normalize() * radius * 1.8;
+    let (camera, radius) = frame_camera(&instances);
 
     let mut app = App {
         state: None,
         proxy: Some(event_loop.create_proxy()),
         instances,
-        camera: Camera::looking_at(eye, center),
+        camera,
         controller: CameraController::new(radius),
         last_frame: None,
         cursor_locked: false,
@@ -285,10 +273,30 @@ fn terrain_height(wx: i32, wz: i32) -> u32 {
     h.round().clamp(1.0, (Section::SIZE - 1) as f32) as u32
 }
 
+/// Frame the camera on the whole scene from the combined world bounds. Returns the
+/// camera and the scene radius (used for move speed). Shared by the app and the
+/// headless renderer so they show the same view.
+pub(crate) fn frame_camera(instances: &[ChunkInstance]) -> (Camera, f32) {
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    for inst in instances {
+        min = min.min(Vec3::from(inst.mesh.aabb.min) + inst.origin);
+        max = max.max(Vec3::from(inst.mesh.aabb.max) + inst.origin);
+    }
+    if instances.is_empty() {
+        min = Vec3::ZERO;
+        max = Vec3::splat(Section::SIZE as f32);
+    }
+    let center = (min + max) * 0.5;
+    let radius = ((max - min).length() * 0.5).max(1.0);
+    let eye = center + Vec3::new(1.0, 0.6, 1.3).normalize() * radius * 1.8;
+    (Camera::looking_at(eye, center), radius)
+}
+
 /// Greedy-mesh each chunk with neighbour-aware seam culling. Meshes stay
 /// chunk-local; the world `origin` travels alongside (the shader applies it).
 /// App-level glue: it's allowed to touch `world` + `mesh` together.
-fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
+pub(crate) fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
     let s = Section::SIZE as f32;
     let mut instances = Vec::new();
     for ((cx, cy, cz), section) in world.chunks() {

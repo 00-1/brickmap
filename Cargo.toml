@@ -32,6 +32,9 @@ web-time = "1"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pollster = "0.4"
 env_logger = "0.11"
+# Headless render-to-PNG (D1): software-Vulkan offscreen capture for golden-image
+# tests and self-checked renders. Native only.
+png = "0.17"
 
 # --- Web / WASM-only -----------------------------------------------------
 [target.'cfg(target_arch = "wasm32")'.dependencies]
