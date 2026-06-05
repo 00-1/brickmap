@@ -16,7 +16,7 @@ use winit::window::Window;
 use crate::mesh::{pack, ChunkMesh};
 use crate::particles::{ParticleInstance, CUBE_INDICES, CUBE_POSITIONS};
 use crate::scene::Frustum;
-use crate::textures::{material_atlas, LAYERS, TILE};
+use crate::textures::{material_mip_chain, mip_levels, LAYERS, TILE};
 use crate::world::ChunkCoord;
 
 /// One mesh instance to draw: a chunk mesh (chunk-local) at a world `origin`.
@@ -670,28 +670,36 @@ pub(crate) fn build_material_bind_group(
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("material-array"),
         size,
-        mip_level_count: 1,
+        mip_level_count: mip_levels(),
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        &material_atlas(),
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(TILE * 4),
-            rows_per_image: Some(TILE),
-        },
-        size,
-    );
+    // Upload every mip level (CPU box-filtered) so distant tiles minify cleanly.
+    for (level, data) in material_mip_chain().iter().enumerate() {
+        let s = TILE >> level;
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: level as u32,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(s * 4),
+                rows_per_image: Some(s),
+            },
+            wgpu::Extent3d {
+                width: s,
+                height: s,
+                depth_or_array_layers: LAYERS,
+            },
+        );
+    }
     let view = texture.create_view(&wgpu::TextureViewDescriptor {
         dimension: Some(wgpu::TextureViewDimension::D2Array),
         ..Default::default()

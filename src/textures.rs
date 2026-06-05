@@ -136,6 +136,48 @@ pub fn material_atlas() -> Vec<u8> {
     data
 }
 
+/// Number of mip levels for the tile (`TILE`, `TILE/2`, … , `1`).
+pub fn mip_levels() -> u32 {
+    TILE.trailing_zeros() + 1
+}
+
+/// Full mip chain for the material array: level 0 is [`material_atlas`], each
+/// subsequent level is a 2×2 box-downsample of the previous (per layer, so layers
+/// never bleed into each other). Nearest-sampled at runtime → chunky LOD that suits
+/// the look while killing distant shimmer. Each `Vec` is `LAYERS` contiguous layers.
+pub fn material_mip_chain() -> Vec<Vec<u8>> {
+    let mut chain = vec![material_atlas()];
+    let mut size = TILE;
+    while size > 1 {
+        let prev = chain.last().unwrap();
+        let half = size / 2;
+        let mut next = Vec::with_capacity((LAYERS * half * half * 4) as usize);
+        for layer in 0..LAYERS {
+            let base = (layer * size * size * 4) as usize;
+            for y in 0..half {
+                for x in 0..half {
+                    let mut acc = [0u32; 4];
+                    for dy in 0..2 {
+                        for dx in 0..2 {
+                            let (sx, sy) = (x * 2 + dx, y * 2 + dy);
+                            let idx = base + ((sy * size + sx) * 4) as usize;
+                            for (c, a) in acc.iter_mut().enumerate() {
+                                *a += prev[idx + c] as u32;
+                            }
+                        }
+                    }
+                    for a in acc {
+                        next.push((a / 4) as u8);
+                    }
+                }
+            }
+        }
+        chain.push(next);
+        size = half;
+    }
+    chain
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +197,18 @@ mod tests {
     #[test]
     fn is_deterministic() {
         assert_eq!(material_atlas(), material_atlas());
+    }
+
+    #[test]
+    fn mip_chain_halves_to_one_texel() {
+        let chain = material_mip_chain();
+        assert_eq!(chain.len(), mip_levels() as usize);
+        for (level, data) in chain.iter().enumerate() {
+            let s = TILE >> level;
+            assert_eq!(data.len(), (LAYERS * s * s * 4) as usize, "level {level}");
+        }
+        // Last level is one texel per layer.
+        assert_eq!(chain.last().unwrap().len(), (LAYERS * 4) as usize);
     }
 
     #[test]
