@@ -56,7 +56,7 @@ own thing — the content/visual work from [`design.md`](design.md) §12 — int
 *in place* so they don't get deferred to the end (or lost).
 
 > Legend: ✅ done · 🛠 in progress · ⏳ planned · **✨ = exploration** (the
-> *interesting* bit, not infrastructure; numbered **E1–E7 in build order**) ·
+> *interesting* bit, not infrastructure; numbered **E1–E11 in build order**) ·
 > **D = dev tooling & process** (cross-cutting; see the D-series below). More
 > exploration candidates (researched and fit-graded) live in
 > [`exploration-backlog.md`](exploration-backlog.md).
@@ -197,6 +197,46 @@ and a lusher palette — the Superbien point-cloud-forest mood. Reuses E6's spla
   forming a forest, atmospheric and alive.
 - **De-risks:** density/perf at forest scale, and the aesthetic itself (heavy look-journal).
 
+### ✨ E8 — A richer world *(exploration)* ⏳
+Make exploring rewarding (and finally exercise M5's cave-culling). From the 2026-06
+research (backlog §G): **ridged noise + domain warping** (near-free, dramatically less
+"obviously-noise"), **biomes** (temp×humidity → materials + foliage density, the backbone
+of forest variety), **jittered-grid tree/foliage placement** (E7's scatter engine),
+**sea level + rivers**, then the pricey-but-foundational **vertical chunk stacks + 3D
+density → overhangs & caves** (stateless noise-intersection caves).
+- **Outcome:** varied biomed terrain with cliffs, rivers, woods, and caves to fly through.
+- **De-risks:** 3D-noise cost (gate to surface bands); unlocks the dormant cave-culling.
+- *Cheap 2D wins (warp/biomes/placement/rivers) can interleave with E6/E7; vertical/caves
+  is the bigger step.*
+
+### ✨ E9 — Weather, water & sound *(exploration)* ⏳
+From the research (backlog §H): a single **global weather state** (wind + gust + precip +
+sun) driving everything; **screen-space god-rays**; **rain/snow as camera-space
+particles** with **snow/wetness accumulation as a per-column shader blend**; **stylized
+water** (sky-Fresnel + depth, no extra pass) + caustics; flat scrolling clouds + analytic
+sky; and **procedural ambient audio** (wind/birds/water, web + native).
+- **Outcome:** a living, weathered, audible world — the mood, coherent across systems.
+- **De-risks:** coupling many effects to one cheap state; keeping water off the re-mesh path.
+
+### ✨ E10 — Palette & aesthetic spine *(exploration)* ⏳
+A second aesthetic pass (backlog §I): **indexed palette + colour cycling** (render to a
+scalar index → tiny palette LUT; structural quantization, a bandwidth *win*, reskin by
+swapping a strip), **depth/normal "ink" outlines** (voxel creases as a blueprint grid), a
+**deliberate low-res internal buffer** (aesthetic + the biggest perf dial), banded
+lighting folded into the index, and a **G-buffer-as-art** mode.
+- **Outcome:** a coherent "the renderer only has N colours, a pixel grid, and a depth/
+  normal buffer — and it shows you all three" identity.
+- **De-risks:** the funnel-everything-through-an-index discipline (which *is* the look).
+
+### ✨ E11 — More dynamic voxels *(exploration)* ⏳
+Extend E5 onto a proper substrate (backlog §J): **block/Margolus CA** (free
+mass-conservation + safe rayon parallelism) + **active-set/dirty-AABB** (Noita-style),
+then **pressure water** (compressible-mass; rendered as a separate vertex-displaced pass,
+*not* re-meshed), **fire/smoke/steam under one heat field**, the **destruction loop**
+(explode→carve→eject→rest→write→slump), and **growth** (moss/vines/crystals).
+- **Outcome:** water that finds its level, fire that spreads, things that grow and crumble.
+- **De-risks:** re-mesh churn (active-set + off-thread mesher + don't-mesh-water absorb it).
+
 ### M7 — Distance dissolve (LOD that's also the look) ⏳
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
 value on a surface world), dissolve distant **terrain into points** via E6's splat
@@ -210,13 +250,20 @@ sidestepping LOD seams, while extending the point-cloud look to the whole world.
   dissolve logic tested. *(Octree-mip meshes remain a fallback if points lose the perf
   A/B on the reference iGPU.)*
 
-### M8 — Hit the budget (profiling & polish) ⏳
-Profile on the **reference iGPU and phone** (design §8), tighten to the frame
-budgets, wire the **lighting data path**, and add mobile **dynamic resolution**.
+### M8 — Hit the budget (perf systems + profiling) ⏳
+Two halves. **(a) Engine perf systems** (doable now, no special hardware; from research
+backlog §K): **vertex pooling + one shared static quad index buffer** (kills upload
+churn, enables multi-draw), **further vertex quantization + quad-expansion**,
+**render-pass load/store discipline** (`loadOp:clear`/depth `storeOp:discard` —
+free tiler bandwidth), **dynamic resolution + FSR1/EASU** spatial upscale (biggest
+mobile pixel win), **front-to-back opaque sort**, and **upload prioritization +
+coalescing**; optional WebGPU `drawIndirect`/render-bundles + `WEBGL_multi_draw`.
+**(b) Profiling** on the **reference iGPU and phone** (design §8): tighten to budgets,
+wire the lighting data path, record real numbers. *(Skip: depth pre-pass, Hi-Z — see §K.)*
 - **Outcome:** meets the stated frame budgets on real weak hardware.
 - **De-risks:** turns "should be fast" into measured-fast.
-- **Acceptance:** recorded frame times on both reference devices within budget;
-  budgets in `design.md` §8 updated with real numbers.
+- **Acceptance:** perf systems landed + measured on the HUD; recorded frame times on both
+  reference devices within budget; budgets in `design.md` §8 updated with real numbers.
 
 ## Dev tooling & process (D-series)
 

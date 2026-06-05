@@ -121,6 +121,94 @@ expensive / off-brand. Each idea: *what · why interesting · rough sketch · co
 4. **✨E4 (displacement)** stays 🟡 with a hard cost budget — the one most likely to
    bust the weak-hardware frame.
 
+---
+
+## Second research pass (2026-06) — curated additions
+
+A 5-agent deep pass (after the engine reached E5) for *new* work beyond the above.
+Full agent detail is summarized here; the points/splat sibling pass lives in
+[`research-points-splatting.md`](research-points-splatting.md). Fit legend as above;
+"→ rung" notes where it's slotted on the [roadmap](roadmap.md).
+
+### G. World richness (→ **E8**, and unlocks M5 cave-culling)
+- 🟢 **Ridged noise + domain warping** — `1-|noise|` ridgelines + `fbm(p + k·fbm(p))`
+  warping; near-free, the biggest "less obviously-noise" look-per-cycle win.
+- 🟢 **Biomes from temperature × humidity** (low-freq 2D maps → a param table for
+  materials + **foliage density**) — cheap, and the backbone of forest *variety* (woods,
+  clearings, treeline). Feeds E6/E7.
+- 🟢 **Jittered-grid foliage/tree/POI placement** gated by biome+slope — this *is* E7's
+  tree-scatter engine; cheaper + more natural than per-voxel noise.
+- 🟢 **Sea level + rivers** (`|river_noise|<width` carves meanders) — lush riverbanks.
+- 🟡 **Vertical chunk stacks + 3D density** (`noise3 − y·squash`) → **overhangs + caves**
+  (cheese/spaghetti via noise intersection, *stateless*/deterministic). The pricey one
+  (3D noise per voxel — gate to surface bands) but **foundational**: it's what finally
+  makes the dormant cave-culling do work. 🔴 *Stateful "worm" caves* — breaks per-chunk
+  determinism; use the noise-intersection form instead.
+
+### H. Weather, water & ambient audio (→ **E9**; some atmosphere → E7)
+- 🟢 **One global "weather state"** (wind vector + gust energy + precip + sun) driving
+  god-rays, clouds, precip, water ripple, tree-sway, *and* audio — coherence for nearly
+  free. The key unifying idea.
+- 🟢 **Screen-space god-rays** (radial blur from the sun, ¼-res) — and through a *splat*
+  canopy the gaps become hard flickering shafts: on-brand. (→ E7/E9)
+- 🟢 **Snow/wetness accumulation as a per-column shader blend** (not new voxels) —
+  height-splat snowline, world-reactive, nearly free; promote-to-voxel only past a depth
+  threshold.
+- 🟢 **Camera-space precipitation** (rain/snow particles, vertex-animated → WebGL2-safe).
+- 🟢 **Stylized water** (sky-Fresnel + depth tint + scrolling normals + depth-foam; no
+  2nd pass) + 🟢 **projected animated caustics**. 🟡 planar reflection (a 2nd scene pass —
+  half-res, gate hard). 🔴 SSR (ray-march).
+- 🟢 **Procedural ambient audio** (filtered-noise wind, pooled spatial bird one-shots,
+  proximity water) — Web Audio on web, `kira`/`fundsp` native; cheap, world-reactive.
+- 🟢 **Scrolling-noise flat clouds + hash stars + analytic (Hoffman–Preetham) sky** with
+  **fog colour pulled from the sky** (aerial perspective ≈ free given our fog). 🔴 LUT
+  multiscatter / volumetric ray-march clouds.
+
+### I. Palette & aesthetic spine (→ **E10**)
+- 🟢 **Indexed palette + colour cycling** — render to a scalar *index* buffer (R8, a
+  bandwidth *win*), look up RGB from a tiny palette strip; quantization becomes
+  structurally true; cycling animates water/lava/sky by rotating the palette. The
+  deepest "expose the tech" idea; reskin the world by swapping one LUT.
+- 🟢 **Depth/normal "ink" outlines** (Roberts cross) — voxel creases light up into a
+  blueprint grid; ~6 taps; thresholds keyed off depth so it's a function of the pipeline.
+- 🟢 **Deliberate low-res internal buffer + nearest upscale** — aesthetic foundation
+  *and* the biggest perf dial; run all post at this res.
+- 🟢 **Banded lighting folded into the palette index** (free); 🟢 **G-buffer-as-art** mode
+  (6-colour normals / depth shells — nearly free, maximally on-theme).
+- 🟡 **Edge-gated chromatic aberration**, 🟡 **halftone/cross-hatch** (alt identity, don't
+  stack on the palette), 🟡 **cheap temporal feedback trails** (half-res — it's the one
+  that spends scarce bandwidth). 🔴 full-screen radial CA / CRT / VHS pastiche.
+
+### J. Dynamic-voxel follow-ups (→ **E5 continued**)
+- 🟢 **Block/Margolus CA** as the sim substrate — free mass-conservation + trivially-safe
+  rayon parallelism (disjoint 2×2×2 blocks).
+- 🟢 **Active-set / dirty-AABB** (Noita-style: only tick moving regions) — *mandatory*
+  infra; reuses our dirty-section path.
+- 🟢 **Pressure water** via "compressible mass" (finds its level, no pressure solve) —
+  **rendered as a separate vertex-displaced translucent pass, not in the chunk mesh** →
+  zero re-mesh churn.
+- 🟡 **Heat field** unifying fire/smoke/steam (slow tick, bounded). 🟡 **Destruction loop**
+  (explode → carve ragged → eject particles → rest-detector → write voxels → CA slumps).
+- 🟢 **Growth automata** (moss/vines/crystals, seconds-per-tick — high charm/cycle);
+  🟡 erosion (leash to where water flows). 🔴 GPU-CA (WebGL2 has no compute; fights our
+  CPU-owned world — keep CA on CPU/rayon).
+
+### K. Perf systems for weak hardware (→ **M9**, feeds M8)
+- 🟢 **Vertex pooling + one shared static quad index buffer** — buckets in a persistent
+  buffer, no per-chunk index data; kills upload churn; enables multi-draw. #1 perf item.
+- 🟢 **Render-pass load/store discipline** (`loadOp:clear`, depth `storeOp:discard` /
+  `invalidateFramebuffer`) — free mobile/tiler bandwidth.
+- 🟢 **Dynamic resolution + FSR1/EASU** spatial upscale (fragment-only, both APIs) —
+  biggest *pixel*-bandwidth win on mobile; composes with E10's low-res buffer.
+- 🟢 **Further vertex quantization + quad-expansion** (1 vertex/quad, expand in VS) —
+  cuts vertex bandwidth (the named bottleneck).
+- 🟢 **Front-to-back opaque sort** (near-free early-Z win) + 🟢 **upload prioritization by
+  screen importance + write-coalescing**.
+- 🟡 **`WEBGL_multi_draw`** (WebGL2 CPU savings, feature-detect) / **render bundles +
+  `drawIndirect`** (WebGPU-only). 🟡 Basis/KTX2 **texture compression** (if the atlas
+  grows). 🔴 depth pre-pass (redundant on tilers; we're not fragment-bound) / 🔴 Hi-Z
+  occlusion (compute-heavy, WebGPU-only — cave-culling already covers it).
+
 ## Discarded (off-brand for us; see design §12)
 Global illumination & path tracing; ray-traced / ray-marched *primary* voxel
 renderers (incl. Teardown's renderer and sparse-tree DDA); photoreal/soft-natural
