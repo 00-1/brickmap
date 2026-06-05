@@ -1,5 +1,7 @@
 // Chunk shader: unpacks the 4-byte face vertex (design §9–10), places it in the
-// world by its chunk origin, and shades it with one fixed directional light.
+// world by its chunk origin, shades it with one fixed directional light, and then
+// leans into the tech as the aesthetic (E1, design §11): vertex-quantization
+// wobble + ordered dithering.
 
 struct Globals {
     view_proj: mat4x4<f32>,
@@ -13,6 +15,11 @@ struct Chunk {
 };
 @group(1) @binding(0)
 var<uniform> chunk: Chunk;
+
+// Aesthetic knobs (E1). Lower `WOBBLE_SNAP` = chunkier vertex jitter; lower
+// `COLOR_STEPS` = more posterised/dithered shading.
+const WOBBLE_SNAP: f32 = 85.0;
+const COLOR_STEPS: f32 = 4.0;
 
 struct VsOut {
     @builtin(position) clip_position: vec4<f32>,
@@ -44,7 +51,13 @@ fn vs_main(@location(0) packed: u32) -> VsOut {
     let world_pos = vec3<f32>(x, y, z) + chunk.origin.xyz;
 
     var out: VsOut;
-    out.clip_position = globals.view_proj * vec4<f32>(world_pos, 1.0);
+    var clip = globals.view_proj * vec4<f32>(world_pos, 1.0);
+    // Vertex-quantization wobble: snap NDC to a coarse grid (PS1-style). Exposes the
+    // compressed-vertex quantization as motion jitter.
+    let w = clip.w;
+    let ndc = round((clip.xy / w) * WOBBLE_SNAP) / WOBBLE_SNAP;
+    out.clip_position = vec4<f32>(ndc * w, clip.z, w);
+
     out.normal = normal;
     out.color = globals.palette[min(material, 7u)].rgb;
     return out;
@@ -56,5 +69,20 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let light_dir = normalize(vec3<f32>(0.4, 0.8, 0.5));
     let diffuse = max(dot(n, light_dir), 0.0);
     let shade = 0.35 + 0.65 * diffuse;
-    return vec4<f32>(in.color * shade, 1.0);
+    var c = in.color * shade;
+
+    // Ordered (4x4 Bayer) dithering: posterise the shading into a few levels with a
+    // deliberate dot pattern, instead of smoothing the banding away.
+    var bayer = array<f32, 16>(
+        0.0, 8.0, 2.0, 10.0,
+        12.0, 4.0, 14.0, 6.0,
+        3.0, 11.0, 1.0, 9.0,
+        15.0, 7.0, 13.0, 5.0,
+    );
+    let px = u32(in.clip_position.x) % 4u;
+    let py = u32(in.clip_position.y) % 4u;
+    let threshold = (bayer[py * 4u + px] + 0.5) / 16.0;
+    c = floor(c * COLOR_STEPS + threshold) / COLOR_STEPS;
+
+    return vec4<f32>(c, 1.0);
 }

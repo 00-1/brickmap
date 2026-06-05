@@ -89,7 +89,7 @@ vertex** (encode/decode round-trip tests).
   fixtures; packed vertex round-trips for every field; a meshing throughput number
   is recorded against the design §8 budget.
 
-### ✨ E1 — Aesthetic pass: expose the tech *(exploration)* ⏳
+### ✨ E1 — Aesthetic pass: expose the tech *(exploration)* ✅ &nbsp;→ [`milestones/E1-aesthetic-pass.md`](milestones/E1-aesthetic-pass.md)
 **Vertex-quantization wobble** (render the compressed-vertex quantization *as* the
 look) + **dithered shading/colour** (render the palette compression). The §11
 thesis made literal — roughly a day's work for an immediate, distinctive face.

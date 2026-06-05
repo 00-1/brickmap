@@ -39,5 +39,13 @@ pause for input; log decisions/questions here and keep moving.
     come first (the inlined exploration rungs). Reordered — doing E1 (aesthetic
     pass) next. The M3 brief is written and waits.
 
-- Next: **E1 — aesthetic pass** (vertex-quantization wobble + dithering), then
-  **E2 — particles + destruction**. Renders to chat as they get interesting.
+- **E1 — aesthetic pass: done.** Two shader effects expose the tech as the look
+  (design §11): PS1-style **vertex-quantization wobble** (NDC snapped to a coarse
+  grid) + **ordered Bayer dithering** (posterised shading). Tuned by eye via headless
+  renders to a fine low-fi grain (`WOBBLE_SNAP=85`, `COLOR_STEPS=4`). Both live in
+  `shader.wgsl`, so windowed + headless match. The headless loop (render → look →
+  tune) paid off immediately.
+  - **QUESTION (low):** dialled fairly subtle at 960×720; easy to push bolder if you
+    want it more aggressive. Knobs are shader consts.
+
+- Next: **E2 — particles + destruction**, then M3. Renders to chat as they land.
