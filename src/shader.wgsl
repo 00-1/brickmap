@@ -6,6 +6,7 @@
 struct Globals {
     view_proj: mat4x4<f32>,
     palette: array<vec4<f32>, 8>,
+    params: vec4<f32>, // x = wobble snap, y = colour steps (live dials, D2)
 };
 @group(0) @binding(0)
 var<uniform> globals: Globals;
@@ -15,11 +16,6 @@ struct Chunk {
 };
 @group(1) @binding(0)
 var<uniform> chunk: Chunk;
-
-// Aesthetic knobs (E1). Lower `WOBBLE_SNAP` = chunkier vertex jitter; lower
-// `COLOR_STEPS` = more posterised/dithered shading.
-const WOBBLE_SNAP: f32 = 85.0;
-const COLOR_STEPS: f32 = 4.0;
 
 struct VsOut {
     @builtin(position) clip_position: vec4<f32>,
@@ -54,8 +50,9 @@ fn vs_main(@location(0) packed: u32) -> VsOut {
     var clip = globals.view_proj * vec4<f32>(world_pos, 1.0);
     // Vertex-quantization wobble: snap NDC to a coarse grid (PS1-style). Exposes the
     // compressed-vertex quantization as motion jitter.
+    let snap = max(globals.params.x, 1.0);
     let w = clip.w;
-    let ndc = round((clip.xy / w) * WOBBLE_SNAP) / WOBBLE_SNAP;
+    let ndc = round((clip.xy / w) * snap) / snap;
     out.clip_position = vec4<f32>(ndc * w, clip.z, w);
 
     out.normal = normal;
@@ -82,7 +79,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let px = u32(in.clip_position.x) % 4u;
     let py = u32(in.clip_position.y) % 4u;
     let threshold = (bayer[py * 4u + px] + 0.5) / 16.0;
-    c = floor(c * COLOR_STEPS + threshold) / COLOR_STEPS;
+    let steps = max(globals.params.y, 1.0);
+    c = floor(c * steps + threshold) / steps;
 
     return vec4<f32>(c, 1.0);
 }

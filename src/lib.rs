@@ -59,6 +59,10 @@ struct App {
     auto_fly_angle: f32,
     scene_center: Vec3,
     scene_radius: f32,
+    /// Live aesthetic dials (D2): `[wobble snap, colour steps]`. On the web these are
+    /// driven by `controls`; on native they stay at the defaults.
+    wobble: f32,
+    color_steps: f32,
     /// Timestamp of the previous frame, for frame-rate-independent movement.
     last_frame: Option<Instant>,
     /// Whether the pointer is captured (mouselook active).
@@ -193,10 +197,17 @@ impl ApplicationHandler<AppEvent> for App {
                 self.particles.update(dt);
                 let particles = self.particles.instances();
 
+                // On the web, pull the latest dial values set by the page sliders.
+                #[cfg(target_arch = "wasm32")]
+                {
+                    self.wobble = controls::wobble();
+                    self.color_steps = controls::color_steps();
+                }
+
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
                     // `render` handles lost/outdated/transient surfaces internally.
-                    state.render(view_proj, &particles);
+                    state.render(view_proj, &particles, [self.wobble, self.color_steps]);
                     // Drive a continuous loop so held keys animate.
                     state.window().request_redraw();
                 }
@@ -263,6 +274,8 @@ pub fn run() {
         auto_fly_angle: 0.0,
         scene_center: center,
         scene_radius: radius,
+        wobble: 85.0,
+        color_steps: 4.0,
         last_frame: None,
         cursor_locked: false,
     };
@@ -378,5 +391,38 @@ fn init_logging() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    }
+}
+
+/// Live aesthetic dials, settable from the web page's sliders (D2). Single-threaded
+/// wasm, so a thread-local cell is enough; the render loop reads these each frame.
+#[cfg(target_arch = "wasm32")]
+pub mod controls {
+    use std::cell::Cell;
+    use wasm_bindgen::prelude::*;
+
+    thread_local! {
+        static WOBBLE: Cell<f32> = const { Cell::new(85.0) };
+        static COLOR_STEPS: Cell<f32> = const { Cell::new(4.0) };
+    }
+
+    /// Vertex-wobble snap (lower = chunkier). Called from JS.
+    #[wasm_bindgen]
+    pub fn set_wobble(value: f32) {
+        WOBBLE.with(|c| c.set(value));
+    }
+
+    /// Dither colour steps (lower = more posterised). Called from JS.
+    #[wasm_bindgen]
+    pub fn set_color_steps(value: f32) {
+        COLOR_STEPS.with(|c| c.set(value));
+    }
+
+    pub(crate) fn wobble() -> f32 {
+        WOBBLE.with(Cell::get)
+    }
+
+    pub(crate) fn color_steps() -> f32 {
+        COLOR_STEPS.with(Cell::get)
     }
 }

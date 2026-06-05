@@ -28,7 +28,11 @@ const CLEAR: wgpu::Color = wgpu::Color {
 struct Globals {
     view_proj: [[f32; 4]; 4],
     palette: [[f32; 4]; 8],
+    params: [f32; 4],
 }
+
+/// Default aesthetic dials (must match the windowed defaults in `lib`).
+pub const DEFAULT_AESTHETIC: [f32; 2] = [85.0, 4.0];
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -174,6 +178,7 @@ pub fn capture(width: u32, height: u32, path: &str) {
             .view_proj(width as f32 / height as f32)
             .to_cols_array_2d(),
         palette: PALETTE,
+        params: [DEFAULT_AESTHETIC[0], DEFAULT_AESTHETIC[1], 0.0, 0.0],
     };
     let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("globals"),

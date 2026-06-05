@@ -31,7 +31,15 @@
       (<b>drag</b> look, <b>Space/Shift</b> up/down, <b>Esc</b> release),
       <b>F</b> to resume auto-fly. <a href="../">build gallery →</a>
     </p>
-    <p style="color: #4a5266; font-size: 12px; margin-top: -4px">
+    <!-- Live aesthetic dials (D2): drive shader params via wasm setters. -->
+    <div
+      style="display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; color: #8a93a8; font-size: 12px; margin-top: 8px"
+    >
+      <label>wobble <input type="range" id="dial-wobble" min="20" max="400" value="85" /></label>
+      <label>dither <input type="range" id="dial-steps" min="2" max="16" step="1" value="4" /></label>
+    </div>
+
+    <p style="color: #4a5266; font-size: 12px; margin-top: 4px">
       build
       <a style="color: #6c8cff" href="https://github.com/00-1/brickmap/commit/__CACHE_BUST__">__BUILD_SHA__</a>
     </p>
@@ -40,13 +48,20 @@
     <!-- `__CACHE_BUST__` is replaced with the commit SHA at deploy time so a new
          build is never served stale from cache (the filenames are unhashed). -->
     <script type="module">
-      import init from "./pkg/brickmap.js?v=__CACHE_BUST__";
-      init({ module_or_path: "./pkg/brickmap_bg.wasm?v=__CACHE_BUST__" }).catch((err) => {
-        // winit's web backend escapes its run loop by throwing; that's expected.
-        if (!`${err}`.includes("Using exceptions for control flow")) {
-          console.error(err);
-        }
-      });
+      import init, { set_wobble, set_color_steps } from "./pkg/brickmap.js?v=__CACHE_BUST__";
+      init({ module_or_path: "./pkg/brickmap_bg.wasm?v=__CACHE_BUST__" })
+        .catch((err) => {
+          // winit's web backend escapes its run loop by throwing; that's expected.
+          if (!`${err}`.includes("Using exceptions for control flow")) {
+            console.error(err);
+          }
+        })
+        .finally(() => {
+          const wobble = document.getElementById("dial-wobble");
+          const steps = document.getElementById("dial-steps");
+          wobble.addEventListener("input", () => set_wobble(parseFloat(wobble.value)));
+          steps.addEventListener("input", () => set_color_steps(parseFloat(steps.value)));
+        });
     </script>
   </body>
 </html>

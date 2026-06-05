@@ -31,12 +31,15 @@ const CHUNK_VERTEX_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBuffe
     attributes: &wgpu::vertex_attr_array![0 => Uint32],
 };
 
-/// Per-frame globals (bind group 0): the camera and the material palette.
+/// Per-frame globals (bind group 0): the camera, the material palette, and the live
+/// aesthetic dials (D2).
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 struct Globals {
     view_proj: [[f32; 4]; 4],
     palette: [[f32; 4]; PALETTE.len()],
+    /// x = wobble snap, y = colour steps, z/w reserved.
+    params: [f32; 4],
 }
 
 /// Per-chunk uniform (bind group 1): the chunk's world origin (xyz; w unused).
@@ -434,10 +437,11 @@ impl State {
 
     /// Draw the scene from the given view-projection, plus the live particles. Chunk
     /// vertices are packed and chunk-local; the shader adds each chunk's world origin.
-    pub fn render(&mut self, view_proj: Mat4, particles: &[ParticleInstance]) {
+    pub fn render(&mut self, view_proj: Mat4, particles: &[ParticleInstance], aesthetic: [f32; 2]) {
         let globals = Globals {
             view_proj: view_proj.to_cols_array_2d(),
             palette: PALETTE,
+            params: [aesthetic[0], aesthetic[1], 0.0, 0.0],
         };
         self.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
