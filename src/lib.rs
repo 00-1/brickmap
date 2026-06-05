@@ -184,17 +184,23 @@ fn ensure_chunk(world: &mut World, cx: i32, cz: i32) {
     }
 }
 
-/// Four debris emitters trailing just behind/around the camera on the terrain, so
-/// there's always some motion in frame as it travels.
-fn trail_emitters(camera: &Camera, phase: f32) -> Vec<Vec3> {
-    let base = camera.position;
-    (0..4)
-        .map(|i| {
-            let a = i as f32 * std::f32::consts::FRAC_PI_2 + phase;
-            let x = base.x + a.cos() * 10.0;
-            let z = base.z + a.sin() * 10.0;
-            let g = worldgen::height(x.floor() as i32, z.floor() as i32, WORLD_SEED) as f32 + 0.5;
-            Vec3::new(x, g, z)
+/// Debris emitters scattered on the terrain *ahead of* the camera along its
+/// heading, so the flight sweeps over rising embers. Emitting at the camera itself
+/// just leaves the debris behind at cruise speed (it spawns and the camera is gone).
+fn lead_emitters(camera: &Camera) -> Vec<Vec3> {
+    // Horizontal heading + right vector (the camera looks slightly down).
+    let mut fwd = camera.forward();
+    fwd.y = 0.0;
+    let fwd = fwd.normalize_or_zero();
+    let right = Vec3::new(-fwd.z, 0.0, fwd.x);
+    // A loose band 24–48 units ahead, scattered side to side, on the surface.
+    [(-1.0_f32, 0.0_f32), (0.6, 8.0), (-0.4, 16.0), (1.0, 24.0)]
+        .iter()
+        .map(|&(side, extra)| {
+            let p = camera.position + fwd * (24.0 + extra) + right * (side * 11.0);
+            let g =
+                worldgen::height(p.x.floor() as i32, p.z.floor() as i32, WORLD_SEED) as f32 + 0.5;
+            Vec3::new(p.x, g, p.z)
         })
         .collect()
 }
@@ -311,9 +317,9 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 // Stream chunks in/out around the (possibly moved) camera.
                 self.stream();
-                // Ambient debris bursts trail the camera so there's always motion.
-                self.particles
-                    .set_emitters(trail_emitters(&self.camera, self.auto_fly_angle));
+                // Ambient debris bursts ahead of the camera so the flight sweeps
+                // over rising embers (there's always motion in frame).
+                self.particles.set_emitters(lead_emitters(&self.camera));
                 self.particles.update(dt);
                 let particles = self.particles.instances();
 
