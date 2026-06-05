@@ -57,7 +57,8 @@
 
 - [x] Hemispheric coloured ambient (sky/ground) replacing flat ambient.
 - [x] Sky gradient / horizon; fog tinted to match.
-- [ ] Emissive materials + cheap bloom; glowing blocks.
+- [x] Cheap bloom (bright-pass → ¼-res separable blur → composite); glows the emissive
+      particles. *(Emissive **blocks** — glowing crystals — still to add.)*
 - [ ] Flood-fill coloured light baked in the mesher; visible corner bleed.
 - [ ] Runs native + web; look-journal entries per decision; snapshot + render.
 - [ ] CI green; docs synced (lockstep rule).

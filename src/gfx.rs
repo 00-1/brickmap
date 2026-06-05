@@ -15,6 +15,7 @@ use winit::window::Window;
 
 use crate::mesh::{pack, ChunkMesh};
 use crate::particles::{ParticleInstance, CUBE_INDICES, CUBE_POSITIONS};
+use crate::post::Bloom;
 use crate::scene::Frustum;
 use crate::textures::{material_mip_chain, mip_levels, LAYERS, TILE};
 use crate::world::ChunkCoord;
@@ -112,6 +113,10 @@ pub struct State {
     /// Procedural material texture array + sampler (group 2). Constant for all chunks.
     material_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
+    /// Offscreen colour target: the scene renders here, then bloom composites it to
+    /// the surface.
+    scene_view: wgpu::TextureView,
+    bloom: Bloom,
 
     // Particles (E2): an instanced emissive-cube pipeline + a growable instance buffer.
     particle_pipeline: wgpu::RenderPipeline,
@@ -383,6 +388,8 @@ impl State {
         });
 
         let depth_view = create_depth_view(&device, &config);
+        let scene_view = create_scene_view(&device, &config);
+        let bloom = Bloom::new(&device, config.format, config.width, config.height);
 
         State {
             surface,
@@ -398,6 +405,8 @@ impl State {
             globals_bind_group,
             material_bind_group,
             depth_view,
+            scene_view,
+            bloom,
             particle_pipeline,
             cube_vertex_buffer,
             cube_index_buffer,
@@ -448,6 +457,9 @@ impl State {
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_view(&self.device, &self.config);
+        self.scene_view = create_scene_view(&self.device, &self.config);
+        self.bloom
+            .resize(&self.device, self.config.width, self.config.height);
     }
 
     /// Reconfigure at the current size — used to recover a lost/outdated surface.
@@ -516,9 +528,11 @@ impl State {
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("cube-pass"),
+                label: Some("scene-pass"),
+                // Render the scene to the offscreen target; bloom composites to the
+                // surface afterwards.
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.scene_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(CLEAR_COLOR),
@@ -582,6 +596,10 @@ impl State {
                 pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..particles.len() as u32);
             }
         }
+
+        // Bloom: bright-pass + blur the scene target, composite scene + glow → surface.
+        self.bloom
+            .render(&self.device, &mut encoder, &self.scene_view, &view);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
@@ -783,6 +801,29 @@ pub(crate) fn build_material_bind_group(
             },
         ],
     })
+}
+
+/// Offscreen colour target the scene renders into (same format as the surface), so
+/// the bloom post-chain can read it before compositing to the surface.
+fn create_scene_view(
+    device: &wgpu::Device,
+    config: &wgpu::SurfaceConfiguration,
+) -> wgpu::TextureView {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("scene-color"),
+        size: wgpu::Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: config.format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
 fn create_depth_view(

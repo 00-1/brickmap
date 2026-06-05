@@ -25,6 +25,17 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## 2026-06-05 · E3 slice 3 — bloom
+
+**Cheap LDR bloom.** The scene now renders to an offscreen target; a bright-pass
+(luminance knee) → ¼-res separable Gaussian blur → additive composite gives a soft
+glow around the bright things (right now: the warm ember particles). **Keep.** It's the
+classic "pretty voxel demo" lever and it's what makes emissive content read as *light*
+rather than just bright pixels. Kept conservative (high knee, modest intensity) so the
+lit terrain doesn't haze — bloom should be for genuinely emissive things, not a global
+soft-focus. Next: actual emissive *blocks* (glowing crystals) to give it something to
+do across the whole world.
+
 ## 2026-06-05 · E3 slice 2 — sky gradient + horizon
 
 **Screen-space sky gradient.** A fullscreen triangle behind everything: horizon band

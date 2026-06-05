@@ -100,6 +100,23 @@ pub fn capture(width: u32, height: u32, path: &str) {
     });
     let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
+    // Offscreen scene target (bloom reads this, then composites into `target`).
+    let scene = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("headless-scene"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: COLOR_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let scene_view = scene.create_view(&wgpu::TextureViewDescriptor::default());
+
     let depth = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("headless-depth"),
         size: wgpu::Extent3d {
@@ -185,6 +202,7 @@ pub fn capture(width: u32, height: u32, path: &str) {
         cache: None,
     });
     let sky_pipeline = crate::gfx::build_sky_pipeline(&device, COLOR_FORMAT);
+    let bloom = crate::post::Bloom::new(&device, COLOR_FORMAT, width, height);
 
     let globals = Globals {
         view_proj: camera
@@ -359,7 +377,7 @@ pub fn capture(width: u32, height: u32, path: &str) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("headless-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target_view,
+                view: &scene_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(CLEAR),
@@ -404,6 +422,8 @@ pub fn capture(width: u32, height: u32, path: &str) {
             );
         }
     }
+    // Bloom: composite scene + glow into `target`, which is then read back.
+    bloom.render(&device, &mut encoder, &scene_view, &target_view);
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &target,

@@ -20,6 +20,7 @@ mod gfx;
 pub mod headless;
 pub mod mesh;
 pub mod particles;
+mod post;
 pub mod scene;
 pub mod textures;
 pub mod world;
