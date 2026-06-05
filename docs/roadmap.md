@@ -68,7 +68,7 @@ A voxel data model (`Section` 32³), a *naïve* face-culling mesher, the
   camera — on native and web. Snapshots: `/archive/01-first-chunk/` (auto-orbit)
   and `/archive/02-fly-camera/`.
 
-### M2 — Greedy meshing + a grid of chunks ⏳
+### M2 — Greedy meshing + a grid of chunks 🛠 &nbsp;→ [`milestones/M2-greedy-grid.md`](milestones/M2-greedy-grid.md)
 The real **binary greedy mesher** (correctness tests + a `criterion` bench), a
 multi-chunk manager, **frustum culling**, and the finalized **4–8 byte packed
 vertex** (encode/decode round-trip tests).
@@ -127,6 +127,27 @@ budgets, wire the **lighting data path**, and add mobile **dynamic resolution**.
 - **De-risks:** turns "should be fast" into measured-fast.
 - **Acceptance:** recorded frame times on both reference devices within budget;
   budgets in `design.md` §8 updated with real numbers.
+
+## Exploration track — the *interesting* bit
+
+The ladder above is mostly the standard voxel "performance spine" (necessary, but
+shared with every Minecraft-like). These explorations are what make brickmap its
+own thing — the **world content & visual destination** from [`design.md`](design.md)
+§12. They **interleave** with the ladder (we don't defer all the fun to the end):
+the first lands right after a lean M2.
+
+- **E1 — Particles + destruction spike** (right after M2). Instanced point-sprite/
+  cube particles in the forward pass; shatter a chunk into flying, fading, emissive
+  cubes. Cheapest path to "alive on screen," and a direct test of the §11 look.
+- **E2 — Dynamic / cellular-automata voxels.** Falling sand / fluid / fire on the
+  world grid, with only dirty regions re-meshed. The headline "interesting";
+  leans on async meshing (M6). Likely after M3 (a real world to disturb) and M6.
+- **E3 — Sub-voxel surface displacement.** Per-face relief so blocks aren't flat,
+  no extra geometry. Pairs naturally with materials (M4).
+
+**Discarded** (don't fit weak-hardware-first / §6 / §11; see design §12): global
+illumination & path tracing, ray-marched/ray-traced voxels, photoreal looks. We
+chase the *mood* of those references with cheap fakes, not their techniques.
 
 ## Notes on ordering
 

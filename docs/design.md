@@ -272,7 +272,45 @@ When a performance technique introduces a visible artifact, the default is **not
 and if so make it intentional.** Suppression is a deliberate choice we justify,
 not a reflex.
 
-## 12. Open items still to resolve (later)
+## 12. World content & visual destination (what we're building toward)
+
+> The gap our earlier docs left: they were strong on *performance* and on an
+> abstract *aesthetic* (§11), but silent on what the world is *made of* or *does* —
+> i.e. what makes it worth looking at. Decided from a reference mood board.
+
+Cubes are a placeholder, not the point. The destination is a voxel world that
+feels **alive and atmospheric**, reached entirely through **cheap, rasterized,
+artifact-embracing** means. Most "pretty voxel" demos online are pretty because of
+*lighting* (global illumination, ray tracing) — which is exactly the cost we
+refuse. We chase the **mood** (motion, glow, drama, depth), not the GI.
+
+### Directions we're pursuing (fit weak-hardware-first + §11)
+- **Dynamic / destructible voxels** — voxels that move, break, fall, flow, burn.
+  Destruction shattering geometry into flying cubes; falling sand / fluids / fire
+  as cellular automata on the world grid. This is the headline "interesting," and
+  the reason the clean world↔mesh seam (architecture §4) and async meshing (M6)
+  exist.
+- **Particles** — instanced point-sprites/cubes for debris, embers, dust, sparks,
+  motes. Cheap in a forward rasterizer; stray glowing pixels *are* the §11 look.
+  The cheapest path to life on screen.
+- **Sub-voxel surface displacement** — per-face relief (brick/grain/cobble) so
+  blocks aren't flat, without shrinking voxels or adding triangles.
+- **Faked atmosphere** — emissive palettes, stepped/dithered "fake light," fog and
+  depth cueing. Drama without bounce lighting.
+
+### Directions we're explicitly NOT taking
+- **Global illumination / path tracing** (John-Lin-style organic GI) — gorgeous,
+  but bought with the GPU cost we refuse (§4–6). We fake the mood instead.
+- **Ray-marched / ray-traced voxels** (sparse-tree DDA) — rejected as the paradigm
+  in §6; fragment/bandwidth-hungry, murders integrated/mobile GPUs.
+- **Photoreal / soft-natural** looks — a non-goal (§3, §11). Low-fi by intent.
+
+> If we ever decide a GI look is the *actual* dream, that reopens
+> weak-hardware-first (§4) — a real pivot, not a tweak. For now it stays. These
+> directions are queued as an **exploration track** in `docs/roadmap.md`,
+> interleaved with the infrastructure ladder rather than deferred to the end.
+
+## 13. Open items still to resolve (later)
 
 - Lighting model details (flood-fill block light + sky light? baked AO only at
   first?). Forward(+) is locked; the light *data path* is not yet.
