@@ -208,7 +208,13 @@ impl App {
             }
         }
 
+        // Re-mesh changed overlay chunks (synchronous — localized), bounded per frame
+        // so a wide sandfall can't spike the frame; any extra settle next frame.
+        let mut budget = SAND_REMESH_BUDGET;
         for coord in dirty {
+            if budget == 0 {
+                break;
+            }
             if !self.loaded.contains(&coord) {
                 continue;
             }
@@ -216,18 +222,25 @@ impl App {
                 let inst = mesh_chunk(coord, sec, WORLD_SEED);
                 if let Some(state) = self.state.as_mut() {
                     state.upload_chunk(&inst);
+                    budget -= 1;
                 }
             }
         }
     }
 
-    /// Drop a small clump of sand high in a loaded chunk ahead of the camera; it falls
-    /// onto the terrain. Skips chunks that aren't on screen yet.
+    /// Seed a clump of sand high in a loaded chunk ahead of the camera; it falls onto
+    /// the terrain. Spread into a *curtain* across the forward path (pseudo-random from
+    /// the camera position) and placed far enough ahead that grains finish falling while
+    /// we approach — so the fall is watchable from the cruise instead of whooshing past.
     fn seed_sand(&mut self) {
         let mut fwd = self.camera.forward();
         fwd.y = 0.0;
         let fwd = fwd.normalize_or_zero();
-        let p = self.camera.position + fwd * 26.0;
+        let right = Vec3::new(-fwd.z, 0.0, fwd.x);
+        let t = self.camera.position.x * 0.7 + self.camera.position.z * 0.9;
+        let lateral = t.sin() * 16.0;
+        let ahead = 42.0 + (t * 1.7).cos() * 6.0;
+        let p = self.camera.position + fwd * ahead + right * lateral;
         let sz = Section::SIZE as f32;
         let coord = ((p.x / sz).floor() as i32, 0, (p.z / sz).floor() as i32);
         if !self.loaded.contains(&coord) {
@@ -242,7 +255,7 @@ impl App {
             .entry(coord)
             .or_insert_with(|| worldgen::generate_section(coord.0, coord.2, WORLD_SEED));
         let mut added = false;
-        for (dx, dz) in [(0i32, 0i32), (1, 0), (0, 1)] {
+        for (dx, dz) in [(0i32, 0i32), (1, 0), (0, 1), (1, 1)] {
             let (x, z) = (lx + dx, lz + dz);
             if (0..n).contains(&x) && (0..n).contains(&z) && sec.get(x as u32, y, z as u32).is_air()
             {
@@ -701,6 +714,9 @@ const STREAM_UPLOADS: usize = 4;
 /// Falling-sand tick (seconds) and how often a clump is dropped (E5).
 const SIM_TICK: f32 = 0.05;
 const SAND_INTERVAL: f32 = 0.14;
+/// Max sand sections re-meshed per frame (synchronous; bounds the frame cost of a wide
+/// sandfall — leftovers settle next frame).
+const SAND_REMESH_BUDGET: usize = 3;
 
 /// How high above the terrain the cinematic camera cruises.
 const CRUISE_HEIGHT: f32 = 22.0;
