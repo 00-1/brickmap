@@ -3,7 +3,7 @@
 //! winit or wgpu (the app translates platform events into [`Action`]s and feeds
 //! the resulting view-projection to the renderer).
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec3, Vec4};
 
 /// A free-fly perspective camera. Orientation is yaw (around +Y) and pitch.
 #[derive(Clone, Copy, Debug)]
@@ -51,6 +51,46 @@ impl Camera {
         let proj = Mat4::perspective_rh(self.fov_y, aspect.max(0.001), 0.05, 2000.0);
         let view = Mat4::look_to_rh(self.position, self.forward(), Vec3::Y);
         proj * view
+    }
+}
+
+/// The six view-frustum planes (inward-facing), for culling chunks by their AABB.
+pub struct Frustum {
+    planes: [Vec4; 6],
+}
+
+impl Frustum {
+    /// Extract the planes from a view-projection matrix (Gribb–Hartmann). Assumes
+    /// a `[0, 1]` clip-space depth range (wgpu / glam `perspective_rh`).
+    pub fn from_view_proj(m: Mat4) -> Self {
+        let (r0, r1, r2, r3) = (m.row(0), m.row(1), m.row(2), m.row(3));
+        Frustum {
+            planes: [
+                r3 + r0, // left
+                r3 - r0, // right
+                r3 + r1, // bottom
+                r3 - r1, // top
+                r2,      // near (z >= 0)
+                r3 - r2, // far
+            ],
+        }
+    }
+
+    /// Conservative AABB test: false only when the box is fully outside one plane.
+    pub fn intersects_aabb(&self, min: Vec3, max: Vec3) -> bool {
+        for p in &self.planes {
+            let n = p.truncate();
+            // The AABB corner furthest along this plane's normal.
+            let positive = Vec3::new(
+                if n.x >= 0.0 { max.x } else { min.x },
+                if n.y >= 0.0 { max.y } else { min.y },
+                if n.z >= 0.0 { max.z } else { min.z },
+            );
+            if n.dot(positive) + p.w < 0.0 {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -177,6 +217,19 @@ mod tests {
         ctl.update(&mut cam, 1.0);
         // 10 units/sec for 1 sec along +X.
         assert!((cam.position - Vec3::new(10.0, 0.0, 0.0)).length() < 1e-4);
+    }
+
+    #[test]
+    fn frustum_keeps_whats_in_front_and_drops_whats_behind() {
+        let proj = Mat4::perspective_rh(60f32.to_radians(), 1.0, 0.1, 100.0);
+        let view = Mat4::look_to_rh(Vec3::ZERO, Vec3::X, Vec3::Y); // looking down +X
+        let f = Frustum::from_view_proj(proj * view);
+        // In front (+x): visible.
+        assert!(f.intersects_aabb(Vec3::new(5.0, -1.0, -1.0), Vec3::new(7.0, 1.0, 1.0)));
+        // Behind (-x): culled.
+        assert!(!f.intersects_aabb(Vec3::new(-7.0, -1.0, -1.0), Vec3::new(-5.0, 1.0, 1.0)));
+        // Far off to the side: culled.
+        assert!(!f.intersects_aabb(Vec3::new(5.0, -1.0, 50.0), Vec3::new(7.0, 1.0, 52.0)));
     }
 
     #[test]

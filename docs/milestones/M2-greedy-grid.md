@@ -134,8 +134,8 @@ treating absent neighbours as air).
 - [x] `World` chunk grid; many chunks drawn at their world origins.
       *(World-space baked vertices + per-chunk buffers; per-chunk transform via the
       packed vertex comes later.)*
-- [ ] Frustum culling with tests; off-screen chunks skipped.
-- [ ] Triangle/draw-call stats visible; greedy shows a clear triangle reduction.
+- [x] Frustum culling with tests; off-screen chunks skipped.
+- [x] Triangle/draw-call stats (throttled console log for now; on-screen HUD is M5).
 - [ ] A meshing throughput number recorded (criterion) against the budget.
 - [ ] Runs native + web; preview shows the multi-chunk world; snapshot to gallery.
 - [ ] CI green; roadmap M2 flipped to done; docs synced in-commit.

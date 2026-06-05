@@ -8,11 +8,12 @@
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::mesh::{ChunkMesh, ChunkVertex};
+use crate::scene::Frustum;
 
 /// Vertex buffer layout for the `mesh` contract's [`ChunkVertex`] (position,
 /// normal, colour). M2 swaps this for the packed face-vertex layout.
@@ -60,15 +61,20 @@ pub struct State {
     uniform_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
 
+    /// Frame counter, used to throttle the stats log.
+    frame_count: u64,
+
     // The window must outlive the surface; keep an Arc so `Surface<'static>` is sound.
     window: Arc<Window>,
 }
 
-/// GPU buffers for one chunk mesh.
+/// GPU buffers for one chunk mesh, plus its world-space AABB for frustum culling.
 struct ChunkDraw {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    aabb_min: Vec3,
+    aabb_max: Vec3,
 }
 
 impl State {
@@ -240,6 +246,8 @@ impl State {
                     usage: wgpu::BufferUsages::INDEX,
                 }),
                 num_indices: m.indices.len() as u32,
+                aabb_min: Vec3::from(m.aabb.min),
+                aabb_max: Vec3::from(m.aabb.max),
             })
             .collect();
 
@@ -256,6 +264,7 @@ impl State {
             uniform_buffer,
             uniform_bind_group,
             depth_view,
+            frame_count: 0,
             window,
         }
     }
@@ -347,10 +356,28 @@ impl State {
 
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+
+            let frustum = Frustum::from_view_proj(view_proj);
+            let mut drawn = 0u32;
+            let mut triangles = 0u32;
             for draw in &self.draws {
+                if !frustum.intersects_aabb(draw.aabb_min, draw.aabb_max) {
+                    continue;
+                }
                 pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
                 pass.set_index_buffer(draw.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..draw.num_indices, 0, 0..1);
+                drawn += 1;
+                triangles += draw.num_indices / 3;
+            }
+
+            // Lightweight stats (a real on-screen HUD is M5).
+            self.frame_count += 1;
+            if self.frame_count.is_multiple_of(120) {
+                log::info!(
+                    "drew {drawn}/{} chunks, {triangles} triangles",
+                    self.draws.len()
+                );
             }
         }
 
