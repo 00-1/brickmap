@@ -57,14 +57,16 @@ an auto-deploying GitHub Pages preview.
 - **Outcome:** a spinning cube in the browser and on desktop from one code path.
 - **De-risked:** the "web is nearly free" premise; the whole toolchain/preview loop.
 
-### M1 — One real chunk on screen ⏳ &nbsp;→ [`milestones/M1-one-chunk.md`](milestones/M1-one-chunk.md)
+### M1 — One real chunk on screen ✅ &nbsp;→ [`milestones/M1-one-chunk.md`](milestones/M1-one-chunk.md)
 A voxel data model (`Section` 32³), a *naïve* face-culling mesher, the
 `ChunkMesh` world↔render contract, and a fly camera + input.
-- **Outcome:** fly around a single hand-built 32³ chunk; faces between solid
-  voxels are culled, boundary faces are drawn.
+- **Outcome:** fly around a single hand-built 32³ chunk (a stepped pyramid); faces
+  between solid voxels are culled, boundary faces are drawn.
 - **De-risks:** the core data → mesh → GPU pipeline and the sacred module seam.
-- **Acceptance:** mesher face-count tests pass; camera flies on native + web; the
-  cube spike is fully replaced by a meshed chunk.
+- **Delivered:** `world`/`mesh`/`scene` modules with unit tests, a naïve mesher
+  feeding the renderer via the `ChunkMesh` contract, and a pointer-lock fly
+  camera — on native and web. Snapshots: `/archive/01-first-chunk/` (auto-orbit)
+  and `/archive/02-fly-camera/`.
 
 ### M2 — Greedy meshing + a grid of chunks ⏳
 The real **binary greedy mesher** (correctness tests + a `criterion` bench), a

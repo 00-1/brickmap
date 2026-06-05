@@ -9,10 +9,11 @@ graphical: storing, meshing, culling, and drawing very large voxel worlds fast.
 It is a personal-interest project, so it favours **interesting and correct** over
 shipping speed.
 
-> **Status: kickoff.** The repo currently contains the planning docs and the
-> first **render spike** (a single spinning cube via wgpu, on desktop *and* the
-> web). No voxel-specific engine code exists yet — that comes after the
-> cross-platform render path is proven. See [`docs/spikes.md`](docs/spikes.md).
+> **Status: M1 done.** Planning docs, the cross-platform render path, and the
+> first voxel milestone: a hand-built 32³ chunk, meshed on the CPU (naïve face
+> culling) and drawn through wgpu, that you can **fly around** (pointer-lock
+> camera) on desktop *and* the web. Next up is binary greedy meshing + multiple
+> chunks (M2). See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## North star
 

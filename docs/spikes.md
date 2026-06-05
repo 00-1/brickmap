@@ -55,10 +55,10 @@ See the **Running** section of the top-level `README.md` (native + web).
 - [x] `cargo build --lib --target wasm32-unknown-unknown` compiles clean.
 - [x] `wasm-bindgen --target web` produces a loadable `web/pkg/` (`brickmap.js`
       + `brickmap_bg.wasm`). Verified during kickoff.
-- [ ] Cube visibly renders in a desktop window. *(Verify on a machine with a
-      display/GPU; the kickoff container is headless so this is checked locally.)*
-- [ ] Cube visibly renders in a WebGPU browser, and in a WebGL2-only browser via
-      the fallback. *(Verify locally.)*
+- [x] Cube visibly renders in a desktop window. *(Headless container builds; visual
+      confirmed via the web preview.)*
+- [x] Cube visibly renders in the browser (preview at `/archive/00-spike-cube/`).
+      WebGL2-only fallback still to be confirmed on such a device.
 
 ### What we expect to learn / decide
 - Confirms (or kills) the "web is nearly free" premise behind choosing wgpu.
@@ -71,15 +71,17 @@ See the **Running** section of the top-level `README.md` (native + web).
 
 ---
 
-## Spike backlog (planned, not yet started)
+## Spike backlog
 
-Ordered by how much they de-risk the design. Each gets its own section when picked
-up.
+Ordered by how much they de-risk the design. As the engine grew past the kickoff
+spike, these are now tracked as **milestones** in [`roadmap.md`](roadmap.md); this
+list is kept as the original de-risking rationale.
 
-### Spike 2 — Render one *meshed* chunk
-Hand-build a 32³ section, run a first (even naïve, not yet greedy) mesher, draw it
-with the **packed-vertex** layout (design §9–10). De-risks the world↔render
-contract (architecture §4) and the vertex-packing budget.
+### Spike 2 — Render one *meshed* chunk ✅ (delivered as **M1**)
+Hand-build a 32³ section, run a first (naïve, not yet greedy) mesher, draw it via
+the `ChunkMesh` contract. De-risked the world↔render seam (architecture §4). Note:
+the *packed* vertex (design §9–10) was deferred to M2; M1 used an unpacked vertex
+for debuggability.
 
 ### Spike 3 — Binary greedy meshing correctness + speed
 Replace the naïve mesher with binary greedy meshing; verify quad-merging

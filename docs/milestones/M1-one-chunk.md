@@ -1,7 +1,7 @@
 # M1 — One real chunk on screen
 
-> Status: **draft for review** (no engine code written yet). Part of the ladder in
-> [`../roadmap.md`](../roadmap.md). When this is agreed, it becomes the build plan.
+> Status: **done** ✅. Part of the ladder in [`../roadmap.md`](../roadmap.md).
+> Snapshots: `/archive/01-first-chunk/`, `/archive/02-fly-camera/`.
 
 ## Goal · Outcome · De-risk
 
@@ -142,11 +142,18 @@ per the testing strategy.)
 
 ## Acceptance checklist
 
-- [ ] `world`: `BlockId`, `Section` (dense 32³) with tested get/set + indexing.
-- [ ] `mesh`: naïve `mesh_section` producing a `ChunkMesh`; face-count tests pass.
-- [ ] `render`: draws an uploaded `ChunkMesh` with flat per-face shading; the
+- [x] `world`: `BlockId`, `Section` (dense 32³) with tested get/set + indexing.
+- [x] `mesh`: naïve `mesh_section` producing a `ChunkMesh`; face-count tests pass.
+- [x] `render`: draws an uploaded `ChunkMesh` with flat per-face shading; the
       hardcoded cube is gone.
-- [ ] `scene`: fly camera with move + drag-look; frame-rate-independent speed.
-- [ ] Runs on **native and web**; the preview shows the fly-around chunk.
-- [ ] Module seams respected (`world` ⊥ wgpu; `render` ⊥ voxel types).
-- [ ] CI green; docs/roadmap status for M1 flipped to done.
+- [x] `scene`: fly camera with move + look; frame-rate-independent speed.
+      (Shipped pointer-lock mouselook rather than drag-look — see note below.)
+- [x] Runs on **native and web**; the preview shows the fly-around chunk.
+- [x] Module seams respected (`world` ⊥ wgpu; `render` ⊥ voxel types).
+- [x] CI green; docs/roadmap status for M1 flipped to done.
+
+### Deviations from the plan
+- **D3 (look controls):** the brief chose drag-look to avoid pointer-lock
+  complexity; we shipped that first, then switched to **pointer-lock mouselook**
+  (click to capture, move to look) on request — it feels far better and the
+  cross-platform handling turned out fine.

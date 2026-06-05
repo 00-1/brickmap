@@ -17,6 +17,15 @@ the actual design; this file is about *how we work*.
 - Commit subjects use an area prefix: `render:`, `mesh:`, `world:`, `docs:`,
   `ci:`, `spike:`.
 
+## Keep docs in lockstep with the code
+- **Update docs in the *same* commit as the change** — don't batch them later.
+  In particular: flip milestone status in `docs/roadmap.md` and tick the brief's
+  acceptance checklist as items land, and keep the README status blurb + the
+  architecture "current vs target" table current. Stale milestone markers are a
+  bug.
+- When a milestone finishes, snapshot it to the gallery (`scripts/snapshot.sh`)
+  and note the deviations from its brief.
+
 ## Quality gates (run before pushing; CI enforces the same)
 ```sh
 cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test --all

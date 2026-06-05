@@ -110,19 +110,19 @@ Everything platform-specific is isolated in `bm-platform` (+ small `cfg` shims i
 - **Threading:** native uses a rayon pool for meshing; web starts single-threaded
   with an upgrade path to `wasm-bindgen-rayon` Web Workers. Per design §4/§7.6,
   web meshing throughput is allowed to be worse.
-- **Time:** a platform timing source feeds animation/streaming; the spike sidesteps
-  it with a per-frame angle increment so it needs no clock.
+- **Time:** a platform timing source feeds animation/movement; the camera uses a
+  `web-time` clock for frame-rate-independent movement (native + web).
 
 ## 7. Current vs target (honesty section)
 
-| Concern | Spike today | Target |
+| Concern | Today (M1) | Target |
 |---|---|---|
-| Crate layout | one `brickmap` crate, modules `gfx` + `app` | the 7-crate workspace in §3 |
-| Geometry | one hardcoded cube, fat 24-byte vertices | greedy-meshed chunks, ≤8-byte packed face vertices |
-| World model | none | palette-compressed 32³ sections, streaming |
-| Culling | none | frustum + visibility-graph cave culling |
-| Pipeline | single forward pass, depth buffer, no materials | forward(+), texture-array materials, LOD |
-| Threading | single-thread | rayon (native) / workers (web) async meshing |
+| Crate layout | one `brickmap` crate, modules `world` / `mesh` / `scene` / `gfx` + app | the 7-crate workspace in §3 |
+| Geometry | naïve-meshed single chunk, fat 36-byte vertices (pos+normal+colour) | greedy-meshed chunks, ≤8-byte packed face vertices |
+| World model | dense 32³ `Section`, one hand-built chunk | palette-compressed sections, streaming |
+| Culling | per-voxel face culling only | frustum + visibility-graph cave culling |
+| Pipeline | single forward pass, depth buffer, flat per-face shading | forward(+), texture-array materials, LOD |
+| Threading | single-thread (meshed once at startup) | rayon (native) / workers (web) async meshing |
 
-The spike's only job is to de-risk the cross-platform render path. The structure
-above is what we grow into, one performance pillar at a time.
+M1 proved the data → mesh → GPU pipeline and the `world`↔`render` seam. The
+structure above is what we grow into, one performance pillar at a time.
