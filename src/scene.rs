@@ -73,7 +73,6 @@ pub struct CameraController {
     right: bool,
     up: bool,
     down: bool,
-    dragging: bool,
     /// Look delta (in pixels) accumulated since the last `update`.
     look_dx: f32,
     look_dy: f32,
@@ -92,7 +91,6 @@ impl CameraController {
             right: false,
             up: false,
             down: false,
-            dragging: false,
             look_dx: 0.0,
             look_dy: 0.0,
             speed,
@@ -111,17 +109,10 @@ impl CameraController {
         }
     }
 
-    /// Whether the look-drag (held mouse button) is active.
-    pub fn set_dragging(&mut self, dragging: bool) {
-        self.dragging = dragging;
-    }
-
-    /// Feed raw cursor motion; only applied while dragging.
+    /// Feed raw mouse motion (the app gates this on the pointer being captured).
     pub fn add_look(&mut self, dx: f32, dy: f32) {
-        if self.dragging {
-            self.look_dx += dx;
-            self.look_dy += dy;
-        }
+        self.look_dx += dx;
+        self.look_dy += dy;
     }
 
     /// Integrate accumulated input into `camera` over `dt` seconds.
@@ -192,7 +183,6 @@ mod tests {
     fn pitch_cannot_flip_over_the_top() {
         let mut cam = Camera::new(Vec3::ZERO, 0.0, 0.0);
         let mut ctl = CameraController::new(1.0);
-        ctl.set_dragging(true);
         ctl.add_look(0.0, -100000.0); // yank the look up hard
         ctl.update(&mut cam, 0.016);
         assert!(cam.pitch <= 1.5471);

@@ -9,10 +9,10 @@ use std::sync::Arc;
 use glam::Vec3;
 use web_time::Instant;
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{DeviceEvent, DeviceId, ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{Window, WindowId};
+use winit::window::{CursorGrabMode, Window, WindowId};
 
 mod gfx;
 pub mod mesh;
@@ -49,8 +49,28 @@ struct App {
     controller: CameraController,
     /// Timestamp of the previous frame, for frame-rate-independent movement.
     last_frame: Option<Instant>,
-    /// Last cursor position, to derive look deltas from `CursorMoved`.
-    last_cursor: Option<(f32, f32)>,
+    /// Whether the pointer is captured (mouselook active).
+    cursor_locked: bool,
+}
+
+impl App {
+    /// Capture/release the pointer for mouselook. Locked grab gives relative
+    /// motion (and Pointer Lock on the web); fall back to Confined where Locked
+    /// isn't supported.
+    fn set_capture(&mut self, capture: bool) {
+        let Some(state) = &self.state else { return };
+        let window = state.window();
+        if capture {
+            let _ = window
+                .set_cursor_grab(CursorGrabMode::Locked)
+                .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined));
+            window.set_cursor_visible(false);
+        } else {
+            let _ = window.set_cursor_grab(CursorGrabMode::None);
+            window.set_cursor_visible(true);
+        }
+        self.cursor_locked = capture;
+    }
 }
 
 /// Map a physical key to a movement intent (WASD + Space/Shift), or `None`.
@@ -104,41 +124,33 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let Some(state) = self.state.as_mut() else {
-            return;
-        };
-
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
-                state.resize(size);
-                state.window().request_redraw();
+                if let Some(state) = self.state.as_mut() {
+                    state.resize(size);
+                    state.window().request_redraw();
+                }
             }
             WindowEvent::KeyboardInput { event: key, .. } => {
                 if let PhysicalKey::Code(code) = key.physical_key {
-                    if let Some(action) = key_action(code) {
+                    if code == KeyCode::Escape && key.state.is_pressed() {
+                        // Release the pointer. (The browser also does this on Esc.)
+                        self.set_capture(false);
+                    } else if let Some(action) = key_action(code) {
                         self.controller.set_action(action, key.state.is_pressed());
                     }
                 }
             }
+            // Click to capture the pointer for mouselook (and to re-capture after
+            // Esc / tabbing away). Idempotent, so re-clicking is harmless.
             WindowEvent::MouseInput {
                 button: MouseButton::Left,
-                state: element_state,
+                state: ElementState::Pressed,
                 ..
-            } => {
-                let pressed = element_state == ElementState::Pressed;
-                self.controller.set_dragging(pressed);
-                if !pressed {
-                    self.last_cursor = None;
-                }
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                let p = (position.x as f32, position.y as f32);
-                if let Some((lx, ly)) = self.last_cursor {
-                    self.controller.add_look(p.0 - lx, p.1 - ly);
-                }
-                self.last_cursor = Some(p);
-            }
+            } => self.set_capture(true),
+            // Pointer lock is lost when focus leaves; reflect that in our state.
+            WindowEvent::Focused(false) => self.set_capture(false),
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
                 let dt = self
@@ -146,15 +158,26 @@ impl ApplicationHandler<AppEvent> for App {
                     .map(|t| (now - t).as_secs_f32().min(0.1))
                     .unwrap_or(0.0);
                 self.last_frame = Some(now);
-
                 self.controller.update(&mut self.camera, dt);
-                let view_proj = self.camera.view_proj(state.aspect());
-                // `render` handles lost/outdated/transient surfaces internally.
-                state.render(view_proj);
-                // Drive a continuous loop so held keys animate.
-                state.window().request_redraw();
+
+                if let Some(state) = self.state.as_mut() {
+                    let view_proj = self.camera.view_proj(state.aspect());
+                    // `render` handles lost/outdated/transient surfaces internally.
+                    state.render(view_proj);
+                    // Drive a continuous loop so held keys animate.
+                    state.window().request_redraw();
+                }
             }
             _ => {}
+        }
+    }
+
+    fn device_event(&mut self, _event_loop: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
+        // Raw mouse motion drives mouselook while the pointer is captured.
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if self.cursor_locked {
+                self.controller.add_look(delta.0 as f32, delta.1 as f32);
+            }
         }
     }
 }
@@ -209,7 +232,7 @@ pub fn run() {
         camera: Camera::looking_at(eye, center),
         controller: CameraController::new(radius * 1.2),
         last_frame: None,
-        last_cursor: None,
+        cursor_locked: false,
     };
 
     event_loop.run_app(&mut app).expect("event loop error");
