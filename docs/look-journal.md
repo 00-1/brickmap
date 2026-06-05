@@ -25,6 +25,18 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## 2026-06-05 · E5 — falling sand (voxels that behave)
+
+**The world moves.** Sand is seeded as a clump ahead of the flight and falls — straight
+down, else sliding diagonally — settling into piles on the terrain, re-meshed only where
+it changes. **Keep — this is the headline.** It's the first thing that makes the world
+feel *alive* rather than a pretty static diorama, and it pays off the whole engine's
+bet (cheap meshing + off-thread re-mesh make dynamic voxels affordable). Restraint
+matters: sand is localized and forgotten when it leaves view, so it stays cheap and
+can't destabilize the stream. Sand deliberately reuses the existing sandy material — no
+new colour — so it reads as *of* the world, not a special-effect overlay. Water/fire/
+smoke are the same automaton with more rules; sand first to prove the loop.
+
 ## 2026-06-05 · E4 — sub-voxel bump relief
 
 **Cheap relief, no marching.** The material detail texture doubles as a height field:

@@ -65,6 +65,13 @@ struct App {
     loader: ChunkLoader,
     /// Chunk coords currently uploaded to the GPU (the renderer's draw set).
     loaded: HashSet<ChunkCoord>,
+    /// Falling-sand simulation (E5): an overlay of sim-modified sections (base terrain +
+    /// sand) keyed by chunk, the set still in motion, and the tick/seed accumulators.
+    /// Only ever covers a few loaded chunks near the camera; forgotten on eviction.
+    overlay: std::collections::HashMap<ChunkCoord, Section>,
+    sim_active: HashSet<ChunkCoord>,
+    sim_timer: f32,
+    sand_timer: f32,
     /// Cinematic auto-fly: on by default so the build is watchable with no input
     /// (mobile / hands-off). Manual input switches it off; `F` toggles it.
     auto_fly: bool,
@@ -119,14 +126,19 @@ impl App {
             (coord.0 - ccx).abs() <= keep && coord.1 == 0 && (coord.2 - ccz).abs() <= keep
         };
 
-        // Evict GPU draws that have drifted beyond the radius (+1 hysteresis). Workers
-        // self-generate, so there's no CPU-side world to prune. Field-split borrows.
+        // Evict GPU draws that have drifted beyond the radius (+1 hysteresis), and
+        // forget any sand overlay there. Workers self-generate, so there's no CPU-side
+        // base world to prune. Field-split borrows.
         let state = self.state.as_mut().unwrap();
+        let overlay = &mut self.overlay;
+        let sim_active = &mut self.sim_active;
         self.loaded.retain(|&coord| {
             if within(coord) {
                 true
             } else {
                 state.remove_chunk(coord);
+                overlay.remove(&coord);
+                sim_active.remove(&coord);
                 false
             }
         });
@@ -163,14 +175,92 @@ impl App {
             self.loaded.insert(inst.coord);
         }
     }
+
+    /// Falling-sand simulation step (E5). Seeds sand ahead of the camera (into loaded
+    /// chunks only — so it never races the streaming loader), steps active overlay
+    /// sections on a fixed tick, and re-meshes the few that changed. Re-mesh is
+    /// synchronous: the sim is localized, so it's a small, occasional cost.
+    fn sim(&mut self, dt: f32) {
+        if !self.toggles.sand || self.state.is_none() {
+            return;
+        }
+        self.sand_timer += dt;
+        while self.sand_timer >= SAND_INTERVAL {
+            self.sand_timer -= SAND_INTERVAL;
+            self.seed_sand();
+        }
+
+        self.sim_timer += dt.min(0.1);
+        let mut dirty: HashSet<ChunkCoord> = HashSet::new();
+        while self.sim_timer >= SIM_TICK {
+            self.sim_timer -= SIM_TICK;
+            let active: Vec<ChunkCoord> = self.sim_active.iter().copied().collect();
+            for coord in active {
+                let moved = self.overlay.get_mut(&coord).map(sim::step_sand);
+                match moved {
+                    Some(true) => {
+                        dirty.insert(coord);
+                    }
+                    _ => {
+                        self.sim_active.remove(&coord); // settled or gone
+                    }
+                }
+            }
+        }
+
+        for coord in dirty {
+            if !self.loaded.contains(&coord) {
+                continue;
+            }
+            if let Some(sec) = self.overlay.get(&coord) {
+                let inst = mesh_chunk(coord, sec, WORLD_SEED);
+                if let Some(state) = self.state.as_mut() {
+                    state.upload_chunk(&inst);
+                }
+            }
+        }
+    }
+
+    /// Drop a small clump of sand high in a loaded chunk ahead of the camera; it falls
+    /// onto the terrain. Skips chunks that aren't on screen yet.
+    fn seed_sand(&mut self) {
+        let mut fwd = self.camera.forward();
+        fwd.y = 0.0;
+        let fwd = fwd.normalize_or_zero();
+        let p = self.camera.position + fwd * 26.0;
+        let sz = Section::SIZE as f32;
+        let coord = ((p.x / sz).floor() as i32, 0, (p.z / sz).floor() as i32);
+        if !self.loaded.contains(&coord) {
+            return;
+        }
+        let lx = p.x.rem_euclid(sz) as i32;
+        let lz = p.z.rem_euclid(sz) as i32;
+        let y = Section::SIZE - 2;
+        let n = Section::SIZE as i32;
+        let sec = self
+            .overlay
+            .entry(coord)
+            .or_insert_with(|| worldgen::generate_section(coord.0, coord.2, WORLD_SEED));
+        let mut added = false;
+        for (dx, dz) in [(0i32, 0i32), (1, 0), (0, 1)] {
+            let (x, z) = (lx + dx, lz + dz);
+            if (0..n).contains(&x) && (0..n).contains(&z) && sec.get(x as u32, y, z as u32).is_air()
+            {
+                sec.set(x as u32, y, z as u32, sim::SAND);
+                added = true;
+            }
+        }
+        if added {
+            self.sim_active.insert(coord);
+        }
+    }
 }
 
-/// The pure off-thread worker: regenerate a chunk + its 4 horizontal neighbours from
-/// the seed, greedy-mesh it (neighbour-aware seam culling), and bake its connectivity
-/// graph. Self-contained and `Send`, so it can run on a rayon thread (M6).
-fn build_chunk_instance(coord: ChunkCoord, seed: u32) -> ChunkInstance {
+/// Greedy-mesh a chunk's `center` section against its 4 (regenerated) procedural
+/// neighbours for seam culling, and bake its connectivity graph. Shared by the
+/// streaming worker and the sand re-mesh.
+fn mesh_chunk(coord: ChunkCoord, center: &Section, seed: u32) -> ChunkInstance {
     let (cx, _cy, cz) = coord;
-    let section = worldgen::generate_section(cx, cz, seed);
     let west = worldgen::generate_section(cx - 1, cz, seed);
     let east = worldgen::generate_section(cx + 1, cz, seed);
     let south = worldgen::generate_section(cx, cz - 1, seed);
@@ -185,14 +275,21 @@ fn build_chunk_instance(coord: ChunkCoord, seed: u32) -> ChunkInstance {
             Some(&north),
         ],
     };
-    let mesh = greedy_mesh_section_with(&section, &neighbors);
+    let mesh = greedy_mesh_section_with(center, &neighbors);
     let s = Section::SIZE as f32;
     ChunkInstance {
         coord,
         origin: Vec3::new(cx as f32 * s, 0.0, cz as f32 * s),
         mesh,
-        graph: connectivity(&section),
+        graph: connectivity(center),
     }
+}
+
+/// The pure off-thread streaming worker: regenerate a chunk from the seed and mesh it.
+/// Self-contained and `Send`, so it can run on a rayon thread (M6).
+fn build_chunk_instance(coord: ChunkCoord, seed: u32) -> ChunkInstance {
+    let center = worldgen::generate_section(coord.0, coord.2, seed);
+    mesh_chunk(coord, &center, seed)
 }
 
 /// Off-thread chunk loader (M6). Native dispatches mesh jobs to rayon and collects
@@ -438,6 +535,8 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 // Stream chunks in/out around the (possibly moved) camera.
                 self.stream();
+                // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
+                self.sim(dt);
                 // Ambient debris bursts ahead of the camera so the flight sweeps
                 // over rising embers (there's always motion in frame).
                 self.particles.set_emitters(lead_emitters(&self.camera));
@@ -566,6 +665,10 @@ pub fn run() {
         particles: ParticleSystem::new(Vec::new()),
         loader: ChunkLoader::new(),
         loaded: HashSet::new(),
+        overlay: std::collections::HashMap::new(),
+        sim_active: HashSet::new(),
+        sim_timer: 0.0,
+        sand_timer: 0.0,
         auto_fly: true,
         auto_fly_angle: 0.0,
         wobble: 85.0,
@@ -594,6 +697,10 @@ const STREAM_REQUESTS: usize = 8;
 /// Finished meshes to upload to the GPU per frame (bounds main-thread upload work, and
 /// on web bounds inline meshing). M6.
 const STREAM_UPLOADS: usize = 4;
+
+/// Falling-sand tick (seconds) and how often a clump is dropped (E5).
+const SIM_TICK: f32 = 0.05;
+const SAND_INTERVAL: f32 = 0.14;
 
 /// How high above the terrain the cinematic camera cruises.
 const CRUISE_HEIGHT: f32 = 22.0;
@@ -728,8 +835,8 @@ pub mod controls {
     thread_local! {
         static WOBBLE: Cell<f32> = const { Cell::new(85.0) };
         static COLOR_STEPS: Cell<f32> = const { Cell::new(4.0) };
-        /// Feature-toggle bitmask, one bit per switch; all 10 on by default.
-        static TOGGLES: Cell<u32> = const { Cell::new(0x3FF) };
+        /// Feature-toggle bitmask, one bit per switch; all 11 on by default.
+        static TOGGLES: Cell<u32> = const { Cell::new(0x7FF) };
     }
 
     /// Vertex-wobble snap (lower = chunkier). Called from JS.
