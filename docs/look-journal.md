@@ -25,6 +25,16 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## 2026-06-05 · E3 slice 3b — emissive crystals
+
+**Glowing crystal blocks.** Rare (~0.4% of columns) emissive cyan crystals perched on
+the surface; the shader renders material 6 unshaded and boosted past 1.0 so the
+bright-pass catches it and it blooms. **Keep.** Now there are *two* kinds of glow — warm
+ember particles and cool crystal blocks — which gives the dusk palette something to
+play against and rewards exploring (you fly toward the glints). Density matters a lot:
+1.3% read as cyan *frost* (a rash); 0.4% reads as rare and special. A good reminder that
+"emissive" wants restraint or it stops being light and becomes texture.
+
 ## 2026-06-05 · E3 slice 3 — bloom
 
 **Cheap LDR bloom.** The scene now renders to an offscreen target; a bright-pass

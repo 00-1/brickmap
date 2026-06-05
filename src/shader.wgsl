@@ -107,6 +107,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let detail = textureSample(mat_tex, mat_samp, uv, i32(in.material)).r;
 
     var c = in.color * detail * light * ao_factor;
+    // Emissive crystal (material 6): unshaded and boosted past 1.0 so the bright-pass
+    // catches it and it glows through bloom.
+    if (in.material == 6u) {
+        c = in.color * detail * 1.3;
+    }
 
     // Ordered (4x4 Bayer) dithering: posterise the shading into a few levels with a
     // deliberate dot pattern, instead of smoothing the banding away.

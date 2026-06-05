@@ -8,6 +8,10 @@ const DIRT: BlockId = BlockId(2);
 const GRASS: BlockId = BlockId(3);
 const SAND: BlockId = BlockId(4);
 const SNOW: BlockId = BlockId(5);
+/// Rare emissive crystal that sits on the surface and glows (feeds bloom, E3).
+const CRYSTAL: BlockId = BlockId(6);
+/// Fraction of columns that sprout a surface crystal (rare — they should feel special).
+const CRYSTAL_CHANCE: f32 = 0.004;
 
 /// Hash a lattice point to `[0, 1)`.
 fn hash(x: i32, z: i32, seed: u32) -> f32 {
@@ -82,7 +86,8 @@ pub fn generate_section(cx: i32, cz: i32, seed: u32) -> Section {
     let mut section = Section::new();
     for z in 0..Section::SIZE {
         for x in 0..Section::SIZE {
-            let h = height(cx * s + x as i32, cz * s + z as i32, seed);
+            let (wx, wz) = (cx * s + x as i32, cz * s + z as i32);
+            let h = height(wx, wz, seed);
             let surface = surface_block(h);
             for y in 0..h.min(Section::SIZE) {
                 let depth = h - y;
@@ -92,6 +97,11 @@ pub fn generate_section(cx: i32, cz: i32, seed: u32) -> Section {
                     _ => STONE,
                 };
                 section.set(x, y, z, block);
+            }
+            // A rare glowing crystal perched on the surface (one voxel above the top
+            // solid), as long as it fits in the section.
+            if h < Section::SIZE && hash(wx, wz, seed.wrapping_add(0x5151)) < CRYSTAL_CHANCE {
+                section.set(x, h, z, CRYSTAL);
             }
         }
     }
