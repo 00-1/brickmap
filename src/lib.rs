@@ -70,6 +70,9 @@ struct App {
     last_frame: Option<Instant>,
     /// Whether the pointer is captured (mouselook active).
     cursor_locked: bool,
+    /// Smoothed frame time (ms) and a throttle accumulator for the perf HUD (M5).
+    frame_ms_ema: f32,
+    hud_timer: f32,
 }
 
 impl App {
@@ -341,6 +344,37 @@ impl ApplicationHandler<AppEvent> for App {
                         &particles,
                         [self.wobble, self.color_steps],
                     );
+
+                    // Perf HUD (M5): smooth the frame time, refresh a few times/sec.
+                    let ms = dt * 1000.0;
+                    self.frame_ms_ema = if self.frame_ms_ema == 0.0 {
+                        ms
+                    } else {
+                        self.frame_ms_ema * 0.9 + ms * 0.1
+                    };
+                    self.hud_timer += dt;
+                    if self.hud_timer >= 0.2 {
+                        self.hud_timer = 0.0;
+                        let s = state.stats();
+                        let fps = if self.frame_ms_ema > 0.0 {
+                            1000.0 / self.frame_ms_ema
+                        } else {
+                            0.0
+                        };
+                        let hud = format!(
+                            "{fps:.0} fps · {:.1} ms · {}/{} chunks · {} tris · {} fx",
+                            self.frame_ms_ema,
+                            s.drawn_chunks,
+                            s.total_chunks,
+                            s.triangles,
+                            s.particles,
+                        );
+                        #[cfg(not(target_arch = "wasm32"))]
+                        state.window().set_title(&format!("brickmap — {hud}"));
+                        #[cfg(target_arch = "wasm32")]
+                        set_hud(&hud);
+                    }
+
                     // Drive a continuous loop so held keys animate.
                     state.window().request_redraw();
                 }
@@ -413,6 +447,8 @@ pub fn run() {
         color_steps: 4.0,
         last_frame: None,
         cursor_locked: false,
+        frame_ms_ema: 0.0,
+        hud_timer: 0.0,
     };
 
     event_loop.run_app(&mut app).expect("event loop error");
@@ -527,6 +563,17 @@ pub(crate) fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub fn wasm_start() {
     run();
+}
+
+/// Push the perf-HUD text into the page's overlay element (web only).
+#[cfg(target_arch = "wasm32")]
+fn set_hud(text: &str) {
+    if let Some(el) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id("hud"))
+    {
+        el.set_text_content(Some(text));
+    }
 }
 
 fn init_logging() {

@@ -143,7 +143,7 @@ extra geometry (design §12).
 - **Outcome:** surfaces gain depth and texture without shrinking the voxels.
 - **Why here:** pairs naturally with M4's material/texture path.
 
-### M5 — Light to draw (occlusion culling) ⏳
+### M5 — Light to draw (occlusion culling) 🛠 &nbsp;→ [`milestones/M5-culling-hud.md`](milestones/M5-culling-hud.md)
 **Visibility-graph / "cave" culling** (flood-fill chunk connectivity) combined
 with frustum culling, plus an on-screen **frame-time / draw-call / triangle HUD**.
 - **Outcome:** large worlds stay cheap; hidden regions aren't drawn.

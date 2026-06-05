@@ -28,6 +28,15 @@ pub struct ChunkInstance {
     pub mesh: ChunkMesh,
 }
 
+/// Per-frame draw counts, surfaced to the perf HUD (M5).
+#[derive(Copy, Clone, Default)]
+pub struct DrawStats {
+    pub drawn_chunks: u32,
+    pub total_chunks: u32,
+    pub triangles: u32,
+    pub particles: u32,
+}
+
 /// Vertex buffer layout for the **packed** face vertex: two `u32`s per vertex (8
 /// bytes, design §9–10) — word 0 = pos/dir/material/ao, word 1 = block light.
 /// Unpacked in the shader.
@@ -128,6 +137,8 @@ pub struct State {
 
     /// Frame counter, used to throttle the stats log.
     frame_count: u64,
+    /// Last frame's draw counts, for the perf HUD (M5).
+    last_stats: DrawStats,
 
     // The window must outlive the surface; keep an Arc so `Surface<'static>` is sound.
     window: Arc<Window>,
@@ -414,8 +425,14 @@ impl State {
             particle_instances,
             particle_capacity,
             frame_count: 0,
+            last_stats: DrawStats::default(),
             window,
         }
+    }
+
+    /// Last frame's draw counts, for the perf HUD.
+    pub fn stats(&self) -> DrawStats {
+        self.last_stats
     }
 
     /// Current surface aspect ratio (width / height).
@@ -577,7 +594,13 @@ impl State {
                 triangles += draw.num_indices / 3;
             }
 
-            // Lightweight stats (a real on-screen HUD is M5).
+            // Record stats for the HUD; still log occasionally on native.
+            self.last_stats = DrawStats {
+                drawn_chunks: drawn,
+                total_chunks: self.draws.len() as u32,
+                triangles,
+                particles: particles.len() as u32,
+            };
             self.frame_count += 1;
             if self.frame_count.is_multiple_of(120) {
                 log::info!(
