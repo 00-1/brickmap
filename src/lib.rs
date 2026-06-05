@@ -1,23 +1,26 @@
-//! brickmap — cross-platform voxel rendering engine (kickoff spike).
+//! brickmap — cross-platform voxel rendering engine.
 //!
-//! At this stage the crate is only the render spike described in
-//! `docs/spikes.md`: clear the screen and draw one spinning cube via wgpu,
-//! on desktop and in the browser (WASM). Voxel-specific code comes later, once
-//! this cross-platform render path is proven. See `docs/design.md` and
-//! `docs/architecture.md` for where this is heading.
+//! M1: a hand-built voxel chunk, meshed on the CPU and drawn through wgpu, that
+//! you can fly around — on desktop and in the browser (WASM) from one code path.
+//! See `docs/design.md`, `docs/architecture.md`, and `docs/roadmap.md`.
 
 use std::sync::Arc;
 
+use glam::Vec3;
+use web_time::Instant;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 mod gfx;
 pub mod mesh;
+pub mod scene;
 pub mod world;
 use gfx::State;
 use mesh::ChunkMesh;
+use scene::{Action, Camera, CameraController};
 use world::{BlockId, Section};
 
 /// Window/canvas init size. On the web this is also the canvas backing size.
@@ -41,6 +44,26 @@ struct App {
     proxy: Option<EventLoopProxy<AppEvent>>,
     /// The scene to draw — built once on the CPU, uploaded when the GPU is ready.
     mesh: ChunkMesh,
+
+    camera: Camera,
+    controller: CameraController,
+    /// Timestamp of the previous frame, for frame-rate-independent movement.
+    last_frame: Option<Instant>,
+    /// Last cursor position, to derive look deltas from `CursorMoved`.
+    last_cursor: Option<(f32, f32)>,
+}
+
+/// Map a physical key to a movement intent (WASD + Space/Shift), or `None`.
+fn key_action(code: KeyCode) -> Option<Action> {
+    Some(match code {
+        KeyCode::KeyW | KeyCode::ArrowUp => Action::Forward,
+        KeyCode::KeyS | KeyCode::ArrowDown => Action::Back,
+        KeyCode::KeyA | KeyCode::ArrowLeft => Action::Left,
+        KeyCode::KeyD | KeyCode::ArrowRight => Action::Right,
+        KeyCode::Space => Action::Up,
+        KeyCode::ShiftLeft | KeyCode::ControlLeft => Action::Down,
+        _ => return None,
+    })
 }
 
 impl ApplicationHandler<AppEvent> for App {
@@ -91,10 +114,44 @@ impl ApplicationHandler<AppEvent> for App {
                 state.resize(size);
                 state.window().request_redraw();
             }
+            WindowEvent::KeyboardInput { event: key, .. } => {
+                if let PhysicalKey::Code(code) = key.physical_key {
+                    if let Some(action) = key_action(code) {
+                        self.controller.set_action(action, key.state.is_pressed());
+                    }
+                }
+            }
+            WindowEvent::MouseInput {
+                button: MouseButton::Left,
+                state: element_state,
+                ..
+            } => {
+                let pressed = element_state == ElementState::Pressed;
+                self.controller.set_dragging(pressed);
+                if !pressed {
+                    self.last_cursor = None;
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let p = (position.x as f32, position.y as f32);
+                if let Some((lx, ly)) = self.last_cursor {
+                    self.controller.add_look(p.0 - lx, p.1 - ly);
+                }
+                self.last_cursor = Some(p);
+            }
             WindowEvent::RedrawRequested => {
+                let now = Instant::now();
+                let dt = self
+                    .last_frame
+                    .map(|t| (now - t).as_secs_f32().min(0.1))
+                    .unwrap_or(0.0);
+                self.last_frame = Some(now);
+
+                self.controller.update(&mut self.camera, dt);
+                let view_proj = self.camera.view_proj(state.aspect());
                 // `render` handles lost/outdated/transient surfaces internally.
-                state.render();
-                // Continuously animate.
+                state.render(view_proj);
+                // Drive a continuous loop so held keys animate.
                 state.window().request_redraw();
             }
             _ => {}
@@ -104,7 +161,7 @@ impl ApplicationHandler<AppEvent> for App {
 
 fn window_attributes() -> winit::window::WindowAttributes {
     let attrs = Window::default_attributes()
-        .with_title("brickmap — spike")
+        .with_title("brickmap")
         .with_inner_size(winit::dpi::LogicalSize::new(
             INITIAL_SIZE.0 as f64,
             INITIAL_SIZE.1 as f64,
@@ -136,10 +193,23 @@ pub fn run() {
         .build()
         .expect("failed to build event loop");
 
+    let mesh = mesh::mesh_section(&demo_section());
+
+    // Frame the camera on the meshed scene from its bounds, then let the user fly.
+    let min = Vec3::from(mesh.aabb.min);
+    let max = Vec3::from(mesh.aabb.max);
+    let center = (min + max) * 0.5;
+    let radius = ((max - min).length() * 0.5).max(1.0);
+    let eye = center + Vec3::new(1.0, 0.7, 1.3).normalize() * radius * 2.6;
+
     let mut app = App {
         state: None,
         proxy: Some(event_loop.create_proxy()),
-        mesh: mesh::mesh_section(&demo_section()),
+        mesh,
+        camera: Camera::looking_at(eye, center),
+        controller: CameraController::new(radius * 1.2),
+        last_frame: None,
+        last_cursor: None,
     };
 
     event_loop.run_app(&mut app).expect("event loop error");

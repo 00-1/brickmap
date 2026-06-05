@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec3};
+use glam::Mat4;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
@@ -58,15 +58,6 @@ pub struct State {
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
-
-    /// Centre and bounding radius of the drawn mesh (from its AABB), used to frame
-    /// the camera and to spin the mesh about its own centre.
-    mesh_center: Vec3,
-    mesh_radius: f32,
-
-    /// Rotation accumulator (radians). Advanced a fixed amount per frame so the
-    /// spike needs no clock and behaves identically on every platform.
-    angle: f32,
 
     // The window must outlive the surface; keep an Arc so `Surface<'static>` is sound.
     window: Arc<Window>,
@@ -237,13 +228,6 @@ impl State {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        // Frame the camera from the mesh's bounds (part of the ChunkMesh contract),
-        // so the renderer stays ignorant of voxel/chunk dimensions.
-        let aabb_min = Vec3::from(mesh.aabb.min);
-        let aabb_max = Vec3::from(mesh.aabb.max);
-        let mesh_center = (aabb_min + aabb_max) * 0.5;
-        let mesh_radius = ((aabb_max - aabb_min).length() * 0.5).max(1.0);
-
         let depth_view = create_depth_view(&device, &config);
 
         State {
@@ -259,11 +243,13 @@ impl State {
             uniform_buffer,
             uniform_bind_group,
             depth_view,
-            mesh_center,
-            mesh_radius,
-            angle: 0.0,
             window,
         }
+    }
+
+    /// Current surface aspect ratio (width / height).
+    pub fn aspect(&self) -> f32 {
+        self.config.width as f32 / self.config.height as f32
     }
 
     pub fn window(&self) -> &Window {
@@ -286,32 +272,15 @@ impl State {
         self.resize(self.size);
     }
 
-    fn update_uniforms(&mut self) {
-        self.angle += 0.005;
-        let aspect = self.config.width as f32 / self.config.height as f32;
-
-        let radius = self.mesh_radius;
-        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect, 0.1, radius * 20.0 + 10.0);
-        // Orbit at a fixed 3/4 angle, framed to the mesh's size.
-        let eye = self.mesh_center + Vec3::new(1.0, 0.7, 1.3).normalize() * radius * 2.6;
-        let view = Mat4::look_at_rh(eye, self.mesh_center, Vec3::Y);
-        // Spin about the mesh's own centre. (`model` is rotation-only for normals;
-        // the translations cancel for direction vectors, so it shades correctly.)
-        let model = Mat4::from_translation(self.mesh_center)
-            * Mat4::from_rotation_y(self.angle)
-            * Mat4::from_translation(-self.mesh_center);
-        let mvp = proj * view * model;
-
+    /// Draw the scene from the given view-projection. The mesh lives in world
+    /// space (model = identity), so normals pass straight through.
+    pub fn render(&mut self, view_proj: Mat4) {
         let uniforms = Uniforms {
-            mvp: mvp.to_cols_array_2d(),
-            model: model.to_cols_array_2d(),
+            mvp: view_proj.to_cols_array_2d(),
+            model: Mat4::IDENTITY.to_cols_array_2d(),
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
-    }
-
-    pub fn render(&mut self) {
-        self.update_uniforms();
 
         use wgpu::CurrentSurfaceTexture as Cst;
         let frame = match self.surface.get_current_texture() {
