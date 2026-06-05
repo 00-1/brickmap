@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>brickmap — spike</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #05060a;
+        color: #c8d0e0;
+        font: 14px/1.4 system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+      }
+      canvas {
+        border: 1px solid #1c2233;
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="brickmap-canvas" width="960" height="720"></canvas>
+    <p>
+      brickmap — M1, first meshed chunk (archived snapshot).
+      <a href="../../" style="color: #6c8cff">← build gallery</a>
+    </p>
+
+    <!-- `wasm-pack build --target web` generates ./pkg next to this file. -->
+    <script type="module">
+      import init from "./pkg/brickmap.js";
+      init().catch((err) => {
+        // winit's web backend escapes its run loop by throwing; that's expected.
+        if (!`${err}`.includes("Using exceptions for control flow")) {
+          console.error(err);
+        }
+      });
+    </script>
+  </body>
+</html>
