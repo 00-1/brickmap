@@ -21,6 +21,7 @@ pub mod headless;
 pub mod mesh;
 pub mod particles;
 pub mod scene;
+pub mod textures;
 pub mod world;
 pub mod worldgen;
 use gfx::{ChunkInstance, State};

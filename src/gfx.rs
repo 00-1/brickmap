@@ -16,6 +16,7 @@ use winit::window::Window;
 use crate::mesh::{pack, ChunkMesh};
 use crate::particles::{ParticleInstance, CUBE_INDICES, CUBE_POSITIONS};
 use crate::scene::Frustum;
+use crate::textures::{material_atlas, LAYERS, TILE};
 use crate::world::ChunkCoord;
 
 /// One mesh instance to draw: a chunk mesh (chunk-local) at a world `origin`.
@@ -110,6 +111,8 @@ pub struct State {
 
     globals_buffer: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
+    /// Procedural material texture array + sampler (group 2). Constant for all chunks.
+    material_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
 
     // Particles (E2): an instanced emissive-cube pipeline + a growable instance buffer.
@@ -253,9 +256,13 @@ impl State {
             }],
         });
 
+        // --- Procedural material texture array (group 2, M4) ---
+        let material_bgl = material_bind_group_layout(&device);
+        let material_bind_group = build_material_bind_group(&device, &queue, &material_bgl);
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline-layout"),
-            bind_group_layouts: &[Some(&globals_bgl), Some(&chunk_bgl)],
+            bind_group_layouts: &[Some(&globals_bgl), Some(&chunk_bgl), Some(&material_bgl)],
             immediate_size: 0,
         });
 
@@ -388,6 +395,7 @@ impl State {
             chunk_bind_group_layout: chunk_bgl,
             globals_buffer,
             globals_bind_group,
+            material_bind_group,
             depth_view,
             particle_pipeline,
             cube_vertex_buffer,
@@ -532,6 +540,7 @@ impl State {
 
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
+            pass.set_bind_group(2, &self.material_bind_group, &[]);
 
             let frustum = Frustum::from_view_proj(view_proj);
             let mut drawn = 0u32;
@@ -615,6 +624,101 @@ fn build_chunk_draw(
         aabb_min: Vec3::from(inst.mesh.aabb.min) + inst.origin,
         aabb_max: Vec3::from(inst.mesh.aabb.max) + inst.origin,
         origin_bind_group,
+    })
+}
+
+/// Bind-group layout for the material texture array (group 2): a `2d_array` texture
+/// plus a sampler, both fragment-only. Shared with the headless renderer.
+pub(crate) fn material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("material-bgl"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    })
+}
+
+/// Upload the procedural material atlas to a texture array and build its bind group.
+/// Unorm (not sRGB): the tiles are a brightness multiplier the shader applies to the
+/// already-sRGB palette colour. Nearest + repeat so each voxel shows one crisp tile.
+/// Shared with the headless renderer.
+pub(crate) fn build_material_bind_group(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+) -> wgpu::BindGroup {
+    let size = wgpu::Extent3d {
+        width: TILE,
+        height: TILE,
+        depth_or_array_layers: LAYERS,
+    };
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("material-array"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &material_atlas(),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(TILE * 4),
+            rows_per_image: Some(TILE),
+        },
+        size,
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("material-sampler"),
+        address_mode_u: wgpu::AddressMode::Repeat,
+        address_mode_v: wgpu::AddressMode::Repeat,
+        address_mode_w: wgpu::AddressMode::Repeat,
+        mag_filter: wgpu::FilterMode::Nearest,
+        min_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("material-bg"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+        ],
     })
 }
 

@@ -135,9 +135,13 @@ pub fn capture(width: u32, height: u32, path: &str) {
     let globals_bgl = uniform_bgl(wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT);
     let chunk_bgl = uniform_bgl(wgpu::ShaderStages::VERTEX);
 
+    // Material texture array (group 2) — shared construction with the windowed renderer.
+    let material_bgl = crate::gfx::material_bind_group_layout(&device);
+    let material_bind_group = crate::gfx::build_material_bind_group(&device, &queue, &material_bgl);
+
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("headless-pipeline-layout"),
-        bind_group_layouts: &[Some(&globals_bgl), Some(&chunk_bgl)],
+        bind_group_layouts: &[Some(&globals_bgl), Some(&chunk_bgl), Some(&material_bgl)],
         immediate_size: 0,
     });
     let vertex_layout = wgpu::VertexBufferLayout {
@@ -375,6 +379,7 @@ pub fn capture(width: u32, height: u32, path: &str) {
         });
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &globals_bind_group, &[]);
+        pass.set_bind_group(2, &material_bind_group, &[]);
         for d in &draws {
             pass.set_bind_group(1, &d.origin_bg, &[]);
             pass.set_vertex_buffer(0, d.vbuf.slice(..));

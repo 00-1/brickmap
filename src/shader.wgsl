@@ -19,12 +19,20 @@ struct Chunk {
 @group(1) @binding(0)
 var<uniform> chunk: Chunk;
 
+// Procedural material textures (M4): grayscale detail per material, tinted by the
+// palette colour. Layer index == material id; tiled per voxel in world space.
+@group(2) @binding(0)
+var mat_tex: texture_2d_array<f32>;
+@group(2) @binding(1)
+var mat_samp: sampler;
+
 struct VsOut {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) world_pos: vec3<f32>,
     @location(3) ao: f32,
+    @location(4) @interpolate(flat) material: u32,
 };
 
 @vertex
@@ -64,6 +72,7 @@ fn vs_main(@location(0) packed: u32) -> VsOut {
     out.color = globals.palette[min(material, 7u)].rgb;
     out.world_pos = world_pos;
     out.ao = f32(ao);
+    out.material = material;
     return out;
 }
 
@@ -76,7 +85,21 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Baked ambient occlusion: corners (ao 0) sink to ~0.5 brightness, open faces
     // (ao 3) stay full. Multiplies the directional shade.
     let ao_factor = 0.5 + 0.5 * (in.ao / 3.0);
-    var c = in.color * shade * ao_factor;
+
+    // Material texture: tile per voxel in world space, axes chosen from the face
+    // normal. Grayscale detail multiplies the palette tint.
+    let an = abs(n);
+    var uv: vec2<f32>;
+    if (an.x > 0.5) {
+        uv = in.world_pos.zy;
+    } else if (an.y > 0.5) {
+        uv = in.world_pos.xz;
+    } else {
+        uv = in.world_pos.xy;
+    }
+    let detail = textureSample(mat_tex, mat_samp, uv, i32(in.material)).r;
+
+    var c = in.color * detail * shade * ao_factor;
 
     // Ordered (4x4 Bayer) dithering: posterise the shading into a few levels with a
     // deliberate dot pattern, instead of smoothing the banding away.
