@@ -56,7 +56,8 @@ own thing — the content/visual work from [`design.md`](design.md) §12 — int
 *in place* so they don't get deferred to the end (or lost).
 
 > Legend: ✅ done · 🛠 in progress · ⏳ planned · **✨ = exploration** (the
-> *interesting* bit, not infrastructure; numbered **E1–E5 in build order**). More
+> *interesting* bit, not infrastructure; numbered **E1–E5 in build order**) ·
+> **D = dev tooling & process** (cross-cutting; see the D-series below). More
 > exploration candidates (researched and fit-graded) live in
 > [`exploration-backlog.md`](exploration-backlog.md).
 
@@ -174,6 +175,19 @@ budgets, wire the **lighting data path**, and add mobile **dynamic resolution**.
 - **De-risks:** turns "should be fast" into measured-fast.
 - **Acceptance:** recorded frame times on both reference devices within budget;
   budgets in `design.md` §8 updated with real numbers.
+
+## Dev tooling & process (D-series)
+
+Cross-cutting tooling that supports the work — done *as needed*, not in the linear
+build order.
+
+### D1 — Headless render-to-PNG 🛠 &nbsp;→ [`milestones/D1-headless-render.md`](milestones/D1-headless-render.md)
+Render the scene offscreen to a PNG using software Vulkan (**llvmpipe** — confirmed
+working in-container, no GPU/display needed), so renders can be verified without a
+display.
+- **Outcome:** a `screenshot` tool that captures the live scene to an image.
+- **Unlocks:** golden-image regression tests, and *supervised* autonomous runs
+  (Claude can sanity-check its own renders instead of working blind).
 
 ## What we're deliberately *not* doing
 
