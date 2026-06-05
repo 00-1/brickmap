@@ -250,9 +250,11 @@ foliage pivot, since it's small, deterministic, and high-delight.)*
 - **✨ E13 — Photo / cinematic mode** — pause + free-cam + FOV/roll/exposure, vignette/
   letterbox/hide-HUD, in-app screenshot (reuse the headless RTT path), Catmull-Rom camera
   paths (→ deterministic headless flythroughs/clips); photo-mode-only DoF.
-- **✨ E14 — Creative / voxel editing** — DDA pick + wireframe highlight, brush edits over
-  the overlay (the *sand* dirty→re-mesh path), undo log, and **seed + sparse-delta** build
-  sharing (ties to E12).
+- **✨ E14 — Creative / voxel editing** 🛠 — **command/event seam landed** (`edit::Edit` +
+  `apply`, the multiplayer-untangle prep): DDA voxel pick ✅, place/break over the overlay
+  via the sand dirty→re-mesh path ✅, undo log (inverse edits) ✅, native V/B/U keys ✅.
+  *Deferred:* wireframe hover highlight, multi-voxel brushes, web mouse-picking, and
+  **seed + sparse-delta** build sharing (ties to E12; the `Edit` log is the payload).
 - **✨ E15 — Point-cloud creatures** — decorative wander/small-flock boids as splat clusters
   with VS animation; camera-follows-creature; deterministic seed spawn. Hard no-gameplay
   guardrails.

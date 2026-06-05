@@ -15,6 +15,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
+pub mod edit;
 pub mod foliage;
 mod gfx;
 #[cfg(not(target_arch = "wasm32"))]
@@ -94,6 +95,9 @@ struct App {
     /// The seed this world is generated from (E12). Drives streaming, sand, emitters,
     /// and the auto-fly ground query; changing it via `set_seed` regenerates the world.
     seed: u32,
+    /// Undo log of inverse edits (E14): each editing action pushes the edit that reverts
+    /// it. The forward edits are the future broadcast/share payload (N1 groundwork).
+    undo: Vec<edit::Edit>,
 }
 
 impl App {
@@ -155,11 +159,88 @@ impl App {
                 log::info!("share: #{}", self.current_share().encode());
                 return true;
             }
+            // Voxel editing (E14): V place, B break, U undo.
+            KeyCode::KeyV => {
+                self.edit_look(true);
+                return true;
+            }
+            KeyCode::KeyB => {
+                self.edit_look(false);
+                return true;
+            }
+            KeyCode::KeyU => {
+                self.undo_edit();
+                return true;
+            }
             _ => {}
         }
         #[cfg(target_arch = "wasm32")]
         let _ = code;
         false
+    }
+
+    /// Edit the voxel the camera is looking at (E14): `place` adds a block against the
+    /// surface we hit, otherwise we remove the hit block. Routes through `edit::apply`
+    /// (the command seam), records the inverse for undo, and re-meshes the chunk.
+    fn edit_look(&mut self, place: bool) {
+        let origin = self.camera.position;
+        let dir = self.camera.forward();
+        let seed = self.seed;
+        // Overlay-aware solidity: an overlaid cell wins, else base terrain (y < height).
+        let overlay = &self.overlay;
+        let solid = move |p: [i32; 3]| match edit::world_to_chunk_local(p) {
+            Some((coord, lx, ly, lz)) => match overlay.get(&coord) {
+                Some(sec) => sec.get(lx, ly, lz).is_solid(),
+                None => (p[1] as u32) < worldgen::height(p[0], p[2], seed),
+            },
+            None => false,
+        };
+        let Some(hit) = edit::raycast(origin, dir, 60.0, solid) else {
+            return;
+        };
+        let target = if place {
+            [
+                hit.voxel[0] + hit.normal[0],
+                hit.voxel[1] + hit.normal[1],
+                hit.voxel[2] + hit.normal[2],
+            ]
+        } else {
+            hit.voxel
+        };
+        let block = if place {
+            world::BlockId(1) // stone
+        } else {
+            world::BlockId::AIR
+        };
+        let cmd = edit::Edit::Set { pos: target, block };
+        if let Some((coord, inverse)) = edit::apply(&mut self.overlay, seed, &cmd) {
+            self.undo.push(inverse);
+            self.remesh(coord);
+        }
+    }
+
+    /// Undo the last edit (E14) by applying its recorded inverse.
+    fn undo_edit(&mut self) {
+        let Some(inverse) = self.undo.pop() else {
+            return;
+        };
+        let seed = self.seed;
+        if let Some((coord, _)) = edit::apply(&mut self.overlay, seed, &inverse) {
+            self.remesh(coord);
+        }
+    }
+
+    /// Re-mesh + re-upload one overlay chunk (shared by editing and the sand sim).
+    fn remesh(&mut self, coord: ChunkCoord) {
+        if !self.loaded.contains(&coord) {
+            return;
+        }
+        if let Some(sec) = self.overlay.get(&coord) {
+            let inst = mesh_chunk(coord, sec, self.seed);
+            if let Some(state) = self.state.as_mut() {
+                state.upload_chunk(&inst);
+            }
+        }
     }
 
     /// The current world + view as a `ShareState` (E12) — for "copy link" / `--share`.
@@ -834,6 +915,7 @@ pub fn run() {
         hud_timer: 0.0,
         toggles: Toggles::from_mask(view.toggles),
         seed: view.seed,
+        undo: Vec::new(),
     };
 
     event_loop.run_app(&mut app).expect("event loop error");
