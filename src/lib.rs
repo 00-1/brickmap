@@ -18,6 +18,7 @@ mod gfx;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
 pub mod mesh;
+pub mod particles;
 pub mod scene;
 pub mod world;
 use gfx::{ChunkInstance, State};
