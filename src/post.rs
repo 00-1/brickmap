@@ -11,6 +11,8 @@ pub(crate) struct Bloom {
     blur_h: wgpu::RenderPipeline,
     blur_v: wgpu::RenderPipeline,
     composite: wgpu::RenderPipeline,
+    /// Straight scene→output copy, used when bloom is toggled off.
+    copy: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
     bgl_single: wgpu::BindGroupLayout,
     bgl_composite: wgpu::BindGroupLayout,
@@ -102,6 +104,7 @@ impl Bloom {
             output_format,
             &bgl_composite,
         );
+        let copy = pipe("bloom-copy", "fs_copy", output_format, &bgl_single);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("bloom-sampler"),
@@ -120,6 +123,7 @@ impl Bloom {
             blur_h,
             blur_v,
             composite,
+            copy,
             sampler,
             bgl_single,
             bgl_composite,
@@ -212,6 +216,31 @@ impl Bloom {
         run_pass(encoder, &self.view_b, &self.blur_h, &blur_h_bg);
         run_pass(encoder, &self.view_a, &self.blur_v, &blur_v_bg);
         run_pass(encoder, output_view, &self.composite, &composite_bg);
+    }
+
+    /// Copy the scene straight to the output (bloom toggled off).
+    pub(crate) fn blit(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        scene_view: &wgpu::TextureView,
+        output_view: &wgpu::TextureView,
+    ) {
+        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("bloom-copy-bg"),
+            layout: &self.bgl_single,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(scene_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        run_pass(encoder, output_view, &self.copy, &bg);
     }
 }
 

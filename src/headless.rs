@@ -31,6 +31,7 @@ struct Globals {
     params: [f32; 4],
     camera_pos: [f32; 4],
     fog_color: [f32; 4],
+    flags: [f32; 4],
 }
 
 /// Distance fog (terrain fades to the sky/clear colour). The live cruise camera
@@ -218,6 +219,8 @@ pub fn capture(width: u32, height: u32, path: &str) {
         camera_pos: [camera.position.x, camera.position.y, camera.position.z, 0.0],
         // Horizon band of the sky gradient (see sky.wgsl) so terrain melts into it.
         fog_color: [0.30, 0.33, 0.42, 1.0],
+        // All features on for the hero shot (AO, block light, emissive).
+        flags: [1.0, 1.0, 1.0, 0.0],
     };
     let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("globals"),

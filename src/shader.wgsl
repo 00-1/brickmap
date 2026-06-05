@@ -9,6 +9,7 @@ struct Globals {
     params: vec4<f32>,     // x = wobble snap, y = colour steps (D2); z = fog start, w = fog end
     camera_pos: vec4<f32>, // xyz = camera world position
     fog_color: vec4<f32>,  // rgb = fog / sky colour
+    flags: vec4<f32>,      // x = AO, y = block light, z = emissive (1 = on)
 };
 @group(0) @binding(0)
 var<uniform> globals: Globals;
@@ -98,11 +99,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sun = vec3<f32>(1.0, 0.94, 0.82) * (0.62 * diffuse);
     // Baked block light (flood-fill, E3): the crystal's colour spills onto nearby
     // surfaces and bleeds around corners. Quadratic falloff for a tighter pool.
-    let block = in.block_light * in.block_light * 1.5;
+    let block = in.block_light * in.block_light * 1.5 * globals.flags.y;
     let light = mix(ground_ambient, sky_ambient, up) + sun + block;
     // Baked ambient occlusion: corners (ao 0) sink to ~0.5 brightness, open faces
-    // (ao 3) stay full. Multiplies the light.
-    let ao_factor = 0.5 + 0.5 * (in.ao / 3.0);
+    // (ao 3) stay full. Multiplies the light. `flags.x` toggles it off (factor 1).
+    let ao_factor = mix(1.0, 0.5 + 0.5 * (in.ao / 3.0), globals.flags.x);
 
     // Material texture: tile per voxel in world space, axes chosen from the face
     // normal. Grayscale detail multiplies the palette tint.
@@ -119,8 +120,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     var c = in.color * detail * light * ao_factor;
     // Emissive crystal (material 6): unshaded and boosted past 1.0 so the bright-pass
-    // catches it and it glows through bloom.
-    if (in.material == 6u) {
+    // catches it and it glows through bloom. `flags.z` toggles emissive off (then the
+    // crystal shades like any other block).
+    if (in.material == 6u && globals.flags.z > 0.5) {
         c = in.color * detail * 1.3;
     }
 

@@ -26,7 +26,7 @@ pub mod textures;
 pub mod visibility;
 pub mod world;
 pub mod worldgen;
-use gfx::{ChunkInstance, State};
+use gfx::{ChunkInstance, State, Toggles};
 use mesh::{greedy_mesh_section_with, Neighbors};
 use particles::ParticleSystem;
 use scene::{Action, Camera, CameraController};
@@ -75,6 +75,8 @@ struct App {
     /// Smoothed frame time (ms) and a throttle accumulator for the perf HUD (M5).
     frame_ms_ema: f32,
     hud_timer: f32,
+    /// Live feature on/off switches (D6).
+    toggles: Toggles,
 }
 
 impl App {
@@ -213,6 +215,22 @@ fn lead_emitters(camera: &Camera) -> Vec<Vec3> {
         .collect()
 }
 
+/// Map a number key `1..9` to a feature-toggle index (D6 debug switches).
+fn toggle_index(code: KeyCode) -> Option<usize> {
+    Some(match code {
+        KeyCode::Digit1 => 0,
+        KeyCode::Digit2 => 1,
+        KeyCode::Digit3 => 2,
+        KeyCode::Digit4 => 3,
+        KeyCode::Digit5 => 4,
+        KeyCode::Digit6 => 5,
+        KeyCode::Digit7 => 6,
+        KeyCode::Digit8 => 7,
+        KeyCode::Digit9 => 8,
+        _ => return None,
+    })
+}
+
 /// Map a physical key to a movement intent (WASD + Space/Shift), or `None`.
 fn key_action(code: KeyCode) -> Option<Action> {
     Some(match code {
@@ -280,6 +298,16 @@ impl ApplicationHandler<AppEvent> for App {
                         self.set_capture(false);
                     } else if code == KeyCode::KeyF && pressed {
                         self.auto_fly = !self.auto_fly; // toggle cinematic orbit
+                    } else if let Some(i) = toggle_index(code) {
+                        // Number keys flip renderer features (D6); web uses checkboxes.
+                        if pressed {
+                            self.toggles.toggle(i);
+                            log::info!(
+                                "toggle {} = {}",
+                                gfx::TOGGLE_LABELS[i],
+                                self.toggles.get(i)
+                            );
+                        }
                     } else if let Some(action) = key_action(code) {
                         self.controller.set_action(action, pressed);
                         if pressed {
@@ -336,6 +364,7 @@ impl ApplicationHandler<AppEvent> for App {
                 {
                     self.wobble = controls::wobble();
                     self.color_steps = controls::color_steps();
+                    self.toggles = controls::toggles();
                 }
 
                 if let Some(state) = self.state.as_mut() {
@@ -346,6 +375,7 @@ impl ApplicationHandler<AppEvent> for App {
                         self.camera.position,
                         &particles,
                         [self.wobble, self.color_steps],
+                        self.toggles,
                     );
 
                     // Perf HUD (M5): smooth the frame time, refresh a few times/sec.
@@ -365,12 +395,13 @@ impl ApplicationHandler<AppEvent> for App {
                             0.0
                         };
                         let hud = format!(
-                            "{fps:.0} fps · {:.1} ms · {}/{} chunks · {} tris · {} fx",
+                            "{fps:.0} fps · {:.1} ms · {}/{} chunks · {} tris · {} fx{}",
                             self.frame_ms_ema,
                             s.drawn_chunks,
                             s.total_chunks,
                             s.triangles,
                             s.particles,
+                            self.toggles.off_summary(),
                         );
                         #[cfg(not(target_arch = "wasm32"))]
                         state.window().set_title(&format!("brickmap — {hud}"));
@@ -452,6 +483,7 @@ pub fn run() {
         cursor_locked: false,
         frame_ms_ema: 0.0,
         hud_timer: 0.0,
+        toggles: Toggles::default(),
     };
 
     event_loop.run_app(&mut app).expect("event loop error");
@@ -602,6 +634,8 @@ pub mod controls {
     thread_local! {
         static WOBBLE: Cell<f32> = const { Cell::new(85.0) };
         static COLOR_STEPS: Cell<f32> = const { Cell::new(4.0) };
+        /// Feature-toggle bitmask, one bit per switch; all 9 on by default.
+        static TOGGLES: Cell<u32> = const { Cell::new(0x1FF) };
     }
 
     /// Vertex-wobble snap (lower = chunkier). Called from JS.
@@ -622,5 +656,28 @@ pub mod controls {
 
     pub(crate) fn color_steps() -> f32 {
         COLOR_STEPS.with(Cell::get)
+    }
+
+    /// Flip a renderer feature on/off by index (D6). Called from the page checkboxes.
+    #[wasm_bindgen]
+    pub fn set_toggle(index: u32, on: bool) {
+        TOGGLES.with(|c| {
+            let mut m = c.get();
+            if on {
+                m |= 1 << index;
+            } else {
+                m &= !(1 << index);
+            }
+            c.set(m);
+        });
+    }
+
+    pub(crate) fn toggles() -> crate::gfx::Toggles {
+        let m = TOGGLES.with(Cell::get);
+        let mut t = crate::gfx::Toggles::default();
+        for i in 0..crate::gfx::TOGGLE_LABELS.len() {
+            t.set(i, m & (1 << i) != 0);
+        }
+        t
     }
 }

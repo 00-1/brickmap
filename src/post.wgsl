@@ -72,3 +72,9 @@ fn fs_composite(in: VsOut) -> @location(0) vec4<f32> {
     let glow = textureSample(bloom, samp, in.uv).rgb;
     return vec4<f32>(scene + glow * 1.1, 1.0);
 }
+
+// Straight copy of the scene to the output, for when bloom is toggled off.
+@fragment
+fn fs_copy(in: VsOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(textureSample(src, samp, in.uv).rgb, 1.0);
+}

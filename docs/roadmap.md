@@ -228,6 +228,15 @@ just the WebGPU path, by driving a headless **Chromium against a locally-served 
 (localhost avoids the sandbox's network block; Chromium can use llvmpipe/swiftshader).
 Lower priority — the native llvmpipe render already covers WebGPU faithfully.
 
+### D6 — Feature toggles (live A/B) ✅
+Live on/off switches for renderer features so we can A/B their cost (with the M5 HUD)
+and their look: frustum cull, cave cull, sky, sparks, bloom, fog, AO, block light,
+emissive glow. Number keys `1`–`9` on native; checkboxes on the web; the HUD shows
+what's off. **Norm going forward:** new visual/perf features land with a toggle where
+it's a cheap runtime branch. *(Not toggled: structural choices baked into data layout —
+packed vertices, palette storage — which get dedicated benchmarks instead. A
+greedy↔naïve mesh switch needs a re-mesh; deferred.)*
+
 ## What we're deliberately *not* doing
 
 Discarded because they fight weak-hardware-first / §6 / §11 (see design §12):

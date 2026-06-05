@@ -31,6 +31,92 @@ pub struct ChunkInstance {
     pub graph: FaceGraph,
 }
 
+/// Live on/off switches for renderer features, so we can A/B their cost + look
+/// (D6). Default: everything on. Indexed `0..N` for the keyboard / web UI.
+#[derive(Copy, Clone)]
+pub struct Toggles {
+    pub frustum_cull: bool,
+    pub cave_cull: bool,
+    pub sky: bool,
+    pub particles: bool,
+    pub bloom: bool,
+    pub fog: bool,
+    pub ao: bool,
+    pub block_light: bool,
+    pub emissive: bool,
+}
+
+/// Short labels for the toggles, in index order (HUD + web checkboxes).
+pub const TOGGLE_LABELS: [&str; 9] = [
+    "cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow",
+];
+
+impl Default for Toggles {
+    fn default() -> Self {
+        Toggles {
+            frustum_cull: true,
+            cave_cull: true,
+            sky: true,
+            particles: true,
+            bloom: true,
+            fog: true,
+            ao: true,
+            block_light: true,
+            emissive: true,
+        }
+    }
+}
+
+impl Toggles {
+    pub fn get(&self, i: usize) -> bool {
+        [
+            self.frustum_cull,
+            self.cave_cull,
+            self.sky,
+            self.particles,
+            self.bloom,
+            self.fog,
+            self.ao,
+            self.block_light,
+            self.emissive,
+        ][i]
+    }
+
+    pub fn set(&mut self, i: usize, v: bool) {
+        match i {
+            0 => self.frustum_cull = v,
+            1 => self.cave_cull = v,
+            2 => self.sky = v,
+            3 => self.particles = v,
+            4 => self.bloom = v,
+            5 => self.fog = v,
+            6 => self.ao = v,
+            7 => self.block_light = v,
+            8 => self.emissive = v,
+            _ => {}
+        }
+    }
+
+    pub fn toggle(&mut self, i: usize) {
+        self.set(i, !self.get(i));
+    }
+
+    /// Compact readout of what's currently OFF, for the HUD (empty when all on).
+    pub fn off_summary(&self) -> String {
+        let off: Vec<&str> = TOGGLE_LABELS
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !self.get(*i))
+            .map(|(_, l)| *l)
+            .collect();
+        if off.is_empty() {
+            String::new()
+        } else {
+            format!(" · off: {}", off.join(" "))
+        }
+    }
+}
+
 /// Per-frame draw counts, surfaced to the perf HUD (M5).
 #[derive(Copy, Clone, Default)]
 pub struct DrawStats {
@@ -62,6 +148,8 @@ struct Globals {
     camera_pos: [f32; 4],
     /// Fog / sky colour (rgb); w unused.
     fog_color: [f32; 4],
+    /// Feature flags (0/1): x = AO, y = block light, z = emissive; w spare.
+    flags: [f32; 4],
 }
 
 /// Per-chunk uniform (bind group 1): the chunk's world origin (xyz; w unused).
@@ -497,13 +585,29 @@ impl State {
         camera_pos: Vec3,
         particles: &[ParticleInstance],
         aesthetic: [f32; 2],
+        toggles: Toggles,
     ) {
+        // Particles off → draw none (the system keeps simulating; cheap).
+        let particles: &[ParticleInstance] = if toggles.particles { particles } else { &[] };
+        // Fog off → push the band out past anything visible.
+        let (fog_start, fog_end) = if toggles.fog {
+            (FOG_START, FOG_END)
+        } else {
+            (1.0e9, 1.0e9 + 1.0)
+        };
+        let flag = |b: bool| if b { 1.0 } else { 0.0 };
         let globals = Globals {
             view_proj: view_proj.to_cols_array_2d(),
             palette: PALETTE,
-            params: [aesthetic[0], aesthetic[1], FOG_START, FOG_END],
+            params: [aesthetic[0], aesthetic[1], fog_start, fog_end],
             camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
             fog_color: FOG_COLOR,
+            flags: [
+                flag(toggles.ao),
+                flag(toggles.block_light),
+                flag(toggles.emissive),
+                0.0,
+            ],
         };
         self.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
@@ -576,8 +680,10 @@ impl State {
             });
 
             // Sky first (fullscreen, no depth write) so terrain draws over it.
-            pass.set_pipeline(&self.sky_pipeline);
-            pass.draw(0..3, 0..1);
+            if toggles.sky {
+                pass.set_pipeline(&self.sky_pipeline);
+                pass.draw(0..3, 0..1);
+            }
 
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
@@ -595,14 +701,16 @@ impl State {
                 (camera_pos.y / s).floor() as i32,
                 (camera_pos.z / s).floor() as i32,
             );
-            let visible = if self.draws.contains_key(&cam_chunk) {
+            let visible = if toggles.cave_cull && self.draws.contains_key(&cam_chunk) {
                 Some(visible_set(
                     cam_chunk,
                     |c| self.draws.get(&c).map(|d| d.graph),
                     |c| {
-                        self.draws
-                            .get(&c)
-                            .is_some_and(|d| frustum.intersects_aabb(d.aabb_min, d.aabb_max))
+                        !toggles.frustum_cull
+                            || self
+                                .draws
+                                .get(&c)
+                                .is_some_and(|d| frustum.intersects_aabb(d.aabb_min, d.aabb_max))
                     },
                 ))
             } else {
@@ -612,7 +720,7 @@ impl State {
             let mut drawn = 0u32;
             let mut triangles = 0u32;
             for (coord, draw) in self.draws.iter() {
-                if !frustum.intersects_aabb(draw.aabb_min, draw.aabb_max) {
+                if toggles.frustum_cull && !frustum.intersects_aabb(draw.aabb_min, draw.aabb_max) {
                     continue;
                 }
                 if let Some(vis) = &visible {
@@ -656,8 +764,14 @@ impl State {
         }
 
         // Bloom: bright-pass + blur the scene target, composite scene + glow → surface.
-        self.bloom
-            .render(&self.device, &mut encoder, &self.scene_view, &view);
+        // Toggled off → copy the scene straight through.
+        if toggles.bloom {
+            self.bloom
+                .render(&self.device, &mut encoder, &self.scene_view, &view);
+        } else {
+            self.bloom
+                .blit(&self.device, &mut encoder, &self.scene_view, &view);
+        }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();

@@ -74,6 +74,13 @@
       <label>dither <input type="range" id="dial-steps" min="2" max="16" step="1" value="4" /></label>
     </div>
 
+    <!-- Feature toggles (D6): checkboxes flip renderer features via wasm. The HUD
+         (top-left) shows what's off. Generated from the label list below. -->
+    <div
+      id="toggles"
+      style="display: flex; gap: 12px 14px; flex-wrap: wrap; justify-content: center; color: #8a93a8; font-size: 12px; margin-top: 10px; max-width: 720px"
+    ></div>
+
     <p style="color: #4a5266; font-size: 12px; margin-top: 4px">
       build
       <a style="color: #6c8cff" href="https://github.com/00-1/brickmap/commit/__CACHE_BUST__">__BUILD_SHA__</a>
@@ -107,7 +114,9 @@
     <!-- `__CACHE_BUST__` is replaced with the commit SHA at deploy time so a new
          build is never served stale from cache (the filenames are unhashed). -->
     <script type="module">
-      import init, { set_wobble, set_color_steps } from "./pkg/brickmap.js?v=__CACHE_BUST__";
+      import init, { set_wobble, set_color_steps, set_toggle } from "./pkg/brickmap.js?v=__CACHE_BUST__";
+      // Order must match TOGGLE_LABELS in gfx.rs.
+      const TOGGLES = ["cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow"];
       init({ module_or_path: "./pkg/brickmap_bg.wasm?v=__CACHE_BUST__" })
         .catch((err) => {
           // winit's web backend escapes its run loop by throwing; that's expected.
@@ -120,6 +129,18 @@
           const steps = document.getElementById("dial-steps");
           wobble.addEventListener("input", () => set_wobble(parseFloat(wobble.value)));
           steps.addEventListener("input", () => set_color_steps(parseFloat(steps.value)));
+
+          // Build the feature-toggle checkboxes (all on by default).
+          const box = document.getElementById("toggles");
+          TOGGLES.forEach((name, i) => {
+            const label = document.createElement("label");
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = true;
+            cb.addEventListener("change", () => set_toggle(i, cb.checked));
+            label.append(cb, " " + name);
+            box.append(label);
+          });
         });
     </script>
   </body>
