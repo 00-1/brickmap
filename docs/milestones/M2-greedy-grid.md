@@ -1,7 +1,7 @@
 # M2 — Greedy meshing + a grid of chunks
 
-> Status: **draft for review** (no M2 code written yet). Part of the ladder in
-> [`../roadmap.md`](../roadmap.md). Builds directly on M1.
+> Status: **in progress** 🛠. Part of the ladder in [`../roadmap.md`](../roadmap.md).
+> Builds directly on M1.
 
 ## Goal · Outcome · De-risk
 
@@ -126,7 +126,9 @@ treating absent neighbours as air).
 
 ## Acceptance checklist
 
-- [ ] Binary greedy mesher; greedy==naïve oracle tests + "actually merges" tests.
+- [x] Greedy mesher; greedy==naïve oracle tests + "actually merges" tests.
+      *(Correctness-first rectangle merging; the bitwise "binary" speed-up is a
+      follow-up optimisation within M2.)*
 - [ ] 4-byte packed vertex with round-trip tests; shader unpacks + palette colour.
 - [ ] Neighbour-aware meshing; adjacent-chunk seam test passes.
 - [ ] `World` chunk grid; many chunks drawn at their world origins.
