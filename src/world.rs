@@ -30,13 +30,18 @@ impl BlockId {
     }
 }
 
-/// A cubic section of the world: `SIZE`³ voxels in dense storage.
+/// A cubic section of the world: `SIZE`³ voxels, **palette-compressed** (design
+/// §7.3). A small palette of distinct blocks + bit-packed indices
+/// (`ceil(log2(palette))` bits per voxel), so a low-diversity chunk costs a few KiB
+/// instead of 64 KiB. The `get`/`set` API is unchanged from the old dense store.
 ///
-/// `SIZE` is 32 (design §10). Dense storage is `SIZE³ * 2` bytes = 64 KiB per
-/// section — fine for M1's single chunk; M3 swaps the backing store for the
-/// palette-compressed representation without changing this interface.
+/// The palette only grows (no shrink/repack on removal yet); indices widen when the
+/// palette outgrows the current bit width.
 pub struct Section {
-    blocks: Box<[BlockId]>,
+    palette: Vec<BlockId>,
+    /// Bit-packed palette indices, `bits` per voxel, x-fastest.
+    indices: Vec<u64>,
+    bits: u32,
 }
 
 impl Section {
@@ -45,11 +50,23 @@ impl Section {
     /// Total voxels in a section.
     pub const VOLUME: usize = (Self::SIZE * Self::SIZE * Self::SIZE) as usize;
 
-    /// A new section filled entirely with air.
+    /// A new section filled entirely with air (palette `[AIR]`, 1 bit/voxel).
     pub fn new() -> Self {
         Self {
-            blocks: vec![BlockId::AIR; Self::VOLUME].into_boxed_slice(),
+            palette: vec![BlockId::AIR],
+            indices: vec![0u64; Self::words(1)],
+            bits: 1,
         }
+    }
+
+    /// `u64` words needed to hold `VOLUME` indices of `bits` each.
+    fn words(bits: u32) -> usize {
+        (Self::VOLUME * bits as usize).div_ceil(64)
+    }
+
+    /// Minimum bits to index a palette of `len` entries (at least 1).
+    fn bits_for(len: usize) -> u32 {
+        (usize::BITS - (len.max(2) - 1).leading_zeros()).max(1)
     }
 
     /// Linear index for a local coordinate, laid out x-fastest then y then z.
@@ -63,22 +80,77 @@ impl Section {
         (x + Self::SIZE * (y + Self::SIZE * z)) as usize
     }
 
+    /// Read the `bits`-wide value at slot `i` from a packed buffer (may span words).
+    #[inline]
+    fn read_bits(buf: &[u64], i: usize, bits: u32) -> usize {
+        let bits = bits as usize;
+        let bit = i * bits;
+        let (word, off) = (bit / 64, bit % 64);
+        let mask = (1u64 << bits) - 1;
+        let mut v = buf[word] >> off;
+        if off + bits > 64 {
+            v |= buf[word + 1] << (64 - off);
+        }
+        (v & mask) as usize
+    }
+
+    /// Write a `bits`-wide `val` into slot `i` of a packed buffer (may span words).
+    #[inline]
+    fn write_bits(buf: &mut [u64], i: usize, bits: u32, val: usize) {
+        let bits = bits as usize;
+        let bit = i * bits;
+        let (word, off) = (bit / 64, bit % 64);
+        let mask = (1u64 << bits) - 1;
+        let val = val as u64 & mask;
+        buf[word] = (buf[word] & !(mask << off)) | (val << off);
+        if off + bits > 64 {
+            let rem = 64 - off;
+            buf[word + 1] = (buf[word + 1] & !(mask >> rem)) | (val >> rem);
+        }
+    }
+
+    /// Find `block` in the palette, adding it (and widening indices) if new.
+    fn palette_index(&mut self, block: BlockId) -> usize {
+        if let Some(p) = self.palette.iter().position(|&b| b == block) {
+            return p;
+        }
+        self.palette.push(block);
+        let needed = Self::bits_for(self.palette.len());
+        if needed > self.bits {
+            let mut wider = vec![0u64; Self::words(needed)];
+            for i in 0..Self::VOLUME {
+                let idx = Self::read_bits(&self.indices, i, self.bits);
+                Self::write_bits(&mut wider, i, needed, idx);
+            }
+            self.indices = wider;
+            self.bits = needed;
+        }
+        self.palette.len() - 1
+    }
+
     /// The block at a local coordinate. Coordinates must be `< SIZE`.
     #[inline]
     pub fn get(&self, x: u32, y: u32, z: u32) -> BlockId {
-        self.blocks[Self::index(x, y, z)]
+        let idx = Self::read_bits(&self.indices, Self::index(x, y, z), self.bits);
+        self.palette[idx]
     }
 
     /// Set the block at a local coordinate. Coordinates must be `< SIZE`.
     #[inline]
     pub fn set(&mut self, x: u32, y: u32, z: u32, block: BlockId) {
-        let i = Self::index(x, y, z);
-        self.blocks[i] = block;
+        let p = self.palette_index(block);
+        Self::write_bits(&mut self.indices, Self::index(x, y, z), self.bits, p);
     }
 
     /// Whether every voxel is air (nothing to mesh).
     pub fn is_empty(&self) -> bool {
-        self.blocks.iter().all(|b| b.is_air())
+        (0..Self::VOLUME)
+            .all(|i| self.palette[Self::read_bits(&self.indices, i, self.bits)].is_air())
+    }
+
+    /// Approximate heap bytes used by this section's storage (for memory tests).
+    pub fn mem_bytes(&self) -> usize {
+        self.palette.len() * std::mem::size_of::<BlockId>() + self.indices.len() * 8
     }
 }
 
@@ -214,5 +286,41 @@ mod tests {
         assert!(world.get((1, 0, 0)).is_some());
         assert!(world.get((9, 9, 9)).is_none());
         assert_eq!(world.chunks().count(), 2);
+    }
+
+    #[test]
+    fn palette_widens_and_round_trips_many_materials() {
+        let mut s = Section::new();
+        // 16 distinct materials along a row -> palette of 17 (incl AIR) -> 5 bits.
+        for i in 0..16u32 {
+            s.set(i, 0, 0, BlockId((i + 1) as u16));
+        }
+        for i in 0..16u32 {
+            assert_eq!(s.get(i, 0, 0), BlockId((i + 1) as u16));
+        }
+        // Untouched voxels are still air.
+        assert_eq!(s.get(31, 31, 31), BlockId::AIR);
+        // Still far smaller than the 64 KiB dense store.
+        assert!(s.mem_bytes() < Section::VOLUME * 2);
+    }
+
+    #[test]
+    fn low_diversity_section_is_compact() {
+        let mut s = Section::new();
+        for x in 0..Section::SIZE {
+            s.set(x, 0, 0, BlockId(1));
+        }
+        // Palette {air, stone} -> 1 bit/voxel -> ~4 KiB, vs 64 KiB dense.
+        assert!(s.mem_bytes() < 8 * 1024, "got {} bytes", s.mem_bytes());
+    }
+
+    #[test]
+    fn overwriting_back_to_air_reads_as_air() {
+        let mut s = Section::new();
+        s.set(3, 4, 5, BlockId(2));
+        assert_eq!(s.get(3, 4, 5), BlockId(2));
+        s.set(3, 4, 5, BlockId::AIR);
+        assert_eq!(s.get(3, 4, 5), BlockId::AIR);
+        assert!(s.is_empty());
     }
 }
