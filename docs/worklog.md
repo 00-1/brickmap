@@ -75,4 +75,18 @@ pause for input; log decisions/questions here and keep moving.
   **D4**, deferred until the look settles and native *performance* is the point — not a
   good use of an unattended run yet. Logged so it's not lost.
 
-- Next: **D2 (live dials)** → then **M3 (procedural world)**. Renders to chat as they land.
+- **D2 — live dials: done.** Wobble + dither are runtime-adjustable via page sliders
+  (`#[wasm_bindgen]` setters → globals uniform). Reusable mechanism for more dials.
+
+- **QUESTION — native app + auto-update (follow-up):** the human wants a *real* native
+  Android app (not a web wrapper) that auto-updates on push. **Assessment:** the build
+  is doable but I'd build it *blind* (no device/emulator here), and crucially the
+  **auto-update half is blocked on the human** — a sideloaded APK can't auto-update;
+  the real options are Google Play internal-testing (needs a $25 Play account + signing
+  key + CI publish) or Firebase App Distribution (needs a Firebase project). Expanded
+  **D4** with this; **deferred** until the human stands up a channel and native
+  *performance* is the goal. Not attempting it in the unattended run (unverifiable +
+  partly blocked). Web-on-mobile remains the preview.
+
+- Next: **M3 — procedural world** (palette storage + noise terrain + streaming). The
+  next big *content* milestone, and very testable. Renders to chat as it lands.

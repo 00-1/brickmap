@@ -189,20 +189,31 @@ display.
 - **Unlocks:** golden-image regression tests, and *supervised* autonomous runs
   (Claude can sanity-check its own renders instead of working blind).
 
-### D2 — Adjustable params (live dials) ⏳
-Make aesthetic/particle params (wobble, dither, gravity, spawn rate…) adjustable at
-runtime — web sliders driving a params uniform — instead of recompiling.
+### D2 — Adjustable params (live dials) ✅
+Aesthetic params (wobble, dither) adjustable at runtime — web sliders driving a
+params uniform via `#[wasm_bindgen]` setters, instead of recompiling. Reusable
+mechanism; particle/gravity/spawn dials can join later.
 
 ### D3 — Auto-fly + mobile-friendly viewing ✅
 A default **auto-fly orbit** so the build is watchable with no keyboard/mouse (mobile,
 or just hands-off). Manual input (click/WASD) takes over; `F` resumes the orbit.
 
-### D4 — Native Android preview (APK) ⏳
-Build an Android APK (winit `android-activity` entry point + NDK toolchain in CI) and
-publish it as a downloadable artifact linked from the gallery. **Caveat:** it's
-*sideload-per-push*, not true auto-update — and the **web build already serves mobile
-preview and auto-updates each push**, so this is lower priority until the look settles
-and native-mobile *performance* (the actual reason for a native build) matters.
+### D4 — Native Android app (+ auto-update) ⏳ &nbsp;*(partly blocked on the human)*
+A real native Android app (not a web wrapper): winit `android-activity` entry point +
+NDK cross-build + a CI APK job. **Two halves:**
+- **Build** (I can do, autonomously): the Android entry point + a CI job producing a
+  signed APK. Caveat: I can't test it here (no Android device/emulator), so it'd be
+  built blind.
+- **Auto-update on push** (needs the human's accounts/keys): a bare sideloaded APK
+  *cannot* auto-update. The realistic channels are **Google Play internal-testing
+  track** (true background auto-update; needs a $25 Play account + signing key + CI
+  publish) or **Firebase App Distribution** (tap-to-update; needs a Firebase project).
+  A self-hosted-APK + in-app updater is possible but Android still prompts per install.
+
+**Status/decision:** deferred. The auto-update half depends on the human picking and
+setting up a distribution channel; until then the **auto-updating web build is the
+mobile preview**. Revisit when native *performance* is the goal and the human is ready
+to stand up a Play/Firebase channel.
 
 ## What we're deliberately *not* doing
 
