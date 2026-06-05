@@ -213,6 +213,76 @@ pub fn scatter_trees(
     out
 }
 
+/// Scatter low **undergrowth** clumps (bushes / ferns) over grass — a mid tier between
+/// the ground grass and the trees (E7 layered vegetation). Jittered grid, denser than
+/// trees but sparser than grass; each clump is a few darker-green splats in a low dome.
+/// Deterministic; `forest` (biome lushness) gates how many sprout.
+pub fn scatter_bushes(
+    section: &Section,
+    cx: i32,
+    cz: i32,
+    seed: u32,
+    forest: f32,
+) -> Vec<SplatInstance> {
+    if forest <= 0.0 {
+        return Vec::new();
+    }
+    let s = Section::SIZE as i32;
+    let cell: u32 = 4;
+    let mut out = Vec::new();
+    let mut g = 0u32;
+    while g * cell < Section::SIZE {
+        let mut k = 0u32;
+        while k * cell < Section::SIZE {
+            let (gx, gz) = (g * cell, k * cell);
+            let (wgx, wgz) = (cx * s + gx as i32, cz * s + gz as i32);
+            let jx = (hash01(wgx, wgz, seed ^ 0x2bb1) * (cell - 1) as f32) as u32;
+            let jz = (hash01(wgx, wgz, seed ^ 0x9cc2) * (cell - 1) as f32) as u32;
+            let (lx, lz) = (
+                (gx + jx).min(Section::SIZE - 1),
+                (gz + jz).min(Section::SIZE - 1),
+            );
+            k += 1;
+            let Some(ty) = top_solid(section, lx, lz) else {
+                continue;
+            };
+            if section.get(lx, ty, lz) != GRASS || ty + 1 >= Section::SIZE {
+                continue;
+            }
+            let (wx, wz) = (cx * s + lx as i32, cz * s + lz as i32);
+            if hash01(wx, wz, seed ^ 0x55de_4e21) > forest * 0.55 {
+                continue;
+            }
+            let mut st = ((wx as u32).wrapping_mul(0x2545_f491)
+                ^ (wz as u32).wrapping_mul(0x9e37_79b9)
+                ^ seed)
+                | 1;
+            let base = [wx as f32 + 0.5, (ty as f32) + 1.0, wz as f32 + 0.5];
+            let sway = frand(&mut st) * std::f32::consts::TAU;
+            let count = 4 + (frand(&mut st) * 4.0) as u32;
+            for _ in 0..count {
+                let dx = (frand(&mut st) - 0.5) * 1.6;
+                let dz = (frand(&mut st) - 0.5) * 1.6;
+                let dy = frand(&mut st) * 1.2;
+                let shade = frand(&mut st);
+                out.push(SplatInstance {
+                    offset: [base[0] + dx, base[1] + 0.3 + dy, base[2] + dz],
+                    size: 0.42 + frand(&mut st) * 0.3,
+                    // Darker, bluer greens than the grass so the tiers read apart.
+                    color: [
+                        0.10 + shade * 0.12,
+                        0.34 + shade * 0.30,
+                        0.16 + shade * 0.10,
+                    ],
+                    sway,
+                });
+            }
+        }
+        g += 1;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,6 +351,23 @@ mod tests {
             scatter_trees(&s, 0, 0, 42, 0.0).is_empty(),
             "no forest → no trees"
         );
+    }
+
+    #[test]
+    fn bushes_deterministic_grass_gated() {
+        let s = grass_section();
+        let a = scatter_bushes(&s, 0, 0, 9, 1.0);
+        assert_eq!(a, scatter_bushes(&s, 0, 0, 9, 1.0));
+        assert!(!a.is_empty());
+        assert!(scatter_bushes(&s, 0, 0, 9, 0.0).is_empty());
+        // Not on stone.
+        let mut stone = Section::new();
+        for z in 0..Section::SIZE {
+            for x in 0..Section::SIZE {
+                stone.set(x, 0, z, BlockId(1));
+            }
+        }
+        assert!(scatter_bushes(&stone, 0, 0, 9, 1.0).is_empty());
     }
 
     #[test]

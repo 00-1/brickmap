@@ -441,8 +441,10 @@ fn mesh_chunk(coord: ChunkCoord, center: &Section, seed: u32) -> ChunkInstance {
     let n = Section::SIZE as i32;
     let lush = worldgen::lushness(cx * n + n / 2, cz * n + n / 2, seed);
     let density = (FOLIAGE_DENSITY as f32 * lush).round() as u32;
-    // Ground foliage + point-cloud trees (E7) share one per-chunk splat buffer.
+    // Ground grass + undergrowth bushes + point-cloud trees (E6/E7) share one per-chunk
+    // splat buffer.
     let mut foliage = foliage::scatter(center, cx, cz, seed, density);
+    foliage.extend(foliage::scatter_bushes(center, cx, cz, seed, lush));
     foliage.extend(foliage::scatter_trees(center, cx, cz, seed, lush));
     ChunkInstance {
         coord,
@@ -1093,6 +1095,7 @@ pub(crate) fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
         let lush = worldgen::lushness(cx * n + n / 2, cz * n + n / 2, WORLD_SEED);
         let density = (FOLIAGE_DENSITY as f32 * lush).round() as u32;
         let mut foliage = foliage::scatter(section, cx, cz, WORLD_SEED, density);
+        foliage.extend(foliage::scatter_bushes(section, cx, cz, WORLD_SEED, lush));
         foliage.extend(foliage::scatter_trees(section, cx, cz, WORLD_SEED, lush));
         instances.push(ChunkInstance {
             coord: (cx, cy, cz),
