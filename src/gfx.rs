@@ -13,6 +13,7 @@ use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
+use crate::foliage::SplatInstance;
 use crate::mesh::{pack, ChunkMesh};
 use crate::particles::{ParticleInstance, CUBE_INDICES, CUBE_POSITIONS};
 use crate::post::Bloom;
@@ -29,6 +30,8 @@ pub struct ChunkInstance {
     pub mesh: ChunkMesh,
     /// Face-connectivity graph for visibility-graph culling (M5).
     pub graph: FaceGraph,
+    /// World-positioned ground-foliage splats for this chunk (E6).
+    pub foliage: Vec<SplatInstance>,
 }
 
 /// Live on/off switches for renderer features, so we can A/B their cost + look
@@ -46,11 +49,13 @@ pub struct Toggles {
     pub emissive: bool,
     pub relief: bool,
     pub sand: bool,
+    pub foliage: bool,
 }
 
 /// Short labels for the toggles, in index order (HUD + web checkboxes).
-pub const TOGGLE_LABELS: [&str; 11] = [
+pub const TOGGLE_LABELS: [&str; 12] = [
     "cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief", "sand",
+    "foliage",
 ];
 
 impl Default for Toggles {
@@ -67,6 +72,7 @@ impl Default for Toggles {
             emissive: true,
             relief: true,
             sand: true,
+            foliage: true,
         }
     }
 }
@@ -85,6 +91,7 @@ impl Toggles {
             self.emissive,
             self.relief,
             self.sand,
+            self.foliage,
         ][i]
     }
 
@@ -101,6 +108,7 @@ impl Toggles {
             8 => self.emissive = v,
             9 => self.relief = v,
             10 => self.sand = v,
+            11 => self.foliage = v,
             _ => {}
         }
     }
@@ -153,6 +161,7 @@ pub struct DrawStats {
     pub total_chunks: u32,
     pub triangles: u32,
     pub particles: u32,
+    pub splats: u32,
 }
 
 /// Vertex buffer layout for the **packed** face vertex: two `u32`s per vertex (8
@@ -179,6 +188,10 @@ struct Globals {
     fog_color: [f32; 4],
     /// Feature flags (0/1): x = AO, y = block light, z = emissive; w spare.
     flags: [f32; 4],
+    /// Camera right vector (xyz) for billboarding splats; w = wind time (seconds).
+    cam_right: [f32; 4],
+    /// Camera up vector (xyz) for billboarding splats; w spare.
+    cam_up: [f32; 4],
 }
 
 /// Per-chunk uniform (bind group 1): the chunk's world origin (xyz; w unused).
@@ -248,6 +261,10 @@ pub struct State {
     scene_view: wgpu::TextureView,
     bloom: Bloom,
 
+    /// Foliage splats (E6): an instanced billboard pipeline; per-chunk instance buffers
+    /// live on each `ChunkDraw`. Shares the globals (group 0).
+    splat_pipeline: wgpu::RenderPipeline,
+
     // Particles (E2): an instanced emissive-cube pipeline + a growable instance buffer.
     particle_pipeline: wgpu::RenderPipeline,
     cube_vertex_buffer: wgpu::Buffer,
@@ -259,6 +276,8 @@ pub struct State {
     frame_count: u64,
     /// Last frame's draw counts, for the perf HUD (M5).
     last_stats: DrawStats,
+    /// Start time, for the foliage wind animation (E6).
+    start: web_time::Instant,
 
     // The window must outlive the surface; keep an Arc so `Surface<'static>` is sound.
     window: Arc<Window>,
@@ -273,6 +292,8 @@ struct ChunkDraw {
     aabb_max: Vec3,
     origin_bind_group: wgpu::BindGroup,
     graph: FaceGraph,
+    /// Foliage splats for this chunk (E6): instance buffer + count (empty → `None`).
+    foliage: Option<(wgpu::Buffer, u32)>,
 }
 
 impl State {
@@ -520,6 +541,9 @@ impl State {
             mapped_at_creation: false,
         });
 
+        // --- Foliage splats (E6): instanced billboards sharing the globals group ---
+        let splat_pipeline = build_splat_pipeline(&device, &globals_bgl, config.format);
+
         let depth_view = create_depth_view(&device, &config);
         let scene_view = create_scene_view(&device, &config);
         let bloom = Bloom::new(&device, config.format, config.width, config.height);
@@ -540,6 +564,7 @@ impl State {
             depth_view,
             scene_view,
             bloom,
+            splat_pipeline,
             particle_pipeline,
             cube_vertex_buffer,
             cube_index_buffer,
@@ -547,6 +572,7 @@ impl State {
             particle_capacity,
             frame_count: 0,
             last_stats: DrawStats::default(),
+            start: web_time::Instant::now(),
             window,
         }
     }
@@ -603,14 +629,18 @@ impl State {
 
     /// Draw the scene from the given view-projection, plus the live particles. Chunk
     /// vertices are packed and chunk-local; the shader adds each chunk's world origin.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         view_proj: Mat4,
         camera_pos: Vec3,
+        cam_right: Vec3,
+        cam_up: Vec3,
         particles: &[ParticleInstance],
         aesthetic: [f32; 2],
         toggles: Toggles,
     ) {
+        let time = self.start.elapsed().as_secs_f32();
         // Particles off → draw none (the system keeps simulating; cheap).
         let particles: &[ParticleInstance] = if toggles.particles { particles } else { &[] };
         // Fog off → push the band out past anything visible.
@@ -632,6 +662,8 @@ impl State {
                 flag(toggles.emissive),
                 flag(toggles.relief),
             ],
+            cam_right: [cam_right.x, cam_right.y, cam_right.z, time],
+            cam_up: [cam_up.x, cam_up.y, cam_up.z, 0.0],
         };
         self.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
@@ -760,12 +792,40 @@ impl State {
                 triangles += draw.num_indices / 3;
             }
 
+            // Foliage splats (E6): instanced billboards over the visible chunks, same
+            // frustum + cave cull as the terrain. One quad (6 verts) per instance, no
+            // index/vertex buffer. Drawn after terrain so depth rejects buried blades.
+            let mut splats = 0u32;
+            if toggles.foliage {
+                pass.set_pipeline(&self.splat_pipeline);
+                pass.set_bind_group(0, &self.globals_bind_group, &[]);
+                for (coord, draw) in self.draws.iter() {
+                    let Some((buf, count)) = &draw.foliage else {
+                        continue;
+                    };
+                    if toggles.frustum_cull
+                        && !frustum.intersects_aabb(draw.aabb_min, draw.aabb_max)
+                    {
+                        continue;
+                    }
+                    if let Some(vis) = &visible {
+                        if !vis.contains(coord) {
+                            continue;
+                        }
+                    }
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..6, 0..*count);
+                    splats += count;
+                }
+            }
+
             // Record stats for the HUD; still log occasionally on native.
             self.last_stats = DrawStats {
                 drawn_chunks: drawn,
                 total_chunks: self.draws.len() as u32,
                 triangles,
                 particles: particles.len() as u32,
+                splats,
             };
             self.frame_count += 1;
             if self.frame_count.is_multiple_of(120) {
@@ -828,6 +888,16 @@ fn build_chunk_draw(
             resource: origin_buffer.as_entire_binding(),
         }],
     });
+    let foliage = (!inst.foliage.is_empty()).then(|| {
+        (
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("chunk-foliage"),
+                contents: bytemuck::cast_slice(&inst.foliage),
+                usage: wgpu::BufferUsages::VERTEX,
+            }),
+            inst.foliage.len() as u32,
+        )
+    });
     Some(ChunkDraw {
         vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("chunk-vertices"),
@@ -844,8 +914,69 @@ fn build_chunk_draw(
         aabb_max: Vec3::from(inst.mesh.aabb.max) + inst.origin,
         origin_bind_group,
         graph: inst.graph,
+        foliage,
     })
 }
+
+/// Instanced foliage-splat pipeline (E6): one unit quad built in the VS from the vertex
+/// index, instanced per `SplatInstance`, billboarded with the camera basis. Alpha-test
+/// (round mask via `discard`), depth-write on, no blend → no sorting. Shares the globals
+/// group. `format` is the colour target. Shared with the headless renderer.
+pub(crate) fn build_splat_pipeline(
+    device: &wgpu::Device,
+    globals_bgl: &wgpu::BindGroupLayout,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::include_wgsl!("splat.wgsl"));
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("splat-pipeline-layout"),
+        bind_group_layouts: &[Some(globals_bgl)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("splat-pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[SPLAT_INSTANCE_LAYOUT],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// Per-instance vertex layout for a `SplatInstance` (offset, size, color, sway). The
+/// quad corners come from `@builtin(vertex_index)`, so there's no per-vertex buffer.
+const SPLAT_INSTANCE_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+    array_stride: std::mem::size_of::<SplatInstance>() as wgpu::BufferAddress,
+    step_mode: wgpu::VertexStepMode::Instance,
+    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x3, 3 => Float32],
+};
 
 /// Fullscreen sky-gradient pipeline: no bind groups, no vertex buffers (the vertex
 /// shader builds a fullscreen triangle), no depth write (drawn behind the terrain).

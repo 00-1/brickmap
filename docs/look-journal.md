@@ -18,6 +18,31 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## E6 · Ground foliage splats — the point-cloud pivot begins (2026-06)
+
+*What we did.* Stood up the **splat render path** — one unit quad, instanced per
+`SplatInstance`, billboarded in the VS with the camera right/up vectors and scaled by a
+per-instance size, with a cheap `sin(time + phase)` wind sway (stronger at the blade tip).
+The FS discards outside a disc (alpha-*test*, depth-write on, no blend → no sorting) and
+flat-shades. Used it for a first layer: **wind-swept grass** scattered (hash-jittered,
+green-varied) over every grass-topped column.
+
+*What it does to the image.* The bare meshed terrain becomes a **lush green carpet of
+points** — the world finally reads as alive rather than a heightmap of cubes. Brighter
+blades catch the existing bloom, so the grass shimmers faintly. Snow caps and the emissive
+crystals still punch through.
+
+*The call.* **Keep** — this is the foundation of the whole foliage/point-cloud direction
+(E7 trees + M7 terrain-dissolve reuse the exact pipeline). It's on-thesis: points with
+visible gaps, flat-shaded, no smoothing — exposing the primitive rather than hiding it.
+
+*To tune next (E7):* the field currently reads a touch uniform/fuzzy from the far hero
+shot — wants height/clumping variation, a lusher palette, and the taller point-cloud
+structures (trees) to break the flatness. Density is a single dial (`FOLIAGE_DENSITY`);
+on-screen splat count is bounded by the stream radius and shown on the HUD.
+
+---
+
 ## The standing thesis (design §11)
 
 - **Expose the tech.** The compression, quantization, and meshing the engine does for

@@ -1,0 +1,79 @@
+// Instanced foliage splats (E6) — camera-facing billboards over the meshed terrain.
+// One unit quad, instanced; the VS billboards it with the camera right/up from the
+// globals and scales by the per-instance size, nudging the top by a cheap wind sway.
+// The FS discards outside a disc (alpha-*test*, no blend) and flat-shades, so splats
+// write depth and need no sorting. Bright greens glow through the existing bloom.
+
+struct Globals {
+    view_proj: mat4x4<f32>,
+    palette: array<vec4<f32>, 8>,
+    params: vec4<f32>,
+    camera_pos: vec4<f32>,
+    fog_color: vec4<f32>,
+    flags: vec4<f32>,
+    cam_right: vec4<f32>, // xyz = camera right; w = wind time
+    cam_up: vec4<f32>,    // xyz = camera up
+};
+@group(0) @binding(0)
+var<uniform> globals: Globals;
+
+struct VsOut {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) color: vec3<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) fog: f32,
+};
+
+// A unit quad in [-0.5, 0.5]^2 from the vertex index (two triangles, 6 verts).
+fn corner(i: u32) -> vec2<f32> {
+    var c = array<vec2<f32>, 6>(
+        vec2<f32>(-0.5, -0.5), vec2<f32>(0.5, -0.5), vec2<f32>(0.5, 0.5),
+        vec2<f32>(-0.5, -0.5), vec2<f32>(0.5, 0.5), vec2<f32>(-0.5, 0.5),
+    );
+    return c[i];
+}
+
+@vertex
+fn vs_main(
+    @builtin(vertex_index) vid: u32,
+    @location(0) offset: vec3<f32>,
+    @location(1) size: f32,
+    @location(2) color: vec3<f32>,
+    @location(3) sway: f32,
+) -> VsOut {
+    let q = corner(vid);
+    let right = globals.cam_right.xyz;
+    let up = globals.cam_up.xyz;
+    let time = globals.cam_right.w;
+
+    // Wind: nudge the blade sideways, strongest at the top (q.y > 0), incoherent via the
+    // per-splat phase. Cheap sin, no per-frame state.
+    let topness = q.y + 0.5; // 0 at base, 1 at top
+    let gust = sin(time * 1.7 + sway) * 0.18 * topness * size;
+
+    let world = offset
+        + right * (q.x * size + gust)
+        + up * (q.y * size);
+
+    var out: VsOut;
+    out.clip_position = globals.view_proj * vec4<f32>(world, 1.0);
+    out.color = color;
+    out.uv = q;
+    // Distance fog, matching the terrain (params.z = start, .w = end; fog_color = horizon).
+    let dist = length(world - globals.camera_pos.xyz);
+    out.fog = clamp((dist - globals.params.z) / max(globals.params.w - globals.params.z, 0.001), 0.0, 1.0);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    // Round mask: discard outside the disc so splats read as points, not squares.
+    if (dot(in.uv, in.uv) > 0.25) {
+        discard;
+    }
+    // Slight centre-bright shading so blades aren't flat discs.
+    let d = 1.0 - dot(in.uv, in.uv) * 1.2;
+    let lit = in.color * (0.7 + 0.3 * d);
+    let rgb = mix(lit, globals.fog_color.rgb, in.fog);
+    return vec4<f32>(rgb, 1.0);
+}

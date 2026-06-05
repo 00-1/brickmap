@@ -360,6 +360,7 @@ fn mesh_chunk(coord: ChunkCoord, center: &Section, seed: u32) -> ChunkInstance {
         origin: Vec3::new(cx as f32 * s, 0.0, cz as f32 * s),
         mesh,
         graph: connectivity(center),
+        foliage: foliage::scatter(center, cx, cz, seed, FOLIAGE_DENSITY),
     }
 }
 
@@ -661,12 +662,19 @@ impl ApplicationHandler<AppEvent> for App {
                 #[cfg(target_arch = "wasm32")]
                 let share_str = self.current_share().encode();
 
+                // Camera basis for billboarding foliage splats (E6).
+                let fwd = self.camera.forward();
+                let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
+                let cam_up = cam_right.cross(fwd).normalize_or_zero();
+
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
                     // `render` handles lost/outdated/transient surfaces internally.
                     state.render(
                         view_proj,
                         self.camera.position,
+                        cam_right,
+                        cam_up,
                         &particles,
                         [self.wobble, self.color_steps],
                         self.toggles,
@@ -695,13 +703,14 @@ impl ApplicationHandler<AppEvent> for App {
                             String::new()
                         };
                         let hud = format!(
-                            "{fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx{meshing}{}",
+                            "{fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats{meshing}{}",
                             self.frame_ms_ema,
                             self.seed,
                             s.drawn_chunks,
                             s.total_chunks,
                             s.triangles,
                             s.particles,
+                            s.splats,
                             self.toggles.off_summary(),
                         );
                         #[cfg(not(target_arch = "wasm32"))]
@@ -895,6 +904,10 @@ const STREAM_REQUESTS: usize = 8;
 /// on web bounds inline meshing). M6.
 const STREAM_UPLOADS: usize = 4;
 
+/// Ground-foliage density (E6): target splats per grass column (hash-thinned per
+/// column for a natural look). Bounded by the stream radius + per-chunk grass area.
+const FOLIAGE_DENSITY: u32 = 4;
+
 /// Falling-sand tick (seconds) and how often a clump is dropped (E5).
 const SIM_TICK: f32 = 0.05;
 const SAND_INTERVAL: f32 = 0.14;
@@ -991,6 +1004,7 @@ pub(crate) fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
             origin,
             mesh,
             graph: connectivity(section),
+            foliage: foliage::scatter(section, cx, cz, WORLD_SEED, FOLIAGE_DENSITY),
         });
     }
     instances
@@ -1035,8 +1049,8 @@ pub mod controls {
     thread_local! {
         static WOBBLE: Cell<f32> = const { Cell::new(85.0) };
         static COLOR_STEPS: Cell<f32> = const { Cell::new(4.0) };
-        /// Feature-toggle bitmask, one bit per switch; all 11 on by default.
-        static TOGGLES: Cell<u32> = const { Cell::new(0x7FF) };
+        /// Feature-toggle bitmask, one bit per switch; all 12 on by default.
+        static TOGGLES: Cell<u32> = const { Cell::new(0xFFF) };
         /// A seed change requested from the page, consumed by the app next frame.
         static PENDING_SEED: Cell<Option<u32>> = const { Cell::new(None) };
         /// The app's current share string, refreshed each HUD tick for "copy link".

@@ -32,6 +32,8 @@ struct Globals {
     camera_pos: [f32; 4],
     fog_color: [f32; 4],
     flags: [f32; 4],
+    cam_right: [f32; 4], // xyz = camera right; w = wind time
+    cam_up: [f32; 4],    // xyz = camera up
 }
 
 /// Distance fog (terrain fades to the sky/clear colour). The live cruise camera
@@ -65,6 +67,13 @@ const PALETTE: [[f32; 4]; 8] = [
 pub fn capture(width: u32, height: u32, path: &str) {
     let instances = crate::build_world_meshes(&crate::demo_world());
     let (camera, _center, _radius) = crate::frame_camera(&instances);
+    // Camera basis for billboarding foliage splats (E6).
+    let fwd = camera.forward();
+    let cam_right = fwd.cross(glam::Vec3::Y).normalize_or_zero();
+    let cam_up = cam_right.cross(fwd).normalize_or_zero();
+    // All foliage in one instance buffer (the hero shot draws everything, no culling).
+    let foliage_all: Vec<crate::foliage::SplatInstance> =
+        instances.iter().flat_map(|i| i.foliage.clone()).collect();
 
     let instance = wgpu::Instance::default();
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -221,6 +230,9 @@ pub fn capture(width: u32, height: u32, path: &str) {
         fog_color: [0.30, 0.33, 0.42, 1.0],
         // All features on for the hero shot (AO, block light, emissive, relief).
         flags: [1.0, 1.0, 1.0, 1.0],
+        // Camera basis for billboarding foliage; w = a fixed wind time for the still.
+        cam_right: [cam_right.x, cam_right.y, cam_right.z, 0.6],
+        cam_up: [cam_up.x, cam_up.y, cam_up.z, 0.0],
     };
     let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("globals"),
@@ -363,6 +375,16 @@ pub fn capture(width: u32, height: u32, path: &str) {
         usage: wgpu::BufferUsages::VERTEX,
     });
 
+    // Foliage splats (E6): instanced billboards sharing the globals; one buffer for all.
+    let splat_pipeline = crate::gfx::build_splat_pipeline(&device, &globals_bgl, COLOR_FORMAT);
+    let splat_vbuf = (!foliage_all.is_empty()).then(|| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("foliage-instances"),
+            contents: bytemuck::cast_slice(&foliage_all),
+            usage: wgpu::BufferUsages::VERTEX,
+        })
+    });
+
     // Row pitch must be aligned to 256 bytes for texture-to-buffer copies.
     let unpadded_bpr = width * 4;
     let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -411,6 +433,13 @@ pub fn capture(width: u32, height: u32, path: &str) {
             pass.set_vertex_buffer(0, d.vbuf.slice(..));
             pass.set_index_buffer(d.ibuf.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..d.n, 0, 0..1);
+        }
+        // Foliage splats over the terrain (before particles so embers draw on top).
+        if let Some(buf) = &splat_vbuf {
+            pass.set_pipeline(&splat_pipeline);
+            pass.set_bind_group(0, &globals_bind_group, &[]);
+            pass.set_vertex_buffer(0, buf.slice(..));
+            pass.draw(0..6, 0..foliage_all.len() as u32);
         }
         if !particle_instances.is_empty() {
             pass.set_pipeline(&particle_pipeline);

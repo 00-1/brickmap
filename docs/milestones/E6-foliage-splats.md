@@ -1,6 +1,6 @@
 # ✨ E6 — Splats & ground foliage
 
-> Status: **planned** ⏳. Exploration rung in [`../roadmap.md`](../roadmap.md). First rung
+> Status: **done** ✅. Exploration rung in [`../roadmap.md`](../roadmap.md). First rung
 > of the **point-cloud / foliage** aesthetic pivot. Grounded in
 > [`../research-points-splatting.md`](../research-points-splatting.md); references:
 > capslpop "voxel splatting for animated foliage" + Superbien point-cloud forest.
@@ -58,10 +58,18 @@
   look-journal entry.
 
 ## Acceptance checklist
-- [ ] Splat pipeline (instanced billboards, round mask, distance fade); shared with headless.
-- [ ] Ground foliage scattered on grass; lush + visible in a headless render.
-- [ ] Wind sway in the VS.
-- [ ] `foliage` toggle; on-screen splat count bounded + shown on the HUD.
-- [ ] Runs native + web; CI green; docs synced; look-journal entry.
+- [x] Splat pipeline (instanced billboards, round mask, distance fade); shared with headless.
+  *(`gfx::build_splat_pipeline` + `splat.wgsl`; VS billboards via the camera basis in
+  globals, FS discards outside a disc + applies fog. Reused by the headless renderer.)*
+- [x] Ground foliage scattered on grass; lush + visible in a headless render. *(`foliage::scatter`;
+  verified — the terrain reads as a green carpet of points.)*
+- [x] Wind sway in the VS. *(`sin(time + sway)`, strongest at the blade tip; `time` in
+  `globals.cam_right.w`.)*
+- [x] `foliage` toggle (D6, index 11); on-screen splat count bounded (stream radius +
+  per-chunk grass area) and shown on the HUD (`… splats`).
+- [x] Runs native + web (CI: fmt + clippy + tests + wasm build green locally); docs synced;
+  look-journal entry added.
 
-> Status: **planned** ⏳ — the splat-pipeline foundation + ground foliage.
+> Status: **done** ✅ — splat pipeline + wind-swept ground foliage. Trees / lusher palette /
+> light-shafts are E7 (reusing this pipeline); a gallery snapshot is deferred to the E7
+> "destination look" to avoid a near-duplicate.

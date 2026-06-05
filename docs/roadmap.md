@@ -181,7 +181,7 @@ same engine with more rules (deferred).
 - **Why here:** needs a real world to disturb (M3) and async meshing (M6) to stay
   smooth. (A cheap prototype could be spiked sooner if we're itching for it.)
 
-### ✨ E6 — Splats & ground foliage *(exploration)* ⏳ &nbsp;→ [`milestones/E6-foliage-splats.md`](milestones/E6-foliage-splats.md)
+### ✨ E6 — Splats & ground foliage *(exploration)* ✅ &nbsp;→ [`milestones/E6-foliage-splats.md`](milestones/E6-foliage-splats.md)
 First rung of the **point-cloud / foliage aesthetic pivot** (see the note below). Stand
 up the **splat render path** (instanced camera-facing billboard points) and use it for
 **wind-swept ground foliage** scattered on the terrain — the world stops being bare
