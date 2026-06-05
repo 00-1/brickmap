@@ -25,6 +25,16 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## 2026-06-05 · E3 slice 1 — hemispheric ambient
+
+**Coloured hemispheric ambient.** Replaced the flat `0.35` ambient with a lerp
+between a cool sky tint (from above) and a warm ground bounce (from below) by face
+normal, plus a warm directional sun. **Keep, subtle for now.** It's the first
+*coloured* light cue — up-faces lean cool, side/under-faces lean warm — so the
+terrain reads with more tonal depth without any GI. Deliberately understated to dodge
+the "stylised colour filter" trap; the louder mood levers (sky gradient, bloom,
+flood-fill bleed) come in later E3 slices. Pure `shader.wgsl`, no pipeline change.
+
 ## 2026-06-05 · M4 — material & occlusion (snapshot `08-materials`)
 
 **Baked ambient occlusion.** Corner darkening from the greedy mesher (the 0fps

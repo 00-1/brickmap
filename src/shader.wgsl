@@ -79,11 +79,18 @@ fn vs_main(@location(0) packed: u32) -> VsOut {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(in.normal);
-    let light_dir = normalize(vec3<f32>(0.4, 0.8, 0.5));
-    let diffuse = max(dot(n, light_dir), 0.0);
-    let shade = 0.35 + 0.65 * diffuse;
+    let sun_dir = normalize(vec3<f32>(0.4, 0.8, 0.5));
+    let diffuse = max(dot(n, sun_dir), 0.0);
+    // Hemispheric ambient (E3, cheap fake bounce): cool sky tint from above, warm
+    // ground bounce from below, by face normal — plus a warm directional sun. The
+    // first coloured light cue; no GI, just a lerp.
+    let up = n.y * 0.5 + 0.5;
+    let sky_ambient = vec3<f32>(0.40, 0.48, 0.60);
+    let ground_ambient = vec3<f32>(0.34, 0.28, 0.24);
+    let sun = vec3<f32>(1.0, 0.94, 0.82) * (0.62 * diffuse);
+    let light = mix(ground_ambient, sky_ambient, up) + sun;
     // Baked ambient occlusion: corners (ao 0) sink to ~0.5 brightness, open faces
-    // (ao 3) stay full. Multiplies the directional shade.
+    // (ao 3) stay full. Multiplies the light.
     let ao_factor = 0.5 + 0.5 * (in.ao / 3.0);
 
     // Material texture: tile per voxel in world space, axes chosen from the face
@@ -99,7 +106,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     let detail = textureSample(mat_tex, mat_samp, uv, i32(in.material)).r;
 
-    var c = in.color * detail * shade * ao_factor;
+    var c = in.color * detail * light * ao_factor;
 
     // Ordered (4x4 Bayer) dithering: posterise the shading into a few levels with a
     // deliberate dot pattern, instead of smoothing the banding away.

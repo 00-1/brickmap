@@ -124,7 +124,7 @@ the artifacts the tech produces.
 - **Acceptance:** AO values tested in the mesher; texture-array path works on web
   (WebGL2) and native; a short look-journal entry captures what we kept and why.
 
-### ✨ E3 — Light & atmosphere: cheap, no GI *(exploration)* ⏳
+### ✨ E3 — Light & atmosphere: cheap, no GI *(exploration)* 🛠 &nbsp;→ [`milestones/E3-light-atmosphere.md`](milestones/E3-light-atmosphere.md)
 Flood-fill block + **coloured sky/emissive light** (a cheap *fake GI* — light visibly
 bleeds around corners), plus bloom and distance fog. The highest beauty-per-cycle on
 the backlog ([`exploration-backlog.md`](exploration-backlog.md) §C).
