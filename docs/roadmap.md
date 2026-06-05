@@ -378,7 +378,7 @@ sibling to the D4 Android APK. The native binary already builds; this is the
 Major scope shifts we want to move *toward* — planned at the skeleton level, de-risked by
 research before committing.
 
-### N1 — Multiple viewers (lightweight multiplayer) ⏳ &nbsp;*(big; research first)*
+### N1 — Multiple viewers (lightweight multiplayer) ⏳ &nbsp;*(big; researched — stack chosen below)*
 Shared exploration: several people flying the **same world**, seeing each other (and,
 later, each other's edits and dynamic sim). A genuine scope shift — and the first thing
 that needs a **server** (GitHub Pages is static).
@@ -397,13 +397,53 @@ that needs a **server** (GitHub Pages is static).
   E12/E14 already push us toward). That's the low-regret prep to do now; a full
   authoritative-server rewrite is **not** warranted yet (premature, fights weak-hardware
   solo-first).
-- **Open questions for a research pass:** transport (WebRTC vs WS relay) on weak/mobile +
-  web; hosting given static Pages; what authority model for dynamic sim (host-authoritative
-  vs deterministic lockstep — lockstep is tempting given determinism but fragile across
-  platforms, see E12's float caveat); presence/avatar representation (point-cloud blips?);
-  how many viewers realistically; cost.
-- **Stance:** record as a direction; keep the seam + serialization clean as we build E12/
-  E14/E11; **run a research pass to de-risk before any netcode is written.**
+- **Research conclusions (2026-06, 5-agent pass):**
+  - **Authority model → host-authoritative hybrid, *not* lockstep.** Cross-platform float
+    determinism (FMA/libm/transcendentals, wasm vs native) makes deterministic lockstep
+    fragile — exactly E12's caveat — so don't sync the sim by stepping it in lockstep.
+    Instead: terrain from the seed (never synced) + a **host-sequenced last-writer-wins edit
+    log** + **unreliable presence** + **host-authoritative broadcast of active dirty-region
+    sim** (sand/CA). Lockstep stays a documented future option *only* if the sim goes
+    all-integer/fixed-point.
+  - **Transport → `ewebsock` (WebSocket) + a tiny Rust WS relay, behind a `Transport`
+    trait.** It's the one transport that spans wasm + native simply; `matchbox` (WebRTC P2P)
+    is a later latency/bandwidth upgrade behind the same trait; **skip `ggrs`** (rollback-
+    lockstep — wrong model for casual shared viewing). `wss://` works fine from static Pages
+    (no CORS issue for sockets).
+  - **Hosting → lowest-ops first.** Cloudflare Durable Objects / PartyKit (free tier, near-
+    zero ops) or a small `axum` + tungstenite relay on Fly.io (~$2–5/mo). The relay only
+    fans out messages + holds a room's edit-diff set; it is **not** an authoritative game
+    server.
+  - **Presence is the cheap, great-fit MVP.** 15 Hz **delta** presence + **entity
+    interpolation** (render peers ~100 ms in the past) → smooth flight from infrequent
+    packets. Avatars/cursors **reuse the splat pipeline** for ~free: splat-cluster avatar,
+    colour-by-peer-id, a heading arrow, billboard name tags, and a **ghost-block cursor** at
+    each peer's targeted cell. Render-side distance-culling of avatars reuses existing
+    culling; **network-side interest management is unnecessary** at our scale (design for
+    ≤8–16 in a room, full broadcast).
+  - **Shared editing → defer, then keep minimal.** When we do it: **Figma-style
+    last-writer-wins per cell** (object = cell, property = block id; relay defines order) —
+    **no CRDTs, no locking**. Sync only **diffs from the seed baseline**; a late joiner
+    replays the seed then receives the room's sparse `cell→block` set. Edits inject into the
+    existing dirty-section → re-mesh path, so the renderer never learns multiplayer exists.
+  - **Rooms/join → `?seed=…&room=…` link, no accounts, ephemeral.** A direct extension of
+    E12 shareable seeds: the seed *is* the world; the room id is just the relay channel.
+- **The low-regret prep to do now — a serializable command/event seam.** The one thing that
+  gets *painful to untangle* later is leaving world mutations as scattered ad-hoc
+  `Section::set` calls (today: sand seeding writes the overlay directly). Fix while the
+  surface is tiny: route **every** mutation through one `enum Event` (`SetVoxel`, `Brush`,
+  `SeedSand`, `Ignite`, `SimStep`) + a single `World::apply(&Event) -> dirty chunks`, all
+  `serde`-derived; make the sim tick **logical (not wall-clock)** and iterate active chunks
+  in **sorted order** (kills a latent desync/replay source); keep `seed + Vec<Event>` as the
+  artifact. That one seam *is* the substrate for **undo/redo, replay, share-with-edits
+  (E14), and broadcast (N1)** — they all become transport+ordering problems, not rewrites.
+  Versioning gotcha to decide early: a share-link is `seed + deltas`, so freeze worldgen per
+  a seed/worldgen version (or old links drift), and treat the `Event` enum as append-only
+  with upcasters.
+- **Stance:** research done — multiplayer is a **thin presence relay + sparse edit-diff
+  log**, not a client/server rewrite, *provided* we land the event seam alongside **E11/E14**
+  and keep edits/sim serializable. No netcode is written until presence is actually built;
+  fold this guidance into the E11, E14, and (eventual) N1 milestone briefs.
 
 ## What we're deliberately *not* doing
 
