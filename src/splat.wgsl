@@ -71,6 +71,22 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (dot(in.uv, in.uv) > 0.25) {
         discard;
     }
+    // Distance dissolve (M7, opt-in via cam_up.w): stipple distant foliage away with the
+    // terrain, using a screen-locked Bayer threshold ramped by the fog distance.
+    if (globals.cam_up.w > 0.5) {
+        var bayer = array<f32, 16>(
+            0.0, 8.0, 2.0, 10.0,
+            12.0, 4.0, 14.0, 6.0,
+            3.0, 11.0, 1.0, 9.0,
+            15.0, 7.0, 13.0, 5.0,
+        );
+        let bx = u32(in.clip_position.x) % 4u;
+        let by = u32(in.clip_position.y) % 4u;
+        let thr = (bayer[by * 4u + bx] + 0.5) / 16.0;
+        if (thr < in.fog * 0.85) {
+            discard;
+        }
+    }
     // Slight centre-bright shading so blades aren't flat discs.
     let d = 1.0 - dot(in.uv, in.uv) * 1.2;
     let lit = in.color * (0.7 + 0.3 * d);

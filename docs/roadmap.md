@@ -261,7 +261,7 @@ foliage pivot, since it's small, deterministic, and high-delight.)*
   **Direction: dark/heavy doom-drone (Sleep — *Dopesmoker*)** — slow, downtuned, crushing
   sustained drones, minor/Phrygian, sparse + hypnotic; per-seed dirge.
 
-### M7 — Distance dissolve (LOD that's also the look) ⏳
+### M7 — Distance dissolve (LOD that's also the look) 🛠
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
 value on a surface world), dissolve distant **terrain into points** via E6's splat
 pipeline + a **dithered (Bayer) mesh→points crossfade** — bounding far cost *and*
@@ -273,6 +273,10 @@ sidestepping LOD seams, while extending the point-cloud look to the whole world.
 - **Acceptance:** far cost bounded as view distance grows (HUD); crossfade is stable;
   dissolve logic tested. *(Octree-mip meshes remain a fallback if points lose the perf
   A/B on the reference iGPU.)*
+- **Landed (look):** an opt-in `melt` toggle — terrain + foliage stipple into a pixel haze
+  toward the horizon via the shared screen-locked Bayer threshold (default off; on-thesis).
+- **Deferred (perf):** the bounded-cost half — decimating distant chunks into actual point
+  sets so *primitives* drop with distance (today fragments are discarded, geometry isn't).
 
 ### M8 — Hit the budget (perf systems + profiling) ⏳
 Two halves. **(a) Engine perf systems** (doable now, no special hardware; from research

@@ -177,6 +177,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // dissolves instead of popping. Cheap — one distance + a smoothstep + a mix.
     let fog_dist = distance(in.world_pos, globals.camera_pos.xyz);
     let fog = smoothstep(globals.params.z, globals.params.w, fog_dist);
+
+    // Distance dissolve (M7, opt-in via cam_up.w): past the fog start, stipple the
+    // terrain away with the same Bayer threshold so it crumbles into a pixel haze toward
+    // the horizon instead of a hard fog wall. Capped so some stipple survives into the fog.
+    if (globals.cam_up.w > 0.5) {
+        let melt = clamp((fog_dist - globals.params.z) / max(globals.params.w - globals.params.z, 0.001), 0.0, 1.0) * 0.85;
+        if (threshold < melt) {
+            discard;
+        }
+    }
+
     c = mix(c, globals.fog_color.rgb, fog);
 
     return vec4<f32>(c, 1.0);

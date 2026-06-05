@@ -50,12 +50,15 @@ pub struct Toggles {
     pub relief: bool,
     pub sand: bool,
     pub foliage: bool,
+    /// Distance-dissolve (M7): stipple distant terrain/foliage into a pixel haze. Opt-in
+    /// (default off) since it's a strong stylistic choice.
+    pub melt: bool,
 }
 
 /// Short labels for the toggles, in index order (HUD + web checkboxes).
-pub const TOGGLE_LABELS: [&str; 12] = [
+pub const TOGGLE_LABELS: [&str; 13] = [
     "cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief", "sand",
-    "foliage",
+    "foliage", "melt",
 ];
 
 impl Default for Toggles {
@@ -73,6 +76,7 @@ impl Default for Toggles {
             relief: true,
             sand: true,
             foliage: true,
+            melt: false, // opt-in (M7 distance dissolve)
         }
     }
 }
@@ -92,6 +96,7 @@ impl Toggles {
             self.relief,
             self.sand,
             self.foliage,
+            self.melt,
         ][i]
     }
 
@@ -109,6 +114,7 @@ impl Toggles {
             9 => self.relief = v,
             10 => self.sand = v,
             11 => self.foliage = v,
+            12 => self.melt = v,
             _ => {}
         }
     }
@@ -663,7 +669,7 @@ impl State {
                 flag(toggles.relief),
             ],
             cam_right: [cam_right.x, cam_right.y, cam_right.z, time],
-            cam_up: [cam_up.x, cam_up.y, cam_up.z, 0.0],
+            cam_up: [cam_up.x, cam_up.y, cam_up.z, flag(toggles.melt)],
         };
         self.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));

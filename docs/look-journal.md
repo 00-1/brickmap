@@ -18,6 +18,30 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## M7 · Distance-dissolve "melt" + stylised water (2026-06)
+
+*What we did.* Added an **opt-in distance dissolve** (`melt` toggle, default off): past the
+fog-start distance, terrain *and* foliage stipple themselves away with the same screen-locked
+Bayer threshold used for the dither shading, ramped by distance and capped so some stipple
+survives into the fog. So the world crumbles into a **pixel haze toward the horizon** instead
+of meeting a hard fog wall. Also gave the E8 water a stylised single-pass treatment — an
+animated crossed-sine ripple sheen plus a Fresnel brighten at grazing angles.
+
+*What it does to the image.* With `melt` on, distant ridges and the chunk edges break into
+scattered pixels that thin with distance — the LOD-as-look the pivot was aiming at, sharing
+the exact Bayer pattern as the shading so it reads as one coherent quantised language rather
+than "holes." Water reads as moving, reflective-ish surface rather than a flat slab.
+
+*The call.* **Keep, opt-in.** The dissolve is a strong stylistic choice, so it's default-off
+(a toggle/checkbox) for the human to evaluate live — it's on-thesis (expose the pixel grid)
+but I didn't want to change the default look unattended. Water: keep.
+
+*Honest limit.* This is the dissolve **look**, not yet the dissolve **perf win** — geometry
+is still fully submitted; fragments are discarded, not primitives. The true bounded-cost LOD
+(decimate distant chunks to actual point sets) is the deferred half of M7.
+
+---
+
 ## E7 · Point-cloud trees + biome forests (2026-06)
 
 *What we did.* Grew the foliage layer into a **point-cloud forest**. Trees are splat
