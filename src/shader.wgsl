@@ -10,6 +10,8 @@ struct Globals {
     camera_pos: vec4<f32>, // xyz = camera world position
     fog_color: vec4<f32>,  // rgb = fog / sky colour
     flags: vec4<f32>,      // x = AO, y = block light, z = emissive (1 = on)
+    cam_right: vec4<f32>,  // xyz = camera right; w = wind/animation time (seconds)
+    cam_up: vec4<f32>,     // xyz = camera up
 };
 @group(0) @binding(0)
 var<uniform> globals: Globals;
@@ -141,6 +143,20 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // crystal shades like any other block).
     if (in.material == 6u && globals.flags.z > 0.5) {
         c = in.color * detail * 1.3;
+    }
+
+    // Stylised water (E8/E9, material 7): single-pass, opaque. An animated crossed-sine
+    // ripple plays over the surface, and a Fresnel-ish term brightens it toward the sky
+    // colour at grazing view angles — so it reads as moving water, not a flat blue slab.
+    if (in.material == 7u) {
+        let t = globals.cam_right.w;
+        let ripple = sin(in.world_pos.x * 0.7 + t * 1.3)
+            * sin(in.world_pos.z * 0.6 + t * 1.1);
+        let sheen = 0.5 + 0.5 * ripple;
+        let view = normalize(globals.camera_pos.xyz - in.world_pos);
+        let fres = pow(1.0 - max(dot(n, view), 0.0), 3.0);
+        let sky = vec3<f32>(0.55, 0.74, 0.92);
+        c = mix(in.color, sky, 0.18 * sheen + 0.45 * fres) + vec3<f32>(0.03, 0.05, 0.07) * sheen;
     }
 
     // Ordered (4x4 Bayer) dithering: posterise the shading into a few levels with a
