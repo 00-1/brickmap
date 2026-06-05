@@ -15,6 +15,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
+pub mod foliage;
 mod gfx;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
