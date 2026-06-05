@@ -63,6 +63,11 @@ impl ParticleSystem {
         }
     }
 
+    /// Replace the emitter points (e.g. to follow a travelling camera).
+    pub fn set_emitters(&mut self, emitters: Vec<Vec3>) {
+        self.emitters = emitters;
+    }
+
     pub fn len(&self) -> usize {
         self.particles.len()
     }

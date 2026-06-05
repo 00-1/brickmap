@@ -187,6 +187,16 @@ impl World {
         self.sections.get(&coord)
     }
 
+    /// Drop a section (streaming evicts distant chunks to bound memory).
+    pub fn remove(&mut self, coord: ChunkCoord) -> Option<Section> {
+        self.sections.remove(&coord)
+    }
+
+    /// Whether a section is present at `coord`.
+    pub fn contains(&self, coord: ChunkCoord) -> bool {
+        self.sections.contains_key(&coord)
+    }
+
     pub fn chunks(&self) -> impl Iterator<Item = (ChunkCoord, &Section)> {
         self.sections.iter().map(|(&c, s)| (c, s))
     }

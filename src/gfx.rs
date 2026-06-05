@@ -5,6 +5,7 @@
 //! `platform` / `render` / `world` / `mesh` crate split. The spike exists only
 //! to prove the wgpu render path compiles and runs on desktop **and** the web.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
@@ -15,10 +16,12 @@ use winit::window::Window;
 use crate::mesh::{pack, ChunkMesh};
 use crate::particles::{ParticleInstance, CUBE_INDICES, CUBE_POSITIONS};
 use crate::scene::Frustum;
+use crate::world::ChunkCoord;
 
 /// One mesh instance to draw: a chunk mesh (chunk-local) at a world `origin`.
 #[derive(Clone)]
 pub struct ChunkInstance {
+    pub coord: ChunkCoord,
     pub origin: Vec3,
     pub mesh: ChunkMesh,
 }
@@ -83,9 +86,11 @@ pub struct State {
     size: winit::dpi::PhysicalSize<u32>,
 
     pipeline: wgpu::RenderPipeline,
-    /// One packed vertex buffer + index buffer per chunk, with its world origin in
-    /// a per-chunk bind group and a world-space AABB for frustum culling.
-    draws: Vec<ChunkDraw>,
+    /// Chunk draws keyed by chunk coordinate, so streaming can add/remove them at
+    /// runtime. Each carries its packed buffers, world AABB, and per-chunk origin.
+    draws: HashMap<ChunkCoord, ChunkDraw>,
+    /// Kept so new chunk draws can be built after construction (streaming).
+    chunk_bind_group_layout: wgpu::BindGroupLayout,
 
     globals_buffer: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
@@ -276,45 +281,12 @@ impl State {
             cache: None,
         });
 
-        let draws: Vec<ChunkDraw> = instances
-            .iter()
-            .filter(|inst| !inst.mesh.is_empty())
-            .map(|inst| {
-                let packed: Vec<u32> = inst.mesh.vertices.iter().map(pack).collect();
-                let origin = ChunkUniform {
-                    origin: [inst.origin.x, inst.origin.y, inst.origin.z, 0.0],
-                };
-                let origin_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("chunk-origin"),
-                    contents: bytemuck::bytes_of(&origin),
-                    usage: wgpu::BufferUsages::UNIFORM,
-                });
-                let origin_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("chunk-origin-bg"),
-                    layout: &chunk_bgl,
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: origin_buffer.as_entire_binding(),
-                    }],
-                });
-                ChunkDraw {
-                    vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("chunk-vertices"),
-                        contents: bytemuck::cast_slice(&packed),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-                    index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("chunk-indices"),
-                        contents: bytemuck::cast_slice(&inst.mesh.indices),
-                        usage: wgpu::BufferUsages::INDEX,
-                    }),
-                    num_indices: inst.mesh.indices.len() as u32,
-                    aabb_min: Vec3::from(inst.mesh.aabb.min) + inst.origin,
-                    aabb_max: Vec3::from(inst.mesh.aabb.max) + inst.origin,
-                    origin_bind_group,
-                }
-            })
-            .collect();
+        let mut draws: HashMap<ChunkCoord, ChunkDraw> = HashMap::new();
+        for inst in instances {
+            if let Some(draw) = build_chunk_draw(&device, &chunk_bgl, inst) {
+                draws.insert(inst.coord, draw);
+            }
+        }
 
         // --- Particles (E2): instanced emissive cubes, sharing the globals group ---
         let particle_shader = device.create_shader_module(wgpu::include_wgsl!("particles.wgsl"));
@@ -397,6 +369,7 @@ impl State {
             size,
             pipeline,
             draws,
+            chunk_bind_group_layout: chunk_bgl,
             globals_buffer,
             globals_bind_group,
             depth_view,
@@ -413,6 +386,28 @@ impl State {
     /// Current surface aspect ratio (width / height).
     pub fn aspect(&self) -> f32 {
         self.config.width as f32 / self.config.height as f32
+    }
+
+    /// Add or replace a chunk's GPU buffers (streaming). Empty meshes are dropped.
+    pub fn upload_chunk(&mut self, instance: &ChunkInstance) {
+        match build_chunk_draw(&self.device, &self.chunk_bind_group_layout, instance) {
+            Some(draw) => {
+                self.draws.insert(instance.coord, draw);
+            }
+            None => {
+                self.draws.remove(&instance.coord);
+            }
+        }
+    }
+
+    /// Drop a chunk's GPU buffers (streaming).
+    pub fn remove_chunk(&mut self, coord: ChunkCoord) {
+        self.draws.remove(&coord);
+    }
+
+    /// How many chunk draws are resident (for stats).
+    pub fn chunk_count(&self) -> usize {
+        self.draws.len()
     }
 
     pub fn window(&self) -> &Window {
@@ -517,7 +512,7 @@ impl State {
             let frustum = Frustum::from_view_proj(view_proj);
             let mut drawn = 0u32;
             let mut triangles = 0u32;
-            for draw in &self.draws {
+            for draw in self.draws.values() {
                 if !frustum.intersects_aabb(draw.aabb_min, draw.aabb_max) {
                     continue;
                 }
@@ -553,6 +548,50 @@ impl State {
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
     }
+}
+
+/// Build a chunk's GPU buffers + per-chunk origin bind group. `None` for empty meshes.
+fn build_chunk_draw(
+    device: &wgpu::Device,
+    chunk_bgl: &wgpu::BindGroupLayout,
+    inst: &ChunkInstance,
+) -> Option<ChunkDraw> {
+    if inst.mesh.is_empty() {
+        return None;
+    }
+    let packed: Vec<u32> = inst.mesh.vertices.iter().map(pack).collect();
+    let origin = ChunkUniform {
+        origin: [inst.origin.x, inst.origin.y, inst.origin.z, 0.0],
+    };
+    let origin_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("chunk-origin"),
+        contents: bytemuck::bytes_of(&origin),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let origin_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("chunk-origin-bg"),
+        layout: chunk_bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: origin_buffer.as_entire_binding(),
+        }],
+    });
+    Some(ChunkDraw {
+        vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("chunk-vertices"),
+            contents: bytemuck::cast_slice(&packed),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("chunk-indices"),
+            contents: bytemuck::cast_slice(&inst.mesh.indices),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+        num_indices: inst.mesh.indices.len() as u32,
+        aabb_min: Vec3::from(inst.mesh.aabb.min) + inst.origin,
+        aabb_max: Vec3::from(inst.mesh.aabb.max) + inst.origin,
+        origin_bind_group,
+    })
 }
 
 fn create_depth_view(

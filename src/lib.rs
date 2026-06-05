@@ -4,6 +4,7 @@
 //! you can fly around — on desktop and in the browser (WASM) from one code path.
 //! See `docs/design.md`, `docs/architecture.md`, and `docs/roadmap.md`.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use glam::Vec3;
@@ -26,7 +27,7 @@ use gfx::{ChunkInstance, State};
 use mesh::{greedy_mesh_section_with, Neighbors};
 use particles::ParticleSystem;
 use scene::{Action, Camera, CameraController};
-use world::{Section, World};
+use world::{ChunkCoord, Section, World};
 
 /// Window/canvas init size. On the web this is also the canvas backing size.
 const INITIAL_SIZE: (u32, u32) = (960, 720);
@@ -47,19 +48,18 @@ struct App {
     // Only used on the web (async init handoff); inert on native.
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     proxy: Option<EventLoopProxy<AppEvent>>,
-    /// The scene to draw — one mesh per non-empty chunk (chunk-local, with its
-    /// world origin), built on the CPU and uploaded when the GPU is ready.
-    instances: Vec<ChunkInstance>,
-
     camera: Camera,
     controller: CameraController,
     particles: ParticleSystem,
-    /// Cinematic auto-orbit: on by default so the build is watchable with no input
+    /// The procedural world, streamed in around the camera as it travels (M3). Only
+    /// chunks near the camera are resident; distant ones are evicted to bound memory.
+    world: World,
+    /// Chunk coords currently uploaded to the GPU (the renderer's draw set).
+    loaded: HashSet<ChunkCoord>,
+    /// Cinematic auto-fly: on by default so the build is watchable with no input
     /// (mobile / hands-off). Manual input switches it off; `F` toggles it.
     auto_fly: bool,
     auto_fly_angle: f32,
-    scene_center: Vec3,
-    scene_radius: f32,
     /// Live aesthetic dials (D2): `[wobble snap, colour steps]`. On the web these are
     /// driven by `controls`; on native they stay at the defaults.
     wobble: f32,
@@ -88,6 +88,115 @@ impl App {
         }
         self.cursor_locked = capture;
     }
+
+    /// Stream chunks in and out around the camera (M3 part 3). Generates + meshes
+    /// newly-entered chunks (nearest first, within a per-frame budget) and evicts
+    /// those that have fallen outside the radius. Synchronous for now (design D3);
+    /// M6 moves it off-thread.
+    fn stream(&mut self) {
+        if self.state.is_none() {
+            return;
+        }
+        let s = Section::SIZE as f32;
+        let ccx = (self.camera.position.x / s).floor() as i32;
+        let ccz = (self.camera.position.z / s).floor() as i32;
+
+        // Evict chunks (GPU + CPU) that have drifted beyond the radius (+1 hysteresis
+        // so a chunk straddling the boundary doesn't thrash). Field-split borrows.
+        let keep = STREAM_RADIUS + 1;
+        let state = self.state.as_mut().unwrap();
+        let world = &mut self.world;
+        self.loaded.retain(|&coord| {
+            let (cx, _cy, cz) = coord;
+            if (cx - ccx).abs() > keep || (cz - ccz).abs() > keep {
+                state.remove_chunk(coord);
+                world.remove(coord);
+                false
+            } else {
+                true
+            }
+        });
+
+        // Load nearest-missing chunks, ring by ring, until the frame budget runs out.
+        let mut budget = STREAM_BUDGET;
+        'rings: for ring in 0..=STREAM_RADIUS {
+            for dz in -ring..=ring {
+                for dx in -ring..=ring {
+                    // Only this ring's outer shell (Chebyshev distance == ring).
+                    if dx.abs().max(dz.abs()) != ring {
+                        continue;
+                    }
+                    let coord = (ccx + dx, 0, ccz + dz);
+                    if self.loaded.contains(&coord) {
+                        continue;
+                    }
+                    let (cx, _cy, cz) = coord;
+                    // Generate this chunk and its 4 horizontal neighbours first, so
+                    // seam culling sees solid neighbours (no faces at chunk borders).
+                    ensure_chunk(&mut self.world, cx, cz);
+                    ensure_chunk(&mut self.world, cx - 1, cz);
+                    ensure_chunk(&mut self.world, cx + 1, cz);
+                    ensure_chunk(&mut self.world, cx, cz - 1);
+                    ensure_chunk(&mut self.world, cx, cz + 1);
+
+                    let section = self.world.get(coord).expect("just generated");
+                    let neighbors = Neighbors {
+                        faces: [
+                            self.world.get((cx - 1, 0, cz)),
+                            self.world.get((cx + 1, 0, cz)),
+                            None, // -y: open sky below the single chunk layer
+                            None, // +y: open sky above
+                            self.world.get((cx, 0, cz - 1)),
+                            self.world.get((cx, 0, cz + 1)),
+                        ],
+                    };
+                    let mesh = greedy_mesh_section_with(section, &neighbors);
+                    let origin = Vec3::new(cx as f32 * s, 0.0, cz as f32 * s);
+                    let inst = ChunkInstance {
+                        coord,
+                        origin,
+                        mesh,
+                    };
+                    self.state.as_mut().unwrap().upload_chunk(&inst);
+                    self.loaded.insert(coord);
+
+                    budget -= 1;
+                    if budget == 0 {
+                        break 'rings;
+                    }
+                }
+            }
+        }
+
+        // Log only on frames that actually changed the draw set (quiet once settled).
+        if budget < STREAM_BUDGET {
+            if let Some(state) = self.state.as_ref() {
+                log::debug!("streaming: {} chunks resident", state.chunk_count());
+            }
+        }
+    }
+}
+
+/// Generate a terrain section at `(cx, 0, cz)` into `world` if it isn't there yet.
+fn ensure_chunk(world: &mut World, cx: i32, cz: i32) {
+    if !world.contains((cx, 0, cz)) {
+        world.insert((cx, 0, cz), worldgen::generate_section(cx, cz, WORLD_SEED));
+    }
+}
+
+/// Four debris emitters trailing just behind/around the camera on the terrain, so
+/// there's always some motion in frame as it travels.
+fn trail_emitters(camera: &Camera, phase: f32) -> Vec<Vec3> {
+    let base = camera.position;
+    (0..4)
+        .map(|i| {
+            let a = i as f32 * std::f32::consts::FRAC_PI_2 + phase;
+            let x = base.x + a.cos() * 10.0;
+            let z = base.z + a.sin() * 10.0;
+            let g = worldgen::height(x.floor() as i32, z.floor() as i32, WORLD_SEED) as f32 + 0.5;
+            Vec3::new(x, g, z)
+        })
+        .collect()
 }
 
 /// Map a physical key to a movement intent (WASD + Space/Shift), or `None`.
@@ -116,19 +225,19 @@ impl ApplicationHandler<AppEvent> for App {
                 .expect("failed to create window"),
         );
 
+        // The draw set starts empty; chunks stream in around the camera each frame.
         #[cfg(not(target_arch = "wasm32"))]
         {
             // Native: just block until the GPU is ready.
-            self.state = Some(pollster::block_on(State::new(window, &self.instances)));
+            self.state = Some(pollster::block_on(State::new(window, &[])));
         }
 
         #[cfg(target_arch = "wasm32")]
         {
             // Web: kick off async init and deliver the result via the proxy.
             let proxy = self.proxy.take().expect("proxy missing");
-            let instances = self.instances.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let state = State::new(window, &instances).await;
+                let state = State::new(window, &[]).await;
                 let _ = proxy.send_event(AppEvent::Initialized(state));
             });
         }
@@ -185,16 +294,26 @@ impl ApplicationHandler<AppEvent> for App {
                     .unwrap_or(0.0);
                 self.last_frame = Some(now);
                 if self.auto_fly {
-                    // Slow cinematic orbit around the scene — no input needed.
-                    self.auto_fly_angle += dt * 0.18;
-                    let a = self.auto_fly_angle;
-                    let r = self.scene_radius * 1.9;
-                    let eye = self.scene_center
-                        + Vec3::new(a.cos() * r, self.scene_radius * 0.85, a.sin() * r);
-                    self.camera = Camera::looking_at(eye, self.scene_center);
+                    // Cinematic travel: cruise forward, banking gently, hugging the
+                    // terrain — an endless flight that streams the world in around us.
+                    self.auto_fly_angle += dt * AUTO_FLY_TURN;
+                    let yaw = self.auto_fly_angle;
+                    let dir = Vec3::new(yaw.cos(), 0.0, yaw.sin());
+                    let mut pos = self.camera.position + dir * (AUTO_FLY_SPEED * dt);
+                    let ground =
+                        worldgen::height(pos.x.floor() as i32, pos.z.floor() as i32, WORLD_SEED)
+                            as f32;
+                    let target_y = ground + CRUISE_HEIGHT;
+                    pos.y += (target_y - pos.y) * (dt * 1.2).min(1.0);
+                    self.camera = Camera::new(pos, yaw, AUTO_FLY_PITCH);
                 } else {
                     self.controller.update(&mut self.camera, dt);
                 }
+                // Stream chunks in/out around the (possibly moved) camera.
+                self.stream();
+                // Ambient debris bursts trail the camera so there's always motion.
+                self.particles
+                    .set_emitters(trail_emitters(&self.camera, self.auto_fly_angle));
                 self.particles.update(dt);
                 let particles = self.particles.instances();
 
@@ -261,20 +380,22 @@ pub fn run() {
         .build()
         .expect("failed to build event loop");
 
-    let instances = build_world_meshes(&demo_world());
-    let (camera, center, radius) = frame_camera(&instances);
+    // Start above the terrain at the origin, looking along +x; streaming fills the
+    // world in around us on the first frames.
+    let start_ground = worldgen::height(0, 0, WORLD_SEED) as f32;
+    let start = Vec3::new(0.0, start_ground + CRUISE_HEIGHT, 0.0);
+    let camera = Camera::new(start, 0.0, AUTO_FLY_PITCH);
 
     let mut app = App {
         state: None,
         proxy: Some(event_loop.create_proxy()),
-        instances,
         camera,
-        controller: CameraController::new(radius),
-        particles: ParticleSystem::new(demo_emitters()),
+        controller: CameraController::new(45.0),
+        particles: ParticleSystem::new(Vec::new()),
+        world: World::new(),
+        loaded: HashSet::new(),
         auto_fly: true,
         auto_fly_angle: 0.0,
-        scene_center: center,
-        scene_radius: radius,
         wobble: 85.0,
         color_steps: 4.0,
         last_frame: None,
@@ -284,17 +405,35 @@ pub fn run() {
     event_loop.run_app(&mut app).expect("event loop error");
 }
 
-/// Seed for the demo world (shared by terrain + emitters).
+/// Seed for the world (shared by terrain + emitters).
 const WORLD_SEED: u32 = 1337;
-/// Radius of the demo world, in chunks (a `(2r+1)²` grid).
+/// Radius of the *demo* world (headless render only), in chunks — a `(2r+1)²` grid.
+#[cfg(not(target_arch = "wasm32"))]
 const WORLD_RADIUS: i32 = 2;
 
-/// The demo world: a procedurally-generated noise-terrain world (M3).
+/// Streaming radius around the camera, in chunks (Chebyshev). The world is one
+/// vertical layer of chunks (`cy == 0`) for M3.
+const STREAM_RADIUS: i32 = 5;
+/// Max chunks to generate + mesh per frame, to cap how long a hitch can get.
+const STREAM_BUDGET: usize = 4;
+
+/// How high above the terrain the cinematic camera cruises.
+const CRUISE_HEIGHT: f32 = 22.0;
+/// Auto-fly cruise speed (world units/second) and turn rate (radians/second).
+const AUTO_FLY_SPEED: f32 = 26.0;
+const AUTO_FLY_TURN: f32 = 0.05;
+/// Downward tilt of the auto-fly camera (radians).
+const AUTO_FLY_PITCH: f32 = -0.22;
+
+/// The demo world: a procedurally-generated noise-terrain world (M3). Used by the
+/// native headless renderer (a fixed scene); the live app streams instead.
+#[cfg(not(target_arch = "wasm32"))]
 fn demo_world() -> World {
     worldgen::generate_world(WORLD_RADIUS, WORLD_SEED)
 }
 
 /// A handful of emitter points sitting on the terrain surface, for ambient debris.
+#[cfg(not(target_arch = "wasm32"))]
 fn demo_emitters() -> Vec<Vec3> {
     [
         (-40, -40),
@@ -318,8 +457,9 @@ fn demo_emitters() -> Vec<Vec3> {
 }
 
 /// Frame the camera on the whole scene from the combined world bounds. Returns the
-/// camera and the scene radius (used for move speed). Shared by the app and the
-/// headless renderer so they show the same view.
+/// camera and the scene radius (used for move speed). Used by the native headless
+/// renderer to show a fixed framing of the demo world.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn frame_camera(instances: &[ChunkInstance]) -> (Camera, Vec3, f32) {
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
@@ -339,7 +479,9 @@ pub(crate) fn frame_camera(instances: &[ChunkInstance]) -> (Camera, Vec3, f32) {
 
 /// Greedy-mesh each chunk with neighbour-aware seam culling. Meshes stay
 /// chunk-local; the world `origin` travels alongside (the shader applies it).
-/// App-level glue: it's allowed to touch `world` + `mesh` together.
+/// App-level glue: it's allowed to touch `world` + `mesh` together. Used by the
+/// native headless renderer (the live app meshes incrementally via streaming).
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
     let s = Section::SIZE as f32;
     let mut instances = Vec::new();
@@ -359,7 +501,11 @@ pub(crate) fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
             continue;
         }
         let origin = Vec3::new(cx as f32 * s, cy as f32 * s, cz as f32 * s);
-        instances.push(ChunkInstance { origin, mesh });
+        instances.push(ChunkInstance {
+            coord: (cx, cy, cz),
+            origin,
+            mesh,
+        });
     }
     instances
 }

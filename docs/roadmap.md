@@ -105,10 +105,11 @@ screen" and a direct test of the §11 look (design §12).
 - **Why here:** needs M2's meshed chunks to shatter; placed *before* more
   infrastructure on purpose, so something distinctive lands early.
 
-### M3 — A world to fly through 🛠 &nbsp;→ [`milestones/M3-world.md`](milestones/M3-world.md)
-**Palette-compressed** section storage ✅ and **procedural** (noise) terrain ✅ done;
-chunk **streaming** around a travelling camera (load/unload) is the remaining piece.
-- **Outcome:** endless-feeling procedural terrain you can fly across.
+### M3 — A world to fly through ✅ &nbsp;→ [`milestones/M3-world.md`](milestones/M3-world.md)
+**Palette-compressed** section storage, **procedural** (noise) terrain, and chunk
+**streaming** around a travelling camera (runtime load/unload, bounded memory) — all done.
+- **Outcome:** endless-feeling procedural terrain you fly across, streamed in around a
+  cinematic travel camera.
 - **De-risks:** storage RAM/bandwidth and the streaming model.
 - **Acceptance:** palette pack/unpack round-trip tests; memory-per-section
   measured; chunks load/unload without leaks as the camera moves.

@@ -1,6 +1,6 @@
 # M3 — A world to fly through
 
-> Status: **draft** ⏳. Part of the ladder in [`../roadmap.md`](../roadmap.md).
+> Status: **done** ✅. Part of the ladder in [`../roadmap.md`](../roadmap.md).
 > Builds on M2 (greedy meshing + chunk grid).
 
 ## Goal · Outcome · De-risk
@@ -73,10 +73,24 @@
 - [x] Palette-compressed `Section` behind the unchanged API; round-trip + memory
       tests pass.
 - [x] Procedural noise terrain; deterministic; layered materials (snow/grass/sand).
-- [ ] Streaming: chunks load/unload around the camera; renderer updates at runtime.
+- [x] Streaming: chunks load/unload around the camera; renderer updates at runtime.
 - [x] A bigger world than M2's 3×3 (5×5), snapshotted (`/archive/06-procedural-world/`).
-- [x] Runs native + web; snapshot + render in chat (terrain). *(Streaming render TBD.)*
-- [ ] CI green; docs synced (per the lockstep rule).
+- [x] Runs native + web; snapshot + render in chat (terrain).
+- [x] CI green; docs synced (per the lockstep rule).
 
-> Status: **parts 1–2 done** 🛠 (noise terrain + palette storage). Part 3 (streaming +
-> travelling camera) in progress.
+## How streaming landed (part 3)
+
+- The renderer's draw set became a `HashMap<ChunkCoord, ChunkDraw>` with runtime
+  `upload_chunk` / `remove_chunk` (was a fixed list at init).
+- The app holds a `World` + a `loaded: HashSet<ChunkCoord>`. Each frame, `stream()`
+  computes the camera's chunk, evicts chunks beyond `STREAM_RADIUS + 1` (GPU **and**
+  CPU, to bound memory), and generates+meshes the nearest missing chunks ring-by-ring
+  within a per-frame budget (`STREAM_BUDGET = 4`) to cap hitch length. Newly-loaded
+  chunks generate their 4 horizontal neighbours first so seam culling stays correct.
+- Auto-fly changed from a fixed orbit to a **cinematic travel** camera that cruises
+  forward, banks gently, and hugs the terrain — an endless flight that pulls the world
+  in around it. (Next: anchor the camera to a creature wandering the terrain.)
+- Headless capture still renders the fixed demo world (the streaming path can't be
+  exercised offscreen yet — tracked as D5).
+
+> Status: **done** ✅ (palette storage + noise terrain + streaming + travelling camera).
