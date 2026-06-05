@@ -55,6 +55,8 @@ jobs:
           # Build gallery (root) + the latest app (/latest/) + frozen snapshots.
           cp web/gallery/index.html dist/index.html
           cp web/index.html dist/latest/index.html
+          # Cache-bust the latest app's unhashed bundle with the commit SHA.
+          sed -i "s/__CACHE_BUST__/${GITHUB_SHA}/g" dist/latest/index.html
           wasm-bindgen --target web --no-typescript \
             --out-dir dist/latest/pkg \
             target/wasm32-unknown-unknown/release/brickmap.wasm
