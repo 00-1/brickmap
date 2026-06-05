@@ -9,13 +9,13 @@ graphical: storing, meshing, culling, and drawing very large voxel worlds fast.
 It is a personal-interest project, so it favours **interesting and correct** over
 shipping speed.
 
-> **Status: M4 done.** An **endless, streamed** procedural voxel world you fly
+> **Status: E3 done.** An **endless, streamed** procedural voxel world you fly
 > across (greedy-meshed, palette-compressed, frustum-culled), with **baked ambient
-> occlusion**, **procedural texture-array materials**, distance fog, and emissive
-> particle debris — on desktop *and* the web, from one code path. The look is a
-> deliberate low-fi "expose the tech" pass (wobble + dither + posterised textures);
-> see the [look journal](docs/look-journal.md). Next: cheap light & atmosphere (E3).
-> See [`docs/roadmap.md`](docs/roadmap.md).
+> occlusion**, **procedural texture-array materials**, a sky/horizon + distance fog,
+> bloom, and **emissive crystals that cast cheap baked "fake-GI" light** onto the
+> terrain — on desktop *and* the web, from one code path. The look is a deliberate
+> low-fi "expose the tech" pass; see the [look journal](docs/look-journal.md). Next:
+> occlusion culling + a perf HUD (M5). See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## North star
 

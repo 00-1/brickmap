@@ -118,10 +118,10 @@ Everything platform-specific is isolated in `bm-platform` (+ small `cfg` shims i
 | Concern | Today (M4) | Target |
 |---|---|---|
 | Crate layout | one `brickmap` crate, modules `world` / `worldgen` / `mesh` / `scene` / `particles` / `textures` / `gfx` + app | the 7-crate workspace in §3 |
-| Geometry | greedy-meshed chunks, **4-byte packed** face vertices (pos/dir/material/ao) | greedy-meshed chunks, ≤8-byte packed face vertices |
+| Geometry | greedy-meshed chunks, **8-byte packed** face vertices (pos/dir/material/ao + block light) | greedy-meshed chunks, ≤8-byte packed face vertices |
 | World model | palette-compressed 32³ sections, **procedural + streamed** around the camera | palette-compressed sections, streaming |
 | Culling | frustum culling (per-chunk AABB) | frustum + visibility-graph cave culling |
-| Pipeline | single forward pass, depth buffer, baked AO + texture-array materials + distance fog | forward(+), texture-array materials, LOD |
+| Pipeline | forward pass → bloom post; baked AO + texture-array materials + hemispheric ambient + flood-fill block light + sky/fog | forward(+), texture-array materials, LOD |
 | Threading | single-thread (synchronous streaming + meshing on the main thread) | rayon (native) / workers (web) async meshing |
 
 Through M4 the data → mesh → GPU pipeline, the `world`↔`render` seam, streaming,

@@ -1,6 +1,6 @@
 # ✨ E3 — Light & atmosphere: cheap, no GI
 
-> Status: **in progress** 🛠. Exploration rung in [`../roadmap.md`](../roadmap.md);
+> Status: **done** ✅. Exploration rung in [`../roadmap.md`](../roadmap.md);
 > the backlog rationale is [`../exploration-backlog.md`](../exploration-backlog.md) §C.
 > Builds on M4 (materials + baked AO).
 
@@ -61,7 +61,11 @@
       blocks — both the ember particles and the crystals glow.
 - [x] Flood-fill coloured light baked in the mesher; visible corner bleed. *(v1:
       per-section, so light clips at chunk borders — cross-chunk light is a follow-up.)*
-- [ ] Runs native + web; look-journal entries per decision; snapshot + render.
-- [ ] CI green; docs synced (lockstep rule).
+- [x] Runs native + web (wasm builds; the texture-array + 8-byte vertex paths are
+      GL2-compatible — web *visual* check still pending D5); look-journal entries per
+      decision; snapshots `09`/`10`/`11` + renders in chat.
+- [x] CI green; docs synced (lockstep rule).
 
-> Status: **in progress** 🛠 — slice 1 (hemispheric ambient) first.
+> Status: **done** ✅ — hemispheric ambient, sky/horizon, bloom, emissive crystals, and
+> flood-fill block light. Deferred follow-ups: cross-chunk light (v1 clips at borders),
+> day–night palette shift, and a pitch-correct view-ray sky.
