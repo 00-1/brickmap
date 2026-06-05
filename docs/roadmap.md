@@ -87,6 +87,14 @@ vertex** (encode/decode round-trip tests).
   fixtures; packed vertex round-trips for every field; a meshing throughput number
   is recorded against the design §8 budget.
 
+### ✨ Aesthetic pass — expose the tech *(exploration)* ⏳
+**Vertex-quantization wobble** (render the compressed-vertex quantization *as* the
+look) + **dithered shading/colour** (render the palette compression). The §11
+thesis made literal — roughly a day's work for an immediate, distinctive face.
+- **Outcome:** the world stops looking like a generic engine; the artifacts become
+  the style.
+- **Why here:** nearly free, and rides along with M2's packed vertex.
+
 ### ✨ E1 — Particles + destruction *(exploration)* ⏳
 Instanced point-sprite / cube **particles** in the forward pass, and **shattering**
 a chunk into flying, fading, emissive cubes — the cheapest path to "alive on
@@ -112,6 +120,15 @@ artifacts the tech produces.
 - **De-risks:** the material path and the first concrete aesthetic decisions.
 - **Acceptance:** AO values tested in the mesher; texture-array path works on web
   (WebGL2) and native; a short look-journal entry captures what we kept and why.
+
+### ✨ Light & atmosphere — cheap, no GI *(exploration)* ⏳
+Flood-fill block + **coloured sky/emissive light** (a cheap *fake GI* — light visibly
+bleeds around corners), plus bloom and distance fog. The highest beauty-per-cycle on
+the backlog ([`exploration-backlog.md`](exploration-backlog.md) §C).
+- **Outcome:** mood and glow — what makes "pretty voxel" demos pretty, faked without
+  ray tracing.
+- **Why here:** builds on M4's materials, and implements the "lighting data path"
+  that M8 only hand-waved.
 
 ### ✨ E3 — Sub-voxel surface displacement *(exploration)* ⏳
 Per-face relief (brick / grain / cobble) so blocks aren't flat — richness with no
