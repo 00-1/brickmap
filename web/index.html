@@ -4,6 +4,29 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>brickmap — spike</title>
+    <!-- Self-heal a stale, browser-cached index.html. GitHub Pages serves HTML
+         with a short cache lifetime, so a plain reload can keep handing you the
+         old page (the wasm is ?v=-busted, but the HTML itself isn't). This runs
+         first, fetches the deploy's version sentinel UNCACHED, and if its SHA
+         differs from the one baked into this page, reloads through a fresh URL
+         (a new ?v= key forces the browser past its HTML cache). A sessionStorage
+         guard stops any reload loop. `__CACHE_BUST__` is the full SHA at deploy. -->
+    <script>
+      (function () {
+        var baked = "__CACHE_BUST__";
+        // Unreplaced placeholder => opened from source, not a deploy: do nothing.
+        if (baked.indexOf("CACHE_BUST") !== -1) return;
+        fetch("version.json?_=" + Date.now(), { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (v) {
+            if (!v || !v.sha || v.sha === baked) return;
+            if (sessionStorage.getItem("brickmap-reloaded") === v.sha) return;
+            sessionStorage.setItem("brickmap-reloaded", v.sha);
+            location.replace(location.pathname + "?v=" + v.sha);
+          })
+          .catch(function () { /* offline / first deploy: ignore */ });
+      })();
+    </script>
     <style>
       html,
       body {

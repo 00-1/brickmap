@@ -81,6 +81,24 @@ establish the harness; real coverage begins with the first pure-logic module
 > One-time setup: in the repo, **Settings → Pages → Source = "GitHub Actions"** must
 > be enabled for the deploy to publish.
 
+### Cache-busting (always-fresh preview)
+
+The unhashed wasm bundle is busted with `?v=<sha>` (the deploy seds `__CACHE_BUST__`
+→ commit SHA into `/latest/index.html`). But the **HTML page itself** is served by
+Pages with a short cache lifetime, so a plain refresh can still hand you a stale
+page that points at the old build. To self-heal that:
+
+- The deploy writes a `version.json` sentinel (`{"sha": "<full sha>"}`) next to the
+  page, and stamps the same SHA into the page (`__CACHE_BUST__`).
+- On load, `index.html` fetches `version.json` **uncached**; if its SHA differs from
+  the one baked into the page, the page is stale, so it reloads through a fresh
+  `?v=<sha>` URL (a new query key forces the browser past its cached HTML). A
+  `sessionStorage` guard prevents reload loops.
+
+The visible **build SHA** stamped on the page (`__BUILD_SHA__`) is the tell for which
+build you're on. Note the self-heal only kicks in once you're on a build that *has*
+the check — upgrading *from* an older cached page still needs one manual hard refresh.
+
 ## Preview gallery & snapshots
 
 The deployed site is a small **build gallery** so we can keep a visible history of
