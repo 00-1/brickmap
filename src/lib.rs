@@ -21,11 +21,12 @@ pub mod mesh;
 pub mod particles;
 pub mod scene;
 pub mod world;
+pub mod worldgen;
 use gfx::{ChunkInstance, State};
 use mesh::{greedy_mesh_section_with, Neighbors};
 use particles::ParticleSystem;
 use scene::{Action, Camera, CameraController};
-use world::{BlockId, Section, World};
+use world::{Section, World};
 
 /// Window/canvas init size. On the web this is also the canvas backing size.
 const INITIAL_SIZE: (u32, u32) = (960, 720);
@@ -283,50 +284,37 @@ pub fn run() {
     event_loop.run_app(&mut app).expect("event loop error");
 }
 
-/// A small demo world: a 3×3 grid of chunks of rolling hills. Enough to show greedy
-/// meshing, cross-chunk seam culling, and many chunks at once. (M2 scaffolding; M3
-/// replaces this with palette storage + real generation + streaming.)
+/// Seed for the demo world (shared by terrain + emitters).
+const WORLD_SEED: u32 = 1337;
+/// Radius of the demo world, in chunks (a `(2r+1)²` grid).
+const WORLD_RADIUS: i32 = 2;
+
+/// The demo world: a procedurally-generated noise-terrain world (M3).
 fn demo_world() -> World {
-    let s = Section::SIZE as i32;
-    let mut world = World::new();
-    for cz in -1..=1 {
-        for cx in -1..=1 {
-            let mut section = Section::new();
-            for z in 0..Section::SIZE {
-                for x in 0..Section::SIZE {
-                    let height = terrain_height(cx * s + x as i32, cz * s + z as i32);
-                    for y in 0..height.min(Section::SIZE) {
-                        let depth = height - y;
-                        let block = match depth {
-                            1 => BlockId(3),     // grass on top
-                            2..=3 => BlockId(2), // dirt
-                            _ => BlockId(1),     // stone
-                        };
-                        section.set(x, y, z, block);
-                    }
-                }
-            }
-            world.insert((cx, 0, cz), section);
-        }
-    }
-    world
+    worldgen::generate_world(WORLD_RADIUS, WORLD_SEED)
 }
 
 /// A handful of emitter points sitting on the terrain surface, for ambient debris.
 fn demo_emitters() -> Vec<Vec3> {
-    [(-10, 5), (20, -8), (38, 30), (5, 40), (50, 48), (15, 16)]
-        .iter()
-        .map(|&(x, z)| Vec3::new(x as f32, terrain_height(x, z) as f32 + 0.5, z as f32))
-        .collect()
-}
-
-/// Smooth pseudo-terrain height (no noise dependency yet — that's M3).
-fn terrain_height(wx: i32, wz: i32) -> u32 {
-    let h = 11.0
-        + 4.0 * (wx as f32 * 0.12).sin()
-        + 4.0 * (wz as f32 * 0.10).cos()
-        + 2.0 * (wx as f32 * 0.31 + wz as f32 * 0.27).sin();
-    h.round().clamp(1.0, (Section::SIZE - 1) as f32) as u32
+    [
+        (-40, -40),
+        (40, 30),
+        (0, 0),
+        (-20, 60),
+        (70, 70),
+        (30, -50),
+        (60, 10),
+        (-55, 35),
+    ]
+    .iter()
+    .map(|&(x, z)| {
+        Vec3::new(
+            x as f32,
+            worldgen::height(x, z, WORLD_SEED) as f32 + 0.5,
+            z as f32,
+        )
+    })
+    .collect()
 }
 
 /// Frame the camera on the whole scene from the combined world bounds. Returns the
