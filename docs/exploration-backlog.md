@@ -22,14 +22,14 @@ expensive / off-brand. Each idea: *what · why interesting · rough sketch · co
 
 ---
 
-## A. Dynamic & simulated voxels — the headline (maps to ✨E2)
+## A. Dynamic & simulated voxels — the headline (maps to ✨E5)
 
 - 🟢 **3D falling-sand / cellular automata** (sand, water, fire, smoke, steam).
   *Why:* voxels that *behave* — the most distinctive direction, genuinely beyond
   Minecraft. *Sketch:* per-cell rules on the grid (à la Sandspiel/3DCellularWorld),
   step on a fixed tick, re-mesh only dirty sections. *Cost:* CA is cheap and
   embarrassingly parallel; the real cost is **re-meshing churn**, which is exactly
-  what async meshing (M6) exists to absorb. This is already ✨E2.
+  what async meshing (M6) exists to absorb. This is already ✨E5.
 - 🟢 **Fire / flammability spread** through flammable block types. *Why:* dramatic,
   emergent, pairs with emissive light + particles. *Sketch:* CA flag per block;
   ignite neighbours probabilistically; consume → ash/air. *Cost:* trivial.
@@ -39,7 +39,7 @@ expensive / off-brand. Each idea: *what · why interesting · rough sketch · co
 - 🟡 **Erosion / fluid that reshapes terrain.** *Why:* living world. *Sketch:*
   hydraulic CA. *Cost:* fine offline / slow-tick; heavier if real-time everywhere.
 
-## B. Destruction & particles (maps to ✨E1)
+## B. Destruction & particles (maps to ✨E2)
 
 - 🟢 **Shatter a chunk into instanced cube particles** with gravity, spin, fade,
   and emissive flashes. *Why:* the cheapest "alive on screen," and pure §11. *Sketch:*
@@ -53,7 +53,7 @@ expensive / off-brand. Each idea: *what · why interesting · rough sketch · co
   Vercidium method) — localized ray-march is fine; it's not the primary renderer.
   *Cost:* cheap per particle; skip entirely for pure ballistic debris.
 
-## C. Cheap lighting & atmosphere — best bang-for-buck (currently underplayed)
+## C. Cheap lighting & atmosphere — best bang-for-buck (maps to ✨E3)
 
 > This cluster is where most "pretty voxel" demos actually get their beauty — and
 > all of it is **fakeable without GI/ray tracing**. Strongly recommend promoting
@@ -71,7 +71,7 @@ expensive / off-brand. Each idea: *what · why interesting · rough sketch · co
 - 🟢 **Day–night palette shift + distance fog.** *Cost:* 🟢 a few shader constants;
   fog also hides LOD pops (M7) and bounds draw distance.
 
-## D. The "expose-the-tech" aesthetic — cheapest personality, most on-brand (§11)
+## D. The "expose-the-tech" aesthetic — cheapest personality (maps to ✨E1, §11)
 
 > Nobody does these *on purpose*; they're nearly free and they make the look ours.
 
@@ -85,7 +85,7 @@ expensive / off-brand. Each idea: *what · why interesting · rough sketch · co
 - 🟡 **CRT/scanline post** — tempting but risks the *retro pastiche* we ruled out
   (§3). Use sparingly, if at all.
 
-## E. Surface detail (maps to ✨E3)
+## E. Surface detail (maps to ✨E4)
 
 - 🟡 **Sub-voxel displacement / relief / parallax-occlusion mapping** per face
   (Daniel Schroeder's "voxel displacement" look). *Why:* blocks stop being flat;
@@ -109,19 +109,16 @@ expensive / off-brand. Each idea: *what · why interesting · rough sketch · co
 
 ---
 
-## Shortlist — what I'd actually slot in next
+## Shortlist — slotted into the roadmap
 
-1. **Promote "cheap lighting & atmosphere" (C) to a first-class exploration rung.**
-   It's the highest beauty-per-cycle on the whole list and currently only a design
-   open-item. Flood-fill coloured light + emissive + bloom + fog would transform the
-   look for very little cost. *Pairs with M4/M5.*
-2. **Add a tiny "aesthetic pass" (D) early and cheap.** Vertex wobble + dithering
-   are a day's work and immediately give brickmap a face — and they *are* the §11
-   thesis made real. Could even land alongside M2's packed vertex.
-3. Keep **✨E1 (particles+destruction)** and **✨E2 (dynamic voxels)** as the
-   headline content; fold **debris-settles-into-grid** in as the bridge between them.
-4. Treat **✨E3 (displacement)** as 🟡 with a hard cost budget — it's the most likely
-   to bust the weak-hardware frame.
+1. **"Cheap lighting & atmosphere" (C) → now ✨E3** (after M4). Highest
+   beauty-per-cycle on the list: flood-fill coloured light + emissive + bloom + fog.
+2. **"Aesthetic pass" (D) → now ✨E1** (right after M2). Vertex wobble + dithering —
+   a day's work, the §11 thesis made real; rides along with the packed vertex.
+3. **✨E2 (particles+destruction)** and **✨E5 (dynamic voxels)** stay the headline
+   content; fold **debris-settles-into-grid** in as the bridge between them.
+4. **✨E4 (displacement)** stays 🟡 with a hard cost budget — the one most likely to
+   bust the weak-hardware frame.
 
 ## Discarded (off-brand for us; see design §12)
 Global illumination & path tracing; ray-traced / ray-marched *primary* voxel

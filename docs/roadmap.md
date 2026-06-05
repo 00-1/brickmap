@@ -56,8 +56,9 @@ own thing — the content/visual work from [`design.md`](design.md) §12 — int
 *in place* so they don't get deferred to the end (or lost).
 
 > Legend: ✅ done · 🛠 in progress · ⏳ planned · **✨ = exploration** (the
-> *interesting* bit, not infrastructure). More exploration candidates (researched
-> and fit-graded) live in [`exploration-backlog.md`](exploration-backlog.md).
+> *interesting* bit, not infrastructure; numbered **E1–E5 in build order**). More
+> exploration candidates (researched and fit-graded) live in
+> [`exploration-backlog.md`](exploration-backlog.md).
 
 ### M0 — Foundation & rig ✅
 Planning docs, the cross-platform render spike (one cube, desktop + web), CI, and
@@ -87,7 +88,7 @@ vertex** (encode/decode round-trip tests).
   fixtures; packed vertex round-trips for every field; a meshing throughput number
   is recorded against the design §8 budget.
 
-### ✨ Aesthetic pass — expose the tech *(exploration)* ⏳
+### ✨ E1 — Aesthetic pass: expose the tech *(exploration)* ⏳
 **Vertex-quantization wobble** (render the compressed-vertex quantization *as* the
 look) + **dithered shading/colour** (render the palette compression). The §11
 thesis made literal — roughly a day's work for an immediate, distinctive face.
@@ -95,7 +96,7 @@ thesis made literal — roughly a day's work for an immediate, distinctive face.
   the style.
 - **Why here:** nearly free, and rides along with M2's packed vertex.
 
-### ✨ E1 — Particles + destruction *(exploration)* ⏳
+### ✨ E2 — Particles + destruction *(exploration)* ⏳
 Instanced point-sprite / cube **particles** in the forward pass, and **shattering**
 a chunk into flying, fading, emissive cubes — the cheapest path to "alive on
 screen" and a direct test of the §11 look (design §12).
@@ -121,7 +122,7 @@ artifacts the tech produces.
 - **Acceptance:** AO values tested in the mesher; texture-array path works on web
   (WebGL2) and native; a short look-journal entry captures what we kept and why.
 
-### ✨ Light & atmosphere — cheap, no GI *(exploration)* ⏳
+### ✨ E3 — Light & atmosphere: cheap, no GI *(exploration)* ⏳
 Flood-fill block + **coloured sky/emissive light** (a cheap *fake GI* — light visibly
 bleeds around corners), plus bloom and distance fog. The highest beauty-per-cycle on
 the backlog ([`exploration-backlog.md`](exploration-backlog.md) §C).
@@ -130,7 +131,7 @@ the backlog ([`exploration-backlog.md`](exploration-backlog.md) §C).
 - **Why here:** builds on M4's materials, and implements the "lighting data path"
   that M8 only hand-waved.
 
-### ✨ E3 — Sub-voxel surface displacement *(exploration)* ⏳
+### ✨ E4 — Sub-voxel surface displacement *(exploration)* ⏳
 Per-face relief (brick / grain / cobble) so blocks aren't flat — richness with no
 extra geometry (design §12).
 - **Outcome:** surfaces gain depth and texture without shrinking the voxels.
@@ -152,7 +153,7 @@ uploads; plus the web fallback (single-thread or `wasm-bindgen-rayon` workers).
 - **Acceptance:** meshing never blocks a frame on native; web still functions
   (slower meshing accepted).
 
-### ✨ E2 — Dynamic / cellular-automata voxels *(exploration)* ⏳
+### ✨ E5 — Dynamic / cellular-automata voxels *(exploration)* ⏳
 Falling sand / fluid / fire on the world grid, re-meshing only the dirty regions.
 The headline "interesting" — voxels that *behave* (design §12).
 - **Outcome:** matter that flows, falls, and burns in real time.
