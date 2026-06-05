@@ -59,7 +59,7 @@ const PALETTE: [[f32; 4]; 8] = [
     [0.80, 0.78, 0.65, 1.0],
     [0.92, 0.94, 0.98, 1.0], // snow
     [0.45, 0.95, 1.00, 1.0], // crystal (emissive)
-    [0.95, 0.10, 0.95, 1.0],
+    [0.18, 0.38, 0.62, 1.0], // water
 ];
 
 /// Render the demo scene to a PNG at `path`. Panics on setup failure (it's a dev

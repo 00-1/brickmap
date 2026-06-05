@@ -197,17 +197,19 @@ and a lusher palette — the Superbien point-cloud-forest mood. Reuses E6's spla
   forming a forest, atmospheric and alive.
 - **De-risks:** density/perf at forest scale, and the aesthetic itself (heavy look-journal).
 
-### ✨ E8 — A richer world *(exploration)* ⏳
+### ✨ E8 — A richer world *(exploration)* 🛠
 Make exploring rewarding (and finally exercise M5's cave-culling). From the 2026-06
-research (backlog §G): **ridged noise + domain warping** (near-free, dramatically less
-"obviously-noise"), **biomes** (temp×humidity → materials + foliage density, the backbone
-of forest variety), **jittered-grid tree/foliage placement** (E7's scatter engine),
-**sea level + rivers**, then the pricey-but-foundational **vertical chunk stacks + 3D
-density → overhangs & caves** (stateless noise-intersection caves).
+research (backlog §G): **ridged noise + domain warping** ✅ (landed — terrain flows in
+valleys/spurs with ridge-line peaks instead of obvious axis-aligned fbm), **sea-level
+water** ✅ (still opaque lakes/seas up to `SEA_LEVEL`; stylised water is E9), **biomes**
+(temp×humidity → materials + foliage density, the backbone of forest variety), **jittered-
+grid tree/foliage placement** (E7's scatter engine), **rivers**, then the pricey-but-
+foundational **vertical chunk stacks + 3D density → overhangs & caves** (stateless
+noise-intersection caves).
 - **Outcome:** varied biomed terrain with cliffs, rivers, woods, and caves to fly through.
 - **De-risks:** 3D-noise cost (gate to surface bands); unlocks the dormant cave-culling.
-- *Cheap 2D wins (warp/biomes/placement/rivers) can interleave with E6/E7; vertical/caves
-  is the bigger step.*
+- *Cheap 2D wins interleave with E6/E7 (warp/ridged/water done; biomes next); vertical/caves
+  is the bigger step (warrants its own brief).*
 
 ### ✨ E9 — Weather, water & sound *(exploration)* ⏳
 From the research (backlog §H): a single **global weather state** (wind + gust + precip +

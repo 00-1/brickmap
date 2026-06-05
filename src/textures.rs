@@ -64,11 +64,11 @@ const STYLES: [Style; LAYERS as usize] = [
         levels: 1,
     }, // 6 unused
     Style {
-        cell: 1,
-        lo: 1.0,
+        cell: 6,
+        lo: 0.82,
         hi: 1.0,
-        levels: 1,
-    }, // 7 unused
+        levels: 3,
+    }, // 7 water: broad, soft sheen
 ];
 
 /// Hash a lattice point to `[0, 1)` (same shape as `worldgen::hash`, separate seed).
