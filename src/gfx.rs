@@ -51,9 +51,10 @@ pub struct State {
     size: winit::dpi::PhysicalSize<u32>,
 
     pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
+    /// One GPU buffer pair per chunk mesh. Vertices are in world space, so a single
+    /// view-projection draws them all (per-chunk transforms come with the packed
+    /// vertex). Frustum culling will skip draws here.
+    draws: Vec<ChunkDraw>,
 
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
@@ -63,8 +64,15 @@ pub struct State {
     window: Arc<Window>,
 }
 
+/// GPU buffers for one chunk mesh.
+struct ChunkDraw {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
+}
+
 impl State {
-    pub async fn new(window: Arc<Window>, mesh: &ChunkMesh) -> State {
+    pub async fn new(window: Arc<Window>, meshes: &[ChunkMesh]) -> State {
         let mut size = window.inner_size();
         // Browsers can report a 0x0 (or 1x1) canvas before layout. Don't configure a
         // tiny surface — the page would stretch that single pixel across the whole
@@ -217,16 +225,23 @@ impl State {
             cache: None,
         });
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("chunk-vertices"),
-            contents: bytemuck::cast_slice(&mesh.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("chunk-indices"),
-            contents: bytemuck::cast_slice(&mesh.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let draws = meshes
+            .iter()
+            .filter(|m| !m.is_empty())
+            .map(|m| ChunkDraw {
+                vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("chunk-vertices"),
+                    contents: bytemuck::cast_slice(&m.vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                }),
+                index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("chunk-indices"),
+                    contents: bytemuck::cast_slice(&m.indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                }),
+                num_indices: m.indices.len() as u32,
+            })
+            .collect();
 
         let depth_view = create_depth_view(&device, &config);
 
@@ -237,9 +252,7 @@ impl State {
             config,
             size,
             pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_indices: mesh.indices.len() as u32,
+            draws,
             uniform_buffer,
             uniform_bind_group,
             depth_view,
@@ -334,9 +347,11 @@ impl State {
 
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            for draw in &self.draws {
+                pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
+                pass.set_index_buffer(draw.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..draw.num_indices, 0, 0..1);
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

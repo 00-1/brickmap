@@ -88,6 +88,46 @@ impl Default for Section {
     }
 }
 
+/// Chunk coordinate: which section, measured in whole sections. World voxel origin
+/// of a chunk is `coord * SIZE`.
+pub type ChunkCoord = (i32, i32, i32);
+
+/// A sparse grid of sections keyed by [`ChunkCoord`]. For M2 this is a small,
+/// hand-populated world; M3 adds palette storage, generation, and streaming behind
+/// the same accessors. Stays free of meshing/GPU types (architecture §4).
+#[derive(Default)]
+pub struct World {
+    sections: std::collections::HashMap<ChunkCoord, Section>,
+}
+
+impl World {
+    pub fn new() -> Self {
+        World::default()
+    }
+
+    pub fn insert(&mut self, coord: ChunkCoord, section: Section) {
+        self.sections.insert(coord, section);
+    }
+
+    /// The section at `coord`, if present. Returns `Option<&Section>` so it drops
+    /// straight into the mesher's neighbour slots.
+    pub fn get(&self, coord: ChunkCoord) -> Option<&Section> {
+        self.sections.get(&coord)
+    }
+
+    pub fn chunks(&self) -> impl Iterator<Item = (ChunkCoord, &Section)> {
+        self.sections.iter().map(|(&c, s)| (c, s))
+    }
+
+    pub fn len(&self) -> usize {
+        self.sections.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sections.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,5 +198,21 @@ mod tests {
             (Section::SIZE * Section::SIZE) as usize
         );
         assert_eq!(Section::index(31, 31, 31), Section::VOLUME - 1);
+    }
+
+    #[test]
+    fn world_stores_and_returns_sections_by_coord() {
+        let mut world = World::new();
+        assert!(world.is_empty());
+        let mut s = Section::new();
+        s.set(1, 2, 3, BlockId(1));
+        world.insert((0, 0, 0), s);
+        world.insert((1, 0, 0), Section::new());
+
+        assert_eq!(world.len(), 2);
+        assert_eq!(world.get((0, 0, 0)).unwrap().get(1, 2, 3), BlockId(1));
+        assert!(world.get((1, 0, 0)).is_some());
+        assert!(world.get((9, 9, 9)).is_none());
+        assert_eq!(world.chunks().count(), 2);
     }
 }

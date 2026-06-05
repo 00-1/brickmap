@@ -131,7 +131,9 @@ treating absent neighbours as air).
       follow-up optimisation within M2.)*
 - [ ] 4-byte packed vertex with round-trip tests; shader unpacks + palette colour.
 - [x] Neighbour-aware meshing; adjacent-chunk seam test passes.
-- [ ] `World` chunk grid; many chunks drawn at their world origins.
+- [x] `World` chunk grid; many chunks drawn at their world origins.
+      *(World-space baked vertices + per-chunk buffers; per-chunk transform via the
+      packed vertex comes later.)*
 - [ ] Frustum culling with tests; off-screen chunks skipped.
 - [ ] Triangle/draw-call stats visible; greedy shows a clear triangle reduction.
 - [ ] A meshing throughput number recorded (criterion) against the budget.

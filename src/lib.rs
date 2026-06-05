@@ -19,9 +19,9 @@ pub mod mesh;
 pub mod scene;
 pub mod world;
 use gfx::State;
-use mesh::ChunkMesh;
+use mesh::{greedy_mesh_section_with, ChunkMesh, Neighbors};
 use scene::{Action, Camera, CameraController};
-use world::{BlockId, Section};
+use world::{BlockId, Section, World};
 
 /// Window/canvas init size. On the web this is also the canvas backing size.
 const INITIAL_SIZE: (u32, u32) = (960, 720);
@@ -42,8 +42,9 @@ struct App {
     // Only used on the web (async init handoff); inert on native.
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     proxy: Option<EventLoopProxy<AppEvent>>,
-    /// The scene to draw — built once on the CPU, uploaded when the GPU is ready.
-    mesh: ChunkMesh,
+    /// The scene to draw — one mesh per non-empty chunk, built on the CPU and
+    /// uploaded when the GPU is ready.
+    meshes: Vec<ChunkMesh>,
 
     camera: Camera,
     controller: CameraController,
@@ -102,16 +103,16 @@ impl ApplicationHandler<AppEvent> for App {
         #[cfg(not(target_arch = "wasm32"))]
         {
             // Native: just block until the GPU is ready.
-            self.state = Some(pollster::block_on(State::new(window, &self.mesh)));
+            self.state = Some(pollster::block_on(State::new(window, &self.meshes)));
         }
 
         #[cfg(target_arch = "wasm32")]
         {
             // Web: kick off async init and deliver the result via the proxy.
             let proxy = self.proxy.take().expect("proxy missing");
-            let mesh = self.mesh.clone();
+            let meshes = self.meshes.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let state = State::new(window, &mesh).await;
+                let state = State::new(window, &meshes).await;
                 let _ = proxy.send_event(AppEvent::Initialized(state));
             });
         }
@@ -216,21 +217,29 @@ pub fn run() {
         .build()
         .expect("failed to build event loop");
 
-    let mesh = mesh::mesh_section(&demo_section());
+    let meshes = build_world_meshes(&demo_world());
 
-    // Frame the camera on the meshed scene from its bounds, then let the user fly.
-    let min = Vec3::from(mesh.aabb.min);
-    let max = Vec3::from(mesh.aabb.max);
+    // Frame the camera on the whole scene from the combined bounds, then fly.
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    for m in &meshes {
+        min = min.min(Vec3::from(m.aabb.min));
+        max = max.max(Vec3::from(m.aabb.max));
+    }
+    if meshes.is_empty() {
+        min = Vec3::ZERO;
+        max = Vec3::splat(Section::SIZE as f32);
+    }
     let center = (min + max) * 0.5;
     let radius = ((max - min).length() * 0.5).max(1.0);
-    let eye = center + Vec3::new(1.0, 0.7, 1.3).normalize() * radius * 2.6;
+    let eye = center + Vec3::new(1.0, 0.6, 1.3).normalize() * radius * 1.8;
 
     let mut app = App {
         state: None,
         proxy: Some(event_loop.create_proxy()),
-        mesh,
+        meshes,
         camera: Camera::looking_at(eye, center),
-        controller: CameraController::new(radius * 1.2),
+        controller: CameraController::new(radius),
         last_frame: None,
         cursor_locked: false,
     };
@@ -238,26 +247,83 @@ pub fn run() {
     event_loop.run_app(&mut app).expect("event loop error");
 }
 
-/// A hand-built test chunk: a stepped pyramid centred in the section. Its terraces
-/// make the mesher's face-culling obvious — vertical step faces and exposed tops,
-/// no hidden interior faces. (M1 scaffolding; M3 replaces this with real terrain.)
-fn demo_section() -> Section {
-    // Cycle a few debug block types up the height so the steps read clearly.
-    const PALETTE: [BlockId; 4] = [BlockId(1), BlockId(2), BlockId(3), BlockId(4)];
-    const LEVELS: u32 = 8;
-
-    let mut section = Section::new();
-    for level in 0..LEVELS {
-        let lo = 8 + level;
-        let hi = 24 - level;
-        let block = PALETTE[level as usize % PALETTE.len()];
-        for z in lo..hi {
-            for x in lo..hi {
-                section.set(x, level, z, block);
+/// A small demo world: a 3×3 grid of chunks of rolling hills. Enough to show greedy
+/// meshing, cross-chunk seam culling, and many chunks at once. (M2 scaffolding; M3
+/// replaces this with palette storage + real generation + streaming.)
+fn demo_world() -> World {
+    let s = Section::SIZE as i32;
+    let mut world = World::new();
+    for cz in -1..=1 {
+        for cx in -1..=1 {
+            let mut section = Section::new();
+            for z in 0..Section::SIZE {
+                for x in 0..Section::SIZE {
+                    let height = terrain_height(cx * s + x as i32, cz * s + z as i32);
+                    for y in 0..height.min(Section::SIZE) {
+                        let depth = height - y;
+                        let block = match depth {
+                            1 => BlockId(3),     // grass on top
+                            2..=3 => BlockId(2), // dirt
+                            _ => BlockId(1),     // stone
+                        };
+                        section.set(x, y, z, block);
+                    }
+                }
             }
+            world.insert((cx, 0, cz), section);
         }
     }
-    section
+    world
+}
+
+/// Smooth pseudo-terrain height (no noise dependency yet — that's M3).
+fn terrain_height(wx: i32, wz: i32) -> u32 {
+    let h = 11.0
+        + 4.0 * (wx as f32 * 0.12).sin()
+        + 4.0 * (wz as f32 * 0.10).cos()
+        + 2.0 * (wx as f32 * 0.31 + wz as f32 * 0.27).sin();
+    h.round().clamp(1.0, (Section::SIZE - 1) as f32) as u32
+}
+
+/// Greedy-mesh each chunk with neighbour-aware seam culling, offset to its world
+/// position. App-level glue: it's allowed to touch `world` + `mesh` together.
+fn build_world_meshes(world: &World) -> Vec<ChunkMesh> {
+    let s = Section::SIZE as f32;
+    let mut meshes = Vec::new();
+    for ((cx, cy, cz), section) in world.chunks() {
+        let neighbors = Neighbors {
+            faces: [
+                world.get((cx - 1, cy, cz)),
+                world.get((cx + 1, cy, cz)),
+                world.get((cx, cy - 1, cz)),
+                world.get((cx, cy + 1, cz)),
+                world.get((cx, cy, cz - 1)),
+                world.get((cx, cy, cz + 1)),
+            ],
+        };
+        let mut mesh = greedy_mesh_section_with(section, &neighbors);
+        if mesh.is_empty() {
+            continue;
+        }
+        let [ox, oy, oz] = [cx as f32 * s, cy as f32 * s, cz as f32 * s];
+        for v in &mut mesh.vertices {
+            v.position[0] += ox;
+            v.position[1] += oy;
+            v.position[2] += oz;
+        }
+        mesh.aabb.min = [
+            mesh.aabb.min[0] + ox,
+            mesh.aabb.min[1] + oy,
+            mesh.aabb.min[2] + oz,
+        ];
+        mesh.aabb.max = [
+            mesh.aabb.max[0] + ox,
+            mesh.aabb.max[1] + oy,
+            mesh.aabb.max[2] + oz,
+        ];
+        meshes.push(mesh);
+    }
+    meshes
 }
 
 #[cfg(target_arch = "wasm32")]
