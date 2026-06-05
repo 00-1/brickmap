@@ -1,6 +1,6 @@
 # ✨ E12 — Shareable seeds & permalinks
 
-> Status: **in progress** 🛠. Exploration/feature rung in [`../roadmap.md`](../roadmap.md);
+> Status: **done** ✅. Exploration/feature rung in [`../roadmap.md`](../roadmap.md);
 > research in [`../exploration-backlog.md`](../exploration-backlog.md) §L. Pulled forward
 > (ahead of the foliage pivot) — small, deterministic, high-delight.
 
@@ -49,8 +49,22 @@
   world + page controls); seed on HUD.
 - [x] Native: `--seed <int|text>` / `--share <blob>` / `--daily`; `P` prints the share
   string, `R` reseeds random.
-- [ ] Golden voxel-hash test; determinism caveat documented. *(next slice)*
-- [ ] CI green; docs synced. *(green locally: fmt + native clippy + tests + wasm build)*
+- [x] Golden voxel-hash test; determinism caveat documented. *(`golden_voxel_hash_is_stable`
+  fingerprints a 5×5 chunk grid via FNV-1a over integer block ids; caveat in the test +
+  below.)*
+- [x] CI green; docs synced. *(green locally: fmt + native clippy + tests + wasm build;
+  CI runs the same on push.)*
 
-> Status: **in progress** 🛠 — runtime seed + codec + web/native wiring landed; golden
-> determinism test is the last slice.
+## Determinism caveat (what "identical worlds" actually promises)
+The world is reproducible **on the same target**. Across targets (native ↔ wasm) the
+**integer** path — `worldgen::hash`, block ids, the share codec — is portable, and the
+golden test guards it. The **`f32` noise** path (`value_noise`/`fbm`) *could* drift
+(FMA/libm/rounding differences), but `height()` ends in `.round().clamp(...) as u32`, which
+masks sub-unit drift in almost all columns — so worlds should match in practice. The
+remaining risk is a column whose height sits exactly on a `*.5` rounding boundary. **Not yet
+proven cross-target** (needs wasm-in-CI); if it ever bites, the fix is fixed-point noise.
+Policy: treat the `Event`/share format as append-only and freeze worldgen per seed version,
+so old links keep reproducing old worlds.
+
+> Status: **done** ✅ — runtime seed + codec + web/native wiring + golden determinism test
+> all landed. (Live-web verification of the buttons is a human check; logic is unit-tested.)

@@ -241,9 +241,10 @@ then **pressure water** (compressible-mass; rendered as a separate vertex-displa
 User-facing features, all rated *great fit* because they reuse machinery we already have.
 *(Build order is fluid — **E12 seeds is being pulled forward to build next**, ahead of the
 foliage pivot, since it's small, deterministic, and high-delight.)*
-- **✨ E12 — Shareable seeds & permalinks** — runtime seed + a `share` codec (URL fragment
-  `#s=…&…`, web + native); seed input / random / seed-of-the-day / copy-link; restore on
-  load. ⚠️ add a cross-target golden voxel-hash test before promising "identical worlds".
+- **✨ E12 — Shareable seeds & permalinks** ✅ — runtime seed + a `share` codec (URL fragment
+  `#s=…&…`, web + native); seed input / 🎲 random / 📅 seed-of-the-day / copy-link / copy-seed;
+  restore on load; seed on the HUD. Golden voxel-hash test guards same-target determinism;
+  cross-target (wasm-in-CI) check + the worldgen-versioning policy noted in the brief.
 - **✨ E13 — Photo / cinematic mode** — pause + free-cam + FOV/roll/exposure, vignette/
   letterbox/hide-HUD, in-app screenshot (reuse the headless RTT path), Catmull-Rom camera
   paths (→ deterministic headless flythroughs/clips); photo-mode-only DoF.

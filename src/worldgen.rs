@@ -136,6 +136,40 @@ mod tests {
         }
     }
 
+    /// A stable FNV-1a hash over the block ids of a fixed 5×5 chunk grid — a compact
+    /// fingerprint of the whole generated world for a seed. Uses only integer block ids
+    /// (the portable part of worldgen, per the determinism caveat in the E12 brief).
+    fn voxel_hash(seed: u32) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV offset basis
+        for cz in -2..=2 {
+            for cx in -2..=2 {
+                let sec = generate_section(cx, cz, seed);
+                for z in 0..Section::SIZE {
+                    for y in 0..Section::SIZE {
+                        for x in 0..Section::SIZE {
+                            h ^= sec.get(x, y, z).0 as u64;
+                            h = h.wrapping_mul(0x0000_0100_0000_01b3); // FNV prime
+                        }
+                    }
+                }
+            }
+        }
+        h
+    }
+
+    #[test]
+    fn golden_voxel_hash_is_stable() {
+        // Guards against accidental worldgen changes (a known seed must keep hashing to
+        // the same world). If worldgen *intentionally* changes, bump this constant and
+        // the seed/worldgen version (E12 brief §5 caveat). The integer block-id path is
+        // portable; the f32 noise feeding `height().round()` *may* drift across targets,
+        // which is why a cross-target (wasm-in-CI) check is noted as a follow-up.
+        assert_eq!(voxel_hash(1337), 147_136_511_805_429_047);
+        // Different seeds must give different worlds.
+        assert_ne!(voxel_hash(1337), voxel_hash(1338));
+        assert_ne!(voxel_hash(0), voxel_hash(1));
+    }
+
     #[test]
     fn terrain_has_a_grass_or_surface_top_and_is_non_empty() {
         let s = generate_section(0, 0, 7);
