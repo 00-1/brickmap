@@ -91,52 +91,15 @@
         <p>The current build, auto-deployed on every push to <code>main</code>.</p>
       </a>
 
-      <a class="card" href="archive/11-crystal-light/">
-        <h2><span class="tag">E3</span>Crystal light</h2>
+      <a class="card" href="archive/07-living-world/">
+        <h2><span class="tag">M3–E5</span>The world so far</h2>
         <p>
-          The fake-GI: emissive crystals now <em>cast</em> light, not just glow. A
-          flood-fill bakes their cyan light into the mesh, so it spills onto the
-          terrain in pools, fades with distance, and bleeds around the folds — cheap,
-          baked, no ray tracing.
-        </p>
-      </a>
-
-      <a class="card" href="archive/10-glow/">
-        <h2><span class="tag">E3</span>Glow</h2>
-        <p>
-          Light to fly toward: cheap bloom makes the warm ember particles and rare
-          cool emissive crystals glow against the dusk sky. The cheap-light
-          exploration finds its mood — two kinds of glow over an AO-shaded, textured,
-          hazy world.
-        </p>
-      </a>
-
-      <a class="card" href="archive/09-atmosphere/">
-        <h2><span class="tag">E3</span>Atmosphere</h2>
-        <p>
-          The world gets air and light: a sky gradient with a hazy horizon the
-          distant terrain dissolves into, and coloured hemispheric ambient (cool sky
-          above, warm bounce below). First slices of the cheap-light exploration.
-        </p>
-      </a>
-
-      <a class="card" href="archive/08-materials/">
-        <h2><span class="tag">M4</span>Material &amp; occlusion</h2>
-        <p>
-          It starts to look like brickmap: baked ambient occlusion grounds the
-          terrain (valleys and folds darken), and per-material procedural textures —
-          posterised, tiled per voxel — give surfaces grain without losing the voxel
-          grid. The first deliberate look pass (see the look journal).
-        </p>
-      </a>
-
-      <a class="card" href="archive/07-endless-flight/">
-        <h2><span class="tag">M3</span>Endless flight</h2>
-        <p>
-          The world goes infinite: chunks stream in and out around a cinematic
-          cruise camera as it flies, so the terrain never ends — and distance fog
-          melts the far edge into the sky instead of popping in. Debris trails ahead
-          of the flight.
+          The current engine in one build: an endless streamed world, greedy-meshed and
+          frustum/cave-culled, with baked AO, procedural textures, sub-voxel relief, a
+          sky + distance fog, bloom, emissive crystals that cast cheap baked light, and
+          falling sand — every feature toggleable live (checkboxes / number keys), with a
+          perf HUD. The consolidated baseline just before the point-cloud foliage pivot.
+          (M3 streaming → M4 materials → E3 light → E4 relief → E5 sand, all in one.)
         </p>
       </a>
 

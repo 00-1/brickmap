@@ -10,6 +10,12 @@ written up front; it's a journal of decisions made as the tech produces them.
 the image · the call (keep / tune / drop) · why*. Snapshots live in the build gallery
 (`/archive/<id>/`); milestone briefs hold the engineering detail.
 
+> **Snapshot note (2026-06):** once features became live-toggleable, the granular
+> per-feature gallery snapshots `07`–`11` (endless-flight, materials, atmosphere, glow,
+> crystal-light) were **consolidated into one `07-living-world`** build (the whole modern
+> engine, everything toggleable). Older mentions of those ids below are historical; the
+> looks live on as toggles in the current build (and in git history).
+
 ---
 
 ## The standing thesis (design §11)
