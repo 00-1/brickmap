@@ -1,0 +1,5 @@
+# Pins the toolchain so local dev and CI agree. `rustup` reads this automatically.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

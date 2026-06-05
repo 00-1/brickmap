@@ -1,0 +1,76 @@
+name: Deploy preview
+
+# Builds the WASM app and publishes it to GitHub Pages so the latest `main` is
+# always previewable. See docs/development.md.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once; let an in-flight one finish (don't cancel a
+# publish midway).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build WASM bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable + wasm target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      # Use the exact wasm-bindgen-cli version from Cargo.lock so the generated JS
+      # glue matches the compiled wasm (mismatches cause subtle runtime breakage).
+      - name: Resolve wasm-bindgen version
+        id: wb
+        run: |
+          v=$(grep -A1 'name = "wasm-bindgen"' Cargo.lock | grep '^version' | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Install wasm-bindgen-cli ${{ steps.wb.outputs.version }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@${{ steps.wb.outputs.version }}
+
+      - name: Build (release)
+        run: cargo build --release --lib --target wasm32-unknown-unknown
+
+      - name: Assemble site
+        run: |
+          rm -rf dist && mkdir -p dist
+          cp web/index.html dist/
+          wasm-bindgen --target web --no-typescript \
+            --out-dir dist/pkg \
+            target/wasm32-unknown-unknown/release/brickmap.wasm
+          touch dist/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Publish to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -45,6 +45,11 @@ retro pastiche and *not* photorealism. The look is meant to **emerge from the
 tech** (the same artifacts that make it fast become the aesthetic), rather than
 being pre-planned. See the design doc.
 
+## Live preview
+
+Every push to `main` auto-deploys the WASM build to **GitHub Pages**:
+<https://00-1.github.io/brickmap/>. It always reflects the latest `main`.
+
 ## Documentation
 
 - [`docs/design.md`](docs/design.md) — goals/non-goals, target hardware + frame
@@ -52,6 +57,8 @@ being pre-planned. See the design doc.
 - [`docs/architecture.md`](docs/architecture.md) — module/crate boundaries and the
   sacred world-data ↔ renderer seam.
 - [`docs/spikes.md`](docs/spikes.md) — what we de-risk first, and the spike backlog.
+- [`docs/development.md`](docs/development.md) — workflow, code-quality gates, and
+  testing strategy.
 
 ## Running
 
