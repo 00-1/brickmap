@@ -119,6 +119,24 @@ pub fn seed_of_the_day(date: &str) -> u32 {
     seed_from_text(date).unwrap_or(0)
 }
 
+/// Format a Unix timestamp (seconds, UTC) as `YYYY-MM-DD`. Pure (no `chrono`), so
+/// native `--daily` lands on the same UTC date string the web gets from JS `Date`,
+/// and thus the same `seed_of_the_day`. Civil-from-days per Howard Hinnant's algorithm.
+pub fn date_utc_from_unix_secs(secs: i64) -> String {
+    let days = secs.div_euclid(86_400); // days since 1970-01-01 (can be negative)
+    let z = days + 719_468; // shift epoch to 0000-03-01
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,5 +220,19 @@ mod tests {
     fn seed_of_the_day_is_stable() {
         assert_eq!(seed_of_the_day("2026-06-05"), seed_of_the_day("2026-06-05"));
         assert_ne!(seed_of_the_day("2026-06-05"), seed_of_the_day("2026-06-06"));
+    }
+
+    #[test]
+    fn date_utc_matches_known_days() {
+        assert_eq!(date_utc_from_unix_secs(0), "1970-01-01");
+        // 2026-06-05 00:00:00 UTC = 1_780_617_600 (20609 days × 86400).
+        assert_eq!(date_utc_from_unix_secs(1_780_617_600), "2026-06-05");
+        // Late in the same UTC day still reads the same date.
+        assert_eq!(
+            date_utc_from_unix_secs(1_780_617_600 + 86_399),
+            "2026-06-05"
+        );
+        // A leap day.
+        assert_eq!(date_utc_from_unix_secs(1_582_934_400), "2020-02-29");
     }
 }

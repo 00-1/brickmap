@@ -40,11 +40,17 @@
   worldgen changes; cross-target check noted as a follow-up (needs wasm-in-CI).
 
 ## Acceptance checklist
-- [ ] Runtime seed (set/reset re-streams); headless still renders.
-- [ ] `share` codec + `seed_from_text`, unit-tested.
-- [ ] Web: seed input / random / daily / copy-link; restore on load; seed on HUD.
-- [ ] Native: `--seed`/`--share`/`--daily`; print share string.
-- [ ] Golden voxel-hash test; determinism caveat documented.
-- [ ] CI green; docs synced.
+- [x] Runtime seed (set/reset re-streams); headless still renders. *(`App.seed` +
+  `ChunkLoader` seed/epoch; `set_seed` tears down + re-streams; stale-epoch meshes
+  discarded. Headless keeps `WORLD_SEED`.)*
+- [x] `share` codec + `seed_from_text`, unit-tested. *(+ `date_utc_from_unix_secs` so
+  native `--daily` matches the web's UTC date.)*
+- [x] Web: seed input / random / daily / copy-link / copy-seed; restore on load (hash →
+  world + page controls); seed on HUD.
+- [x] Native: `--seed <int|text>` / `--share <blob>` / `--daily`; `P` prints the share
+  string, `R` reseeds random.
+- [ ] Golden voxel-hash test; determinism caveat documented. *(next slice)*
+- [ ] CI green; docs synced. *(green locally: fmt + native clippy + tests + wasm build)*
 
-> Status: **in progress** 🛠 — codec + runtime seed first.
+> Status: **in progress** 🛠 — runtime seed + codec + web/native wiring landed; golden
+> determinism test is the last slice.

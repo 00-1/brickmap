@@ -66,6 +66,20 @@
       (<b>drag</b> look, <b>Space/Shift</b> up/down, <b>Esc</b> release),
       <b>F</b> to resume auto-fly. <a href="../">build gallery →</a>
     </p>
+    <!-- Shareable seeds (E12): type a seed, roll a random one, get the seed-of-the-day,
+         or copy a link/seed to reproduce this exact world + view elsewhere. -->
+    <div
+      style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: center; color: #8a93a8; font-size: 12px; margin-top: 10px"
+    >
+      <label>seed <input type="text" id="seed-input" size="12" placeholder="number or word" style="background:#0d1018;color:#cfe;border:1px solid #1c2233;padding:2px 6px" /></label>
+      <button id="seed-go" type="button">go</button>
+      <button id="seed-random" type="button" title="random seed">🎲</button>
+      <button id="seed-daily" type="button" title="seed of the day">📅 daily</button>
+      <button id="copy-link" type="button">copy link</button>
+      <button id="copy-seed" type="button">copy seed</button>
+      <span id="seed-status" style="color: #6c8cff"></span>
+    </div>
+
     <!-- Live aesthetic dials (D2): drive shader params via wasm setters. -->
     <div
       style="display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; color: #8a93a8; font-size: 12px; margin-top: 8px"
@@ -114,9 +128,35 @@
     <!-- `__CACHE_BUST__` is replaced with the commit SHA at deploy time so a new
          build is never served stale from cache (the filenames are unhashed). -->
     <script type="module">
-      import init, { set_wobble, set_color_steps, set_toggle } from "./pkg/brickmap.js?v=__CACHE_BUST__";
+      import init, {
+        set_wobble,
+        set_color_steps,
+        set_toggle,
+        set_seed,
+        set_seed_text,
+        seed_of_the_day,
+        current_share,
+      } from "./pkg/brickmap.js?v=__CACHE_BUST__";
       // Order must match TOGGLE_LABELS in gfx.rs.
       const TOGGLES = ["cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief", "sand"];
+
+      // Parse the URL hash fragment (#s=…&w=…&…) the same way the Rust `share` codec
+      // does, so the page controls reflect a restored world on load.
+      function parseHash() {
+        const out = {};
+        location.hash.replace(/^#/, "").split("&").forEach((p) => {
+          const i = p.indexOf("=");
+          if (i > 0) out[p.slice(0, i)] = p.slice(i + 1);
+        });
+        return out;
+      }
+      let status; // set after DOM ready
+      function flash(msg) {
+        if (!status) return;
+        status.textContent = msg;
+        setTimeout(() => { if (status.textContent === msg) status.textContent = ""; }, 1500);
+      }
+
       init({ module_or_path: "./pkg/brickmap_bg.wasm?v=__CACHE_BUST__" })
         .catch((err) => {
           // winit's web backend escapes its run loop by throwing; that's expected.
@@ -125,21 +165,56 @@
           }
         })
         .finally(() => {
+          const hp = parseHash();
           const wobble = document.getElementById("dial-wobble");
           const steps = document.getElementById("dial-steps");
+          if (hp.w !== undefined) wobble.value = hp.w;
+          if (hp.d !== undefined) steps.value = hp.d;
           wobble.addEventListener("input", () => set_wobble(parseFloat(wobble.value)));
           steps.addEventListener("input", () => set_color_steps(parseFloat(steps.value)));
 
-          // Build the feature-toggle checkboxes (all on by default).
+          // Build the feature-toggle checkboxes, reflecting any restored toggle mask.
+          const mask = hp.t !== undefined ? parseInt(hp.t, 16) : 0x7ff;
           const box = document.getElementById("toggles");
           TOGGLES.forEach((name, i) => {
             const label = document.createElement("label");
             const cb = document.createElement("input");
             cb.type = "checkbox";
-            cb.checked = true;
+            cb.checked = (mask & (1 << i)) !== 0;
             cb.addEventListener("change", () => set_toggle(i, cb.checked));
             label.append(cb, " " + name);
             box.append(label);
+          });
+
+          // Seed controls (E12).
+          status = document.getElementById("seed-status");
+          const seedInput = document.getElementById("seed-input");
+          if (hp.s !== undefined) seedInput.value = hp.s;
+          const applyText = () => {
+            const s = set_seed_text(seedInput.value);
+            if (seedInput.value.trim() !== "") flash("seed " + s);
+          };
+          document.getElementById("seed-go").addEventListener("click", applyText);
+          seedInput.addEventListener("keydown", (e) => { if (e.key === "Enter") applyText(); });
+          document.getElementById("seed-random").addEventListener("click", () => {
+            const s = (Math.floor(Math.random() * 4294967296)) >>> 0;
+            set_seed(s); seedInput.value = s; flash("seed " + s);
+          });
+          document.getElementById("seed-daily").addEventListener("click", () => {
+            const s = seed_of_the_day(new Date().toISOString().slice(0, 10));
+            set_seed(s); seedInput.value = s; flash("daily " + s);
+          });
+          document.getElementById("copy-link").addEventListener("click", () => {
+            const url = location.origin + location.pathname + "#" + current_share();
+            navigator.clipboard.writeText(url).then(() => flash("link copied"),
+              () => flash("copy failed"));
+          });
+          document.getElementById("copy-seed").addEventListener("click", () => {
+            const share = current_share();
+            const m = /(^|&)s=([^&]+)/.exec(share);
+            const seed = m ? m[2] : seedInput.value;
+            navigator.clipboard.writeText(seed).then(() => flash("seed copied"),
+              () => flash("copy failed"));
           });
         });
     </script>

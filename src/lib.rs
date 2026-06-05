@@ -90,6 +90,9 @@ struct App {
     hud_timer: f32,
     /// Live feature on/off switches (D6).
     toggles: Toggles,
+    /// The seed this world is generated from (E12). Drives streaming, sand, emitters,
+    /// and the auto-fly ground query; changing it via `set_seed` regenerates the world.
+    seed: u32,
 }
 
 impl App {
@@ -109,6 +112,66 @@ impl App {
             window.set_cursor_visible(true);
         }
         self.cursor_locked = capture;
+    }
+
+    /// Switch to a new world seed (E12): tear down the streamed world + sand overlay,
+    /// reset the loader, and drop the camera back onto the new ground. The world
+    /// re-streams from the next frame. No-op if the seed is unchanged.
+    fn set_seed(&mut self, seed: u32) {
+        if seed == self.seed {
+            return;
+        }
+        self.seed = seed;
+        if let Some(state) = self.state.as_mut() {
+            for &coord in self.loaded.iter() {
+                state.remove_chunk(coord);
+            }
+        }
+        self.loaded.clear();
+        self.overlay.clear();
+        self.sim_active.clear();
+        self.loader.set_seed(seed);
+        let ground = worldgen::height(
+            self.camera.position.x.floor() as i32,
+            self.camera.position.z.floor() as i32,
+            seed,
+        ) as f32;
+        self.camera.position.y = ground + CRUISE_HEIGHT;
+        log::info!("seed → {seed}");
+    }
+
+    /// Dev seed keys on native: `R` reseeds to a fresh random world, `P` prints the
+    /// current share string. Returns whether the key was handled. No-op on web (the page
+    /// has buttons for these).
+    fn handle_seed_key(&mut self, code: KeyCode) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        match code {
+            KeyCode::KeyR => {
+                self.set_seed(random_seed());
+                return true;
+            }
+            KeyCode::KeyP => {
+                log::info!("share: #{}", self.current_share().encode());
+                return true;
+            }
+            _ => {}
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = code;
+        false
+    }
+
+    /// The current world + view as a `ShareState` (E12) — for "copy link" / `--share`.
+    fn current_share(&self) -> share::ShareState {
+        share::ShareState {
+            seed: self.seed,
+            pos: self.camera.position.into(),
+            yaw: self.camera.yaw,
+            pitch: self.camera.pitch,
+            wobble: self.wobble,
+            color_steps: self.color_steps,
+            toggles: self.toggles.to_mask(),
+        }
     }
 
     /// Stream chunks in and out around the camera (M3 part 3). Generates + meshes
@@ -220,7 +283,7 @@ impl App {
                 continue;
             }
             if let Some(sec) = self.overlay.get(&coord) {
-                let inst = mesh_chunk(coord, sec, WORLD_SEED);
+                let inst = mesh_chunk(coord, sec, self.seed);
                 if let Some(state) = self.state.as_mut() {
                     state.upload_chunk(&inst);
                     budget -= 1;
@@ -254,7 +317,7 @@ impl App {
         let sec = self
             .overlay
             .entry(coord)
-            .or_insert_with(|| worldgen::generate_section(coord.0, coord.2, WORLD_SEED));
+            .or_insert_with(|| worldgen::generate_section(coord.0, coord.2, self.seed));
         let mut added = false;
         for (dx, dz) in [(0i32, 0i32), (1, 0), (0, 1), (1, 1)] {
             let (x, z) = (lx + dx, lz + dz);
@@ -310,21 +373,28 @@ fn build_chunk_instance(coord: ChunkCoord, seed: u32) -> ChunkInstance {
 /// finished `ChunkInstance`s over a channel; web meshes inline, time-sliced. Same
 /// interface either way: `request` to enqueue, `drain` to collect.
 struct ChunkLoader {
+    /// The seed the world is currently generated from (E12 runtime seed).
+    seed: u32,
+    /// Bumped on reseed; in-flight jobs carry the epoch they were dispatched under so
+    /// stale (old-seed) results can be discarded as they trickle back.
+    epoch: u64,
     /// Coords currently in flight (so we don't request them twice).
     pending: HashSet<ChunkCoord>,
     #[cfg(not(target_arch = "wasm32"))]
-    tx: std::sync::mpsc::Sender<ChunkInstance>,
+    tx: std::sync::mpsc::Sender<(u64, ChunkInstance)>,
     #[cfg(not(target_arch = "wasm32"))]
-    rx: std::sync::mpsc::Receiver<ChunkInstance>,
+    rx: std::sync::mpsc::Receiver<(u64, ChunkInstance)>,
     #[cfg(target_arch = "wasm32")]
     queue: std::collections::VecDeque<ChunkCoord>,
 }
 
 impl ChunkLoader {
-    fn new() -> ChunkLoader {
+    fn new(seed: u32) -> ChunkLoader {
         #[cfg(not(target_arch = "wasm32"))]
         let (tx, rx) = std::sync::mpsc::channel();
         ChunkLoader {
+            seed,
+            epoch: 0,
             pending: HashSet::new(),
             #[cfg(not(target_arch = "wasm32"))]
             tx,
@@ -343,6 +413,16 @@ impl ChunkLoader {
         self.pending.len()
     }
 
+    /// Switch the world to a new seed: drop all in-flight work (results still arriving
+    /// under the old epoch are discarded in `drain`) and start fresh.
+    fn set_seed(&mut self, seed: u32) {
+        self.seed = seed;
+        self.epoch += 1;
+        self.pending.clear();
+        #[cfg(target_arch = "wasm32")]
+        self.queue.clear();
+    }
+
     /// Queue a chunk to be meshed. Native: dispatch a rayon job. Web: enqueue.
     fn request(&mut self, coord: ChunkCoord) {
         if !self.pending.insert(coord) {
@@ -351,8 +431,9 @@ impl ChunkLoader {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let tx = self.tx.clone();
+            let (seed, epoch) = (self.seed, self.epoch);
             rayon::spawn(move || {
-                let _ = tx.send(build_chunk_instance(coord, WORLD_SEED));
+                let _ = tx.send((epoch, build_chunk_instance(coord, seed)));
             });
         }
         #[cfg(target_arch = "wasm32")]
@@ -361,14 +442,18 @@ impl ChunkLoader {
         }
     }
 
-    /// Collect up to `budget` finished meshes. Native: non-blocking `try_recv`. Web:
-    /// mesh up to `budget` queued chunks inline (this is where the web cost lives).
+    /// Collect up to `budget` finished meshes. Native: non-blocking `try_recv` (stale-
+    /// epoch results are dropped). Web: mesh up to `budget` queued chunks inline (this is
+    /// where the web cost lives).
     fn drain(&mut self, budget: usize) -> Vec<ChunkInstance> {
         let mut out = Vec::new();
         #[cfg(not(target_arch = "wasm32"))]
-        for _ in 0..budget {
+        while out.len() < budget {
             match self.rx.try_recv() {
-                Ok(inst) => {
+                Ok((epoch, inst)) => {
+                    if epoch != self.epoch {
+                        continue; // result from a superseded seed — discard
+                    }
                     self.pending.remove(&inst.coord);
                     out.push(inst);
                 }
@@ -380,7 +465,7 @@ impl ChunkLoader {
             match self.queue.pop_front() {
                 Some(coord) => {
                     self.pending.remove(&coord);
-                    out.push(build_chunk_instance(coord, WORLD_SEED));
+                    out.push(build_chunk_instance(coord, self.seed));
                 }
                 None => break,
             }
@@ -392,7 +477,7 @@ impl ChunkLoader {
 /// Debris emitters scattered on the terrain *ahead of* the camera along its
 /// heading, so the flight sweeps over rising embers. Emitting at the camera itself
 /// just leaves the debris behind at cruise speed (it spawns and the camera is gone).
-fn lead_emitters(camera: &Camera) -> Vec<Vec3> {
+fn lead_emitters(camera: &Camera, seed: u32) -> Vec<Vec3> {
     // Horizontal heading + right vector (the camera looks slightly down).
     let mut fwd = camera.forward();
     fwd.y = 0.0;
@@ -403,8 +488,7 @@ fn lead_emitters(camera: &Camera) -> Vec<Vec3> {
         .iter()
         .map(|&(side, extra)| {
             let p = camera.position + fwd * (24.0 + extra) + right * (side * 11.0);
-            let g =
-                worldgen::height(p.x.floor() as i32, p.z.floor() as i32, WORLD_SEED) as f32 + 0.5;
+            let g = worldgen::height(p.x.floor() as i32, p.z.floor() as i32, seed) as f32 + 0.5;
             Vec3::new(p.x, g, p.z)
         })
         .collect()
@@ -494,6 +578,8 @@ impl ApplicationHandler<AppEvent> for App {
                         self.set_capture(false);
                     } else if code == KeyCode::KeyF && pressed {
                         self.auto_fly = !self.auto_fly; // toggle cinematic orbit
+                    } else if pressed && self.handle_seed_key(code) {
+                        // handled: R reseed / P print share (native)
                     } else if let Some(i) = toggle_index(code) {
                         // Number keys flip renderer features (D6); web uses checkboxes.
                         if pressed {
@@ -539,7 +625,7 @@ impl ApplicationHandler<AppEvent> for App {
                     let dir = Vec3::new(yaw.cos(), 0.0, yaw.sin());
                     let mut pos = self.camera.position + dir * (AUTO_FLY_SPEED * dt);
                     let ground =
-                        worldgen::height(pos.x.floor() as i32, pos.z.floor() as i32, WORLD_SEED)
+                        worldgen::height(pos.x.floor() as i32, pos.z.floor() as i32, self.seed)
                             as f32;
                     let target_y = ground + CRUISE_HEIGHT;
                     pos.y += (target_y - pos.y) * (dt * 1.2).min(1.0);
@@ -553,17 +639,26 @@ impl ApplicationHandler<AppEvent> for App {
                 self.sim(dt);
                 // Ambient debris bursts ahead of the camera so the flight sweeps
                 // over rising embers (there's always motion in frame).
-                self.particles.set_emitters(lead_emitters(&self.camera));
+                self.particles
+                    .set_emitters(lead_emitters(&self.camera, self.seed));
                 self.particles.update(dt);
                 let particles = self.particles.instances();
 
-                // On the web, pull the latest dial values set by the page sliders.
+                // On the web, pull the latest dial values set by the page sliders, plus
+                // any seed change requested from the page (E12).
                 #[cfg(target_arch = "wasm32")]
                 {
                     self.wobble = controls::wobble();
                     self.color_steps = controls::color_steps();
                     self.toggles = controls::toggles();
+                    if let Some(seed) = controls::take_pending_seed() {
+                        self.set_seed(seed);
+                    }
                 }
+                // The current share string for "copy link" (computed before the mutable
+                // `state` borrow below; cheap, refreshed every frame).
+                #[cfg(target_arch = "wasm32")]
+                let share_str = self.current_share().encode();
 
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
@@ -599,8 +694,9 @@ impl ApplicationHandler<AppEvent> for App {
                             String::new()
                         };
                         let hud = format!(
-                            "{fps:.0} fps · {:.1} ms · {}/{} chunks · {} tris · {} fx{meshing}{}",
+                            "{fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx{meshing}{}",
                             self.frame_ms_ema,
+                            self.seed,
                             s.drawn_chunks,
                             s.total_chunks,
                             s.triangles,
@@ -610,7 +706,11 @@ impl ApplicationHandler<AppEvent> for App {
                         #[cfg(not(target_arch = "wasm32"))]
                         state.window().set_title(&format!("brickmap — {hud}"));
                         #[cfg(target_arch = "wasm32")]
-                        set_hud(&hud);
+                        {
+                            set_hud(&hud);
+                            // Keep the page's "copy link" payload fresh.
+                            controls::set_current_share(&share_str);
+                        }
                     }
 
                     // Drive a continuous loop so held keys animate.
@@ -665,11 +765,34 @@ pub fn run() {
         .build()
         .expect("failed to build event loop");
 
-    // Start above the terrain at the origin, looking along +x; streaming fills the
-    // world in around us on the first frames.
-    let start_ground = worldgen::height(0, 0, WORLD_SEED) as f32;
-    let start = Vec3::new(0.0, start_ground + CRUISE_HEIGHT, 0.0);
-    let camera = Camera::new(start, 0.0, AUTO_FLY_PITCH);
+    // The default world/view: start above the terrain at the origin, looking along +x;
+    // streaming fills the world in around us on the first frames.
+    let default_ground = worldgen::height(0, 0, WORLD_SEED) as f32;
+    let default_view = share::ShareState {
+        seed: WORLD_SEED,
+        pos: [0.0, default_ground + CRUISE_HEIGHT, 0.0],
+        yaw: 0.0,
+        pitch: AUTO_FLY_PITCH,
+        wobble: 85.0,
+        color_steps: 4.0,
+        toggles: Toggles::default().to_mask(),
+    };
+    // Override from a shared link / CLI seed if present (E12).
+    let view = initial_view(default_view);
+
+    // If a seed was chosen but no explicit camera position came with it, drop the
+    // camera onto the new seed's ground so we don't start buried or floating.
+    let mut pos = Vec3::from(view.pos);
+    if view.seed != default_view.seed && view.pos == default_view.pos {
+        pos.y = worldgen::height(pos.x.floor() as i32, pos.z.floor() as i32, view.seed) as f32
+            + CRUISE_HEIGHT;
+    }
+    let camera = Camera::new(pos, view.yaw, view.pitch);
+
+    // On the web, seed the JS-facing control cells so the page reflects the restored
+    // state (and the per-frame read-back doesn't clobber it).
+    #[cfg(target_arch = "wasm32")]
+    controls::init_from(&view);
 
     let mut app = App {
         state: None,
@@ -677,7 +800,7 @@ pub fn run() {
         camera,
         controller: CameraController::new(45.0),
         particles: ParticleSystem::new(Vec::new()),
-        loader: ChunkLoader::new(),
+        loader: ChunkLoader::new(view.seed),
         loaded: HashSet::new(),
         overlay: std::collections::HashMap::new(),
         sim_active: HashSet::new(),
@@ -685,20 +808,79 @@ pub fn run() {
         sand_timer: 0.0,
         auto_fly: true,
         auto_fly_angle: 0.0,
-        wobble: 85.0,
-        color_steps: 4.0,
+        wobble: view.wobble,
+        color_steps: view.color_steps,
         last_frame: None,
         cursor_locked: false,
         frame_ms_ema: 0.0,
         hud_timer: 0.0,
-        toggles: Toggles::default(),
+        toggles: Toggles::from_mask(view.toggles),
+        seed: view.seed,
     };
 
     event_loop.run_app(&mut app).expect("event loop error");
 }
 
-/// Seed for the world (shared by terrain + emitters).
+/// Resolve the initial world/view, overriding `default` from a shared link or CLI seed.
+/// Native: `--share <blob>`, `--seed <int|text>`, `--daily`. Web: the URL hash fragment.
+#[cfg(not(target_arch = "wasm32"))]
+fn initial_view(default: share::ShareState) -> share::ShareState {
+    let args: Vec<String> = std::env::args().collect();
+    let mut i = 1;
+    let mut view = default;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--share" if i + 1 < args.len() => {
+                if let Some(v) = share::ShareState::decode(&args[i + 1], view) {
+                    view = v;
+                }
+                i += 2;
+            }
+            "--seed" if i + 1 < args.len() => {
+                if let Some(s) = share::seed_from_text(&args[i + 1]) {
+                    view.seed = s;
+                }
+                i += 2;
+            }
+            "--daily" => {
+                let secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                view.seed = share::seed_of_the_day(&share::date_utc_from_unix_secs(secs));
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    view
+}
+
+/// Web: restore the view from the URL hash fragment (`#s=…&x=…&…`) if present.
+#[cfg(target_arch = "wasm32")]
+fn initial_view(default: share::ShareState) -> share::ShareState {
+    web_sys::window()
+        .and_then(|w| w.location().hash().ok())
+        .and_then(|h| share::ShareState::decode(&h, default))
+        .unwrap_or(default)
+}
+
+/// Seed for the world (the default + the headless demo).
 const WORLD_SEED: u32 = 1337;
+
+/// A fresh pseudo-random seed from the wall clock (native `R` key). splitmix64-style
+/// mix so nearby nanos still produce well-spread seeds.
+#[cfg(not(target_arch = "wasm32"))]
+fn random_seed() -> u32 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let mut z = nanos.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    (z ^ (z >> 31)) as u32
+}
 /// Radius of the *demo* world (headless render only), in chunks — a `(2r+1)²` grid.
 #[cfg(not(target_arch = "wasm32"))]
 const WORLD_RADIUS: i32 = 2;
@@ -854,6 +1036,17 @@ pub mod controls {
         static COLOR_STEPS: Cell<f32> = const { Cell::new(4.0) };
         /// Feature-toggle bitmask, one bit per switch; all 11 on by default.
         static TOGGLES: Cell<u32> = const { Cell::new(0x7FF) };
+        /// A seed change requested from the page, consumed by the app next frame.
+        static PENDING_SEED: Cell<Option<u32>> = const { Cell::new(None) };
+        /// The app's current share string, refreshed each HUD tick for "copy link".
+        static CURRENT_SHARE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    }
+
+    /// Seed the control cells from a restored view on startup (so the page reflects it).
+    pub(crate) fn init_from(view: &crate::share::ShareState) {
+        WOBBLE.with(|c| c.set(view.wobble));
+        COLOR_STEPS.with(|c| c.set(view.color_steps));
+        TOGGLES.with(|c| c.set(view.toggles));
     }
 
     /// Vertex-wobble snap (lower = chunkier). Called from JS.
@@ -866,6 +1059,47 @@ pub mod controls {
     #[wasm_bindgen]
     pub fn set_color_steps(value: f32) {
         COLOR_STEPS.with(|c| c.set(value));
+    }
+
+    /// Switch to a seed parsed from user text (numeric or folded). Returns the resolved
+    /// `u32` seed so the page can display it; empty text is ignored (returns the current).
+    #[wasm_bindgen]
+    pub fn set_seed_text(text: &str) -> u32 {
+        match crate::share::seed_from_text(text) {
+            Some(seed) => {
+                PENDING_SEED.with(|c| c.set(Some(seed)));
+                seed
+            }
+            None => 0,
+        }
+    }
+
+    /// Switch to an explicit numeric seed (e.g. the 🎲 random button). Returns it back.
+    #[wasm_bindgen]
+    pub fn set_seed(seed: u32) -> u32 {
+        PENDING_SEED.with(|c| c.set(Some(seed)));
+        seed
+    }
+
+    /// The deterministic seed for a `YYYY-MM-DD` date (seed-of-the-day). Pure; the page
+    /// passes its local UTC date and then calls `set_seed` with the result.
+    #[wasm_bindgen]
+    pub fn seed_of_the_day(date: &str) -> u32 {
+        crate::share::seed_of_the_day(date)
+    }
+
+    /// The current share string (`s=…&x=…&…`) for building a copy-link URL.
+    #[wasm_bindgen]
+    pub fn current_share() -> String {
+        CURRENT_SHARE.with(|c| c.borrow().clone())
+    }
+
+    pub(crate) fn set_current_share(s: &str) {
+        CURRENT_SHARE.with(|c| *c.borrow_mut() = s.to_string());
+    }
+
+    pub(crate) fn take_pending_seed() -> Option<u32> {
+        PENDING_SEED.with(|c| c.take())
     }
 
     pub(crate) fn wobble() -> f32 {
@@ -907,7 +1141,7 @@ mod tests {
     #[test]
     fn loader_meshes_a_chunk_off_thread() {
         // The native loader dispatches to rayon; the mesh comes back via the channel.
-        let mut loader = ChunkLoader::new();
+        let mut loader = ChunkLoader::new(WORLD_SEED);
         loader.request((0, 0, 0));
         assert!(loader.is_pending((0, 0, 0)));
 

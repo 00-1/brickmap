@@ -109,6 +109,27 @@ impl Toggles {
         self.set(i, !self.get(i));
     }
 
+    /// Pack the switches into a bitmask (bit `i` = `TOGGLE_LABELS[i]`), for the share
+    /// codec and the web bridge.
+    pub fn to_mask(self) -> u32 {
+        let mut m = 0u32;
+        for i in 0..TOGGLE_LABELS.len() {
+            if self.get(i) {
+                m |= 1 << i;
+            }
+        }
+        m
+    }
+
+    /// Rebuild the switches from a bitmask (inverse of [`to_mask`](Self::to_mask)).
+    pub fn from_mask(m: u32) -> Toggles {
+        let mut t = Toggles::default();
+        for i in 0..TOGGLE_LABELS.len() {
+            t.set(i, m & (1 << i) != 0);
+        }
+        t
+    }
+
     /// Compact readout of what's currently OFF, for the HUD (empty when all on).
     pub fn off_summary(&self) -> String {
         let off: Vec<&str> = TOGGLE_LABELS
