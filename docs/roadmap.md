@@ -49,7 +49,14 @@ Acceptance checklist
 
 ## The ladder
 
-> Status legend: ✅ done · 🛠 in progress · ⏳ planned
+This is a **single sequence, in execution order** — top to bottom is the order we
+build. Most rungs are the standard voxel "performance spine" (necessary, shared
+with every Minecraft-like). The **✨ exploration** rungs are what make brickmap its
+own thing — the content/visual work from [`design.md`](design.md) §12 — interleaved
+*in place* so they don't get deferred to the end (or lost).
+
+> Legend: ✅ done · 🛠 in progress · ⏳ planned · **✨ = exploration** (the
+> *interesting* bit, not infrastructure).
 
 ### M0 — Foundation & rig ✅
 Planning docs, the cross-platform render spike (one cube, desktop + web), CI, and
@@ -79,6 +86,14 @@ vertex** (encode/decode round-trip tests).
   fixtures; packed vertex round-trips for every field; a meshing throughput number
   is recorded against the design §8 budget.
 
+### ✨ E1 — Particles + destruction *(exploration)* ⏳
+Instanced point-sprite / cube **particles** in the forward pass, and **shattering**
+a chunk into flying, fading, emissive cubes — the cheapest path to "alive on
+screen" and a direct test of the §11 look (design §12).
+- **Outcome:** disturb a chunk and it bursts into glowing debris that scatters and fades.
+- **Why here:** needs M2's meshed chunks to shatter; placed *before* more
+  infrastructure on purpose, so something distinctive lands early.
+
 ### M3 — A world to fly through ⏳
 **Palette-compressed** section storage, **procedural** (noise) terrain, and chunk
 **streaming** around the camera (load/unload; synchronous is fine here).
@@ -97,6 +112,12 @@ artifacts the tech produces.
 - **Acceptance:** AO values tested in the mesher; texture-array path works on web
   (WebGL2) and native; a short look-journal entry captures what we kept and why.
 
+### ✨ E3 — Sub-voxel surface displacement *(exploration)* ⏳
+Per-face relief (brick / grain / cobble) so blocks aren't flat — richness with no
+extra geometry (design §12).
+- **Outcome:** surfaces gain depth and texture without shrinking the voxels.
+- **Why here:** pairs naturally with M4's material/texture path.
+
 ### M5 — Light to draw (occlusion culling) ⏳
 **Visibility-graph / "cave" culling** (flood-fill chunk connectivity) combined
 with frustum culling, plus an on-screen **frame-time / draw-call / triangle HUD**.
@@ -113,6 +134,13 @@ uploads; plus the web fallback (single-thread or `wasm-bindgen-rayon` workers).
 - **Acceptance:** meshing never blocks a frame on native; web still functions
   (slower meshing accepted).
 
+### ✨ E2 — Dynamic / cellular-automata voxels *(exploration)* ⏳
+Falling sand / fluid / fire on the world grid, re-meshing only the dirty regions.
+The headline "interesting" — voxels that *behave* (design §12).
+- **Outcome:** matter that flows, falls, and burns in real time.
+- **Why here:** needs a real world to disturb (M3) and async meshing (M6) to stay
+  smooth. (A cheap prototype could be spiked sooner if we're itching for it.)
+
 ### M7 — Distance is cheap (LOD) ⏳
 **Octree-mip chunk LOD** with distance selection and transition handling.
 - **Outcome:** long view distances with bounded triangle counts.
@@ -128,26 +156,12 @@ budgets, wire the **lighting data path**, and add mobile **dynamic resolution**.
 - **Acceptance:** recorded frame times on both reference devices within budget;
   budgets in `design.md` §8 updated with real numbers.
 
-## Exploration track — the *interesting* bit
+## What we're deliberately *not* doing
 
-The ladder above is mostly the standard voxel "performance spine" (necessary, but
-shared with every Minecraft-like). These explorations are what make brickmap its
-own thing — the **world content & visual destination** from [`design.md`](design.md)
-§12. They **interleave** with the ladder (we don't defer all the fun to the end):
-the first lands right after a lean M2.
-
-- **E1 — Particles + destruction spike** (right after M2). Instanced point-sprite/
-  cube particles in the forward pass; shatter a chunk into flying, fading, emissive
-  cubes. Cheapest path to "alive on screen," and a direct test of the §11 look.
-- **E2 — Dynamic / cellular-automata voxels.** Falling sand / fluid / fire on the
-  world grid, with only dirty regions re-meshed. The headline "interesting";
-  leans on async meshing (M6). Likely after M3 (a real world to disturb) and M6.
-- **E3 — Sub-voxel surface displacement.** Per-face relief so blocks aren't flat,
-  no extra geometry. Pairs naturally with materials (M4).
-
-**Discarded** (don't fit weak-hardware-first / §6 / §11; see design §12): global
-illumination & path tracing, ray-marched/ray-traced voxels, photoreal looks. We
-chase the *mood* of those references with cheap fakes, not their techniques.
+Discarded because they fight weak-hardware-first / §6 / §11 (see design §12):
+global illumination & path tracing, ray-marched/ray-traced voxels, photoreal
+looks. We chase the *mood* of those references with cheap fakes, not their
+techniques.
 
 ## Notes on ordering
 
