@@ -12,7 +12,7 @@ use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-/// A single interleaved cube vertex: chunk-local-ish position + a flat colour.
+/// A single interleaved cube vertex: position, face normal, and a flat colour.
 ///
 /// NOTE: in the real engine this becomes a packed ~4–8 byte face vertex (see the
 /// "compressed vertices" perf pillar). Here we keep it fat and obvious.
@@ -20,6 +20,7 @@ use winit::window::Window;
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct Vertex {
     position: [f32; 3],
+    normal: [f32; 3],
     color: [f32; 3],
 }
 
@@ -27,7 +28,7 @@ impl Vertex {
     const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
         step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3],
     };
 }
 
@@ -35,31 +36,62 @@ impl Vertex {
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct Uniforms {
     mvp: [[f32; 4]; 4],
+    // Model rotation only — used to bring face normals into world space for shading.
+    model: [[f32; 4]; 4],
 }
 
-// Unit cube centred on the origin. One colour per corner so the faces read as
-// smooth gradients and rotation is obvious.
+// Unit cube centred on the origin, authored per-face: each of the 6 faces gets its
+// own 4 vertices, a face normal, and one flat colour. Distinct per-face colours +
+// lighting make the 3D structure read clearly as it tumbles. (Faces share no
+// vertices, so there are 24 of them.)
 #[rustfmt::skip]
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.5, -0.5, -0.5], color: [0.0, 0.0, 0.0] },
-    Vertex { position: [ 0.5, -0.5, -0.5], color: [1.0, 0.0, 0.0] },
-    Vertex { position: [ 0.5,  0.5, -0.5], color: [1.0, 1.0, 0.0] },
-    Vertex { position: [-0.5,  0.5, -0.5], color: [0.0, 1.0, 0.0] },
-    Vertex { position: [-0.5, -0.5,  0.5], color: [0.0, 0.0, 1.0] },
-    Vertex { position: [ 0.5, -0.5,  0.5], color: [1.0, 0.0, 1.0] },
-    Vertex { position: [ 0.5,  0.5,  0.5], color: [1.0, 1.0, 1.0] },
-    Vertex { position: [-0.5,  0.5,  0.5], color: [0.0, 1.0, 1.0] },
+    // +X (red)
+    Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 1.0, 0.0, 0.0], color: [0.90, 0.30, 0.30] },
+    Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 1.0, 0.0, 0.0], color: [0.90, 0.30, 0.30] },
+    Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 1.0, 0.0, 0.0], color: [0.90, 0.30, 0.30] },
+    Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 1.0, 0.0, 0.0], color: [0.90, 0.30, 0.30] },
+    // -X (cyan)
+    Vertex { position: [-0.5, -0.5,  0.5], normal: [-1.0, 0.0, 0.0], color: [0.30, 0.85, 0.90] },
+    Vertex { position: [-0.5,  0.5,  0.5], normal: [-1.0, 0.0, 0.0], color: [0.30, 0.85, 0.90] },
+    Vertex { position: [-0.5,  0.5, -0.5], normal: [-1.0, 0.0, 0.0], color: [0.30, 0.85, 0.90] },
+    Vertex { position: [-0.5, -0.5, -0.5], normal: [-1.0, 0.0, 0.0], color: [0.30, 0.85, 0.90] },
+    // +Y (green)
+    Vertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0, 1.0, 0.0], color: [0.45, 0.85, 0.40] },
+    Vertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0, 1.0, 0.0], color: [0.45, 0.85, 0.40] },
+    Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0, 1.0, 0.0], color: [0.45, 0.85, 0.40] },
+    Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0, 1.0, 0.0], color: [0.45, 0.85, 0.40] },
+    // -Y (orange)
+    Vertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0,-1.0, 0.0], color: [0.95, 0.60, 0.25] },
+    Vertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0,-1.0, 0.0], color: [0.95, 0.60, 0.25] },
+    Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0,-1.0, 0.0], color: [0.95, 0.60, 0.25] },
+    Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0,-1.0, 0.0], color: [0.95, 0.60, 0.25] },
+    // +Z (blue)
+    Vertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0, 0.0, 1.0], color: [0.40, 0.55, 0.95] },
+    Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0, 0.0, 1.0], color: [0.40, 0.55, 0.95] },
+    Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0, 0.0, 1.0], color: [0.40, 0.55, 0.95] },
+    Vertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0, 0.0, 1.0], color: [0.40, 0.55, 0.95] },
+    // -Z (yellow)
+    Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0, 0.0,-1.0], color: [0.95, 0.85, 0.35] },
+    Vertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0, 0.0,-1.0], color: [0.95, 0.85, 0.35] },
+    Vertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0, 0.0,-1.0], color: [0.95, 0.85, 0.35] },
+    Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0, 0.0,-1.0], color: [0.95, 0.85, 0.35] },
 ];
 
 #[rustfmt::skip]
 const INDICES: &[u16] = &[
-    0, 1, 2,  0, 2, 3, // back
-    4, 6, 5,  4, 7, 6, // front
-    4, 5, 1,  4, 1, 0, // bottom
-    3, 2, 6,  3, 6, 7, // top
-    4, 0, 3,  4, 3, 7, // left
-    1, 5, 6,  1, 6, 2, // right
+     0,  1,  2,   0,  2,  3, // +X
+     4,  5,  6,   4,  6,  7, // -X
+     8,  9, 10,   8, 10, 11, // +Y
+    12, 13, 14,  12, 14, 15, // -Y
+    16, 17, 18,  16, 18, 19, // +Z
+    20, 21, 22,  20, 22, 23, // -Z
 ];
+
+// Fallback surface size used when the windowing layer reports a degenerate size
+// (browsers can report 0x0 before the canvas is laid out). Should match the
+// canvas in web/index.html / `INITIAL_SIZE` in lib.rs.
+const FALLBACK_SIZE: (u32, u32) = (960, 720);
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const CLEAR_COLOR: wgpu::Color = wgpu::Color {
@@ -96,9 +128,15 @@ pub struct State {
 impl State {
     pub async fn new(window: Arc<Window>) -> State {
         let mut size = window.inner_size();
-        // Browsers can report a 0x0 canvas on first frame; clamp to something sane.
-        size.width = size.width.max(1);
-        size.height = size.height.max(1);
+        // Browsers can report a 0x0 (or 1x1) canvas before layout. Don't configure a
+        // tiny surface — the page would stretch that single pixel across the whole
+        // canvas. Fall back to a real size instead.
+        if size.width <= 1 {
+            size.width = FALLBACK_SIZE.0;
+        }
+        if size.height <= 1 {
+            size.height = FALLBACK_SIZE.1;
+        }
 
         // On the web, detect WebGPU vs WebGL2 so the GLES fallback actually kicks in
         // on browsers that expose `navigator.gpu` but can't create an adapter.
@@ -296,11 +334,13 @@ impl State {
         self.angle += 0.01;
         let aspect = self.config.width as f32 / self.config.height as f32;
         let proj = Mat4::perspective_rh(60f32.to_radians(), aspect, 0.1, 100.0);
-        let view = Mat4::look_at_rh(Vec3::new(0.0, 1.4, 3.0), Vec3::ZERO, Vec3::Y);
+        // A 3/4 view so three faces are visible — reads as a cube immediately.
+        let view = Mat4::look_at_rh(Vec3::new(2.0, 1.6, 2.6), Vec3::ZERO, Vec3::Y);
         let model = Mat4::from_rotation_y(self.angle) * Mat4::from_rotation_x(self.angle * 0.5);
         let mvp = proj * view * model;
         let uniforms = Uniforms {
             mvp: mvp.to_cols_array_2d(),
+            model: model.to_cols_array_2d(),
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
@@ -402,7 +442,11 @@ mod tests {
     // testing harness; real coverage starts with the mesher (Spike 2).
     #[test]
     fn cube_geometry_is_well_formed() {
-        assert_eq!(VERTICES.len(), 8, "a cube has 8 corners");
+        assert_eq!(
+            VERTICES.len(),
+            24,
+            "6 faces * 4 corners (faces share no vertices)"
+        );
         assert_eq!(INDICES.len(), 36, "12 triangles * 3 indices each");
         assert_eq!(INDICES.len() % 3, 0, "indices must form whole triangles");
 
