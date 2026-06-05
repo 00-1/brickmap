@@ -1,6 +1,6 @@
 # M5 — Light to draw (occlusion culling + HUD)
 
-> Status: **in progress** 🛠. Part of the ladder in [`../roadmap.md`](../roadmap.md).
+> Status: **done** ✅. Part of the ladder in [`../roadmap.md`](../roadmap.md).
 > Builds on M2 (frustum culling) and M3 (streaming).
 
 ## Goal · Outcome · De-risk
@@ -52,9 +52,13 @@ reduction the HUD shows today is mostly **frustum** culling. The cave-cull pays 
 ## Acceptance checklist
 
 - [x] Perf HUD on screen (web overlay + native title), smoothed frame time + counts.
-- [ ] Visibility-graph connectivity computed per section; logic tested (incl. a cave).
-- [ ] Cave-cull traversal layered on frustum, with the safe above-world fallback.
-- [ ] HUD shows the draw-call reduction (frustum today; connectivity proven in tests).
-- [ ] Runs native + web; CI green; docs synced.
+- [x] Visibility-graph connectivity computed per section; logic tested (incl. a cave).
+- [x] Cave-cull traversal layered on frustum, with the safe above-world fallback.
+- [x] HUD shows the draw-call reduction (frustum today; connectivity proven in tests).
+- [x] Runs native + web; CI green; docs synced.
 
-> Status: **in progress** 🛠 — HUD first, then the connectivity graph.
+> Status: **done** ✅ — perf HUD (web overlay + native title), per-section connectivity
+> graph + the camera-flood cave cull (with the safe above-world fallback), all tested.
+> Honest caveat (above): on today's single-layer surface world seen from above, the
+> cave cull is a no-op over frustum culling; its payoff is proven in tests and arrives
+> for real with 3D terrain / caves.

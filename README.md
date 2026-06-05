@@ -14,8 +14,9 @@ shipping speed.
 > occlusion**, **procedural texture-array materials**, a sky/horizon + distance fog,
 > bloom, and **emissive crystals that cast cheap baked "fake-GI" light** onto the
 > terrain — on desktop *and* the web, from one code path. The look is a deliberate
-> low-fi "expose the tech" pass; see the [look journal](docs/look-journal.md). Next:
-> occlusion culling + a perf HUD (M5). See [`docs/roadmap.md`](docs/roadmap.md).
+> low-fi "expose the tech" pass; see the [look journal](docs/look-journal.md). There's
+> a perf HUD and visibility-graph cave culling (M5). Next: async meshing (M6). See
+> [`docs/roadmap.md`](docs/roadmap.md).
 
 ## North star
 

@@ -23,12 +23,14 @@ pub mod particles;
 mod post;
 pub mod scene;
 pub mod textures;
+pub mod visibility;
 pub mod world;
 pub mod worldgen;
 use gfx::{ChunkInstance, State};
 use mesh::{greedy_mesh_section_with, Neighbors};
 use particles::ParticleSystem;
 use scene::{Action, Camera, CameraController};
+use visibility::connectivity;
 use world::{ChunkCoord, Section, World};
 
 /// Window/canvas init size. On the web this is also the canvas backing size.
@@ -161,6 +163,7 @@ impl App {
                         coord,
                         origin,
                         mesh,
+                        graph: connectivity(section),
                     };
                     self.state.as_mut().unwrap().upload_chunk(&inst);
                     self.loaded.insert(coord);
@@ -554,6 +557,7 @@ pub(crate) fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
             coord: (cx, cy, cz),
             origin,
             mesh,
+            graph: connectivity(section),
         });
     }
     instances

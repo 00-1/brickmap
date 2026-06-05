@@ -18,6 +18,7 @@ use crate::particles::{ParticleInstance, CUBE_INDICES, CUBE_POSITIONS};
 use crate::post::Bloom;
 use crate::scene::Frustum;
 use crate::textures::{material_mip_chain, mip_levels, LAYERS, TILE};
+use crate::visibility::{visible_set, FaceGraph};
 use crate::world::ChunkCoord;
 
 /// One mesh instance to draw: a chunk mesh (chunk-local) at a world `origin`.
@@ -26,6 +27,8 @@ pub struct ChunkInstance {
     pub coord: ChunkCoord,
     pub origin: Vec3,
     pub mesh: ChunkMesh,
+    /// Face-connectivity graph for visibility-graph culling (M5).
+    pub graph: FaceGraph,
 }
 
 /// Per-frame draw counts, surfaced to the perf HUD (M5).
@@ -152,6 +155,7 @@ struct ChunkDraw {
     aabb_min: Vec3,
     aabb_max: Vec3,
     origin_bind_group: wgpu::BindGroup,
+    graph: FaceGraph,
 }
 
 impl State {
@@ -580,11 +584,41 @@ impl State {
             pass.set_bind_group(2, &self.material_bind_group, &[]);
 
             let frustum = Frustum::from_view_proj(view_proj);
+
+            // Visibility-graph "cave" cull, layered on the frustum (M5). Flood from the
+            // camera's chunk through connected faces. Safe fallback: if the camera is
+            // outside the loaded volume (flying above a surface world — the usual
+            // case), skip it and frustum-cull only, so we can't wrongly hide terrain.
+            let s = crate::world::Section::SIZE as f32;
+            let cam_chunk = (
+                (camera_pos.x / s).floor() as i32,
+                (camera_pos.y / s).floor() as i32,
+                (camera_pos.z / s).floor() as i32,
+            );
+            let visible = if self.draws.contains_key(&cam_chunk) {
+                Some(visible_set(
+                    cam_chunk,
+                    |c| self.draws.get(&c).map(|d| d.graph),
+                    |c| {
+                        self.draws
+                            .get(&c)
+                            .is_some_and(|d| frustum.intersects_aabb(d.aabb_min, d.aabb_max))
+                    },
+                ))
+            } else {
+                None
+            };
+
             let mut drawn = 0u32;
             let mut triangles = 0u32;
-            for draw in self.draws.values() {
+            for (coord, draw) in self.draws.iter() {
                 if !frustum.intersects_aabb(draw.aabb_min, draw.aabb_max) {
                     continue;
+                }
+                if let Some(vis) = &visible {
+                    if !vis.contains(coord) {
+                        continue; // sealed off from the camera — cave-culled
+                    }
                 }
                 pass.set_bind_group(1, &draw.origin_bind_group, &[]);
                 pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
@@ -671,6 +705,7 @@ fn build_chunk_draw(
         aabb_min: Vec3::from(inst.mesh.aabb.min) + inst.origin,
         aabb_max: Vec3::from(inst.mesh.aabb.max) + inst.origin,
         origin_bind_group,
+        graph: inst.graph,
     })
 }
 
