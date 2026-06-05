@@ -80,3 +80,24 @@ establish the harness; real coverage begins with the first pure-logic module
 
 > One-time setup: in the repo, **Settings → Pages → Source = "GitHub Actions"** must
 > be enabled for the deploy to publish.
+
+## Preview gallery & snapshots
+
+The deployed site is a small **build gallery** so we can keep a visible history of
+how the engine looks as it evolves (this is also the "look journal" from
+[`design.md`](design.md) §11):
+
+- **root** — the gallery index ([`web/gallery/index.html`](../web/gallery/index.html)).
+- **`/latest/`** — the current `main` build, rebuilt on every push.
+- **`/archive/<id>/`** — frozen, immutable snapshots of notable milestones.
+
+Snapshots are **committed static bundles** (a few MB each), so the deploy stays a
+fast copy rather than rebuilding old code — keep them to genuine milestones. To
+capture one:
+
+```sh
+scripts/snapshot.sh <id> <git-ref>     # e.g. scripts/snapshot.sh 01-first-chunk HEAD
+```
+
+That writes `web/archive/<id>/` and tags the source commit `snapshot/<id>`. Then
+add a card to `web/gallery/index.html` and commit both (push the tag too).

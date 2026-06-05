@@ -51,11 +51,15 @@ jobs:
 
       - name: Assemble site
         run: |
-          rm -rf dist && mkdir -p dist
-          cp web/index.html dist/
+          rm -rf dist && mkdir -p dist/latest
+          # Build gallery (root) + the latest app (/latest/) + frozen snapshots.
+          cp web/gallery/index.html dist/index.html
+          cp web/index.html dist/latest/index.html
           wasm-bindgen --target web --no-typescript \
-            --out-dir dist/pkg \
+            --out-dir dist/latest/pkg \
             target/wasm32-unknown-unknown/release/brickmap.wasm
+          # Immutable milestone snapshots, committed under web/archive/.
+          if [ -d web/archive ]; then cp -r web/archive dist/archive; fi
           touch dist/.nojekyll
 
       - name: Upload Pages artifact

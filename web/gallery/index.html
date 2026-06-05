@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>brickmap — build gallery</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #05060a;
+        color: #c8d0e0;
+        font: 15px/1.5 system-ui, sans-serif;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 48px 20px 64px;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 28px;
+        letter-spacing: 0.5px;
+      }
+      .sub {
+        color: #6b7691;
+        margin: 0 0 32px;
+      }
+      a.card {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        border: 1px solid #1c2233;
+        border-radius: 8px;
+        padding: 16px 18px;
+        margin: 12px 0;
+        background: #0a0d16;
+        transition: border-color 0.15s, transform 0.15s;
+      }
+      a.card:hover {
+        border-color: #3a4566;
+        transform: translateY(-1px);
+      }
+      .card h2 {
+        margin: 0 0 4px;
+        font-size: 17px;
+      }
+      .card .tag {
+        font: 600 11px/1 ui-monospace, monospace;
+        color: #05060a;
+        background: #6c8cff;
+        border-radius: 4px;
+        padding: 3px 6px;
+        margin-right: 8px;
+        vertical-align: middle;
+      }
+      .card.latest .tag {
+        background: #5ad19a;
+      }
+      .card p {
+        margin: 6px 0 0;
+        color: #8a93a8;
+        font-size: 14px;
+      }
+      footer {
+        margin-top: 40px;
+        color: #495066;
+        font-size: 13px;
+      }
+      footer a {
+        color: #6c8cff;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>brickmap</h1>
+      <p class="sub">
+        A voxel rendering engine. This is the build gallery — the latest preview
+        plus frozen snapshots of notable milestones along the way.
+      </p>
+
+      <!-- Newest first. `latest/` is rebuilt on every push to main; the archive
+           entries are immutable bundles captured at a point in time. -->
+      <a class="card latest" href="latest/">
+        <h2><span class="tag">live</span>Latest (main)</h2>
+        <p>The current build, auto-deployed on every push to <code>main</code>.</p>
+      </a>
+
+      <a class="card" href="archive/00-spike-cube/">
+        <h2><span class="tag">M0</span>Spike — single cube</h2>
+        <p>
+          The first proof: clear the screen and draw one lit, tumbling cube via
+          wgpu, on desktop and web from one code path. Validated the
+          cross-platform render path before any voxel code.
+        </p>
+      </a>
+
+      <footer>
+        Source: <a href="https://github.com/00-1/brickmap">github.com/00-1/brickmap</a>
+      </footer>
+    </main>
+  </body>
+</html>

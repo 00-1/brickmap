@@ -47,8 +47,10 @@ being pre-planned. See the design doc.
 
 ## Live preview
 
-Every push to `main` auto-deploys the WASM build to **GitHub Pages**:
-<https://00-1.github.io/brickmap/>. It always reflects the latest `main`.
+Every push to `main` auto-deploys to **GitHub Pages** as a small build gallery:
+<https://00-1.github.io/brickmap/>. The current build is at
+[`/latest/`](https://00-1.github.io/brickmap/latest/); frozen snapshots of past
+milestones live under `/archive/`. See `docs/development.md`.
 
 ## Documentation
 
