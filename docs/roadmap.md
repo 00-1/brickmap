@@ -163,9 +163,10 @@ meshing (no `wasm-bindgen-rayon` — Pages can't set the COOP/COEP headers it ne
 - **Acceptance:** meshing never blocks a frame on native; web still functions
   (slower meshing accepted).
 
-### ✨ E5 — Dynamic / cellular-automata voxels *(exploration)* ⏳
+### ✨ E5 — Dynamic / cellular-automata voxels *(exploration)* 🛠 &nbsp;→ [`milestones/E5-dynamic-voxels.md`](milestones/E5-dynamic-voxels.md)
 Falling sand / fluid / fire on the world grid, re-meshing only the dirty regions.
-The headline "interesting" — voxels that *behave* (design §12).
+The headline "interesting" — voxels that *behave* (design §12). v1: falling sand;
+the simulation core is done + tested, live integration next.
 - **Outcome:** matter that flows, falls, and burns in real time.
 - **Why here:** needs a real world to disturb (M3) and async meshing (M6) to stay
   smooth. (A cheap prototype could be spiked sooner if we're itching for it.)

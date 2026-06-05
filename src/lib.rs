@@ -22,6 +22,7 @@ pub mod mesh;
 pub mod particles;
 mod post;
 pub mod scene;
+pub mod sim;
 pub mod textures;
 pub mod visibility;
 pub mod world;
