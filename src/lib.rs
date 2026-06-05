@@ -14,6 +14,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
 mod gfx;
+pub mod world;
 use gfx::State;
 
 /// Window/canvas init size. On the web this is also the canvas backing size.
