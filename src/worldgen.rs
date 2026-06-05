@@ -89,7 +89,20 @@ fn height_f(wx: i32, wz: i32, seed: u32) -> f32 {
     let mask = ((shaped - 0.45) * 2.2).clamp(0.0, 1.0);
     let ridge = ridged(wxp * 0.018, wzp * 0.018, seed ^ 0x00c3);
 
-    SEA_FLOOR + shaped * 20.0 + ridge * mask * 16.0
+    let land = SEA_FLOOR + shaped * 20.0 + ridge * mask * 16.0;
+
+    // Rivers (E8): the thin crest lines of a ridged field carve winding channels down
+    // toward the waterline, which then fill via the sea-level water pass — so rivers are
+    // just deeply-carved low ground, no extra system. Narrow (high threshold) so they read
+    // as rivers, not floods.
+    let rv = ridged(wxp * 0.021 + 3.0, wzp * 0.021 + 9.0, seed ^ 0x00f7);
+    let river = smoothstep_range(0.86, 0.97, rv);
+    lerp(land, SEA_LEVEL as f32 - 1.5, river * 0.9)
+}
+
+/// `smoothstep` remapped to an `[edge0, edge1]` range → `[0, 1]`.
+fn smoothstep_range(edge0: f32, edge1: f32, x: f32) -> f32 {
+    smoothstep(((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0))
 }
 
 /// Sea floor / base height offset (voxels) the terrain rises from.
@@ -233,9 +246,8 @@ mod tests {
         // the seed/worldgen version (E12 brief §5 caveat). The integer block-id path is
         // portable; the f32 noise feeding `height().round()` *may* drift across targets,
         // which is why a cross-target (wasm-in-CI) check is noted as a follow-up.
-        // Bump this when worldgen *intentionally* changes (last: E8 temperature/humidity
-        // biomes selecting surface materials).
-        assert_eq!(voxel_hash(1337), 9_454_611_631_799_482_604);
+        // Bump this when worldgen *intentionally* changes (last: E8 river carving).
+        assert_eq!(voxel_hash(1337), 13_325_205_047_348_946_567);
         // Different seeds must give different worlds.
         assert_ne!(voxel_hash(1337), voxel_hash(1338));
         assert_ne!(voxel_hash(0), voxel_hash(1));

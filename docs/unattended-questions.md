@@ -21,6 +21,22 @@ gamepad, no live browser). I'm leaving them parked rather than build blind; say 
 I'll do the CI-packaging work (they're mostly CI + entry-shim), but you'd verify on your
 devices. Not started yet — prioritising verifiable milestones first.
 
+## 2026-06-05 · E11 flowing water / fire — wants a proper substrate, not a naive CA
+I held off on a flowing-water cellular automaton. A naive "spread into air" rule either
+doesn't conserve water or **oscillates forever** (water shuffling sideways on flat ground →
+the dirty-chunk re-mesh fires every tick → perf sink). Doing it right needs the E11 §J
+substrate (Margolus/block CA + active-set/dirty-AABB, and pressure-water rendered as a
+*separate vertex-displaced pass, not re-meshed*). That's a real milestone, not a quick add,
+and worth your steer on scope. Sand (E5) stays the shipped CA; the E14 `edit` seam is ready
+to carry sim triggers when we build it.
+
+## 2026-06-05 · E13 headless flythrough — deferred to protect my only verifier
+E13's deterministic camera-path flythrough (Catmull-Rom → a clip/contact-sheet) needs the
+headless renderer refactored to render N cameras per setup. The headless renderer is my
+*only* way to verify renders in-container, so I didn't want to risk breaking it unattended.
+The pure camera-path math is easy + testable; the render-loop refactor I'd rather do
+carefully (or with you watching). Parked.
+
 ## 2026-06-05 · E10 aesthetic spine — wants your eye before I commit the look
 E10 (indexed-palette colour-cycling, depth/normal "ink" outlines, a deliberate low-res
 internal buffer, banded lighting, G-buffer-as-art) is a set of **strong, opinionated**
