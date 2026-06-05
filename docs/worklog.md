@@ -62,5 +62,17 @@ pause for input; log decisions/questions here and keep moving.
     desktop input takes over, toggle to resume. **Doing D3 next** (it gates the human
     being able to view the live build at all on mobile).
 
-- Next: **D3 (auto-fly)** → then D2 (dials) → then M3 (procedural world). Renders to
-  chat as they land.
+- **D3 — auto-fly: done.** Cinematic auto-orbit on by default, so mobile/hands-off
+  just watches it circle the scene. Keyboard/click takes manual control; `F` resumes.
+  (Headless renders the static framed view; the orbit is a live-build behaviour.)
+
+- **QUESTION — native mobile (APK):** the human asked about previewing the *native*
+  Android build with push-auto-update. **DECISION/assessment:** the **web build is the
+  mobile preview for now** — it runs in the mobile browser and already auto-updates each
+  push (auto-fly makes it watchable hands-free). A native APK is a real chunk
+  (`android-activity` entry point + NDK cross-build + signing + a CI job), and
+  "auto-update" really means *sideload-per-push* (no app-store update path). Queued as
+  **D4**, deferred until the look settles and native *performance* is the point — not a
+  good use of an unattended run yet. Logged so it's not lost.
+
+- Next: **D2 (live dials)** → then **M3 (procedural world)**. Renders to chat as they land.

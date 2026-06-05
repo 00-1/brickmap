@@ -51,7 +51,7 @@ const PALETTE: [[f32; 4]; 8] = [
 /// tool); the most likely cause is a missing software-Vulkan ICD.
 pub fn capture(width: u32, height: u32, path: &str) {
     let instances = crate::build_world_meshes(&crate::demo_world());
-    let (camera, _radius) = crate::frame_camera(&instances);
+    let (camera, _center, _radius) = crate::frame_camera(&instances);
 
     let instance = wgpu::Instance::default();
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {

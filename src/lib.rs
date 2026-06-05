@@ -53,6 +53,12 @@ struct App {
     camera: Camera,
     controller: CameraController,
     particles: ParticleSystem,
+    /// Cinematic auto-orbit: on by default so the build is watchable with no input
+    /// (mobile / hands-off). Manual input switches it off; `F` toggles it.
+    auto_fly: bool,
+    auto_fly_angle: f32,
+    scene_center: Vec3,
+    scene_radius: f32,
     /// Timestamp of the previous frame, for frame-rate-independent movement.
     last_frame: Option<Instant>,
     /// Whether the pointer is captured (mouselook active).
@@ -140,11 +146,17 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event: key, .. } => {
                 if let PhysicalKey::Code(code) = key.physical_key {
-                    if code == KeyCode::Escape && key.state.is_pressed() {
+                    let pressed = key.state.is_pressed();
+                    if code == KeyCode::Escape && pressed {
                         // Release the pointer. (The browser also does this on Esc.)
                         self.set_capture(false);
+                    } else if code == KeyCode::KeyF && pressed {
+                        self.auto_fly = !self.auto_fly; // toggle cinematic orbit
                     } else if let Some(action) = key_action(code) {
-                        self.controller.set_action(action, key.state.is_pressed());
+                        self.controller.set_action(action, pressed);
+                        if pressed {
+                            self.auto_fly = false; // manual movement takes the wheel
+                        }
                     }
                 }
             }
@@ -154,7 +166,10 @@ impl ApplicationHandler<AppEvent> for App {
                 button: MouseButton::Left,
                 state: ElementState::Pressed,
                 ..
-            } => self.set_capture(true),
+            } => {
+                self.auto_fly = false;
+                self.set_capture(true);
+            }
             // Pointer lock is lost when focus leaves; reflect that in our state.
             WindowEvent::Focused(false) => self.set_capture(false),
             WindowEvent::RedrawRequested => {
@@ -164,7 +179,17 @@ impl ApplicationHandler<AppEvent> for App {
                     .map(|t| (now - t).as_secs_f32().min(0.1))
                     .unwrap_or(0.0);
                 self.last_frame = Some(now);
-                self.controller.update(&mut self.camera, dt);
+                if self.auto_fly {
+                    // Slow cinematic orbit around the scene — no input needed.
+                    self.auto_fly_angle += dt * 0.18;
+                    let a = self.auto_fly_angle;
+                    let r = self.scene_radius * 1.9;
+                    let eye = self.scene_center
+                        + Vec3::new(a.cos() * r, self.scene_radius * 0.85, a.sin() * r);
+                    self.camera = Camera::looking_at(eye, self.scene_center);
+                } else {
+                    self.controller.update(&mut self.camera, dt);
+                }
                 self.particles.update(dt);
                 let particles = self.particles.instances();
 
@@ -225,7 +250,7 @@ pub fn run() {
         .expect("failed to build event loop");
 
     let instances = build_world_meshes(&demo_world());
-    let (camera, radius) = frame_camera(&instances);
+    let (camera, center, radius) = frame_camera(&instances);
 
     let mut app = App {
         state: None,
@@ -234,6 +259,10 @@ pub fn run() {
         camera,
         controller: CameraController::new(radius),
         particles: ParticleSystem::new(demo_emitters()),
+        auto_fly: true,
+        auto_fly_angle: 0.0,
+        scene_center: center,
+        scene_radius: radius,
         last_frame: None,
         cursor_locked: false,
     };
@@ -290,7 +319,7 @@ fn terrain_height(wx: i32, wz: i32) -> u32 {
 /// Frame the camera on the whole scene from the combined world bounds. Returns the
 /// camera and the scene radius (used for move speed). Shared by the app and the
 /// headless renderer so they show the same view.
-pub(crate) fn frame_camera(instances: &[ChunkInstance]) -> (Camera, f32) {
+pub(crate) fn frame_camera(instances: &[ChunkInstance]) -> (Camera, Vec3, f32) {
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
     for inst in instances {
@@ -304,7 +333,7 @@ pub(crate) fn frame_camera(instances: &[ChunkInstance]) -> (Camera, f32) {
     let center = (min + max) * 0.5;
     let radius = ((max - min).length() * 0.5).max(1.0);
     let eye = center + Vec3::new(1.0, 0.6, 1.3).normalize() * radius * 1.8;
-    (Camera::looking_at(eye, center), radius)
+    (Camera::looking_at(eye, center), center, radius)
 }
 
 /// Greedy-mesh each chunk with neighbour-aware seam culling. Meshes stay

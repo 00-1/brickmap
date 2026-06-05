@@ -193,9 +193,16 @@ display.
 Make aesthetic/particle params (wobble, dither, gravity, spawn rate…) adjustable at
 runtime — web sliders driving a params uniform — instead of recompiling.
 
-### D3 — Auto-fly + mobile-friendly viewing ⏳
+### D3 — Auto-fly + mobile-friendly viewing ✅
 A default **auto-fly orbit** so the build is watchable with no keyboard/mouse (mobile,
-or just hands-off). Manual input takes over on desktop; auto-fly resumes on toggle.
+or just hands-off). Manual input (click/WASD) takes over; `F` resumes the orbit.
+
+### D4 — Native Android preview (APK) ⏳
+Build an Android APK (winit `android-activity` entry point + NDK toolchain in CI) and
+publish it as a downloadable artifact linked from the gallery. **Caveat:** it's
+*sideload-per-push*, not true auto-update — and the **web build already serves mobile
+preview and auto-updates each push**, so this is lower priority until the look settles
+and native-mobile *performance* (the actual reason for a native build) matters.
 
 ## What we're deliberately *not* doing
 
