@@ -65,8 +65,25 @@ const PALETTE: [[f32; 4]; 8] = [
 /// Render the demo scene to a PNG at `path`. Panics on setup failure (it's a dev
 /// tool); the most likely cause is a missing software-Vulkan ICD.
 pub fn capture(width: u32, height: u32, path: &str) {
+    capture_view(width, height, path, None, None);
+}
+
+/// As [`capture`], but with an optional camera override (`eye` looking at `target`) so
+/// the dev tool can frame the world from any angle — invaluable for verifying features
+/// (water, rivers, caves) that the default hero shot hides. Both `None` → the default
+/// whole-world framing.
+pub fn capture_view(
+    width: u32,
+    height: u32,
+    path: &str,
+    eye: Option<glam::Vec3>,
+    target: Option<glam::Vec3>,
+) {
     let instances = crate::build_world_meshes(&crate::demo_world());
-    let (camera, _center, _radius) = crate::frame_camera(&instances);
+    let camera = match (eye, target) {
+        (Some(e), Some(t)) => crate::scene::Camera::looking_at(e, t),
+        _ => crate::frame_camera(&instances).0,
+    };
     // Camera basis for billboarding foliage splats (E6).
     let fwd = camera.forward();
     let cam_right = fwd.cross(glam::Vec3::Y).normalize_or_zero();
