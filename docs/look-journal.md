@@ -25,6 +25,19 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## 2026-06-05 · E4 — sub-voxel bump relief
+
+**Cheap relief, no marching.** The material detail texture doubles as a height field:
+the shader samples it at two neighbour texels, takes the gradient, and perturbs the
+lit normal in the face's tangent space, so surfaces catch the sun as if bumpy.
+**Keep — but it's a close-up effect.** On the far hero shot it's barely there (the
+texture's mips flatten the gradient with distance, which is exactly the cheap
+distance-LOD we want); on the low cruise where near surfaces fill the frame it reads
+as real grain. Deliberately *not* parallax-occlusion mapping (per-fragment marching) —
+that's the §E cost trap on weak hardware; two extra texture taps is the budget. Banded
+because the source texture is posterised + nearest — faceted relief, on-brand. Toggle:
+`relief`.
+
 ## 2026-06-05 · E3 slice 4 — flood-fill block light (the fake-GI)
 
 **Crystals now *cast* light.** A BFS flood-fill bakes the crystal's cyan light into the

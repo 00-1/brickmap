@@ -219,8 +219,8 @@ pub fn capture(width: u32, height: u32, path: &str) {
         camera_pos: [camera.position.x, camera.position.y, camera.position.z, 0.0],
         // Horizon band of the sky gradient (see sky.wgsl) so terrain melts into it.
         fog_color: [0.30, 0.33, 0.42, 1.0],
-        // All features on for the hero shot (AO, block light, emissive).
-        flags: [1.0, 1.0, 1.0, 0.0],
+        // All features on for the hero shot (AO, block light, emissive, relief).
+        flags: [1.0, 1.0, 1.0, 1.0],
     };
     let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("globals"),

@@ -44,11 +44,12 @@ pub struct Toggles {
     pub ao: bool,
     pub block_light: bool,
     pub emissive: bool,
+    pub relief: bool,
 }
 
 /// Short labels for the toggles, in index order (HUD + web checkboxes).
-pub const TOGGLE_LABELS: [&str; 9] = [
-    "cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow",
+pub const TOGGLE_LABELS: [&str; 10] = [
+    "cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief",
 ];
 
 impl Default for Toggles {
@@ -63,6 +64,7 @@ impl Default for Toggles {
             ao: true,
             block_light: true,
             emissive: true,
+            relief: true,
         }
     }
 }
@@ -79,6 +81,7 @@ impl Toggles {
             self.ao,
             self.block_light,
             self.emissive,
+            self.relief,
         ][i]
     }
 
@@ -93,6 +96,7 @@ impl Toggles {
             6 => self.ao = v,
             7 => self.block_light = v,
             8 => self.emissive = v,
+            9 => self.relief = v,
             _ => {}
         }
     }
@@ -601,7 +605,7 @@ impl State {
                 flag(toggles.ao),
                 flag(toggles.block_light),
                 flag(toggles.emissive),
-                0.0,
+                flag(toggles.relief),
             ],
         };
         self.queue

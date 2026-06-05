@@ -310,6 +310,7 @@ fn toggle_index(code: KeyCode) -> Option<usize> {
         KeyCode::Digit7 => 6,
         KeyCode::Digit8 => 7,
         KeyCode::Digit9 => 8,
+        KeyCode::Digit0 => 9,
         _ => return None,
     })
 }
@@ -726,8 +727,8 @@ pub mod controls {
     thread_local! {
         static WOBBLE: Cell<f32> = const { Cell::new(85.0) };
         static COLOR_STEPS: Cell<f32> = const { Cell::new(4.0) };
-        /// Feature-toggle bitmask, one bit per switch; all 9 on by default.
-        static TOGGLES: Cell<u32> = const { Cell::new(0x1FF) };
+        /// Feature-toggle bitmask, one bit per switch; all 10 on by default.
+        static TOGGLES: Cell<u32> = const { Cell::new(0x3FF) };
     }
 
     /// Vertex-wobble snap (lower = chunkier). Called from JS.

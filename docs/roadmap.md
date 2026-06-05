@@ -137,9 +137,10 @@ and distance fog. The highest beauty-per-cycle on the backlog
 - **Why here:** builds on M4's materials, and implements the "lighting data path"
   that M8 only hand-waved.
 
-### ✨ E4 — Sub-voxel surface displacement *(exploration)* ⏳
+### ✨ E4 — Sub-voxel surface displacement *(exploration)* ✅ &nbsp;→ [`milestones/E4-displacement.md`](milestones/E4-displacement.md)
 Per-face relief (brick / grain / cobble) so blocks aren't flat — richness with no
-extra geometry (design §12).
+extra geometry (design §12). Cheap **bump** relief (gradient of the detail texture
+perturbs the lit normal), not per-fragment parallax marching (the §E cost risk).
 - **Outcome:** surfaces gain depth and texture without shrinking the voxels.
 - **Why here:** pairs naturally with M4's material/texture path.
 

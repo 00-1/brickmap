@@ -88,11 +88,41 @@ fn vs_main(@location(0) packed: u32, @location(1) packed1: u32) -> VsOut {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(in.normal);
+
+    // Material UV + tangent basis, both from the axis-aligned face normal. The texture
+    // tiles once per voxel in world space.
+    let an = abs(n);
+    var uv: vec2<f32>;
+    var tangent: vec3<f32>;
+    var bitangent: vec3<f32>;
+    if (an.x > 0.5) {
+        uv = in.world_pos.zy;
+        tangent = vec3<f32>(0.0, 0.0, 1.0);
+        bitangent = vec3<f32>(0.0, 1.0, 0.0);
+    } else if (an.y > 0.5) {
+        uv = in.world_pos.xz;
+        tangent = vec3<f32>(1.0, 0.0, 0.0);
+        bitangent = vec3<f32>(0.0, 0.0, 1.0);
+    } else {
+        uv = in.world_pos.xy;
+        tangent = vec3<f32>(1.0, 0.0, 0.0);
+        bitangent = vec3<f32>(0.0, 1.0, 0.0);
+    }
+    let detail = textureSample(mat_tex, mat_samp, uv, i32(in.material)).r;
+
+    // Sub-voxel bump relief (E4): treat the detail texture as a height field and
+    // perturb the lit normal by its gradient — cheap depth, no parallax marching.
+    // `flags.w` toggles it; the texture's mips fade the relief with distance.
+    let eps = 1.0 / 16.0; // one texel of the per-voxel tile
+    let hu = textureSample(mat_tex, mat_samp, uv + vec2<f32>(eps, 0.0), i32(in.material)).r;
+    let hv = textureSample(mat_tex, mat_samp, uv + vec2<f32>(0.0, eps), i32(in.material)).r;
+    let bump = (hu - detail) * tangent + (hv - detail) * bitangent;
+    let nrm = normalize(n - 1.6 * bump * globals.flags.w);
+
     let sun_dir = normalize(vec3<f32>(0.4, 0.8, 0.5));
-    let diffuse = max(dot(n, sun_dir), 0.0);
+    let diffuse = max(dot(nrm, sun_dir), 0.0);
     // Hemispheric ambient (E3, cheap fake bounce): cool sky tint from above, warm
-    // ground bounce from below, by face normal — plus a warm directional sun. The
-    // first coloured light cue; no GI, just a lerp.
+    // ground bounce from below, by face normal — plus a warm directional sun.
     let up = n.y * 0.5 + 0.5;
     let sky_ambient = vec3<f32>(0.40, 0.48, 0.60);
     let ground_ambient = vec3<f32>(0.34, 0.28, 0.24);
@@ -104,19 +134,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Baked ambient occlusion: corners (ao 0) sink to ~0.5 brightness, open faces
     // (ao 3) stay full. Multiplies the light. `flags.x` toggles it off (factor 1).
     let ao_factor = mix(1.0, 0.5 + 0.5 * (in.ao / 3.0), globals.flags.x);
-
-    // Material texture: tile per voxel in world space, axes chosen from the face
-    // normal. Grayscale detail multiplies the palette tint.
-    let an = abs(n);
-    var uv: vec2<f32>;
-    if (an.x > 0.5) {
-        uv = in.world_pos.zy;
-    } else if (an.y > 0.5) {
-        uv = in.world_pos.xz;
-    } else {
-        uv = in.world_pos.xy;
-    }
-    let detail = textureSample(mat_tex, mat_samp, uv, i32(in.material)).r;
 
     var c = in.color * detail * light * ao_factor;
     // Emissive crystal (material 6): unshaded and boosted past 1.0 so the bright-pass

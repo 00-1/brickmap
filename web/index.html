@@ -116,7 +116,7 @@
     <script type="module">
       import init, { set_wobble, set_color_steps, set_toggle } from "./pkg/brickmap.js?v=__CACHE_BUST__";
       // Order must match TOGGLE_LABELS in gfx.rs.
-      const TOGGLES = ["cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow"];
+      const TOGGLES = ["cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief"];
       init({ module_or_path: "./pkg/brickmap_bg.wasm?v=__CACHE_BUST__" })
         .catch((err) => {
           // winit's web backend escapes its run loop by throwing; that's expected.
