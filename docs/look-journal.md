@@ -18,6 +18,29 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## E8 · A richer world — biomes, rivers, caves (2026-06)
+
+*What we did.* Filled out the terrain behind the foliage: **domain-warped + ridged** height
+(valleys/spurs + crest peaks instead of obvious fbm), **temperature/humidity biomes** that
+pick the surface material (lush grass ↔ desert sand ↔ snowy peaks) and scale forest density,
+**rivers** (ridged crest lines carved to the waterline, then water-filled), and **3D-noise
+caves** hollowed into the cliffs.
+
+*What it does to the image.* Variety. One flight crosses green woodland, bare dunes, snow
+caps, water glinting in low channels, and dark cave mouths in the slopes — the world reads as
+*places*, not one uniform noise field. The caves also give the (previously no-op) cave-culling
+real structure.
+
+*The call.* **Keep.** This is content/structure more than a look-decision, but it's what makes
+the low-fi aesthetic feel like a world worth exploring. The biome palette stays within the
+existing material set (no new visual language), so it's coherent with everything above.
+
+*Tooling note:* added a camera-override to the headless screenshot tool this pass — being
+able to frame the world from any angle (not just the top-down hero shot) is what let me
+actually *see* and keep these (water, rivers, cave mouths were invisible from above).
+
+---
+
 ## M7 · Distance-dissolve "melt" + stylised water (2026-06)
 
 *What we did.* Added an **opt-in distance dissolve** (`melt` toggle, default off): past the
