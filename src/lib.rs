@@ -17,6 +17,8 @@ mod gfx;
 pub mod mesh;
 pub mod world;
 use gfx::State;
+use mesh::ChunkMesh;
+use world::{BlockId, Section};
 
 /// Window/canvas init size. On the web this is also the canvas backing size.
 const INITIAL_SIZE: (u32, u32) = (960, 720);
@@ -37,6 +39,8 @@ struct App {
     // Only used on the web (async init handoff); inert on native.
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     proxy: Option<EventLoopProxy<AppEvent>>,
+    /// The scene to draw — built once on the CPU, uploaded when the GPU is ready.
+    mesh: ChunkMesh,
 }
 
 impl ApplicationHandler<AppEvent> for App {
@@ -55,15 +59,16 @@ impl ApplicationHandler<AppEvent> for App {
         #[cfg(not(target_arch = "wasm32"))]
         {
             // Native: just block until the GPU is ready.
-            self.state = Some(pollster::block_on(State::new(window)));
+            self.state = Some(pollster::block_on(State::new(window, &self.mesh)));
         }
 
         #[cfg(target_arch = "wasm32")]
         {
             // Web: kick off async init and deliver the result via the proxy.
             let proxy = self.proxy.take().expect("proxy missing");
+            let mesh = self.mesh.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let state = State::new(window).await;
+                let state = State::new(window, &mesh).await;
                 let _ = proxy.send_event(AppEvent::Initialized(state));
             });
         }
@@ -134,9 +139,32 @@ pub fn run() {
     let mut app = App {
         state: None,
         proxy: Some(event_loop.create_proxy()),
+        mesh: mesh::mesh_section(&demo_section()),
     };
 
     event_loop.run_app(&mut app).expect("event loop error");
+}
+
+/// A hand-built test chunk: a stepped pyramid centred in the section. Its terraces
+/// make the mesher's face-culling obvious — vertical step faces and exposed tops,
+/// no hidden interior faces. (M1 scaffolding; M3 replaces this with real terrain.)
+fn demo_section() -> Section {
+    // Cycle a few debug block types up the height so the steps read clearly.
+    const PALETTE: [BlockId; 4] = [BlockId(1), BlockId(2), BlockId(3), BlockId(4)];
+    const LEVELS: u32 = 8;
+
+    let mut section = Section::new();
+    for level in 0..LEVELS {
+        let lo = 8 + level;
+        let hi = 24 - level;
+        let block = PALETTE[level as usize % PALETTE.len()];
+        for z in lo..hi {
+            for x in lo..hi {
+                section.set(x, level, z, block);
+            }
+        }
+    }
+    section
 }
 
 #[cfg(target_arch = "wasm32")]

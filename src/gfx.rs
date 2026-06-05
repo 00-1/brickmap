@@ -12,25 +12,15 @@ use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-/// A single interleaved cube vertex: position, face normal, and a flat colour.
-///
-/// NOTE: in the real engine this becomes a packed ~4–8 byte face vertex (see the
-/// "compressed vertices" perf pillar). Here we keep it fat and obvious.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    normal: [f32; 3],
-    color: [f32; 3],
-}
+use crate::mesh::{ChunkMesh, ChunkVertex};
 
-impl Vertex {
-    const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-        array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3],
-    };
-}
+/// Vertex buffer layout for the `mesh` contract's [`ChunkVertex`] (position,
+/// normal, colour). M2 swaps this for the packed face-vertex layout.
+const CHUNK_VERTEX_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+    array_stride: std::mem::size_of::<ChunkVertex>() as wgpu::BufferAddress,
+    step_mode: wgpu::VertexStepMode::Vertex,
+    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3],
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -39,54 +29,6 @@ struct Uniforms {
     // Model rotation only — used to bring face normals into world space for shading.
     model: [[f32; 4]; 4],
 }
-
-// Unit cube centred on the origin, authored per-face: each of the 6 faces gets its
-// own 4 vertices, a face normal, and one flat colour. Distinct per-face colours +
-// lighting make the 3D structure read clearly as it tumbles. (Faces share no
-// vertices, so there are 24 of them.)
-#[rustfmt::skip]
-const VERTICES: &[Vertex] = &[
-    // +X (red)
-    Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 1.0, 0.0, 0.0], color: [0.90, 0.30, 0.30] },
-    Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 1.0, 0.0, 0.0], color: [0.90, 0.30, 0.30] },
-    Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 1.0, 0.0, 0.0], color: [0.90, 0.30, 0.30] },
-    Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 1.0, 0.0, 0.0], color: [0.90, 0.30, 0.30] },
-    // -X (cyan)
-    Vertex { position: [-0.5, -0.5,  0.5], normal: [-1.0, 0.0, 0.0], color: [0.30, 0.85, 0.90] },
-    Vertex { position: [-0.5,  0.5,  0.5], normal: [-1.0, 0.0, 0.0], color: [0.30, 0.85, 0.90] },
-    Vertex { position: [-0.5,  0.5, -0.5], normal: [-1.0, 0.0, 0.0], color: [0.30, 0.85, 0.90] },
-    Vertex { position: [-0.5, -0.5, -0.5], normal: [-1.0, 0.0, 0.0], color: [0.30, 0.85, 0.90] },
-    // +Y (green)
-    Vertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0, 1.0, 0.0], color: [0.45, 0.85, 0.40] },
-    Vertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0, 1.0, 0.0], color: [0.45, 0.85, 0.40] },
-    Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0, 1.0, 0.0], color: [0.45, 0.85, 0.40] },
-    Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0, 1.0, 0.0], color: [0.45, 0.85, 0.40] },
-    // -Y (orange)
-    Vertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0,-1.0, 0.0], color: [0.95, 0.60, 0.25] },
-    Vertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0,-1.0, 0.0], color: [0.95, 0.60, 0.25] },
-    Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0,-1.0, 0.0], color: [0.95, 0.60, 0.25] },
-    Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0,-1.0, 0.0], color: [0.95, 0.60, 0.25] },
-    // +Z (blue)
-    Vertex { position: [-0.5, -0.5,  0.5], normal: [ 0.0, 0.0, 1.0], color: [0.40, 0.55, 0.95] },
-    Vertex { position: [ 0.5, -0.5,  0.5], normal: [ 0.0, 0.0, 1.0], color: [0.40, 0.55, 0.95] },
-    Vertex { position: [ 0.5,  0.5,  0.5], normal: [ 0.0, 0.0, 1.0], color: [0.40, 0.55, 0.95] },
-    Vertex { position: [-0.5,  0.5,  0.5], normal: [ 0.0, 0.0, 1.0], color: [0.40, 0.55, 0.95] },
-    // -Z (yellow)
-    Vertex { position: [ 0.5, -0.5, -0.5], normal: [ 0.0, 0.0,-1.0], color: [0.95, 0.85, 0.35] },
-    Vertex { position: [-0.5, -0.5, -0.5], normal: [ 0.0, 0.0,-1.0], color: [0.95, 0.85, 0.35] },
-    Vertex { position: [-0.5,  0.5, -0.5], normal: [ 0.0, 0.0,-1.0], color: [0.95, 0.85, 0.35] },
-    Vertex { position: [ 0.5,  0.5, -0.5], normal: [ 0.0, 0.0,-1.0], color: [0.95, 0.85, 0.35] },
-];
-
-#[rustfmt::skip]
-const INDICES: &[u16] = &[
-     0,  1,  2,   0,  2,  3, // +X
-     4,  5,  6,   4,  6,  7, // -X
-     8,  9, 10,   8, 10, 11, // +Y
-    12, 13, 14,  12, 14, 15, // -Y
-    16, 17, 18,  16, 18, 19, // +Z
-    20, 21, 22,  20, 22, 23, // -Z
-];
 
 // Fallback surface size used when the windowing layer reports a degenerate size
 // (browsers can report 0x0 before the canvas is laid out). Should match the
@@ -117,6 +59,11 @@ pub struct State {
     uniform_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
 
+    /// Centre and bounding radius of the drawn mesh (from its AABB), used to frame
+    /// the camera and to spin the mesh about its own centre.
+    mesh_center: Vec3,
+    mesh_radius: f32,
+
     /// Rotation accumulator (radians). Advanced a fixed amount per frame so the
     /// spike needs no clock and behaves identically on every platform.
     angle: f32,
@@ -126,7 +73,7 @@ pub struct State {
 }
 
 impl State {
-    pub async fn new(window: Arc<Window>) -> State {
+    pub async fn new(window: Arc<Window>, mesh: &ChunkMesh) -> State {
         let mut size = window.inner_size();
         // Browsers can report a 0x0 (or 1x1) canvas before layout. Don't configure a
         // tiny surface — the page would stretch that single pixel across the whole
@@ -247,7 +194,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Vertex::LAYOUT],
+                buffers: &[CHUNK_VERTEX_LAYOUT],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -280,15 +227,22 @@ impl State {
         });
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("cube-vertices"),
-            contents: bytemuck::cast_slice(VERTICES),
+            label: Some("chunk-vertices"),
+            contents: bytemuck::cast_slice(&mesh.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("cube-indices"),
-            contents: bytemuck::cast_slice(INDICES),
+            label: Some("chunk-indices"),
+            contents: bytemuck::cast_slice(&mesh.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
+
+        // Frame the camera from the mesh's bounds (part of the ChunkMesh contract),
+        // so the renderer stays ignorant of voxel/chunk dimensions.
+        let aabb_min = Vec3::from(mesh.aabb.min);
+        let aabb_max = Vec3::from(mesh.aabb.max);
+        let mesh_center = (aabb_min + aabb_max) * 0.5;
+        let mesh_radius = ((aabb_max - aabb_min).length() * 0.5).max(1.0);
 
         let depth_view = create_depth_view(&device, &config);
 
@@ -301,10 +255,12 @@ impl State {
             pipeline,
             vertex_buffer,
             index_buffer,
-            num_indices: INDICES.len() as u32,
+            num_indices: mesh.indices.len() as u32,
             uniform_buffer,
             uniform_bind_group,
             depth_view,
+            mesh_center,
+            mesh_radius,
             angle: 0.0,
             window,
         }
@@ -331,13 +287,21 @@ impl State {
     }
 
     fn update_uniforms(&mut self) {
-        self.angle += 0.01;
+        self.angle += 0.005;
         let aspect = self.config.width as f32 / self.config.height as f32;
-        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect, 0.1, 100.0);
-        // A 3/4 view so three faces are visible — reads as a cube immediately.
-        let view = Mat4::look_at_rh(Vec3::new(2.0, 1.6, 2.6), Vec3::ZERO, Vec3::Y);
-        let model = Mat4::from_rotation_y(self.angle) * Mat4::from_rotation_x(self.angle * 0.5);
+
+        let radius = self.mesh_radius;
+        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect, 0.1, radius * 20.0 + 10.0);
+        // Orbit at a fixed 3/4 angle, framed to the mesh's size.
+        let eye = self.mesh_center + Vec3::new(1.0, 0.7, 1.3).normalize() * radius * 2.6;
+        let view = Mat4::look_at_rh(eye, self.mesh_center, Vec3::Y);
+        // Spin about the mesh's own centre. (`model` is rotation-only for normals;
+        // the translations cancel for direction vectors, so it shades correctly.)
+        let model = Mat4::from_translation(self.mesh_center)
+            * Mat4::from_rotation_y(self.angle)
+            * Mat4::from_translation(-self.mesh_center);
         let mvp = proj * view * model;
+
         let uniforms = Uniforms {
             mvp: mvp.to_cols_array_2d(),
             model: model.to_cols_array_2d(),
@@ -402,7 +366,7 @@ impl State {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
@@ -430,30 +394,4 @@ fn create_depth_view(
         view_formats: &[],
     });
     texture.create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{INDICES, VERTICES};
-
-    // The cube geometry is hand-authored. This guards the easy mistakes — a
-    // typo'd index or a half-written triangle — so an edit fails loudly in CI
-    // instead of silently corrupting the draw on the GPU. It also seeds the
-    // testing harness; real coverage starts with the mesher (Spike 2).
-    #[test]
-    fn cube_geometry_is_well_formed() {
-        assert_eq!(
-            VERTICES.len(),
-            24,
-            "6 faces * 4 corners (faces share no vertices)"
-        );
-        assert_eq!(INDICES.len(), 36, "12 triangles * 3 indices each");
-        assert_eq!(INDICES.len() % 3, 0, "indices must form whole triangles");
-
-        let vertex_count = VERTICES.len() as u16;
-        assert!(
-            INDICES.iter().all(|&i| i < vertex_count),
-            "every index must reference an existing vertex",
-        );
-    }
 }
