@@ -62,7 +62,12 @@ const INDICES: &[u16] = &[
 ];
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-const CLEAR_COLOR: wgpu::Color = wgpu::Color { r: 0.02, g: 0.03, b: 0.06, a: 1.0 };
+const CLEAR_COLOR: wgpu::Color = wgpu::Color {
+    r: 0.02,
+    g: 0.03,
+    b: 0.06,
+    a: 1.0,
+};
 
 pub struct State {
     surface: wgpu::Surface<'static>,
@@ -169,20 +174,19 @@ impl State {
             mapped_at_creation: false,
         });
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("uniform-bgl"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("uniform-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
 
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("uniform-bg"),
@@ -295,7 +299,9 @@ impl State {
         let view = Mat4::look_at_rh(Vec3::new(0.0, 1.4, 3.0), Vec3::ZERO, Vec3::Y);
         let model = Mat4::from_rotation_y(self.angle) * Mat4::from_rotation_x(self.angle * 0.5);
         let mvp = proj * view * model;
-        let uniforms = Uniforms { mvp: mvp.to_cols_array_2d() };
+        let uniforms = Uniforms {
+            mvp: mvp.to_cols_array_2d(),
+        };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }
@@ -384,4 +390,26 @@ fn create_depth_view(
         view_formats: &[],
     });
     texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{INDICES, VERTICES};
+
+    // The cube geometry is hand-authored. This guards the easy mistakes — a
+    // typo'd index or a half-written triangle — so an edit fails loudly in CI
+    // instead of silently corrupting the draw on the GPU. It also seeds the
+    // testing harness; real coverage starts with the mesher (Spike 2).
+    #[test]
+    fn cube_geometry_is_well_formed() {
+        assert_eq!(VERTICES.len(), 8, "a cube has 8 corners");
+        assert_eq!(INDICES.len(), 36, "12 triangles * 3 indices each");
+        assert_eq!(INDICES.len() % 3, 0, "indices must form whole triangles");
+
+        let vertex_count = VERTICES.len() as u16;
+        assert!(
+            INDICES.iter().all(|&i| i < vertex_count),
+            "every index must reference an existing vertex",
+        );
+    }
 }
