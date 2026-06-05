@@ -114,7 +114,7 @@ screen" and a direct test of the §11 look (design §12).
 - **Acceptance:** palette pack/unpack round-trip tests; memory-per-section
   measured; chunks load/unload without leaks as the camera moves.
 
-### M4 — It starts to look like brickmap ⏳
+### M4 — It starts to look like brickmap 🛠 &nbsp;→ [`milestones/M4-materials.md`](milestones/M4-materials.md)
 **Texture-array materials** (per-face texture id, nearest sampling, mips), baked
 **ambient occlusion** in the mesher, and the first real **aesthetic exploration** —
 starting the "look journal" (design §11): deliberately surfacing and curating the

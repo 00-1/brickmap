@@ -24,6 +24,7 @@ struct VsOut {
     @location(0) color: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) world_pos: vec3<f32>,
+    @location(3) ao: f32,
 };
 
 @vertex
@@ -34,6 +35,7 @@ fn vs_main(@location(0) packed: u32) -> VsOut {
     let z = f32((packed >> 12u) & 63u);
     let dir = (packed >> 18u) & 7u;
     let material = (packed >> 21u) & 511u;
+    let ao = (packed >> 30u) & 3u;
 
     // Direction -> normal: 0:+X 1:-X 2:+Y 3:-Y 4:+Z 5:-Z.
     let axis = dir >> 1u;
@@ -61,6 +63,7 @@ fn vs_main(@location(0) packed: u32) -> VsOut {
     out.normal = normal;
     out.color = globals.palette[min(material, 7u)].rgb;
     out.world_pos = world_pos;
+    out.ao = f32(ao);
     return out;
 }
 
@@ -70,7 +73,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let light_dir = normalize(vec3<f32>(0.4, 0.8, 0.5));
     let diffuse = max(dot(n, light_dir), 0.0);
     let shade = 0.35 + 0.65 * diffuse;
-    var c = in.color * shade;
+    // Baked ambient occlusion: corners (ao 0) sink to ~0.5 brightness, open faces
+    // (ao 3) stay full. Multiplies the directional shade.
+    let ao_factor = 0.5 + 0.5 * (in.ao / 3.0);
+    var c = in.color * shade * ao_factor;
 
     // Ordered (4x4 Bayer) dithering: posterise the shading into a few levels with a
     // deliberate dot pattern, instead of smoothing the banding away.

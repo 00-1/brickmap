@@ -18,14 +18,23 @@ pub struct ChunkVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub material: u16,
+    /// Baked ambient-occlusion level, `0` (darkest) .. `3` (unoccluded). M4.
+    pub ao: u8,
 }
 
 impl ChunkVertex {
+    /// A fully-lit vertex (`ao == 3`). The naïve oracle and tests use this; the
+    /// greedy mesher bakes real AO via [`ChunkVertex::with_ao`].
     pub fn new(position: [f32; 3], normal: [f32; 3], material: u16) -> Self {
+        ChunkVertex::with_ao(position, normal, material, 3)
+    }
+
+    pub fn with_ao(position: [f32; 3], normal: [f32; 3], material: u16, ao: u8) -> Self {
         ChunkVertex {
             position,
             normal,
             material,
+            ao,
         }
     }
 }
@@ -91,7 +100,12 @@ pub fn pack(v: &ChunkVertex) -> u32 {
         v.position[1].round() as u32,
         v.position[2].round() as u32,
     ];
-    pack_vertex(pos, normal_to_dir(v.normal), v.material as u32, 0)
+    pack_vertex(
+        pos,
+        normal_to_dir(v.normal),
+        v.material as u32,
+        v.ao as u32 & 0x3,
+    )
 }
 
 /// Axis-aligned bounding box of a mesh, in chunk-local space. Used later for
@@ -209,6 +223,81 @@ fn is_air(section: &Section, neighbors: &Neighbors, x: i32, y: i32, z: i32) -> b
     }
 }
 
+/// Solidity test for AO sampling. Handles a sample up to one step outside the
+/// section on a **single** axis (consulting the matching face neighbour); samples
+/// outside on two+ axes (chunk edges/corners) count as air. Good enough — AO only
+/// loses a little darkening at chunk corners, where we have no diagonal neighbour.
+fn solid_for_ao(section: &Section, neighbors: &Neighbors, x: i32, y: i32, z: i32) -> bool {
+    let n = Section::SIZE as i32;
+    let out = [x, y, z].iter().filter(|&&c| c < 0 || c >= n).count();
+    if out == 0 {
+        return section.get(x as u32, y as u32, z as u32).is_solid();
+    }
+    if out >= 2 {
+        return false;
+    }
+    let (face, sx, sy, sz) = if x < 0 {
+        (0, n - 1, y, z)
+    } else if x >= n {
+        (1, 0, y, z)
+    } else if y < 0 {
+        (2, x, n - 1, z)
+    } else if y >= n {
+        (3, x, 0, z)
+    } else if z < 0 {
+        (4, x, y, n - 1)
+    } else {
+        (5, x, y, 0)
+    };
+    match neighbors.faces[face] {
+        Some(nb) => nb.get(sx as u32, sy as u32, sz as u32).is_solid(),
+        None => false,
+    }
+}
+
+/// Baked ambient occlusion for the four corners of one cell face (0fps method).
+/// `d/u/v` are the face's principal/in-plane axes, `sign` its facing, `s` its slice,
+/// and `(i, j)` the cell within the slice. Returns AO `0` (darkest) .. `3` for the
+/// corners in `(du, dv)` order `(0,0),(1,0),(1,1),(0,1)` — matching [`emit_quad`].
+#[allow(clippy::too_many_arguments)]
+fn face_ao(
+    section: &Section,
+    neighbors: &Neighbors,
+    d: usize,
+    u: usize,
+    v: usize,
+    sign: i32,
+    s: i32,
+    i: i32,
+    j: i32,
+) -> [u8; 4] {
+    // The occluders sit in the layer one step out along the face normal.
+    let mut l = [0i32; 3];
+    l[d] = s + sign;
+    l[u] = i;
+    l[v] = j;
+    let solid = |du: i32, dv: i32| -> u32 {
+        let mut p = l;
+        p[u] += du;
+        p[v] += dv;
+        solid_for_ao(section, neighbors, p[0], p[1], p[2]) as u32
+    };
+    let mut ao = [0u8; 4];
+    for (k, &(du, dv)) in [(0i32, 0i32), (1, 0), (1, 1), (0, 1)].iter().enumerate() {
+        let su = if du == 0 { -1 } else { 1 };
+        let sv = if dv == 0 { -1 } else { 1 };
+        let side1 = solid(su, 0);
+        let side2 = solid(0, sv);
+        let corner = solid(su, sv);
+        ao[k] = if side1 == 1 && side2 == 1 {
+            0
+        } else {
+            (3 - (side1 + side2 + corner)) as u8
+        };
+    }
+    ao
+}
+
 /// Mesh one section (naïve face culling — see module docs). Single-chunk
 /// convenience; boundary faces are drawn.
 pub fn mesh_section(section: &Section) -> ChunkMesh {
@@ -296,9 +385,11 @@ pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> Chu
 
         for sign in [1i32, -1i32] {
             for s in 0..n {
-                // mask[i + j*n] = Some(block) where this slice has a face exposed
-                // in direction `sign` (solid here, air in the neighbour cell).
-                let mut mask: Vec<Option<BlockId>> = vec![None; (n * n) as usize];
+                // mask[i + j*n] = Some((block, ao4)) where this slice has a face
+                // exposed in direction `sign` (solid here, air in the neighbour
+                // cell). The baked corner-AO is part of the key so merging only joins
+                // cells with an identical AO pattern.
+                let mut mask: Vec<Option<(BlockId, [u8; 4])>> = vec![None; (n * n) as usize];
                 for j in 0..n {
                     for i in 0..n {
                         let mut c = [0i32; 3];
@@ -312,7 +403,8 @@ pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> Chu
                         let mut nb = c;
                         nb[d] = s + sign;
                         if is_air(section, neighbors, nb[0], nb[1], nb[2]) {
-                            mask[(i + j * n) as usize] = Some(block);
+                            let ao = face_ao(section, neighbors, d, u, v, sign, s, i, j);
+                            mask[(i + j * n) as usize] = Some((block, ao));
                         }
                     }
                 }
@@ -321,19 +413,20 @@ pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> Chu
                 for j in 0..n {
                     let mut i = 0;
                     while i < n {
-                        let Some(block) = mask[(i + j * n) as usize] else {
+                        let Some(cell) = mask[(i + j * n) as usize] else {
                             i += 1;
                             continue;
                         };
-                        // Extend width along u, then height along v.
+                        // Extend width along u, then height along v — same block AND
+                        // same corner-AO (so AO breaks the merge at occluders).
                         let mut w = 1;
-                        while i + w < n && mask[((i + w) + j * n) as usize] == Some(block) {
+                        while i + w < n && mask[((i + w) + j * n) as usize] == Some(cell) {
                             w += 1;
                         }
                         let mut h = 1;
                         'grow: while j + h < n {
                             for k in 0..w {
-                                if mask[((i + k) + (j + h) * n) as usize] != Some(block) {
+                                if mask[((i + k) + (j + h) * n) as usize] != Some(cell) {
                                     break 'grow;
                                 }
                             }
@@ -352,7 +445,8 @@ pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> Chu
                             j,
                             w,
                             h,
-                            block,
+                            cell.0,
+                            cell.1,
                         );
 
                         for hh in 0..h {
@@ -376,7 +470,8 @@ pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> Chu
 }
 
 /// Emit one greedy quad: a `w`×`h` rectangle on axis `d`'s slice `s`, facing
-/// `sign`, spanning `[i, i+w]` along `u` and `[j, j+h]` along `v`.
+/// `sign`, spanning `[i, i+w]` along `u` and `[j, j+h]` along `v`. `ao` is the baked
+/// corner occlusion in `(0,0),(1,0),(1,1),(0,1)` order (see [`face_ao`]).
 #[allow(clippy::too_many_arguments)]
 fn emit_quad(
     vertices: &mut Vec<ChunkVertex>,
@@ -391,6 +486,7 @@ fn emit_quad(
     w: i32,
     h: i32,
     block: BlockId,
+    ao: [u8; 4],
 ) {
     // The face plane sits at the +d boundary of the slice for +sign, else at -d.
     let plane = if sign > 0 { s + 1 } else { s };
@@ -404,20 +500,30 @@ fn emit_quad(
     let mut normal = [0.0f32; 3];
     normal[d] = sign as f32;
 
+    // Corners a,b,c,e map to AO indices 0,1,2,3 — keep them paired through winding.
     let (a, b, c, e) = (
-        corner(i, j),
-        corner(i + w, j),
-        corner(i + w, j + h),
-        corner(i, j + h),
+        (corner(i, j), ao[0]),
+        (corner(i + w, j), ao[1]),
+        (corner(i + w, j + h), ao[2]),
+        (corner(i, j + h), ao[3]),
     );
     // Wind so the front face matches the normal direction.
     let quad = if sign > 0 { [a, b, c, e] } else { [a, e, c, b] };
 
     let base = vertices.len() as u32;
-    for position in quad {
-        vertices.push(ChunkVertex::new(position, normal, block.0));
+    for (position, corner_ao) in quad {
+        vertices.push(ChunkVertex::with_ao(position, normal, block.0, corner_ao));
     }
-    indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    // Split the quad along the diagonal between the *darker* pair of corners, so the
+    // AO gradient doesn't interpolate a bright triangle across a dark edge. Culling is
+    // off, so re-winding is free. `quad` corner order is [0,1,2,3]; default diagonal
+    // is 0–2, flipped is 1–3.
+    let (q0, q1, q2, q3) = (quad[0].1, quad[1].1, quad[2].1, quad[3].1);
+    if q0 as u16 + q2 as u16 >= q1 as u16 + q3 as u16 {
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    } else {
+        indices.extend_from_slice(&[base + 1, base + 2, base + 3, base + 1, base + 3, base]);
+    }
 }
 
 #[cfg(test)]
@@ -676,6 +782,74 @@ mod tests {
             let (_, d, m, _) = unpack_vertex(pack(&v));
             assert_eq!(d as usize, dir);
             assert_eq!(m, 7);
+        }
+    }
+
+    // --- Baked AO (M4) --------------------------------------------------------
+
+    #[test]
+    fn isolated_voxel_is_fully_unoccluded() {
+        // No neighbours anywhere → every corner of every face is open (ao == 3).
+        let mesh = greedy_mesh_section(&section_with(&[(10, 10, 10)]));
+        assert!(
+            mesh.vertices.iter().all(|v| v.ao == 3),
+            "lone voxel should have no occlusion",
+        );
+    }
+
+    #[test]
+    fn a_neighbour_darkens_adjacent_face_corners() {
+        // A voxel plus an occluder sitting diagonally above one edge of it. The
+        // occluder is in the layer just above the voxel's +y (top) face, so it
+        // darkens the two top-face corners on that edge — but not the far ones.
+        let mesh = greedy_mesh_section(&section_with(&[(10, 10, 10), (11, 11, 10)]));
+        let top: Vec<&ChunkVertex> = mesh.vertices.iter().filter(|v| v.normal[1] > 0.5).collect();
+        assert!(top.iter().any(|v| v.ao < 3), "no top-face corner darkened");
+        assert!(top.iter().any(|v| v.ao == 3), "whole top face darkened");
+    }
+
+    #[test]
+    fn occlusion_breaks_a_greedy_merge() {
+        // A flat 1-voxel-thick floor merges its top face into a single quad. Drop a
+        // block onto that floor and the AO discontinuity around it must split the top
+        // face into more than one quad (no longer a clean single rectangle).
+        let mut floor = Section::new();
+        for z in 8..16 {
+            for x in 8..16 {
+                floor.set(x, 5, z, STONE);
+            }
+        }
+        let plain_top = greedy_mesh_section(&floor)
+            .vertices
+            .iter()
+            .filter(|v| v.normal[1] > 0.5)
+            .count()
+            / 4;
+        assert_eq!(plain_top, 1, "flat floor top should be one quad");
+
+        floor.set(11, 6, 11, STONE); // an occluder sitting on the floor
+        let bumped_top = greedy_mesh_section(&floor)
+            .vertices
+            .iter()
+            .filter(|v| v.normal[1] > 0.5)
+            .count()
+            / 4;
+        assert!(
+            bumped_top > 1,
+            "AO around the occluder should split the floor's top face",
+        );
+    }
+
+    #[test]
+    fn ao_does_not_change_the_covered_face_set() {
+        // AO affects shading + how faces are split, never *which* unit faces exist:
+        // the greedy mesh must still cover exactly the naïve face set.
+        for section in oracle_fixtures() {
+            let mut naive = face_cells(&mesh_section(&section));
+            let mut greedy = face_cells(&greedy_mesh_section(&section));
+            naive.sort_unstable();
+            greedy.sort_unstable();
+            assert_eq!(naive, greedy);
         }
     }
 
