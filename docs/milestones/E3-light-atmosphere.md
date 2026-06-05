@@ -56,7 +56,7 @@
 ## Acceptance checklist
 
 - [x] Hemispheric coloured ambient (sky/ground) replacing flat ambient.
-- [ ] Sky gradient / horizon; fog tinted to match.
+- [x] Sky gradient / horizon; fog tinted to match.
 - [ ] Emissive materials + cheap bloom; glowing blocks.
 - [ ] Flood-fill coloured light baked in the mesher; visible corner bleed.
 - [ ] Runs native + web; look-journal entries per decision; snapshot + render.

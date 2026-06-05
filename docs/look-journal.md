@@ -25,6 +25,15 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## 2026-06-05 · E3 slice 2 — sky gradient + horizon
+
+**Screen-space sky gradient.** A fullscreen triangle behind everything: horizon band
+(low) → deeper zenith blue (high), with the **fog colour retuned to the horizon** so
+distant terrain dissolves into the haze rather than a flat void. **Keep.** Instant
+atmosphere and a real sense of distance; the world no longer floats in a dark box. The
+gradient is screen-space (correct under translation + yaw, i.e. the whole auto-fly
+path) — a pitch-correct view-ray sky is a later upgrade if manual look-around needs it.
+
 ## 2026-06-05 · E3 slice 1 — hemispheric ambient
 
 **Coloured hemispheric ambient.** Replaced the flat `0.35` ambient with a lerp

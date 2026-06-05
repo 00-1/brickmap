@@ -184,6 +184,7 @@ pub fn capture(width: u32, height: u32, path: &str) {
         multiview_mask: None,
         cache: None,
     });
+    let sky_pipeline = crate::gfx::build_sky_pipeline(&device, COLOR_FORMAT);
 
     let globals = Globals {
         view_proj: camera
@@ -197,7 +198,8 @@ pub fn capture(width: u32, height: u32, path: &str) {
             FOG_END,
         ],
         camera_pos: [camera.position.x, camera.position.y, camera.position.z, 0.0],
-        fog_color: [CLEAR.r as f32, CLEAR.g as f32, CLEAR.b as f32, 1.0],
+        // Horizon band of the sky gradient (see sky.wgsl) so terrain melts into it.
+        fog_color: [0.30, 0.33, 0.42, 1.0],
     };
     let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("globals"),
@@ -377,6 +379,9 @@ pub fn capture(width: u32, height: u32, path: &str) {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+        pass.set_pipeline(&sky_pipeline);
+        pass.draw(0..3, 0..1);
+
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &globals_bind_group, &[]);
         pass.set_bind_group(2, &material_bind_group, &[]);

@@ -83,17 +83,13 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
-/// Distance fog (world units): terrain fades to the sky colour between these, so the
-/// streaming load edge (~5 chunks ≈ 160 u) dissolves instead of popping in.
+/// Distance fog (world units): terrain fades to the horizon colour between these, so
+/// the streaming load edge (~5 chunks ≈ 160 u) dissolves instead of popping in.
 const FOG_START: f32 = 72.0;
 const FOG_END: f32 = 176.0;
-/// Fog colour — matches `CLEAR_COLOR` so geometry fades into the background.
-const FOG_COLOR: [f32; 4] = [
-    CLEAR_COLOR.r as f32,
-    CLEAR_COLOR.g as f32,
-    CLEAR_COLOR.b as f32,
-    1.0,
-];
+/// Fog colour — the sky's **horizon** band (see `sky.wgsl`) so distant terrain melts
+/// into the horizon rather than a flat background.
+const FOG_COLOR: [f32; 4] = [0.30, 0.33, 0.42, 1.0];
 
 pub struct State {
     surface: wgpu::Surface<'static>,
@@ -103,6 +99,8 @@ pub struct State {
     size: winit::dpi::PhysicalSize<u32>,
 
     pipeline: wgpu::RenderPipeline,
+    /// Fullscreen sky-gradient pipeline (no bindings); drawn first behind everything.
+    sky_pipeline: wgpu::RenderPipeline,
     /// Chunk draws keyed by chunk coordinate, so streaming can add/remove them at
     /// runtime. Each carries its packed buffers, world AABB, and per-chunk origin.
     draws: HashMap<ChunkCoord, ChunkDraw>,
@@ -304,6 +302,8 @@ impl State {
             cache: None,
         });
 
+        let sky_pipeline = build_sky_pipeline(&device, config.format);
+
         let mut draws: HashMap<ChunkCoord, ChunkDraw> = HashMap::new();
         for inst in instances {
             if let Some(draw) = build_chunk_draw(&device, &chunk_bgl, inst) {
@@ -391,6 +391,7 @@ impl State {
             config,
             size,
             pipeline,
+            sky_pipeline,
             draws,
             chunk_bind_group_layout: chunk_bgl,
             globals_buffer,
@@ -538,6 +539,10 @@ impl State {
                 multiview_mask: None,
             });
 
+            // Sky first (fullscreen, no depth write) so terrain draws over it.
+            pass.set_pipeline(&self.sky_pipeline);
+            pass.draw(0..3, 0..1);
+
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
             pass.set_bind_group(2, &self.material_bind_group, &[]);
@@ -624,6 +629,56 @@ fn build_chunk_draw(
         aabb_min: Vec3::from(inst.mesh.aabb.min) + inst.origin,
         aabb_max: Vec3::from(inst.mesh.aabb.max) + inst.origin,
         origin_bind_group,
+    })
+}
+
+/// Fullscreen sky-gradient pipeline: no bind groups, no vertex buffers (the vertex
+/// shader builds a fullscreen triangle), no depth write (drawn behind the terrain).
+/// Shared with the headless renderer. `format` is the colour target format.
+pub(crate) fn build_sky_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::include_wgsl!("sky.wgsl"));
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("sky-pipeline-layout"),
+        bind_group_layouts: &[],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("sky-pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
     })
 }
 
