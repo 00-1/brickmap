@@ -130,7 +130,7 @@ treating absent neighbours as air).
       *(Correctness-first rectangle merging; the bitwise "binary" speed-up is a
       follow-up optimisation within M2.)*
 - [ ] 4-byte packed vertex with round-trip tests; shader unpacks + palette colour.
-- [ ] Neighbour-aware meshing; adjacent-chunk seam test passes.
+- [x] Neighbour-aware meshing; adjacent-chunk seam test passes.
 - [ ] `World` chunk grid; many chunks drawn at their world origins.
 - [ ] Frustum culling with tests; off-screen chunks skipped.
 - [ ] Triangle/draw-call stats visible; greedy shows a clear triangle reduction.

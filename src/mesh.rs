@@ -98,16 +98,43 @@ const FACES: [Face; 6] = [
     Face { dir: [ 0, 0,-1], normal: [ 0.0, 0.0,-1.0], corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]] },
 ];
 
-/// A face is visible when the neighbouring voxel in `dir` is air, or lies outside
-/// the section. M1 meshes a single chunk, so out-of-bounds counts as air (the
-/// boundary faces are drawn). M2 supplies neighbour sections to cull these too.
-fn neighbour_is_air(section: &Section, x: u32, y: u32, z: u32, dir: [i32; 3]) -> bool {
+/// The six face-adjacent neighbour sections, used to cull faces across chunk
+/// borders. Order: `[-x, +x, -y, +y, -z, +z]`. A `None` neighbour is treated as
+/// air, so its boundary face is drawn (the single-chunk default).
+pub struct Neighbors<'a> {
+    pub faces: [Option<&'a Section>; 6],
+}
+
+impl Neighbors<'_> {
+    /// No neighbours — every boundary face is drawn.
+    pub const NONE: Neighbors<'static> = Neighbors { faces: [None; 6] };
+}
+
+/// Is the voxel at (possibly out-of-range) local coord `(x,y,z)` air? When a
+/// coordinate steps one past a face, the matching neighbour section is consulted
+/// (an absent neighbour counts as air). Only ever called one step off a face.
+fn is_air(section: &Section, neighbors: &Neighbors, x: i32, y: i32, z: i32) -> bool {
     let n = Section::SIZE as i32;
-    let (nx, ny, nz) = (x as i32 + dir[0], y as i32 + dir[1], z as i32 + dir[2]);
-    if nx < 0 || ny < 0 || nz < 0 || nx >= n || ny >= n || nz >= n {
-        return true;
+    if (0..n).contains(&x) && (0..n).contains(&y) && (0..n).contains(&z) {
+        return section.get(x as u32, y as u32, z as u32).is_air();
     }
-    section.get(nx as u32, ny as u32, nz as u32).is_air()
+    let (face, sx, sy, sz) = if x < 0 {
+        (0, n - 1, y, z)
+    } else if x >= n {
+        (1, 0, y, z)
+    } else if y < 0 {
+        (2, x, n - 1, z)
+    } else if y >= n {
+        (3, x, 0, z)
+    } else if z < 0 {
+        (4, x, y, n - 1)
+    } else {
+        (5, x, y, 0)
+    };
+    match neighbors.faces[face] {
+        Some(nb) => nb.get(sx as u32, sy as u32, sz as u32).is_air(),
+        None => true,
+    }
 }
 
 /// A simple debug palette so blocks are distinguishable before real materials
@@ -122,8 +149,15 @@ fn block_color(block: BlockId) -> [f32; 3] {
     }
 }
 
-/// Mesh one section into a [`ChunkMesh`] (naïve face culling — see module docs).
+/// Mesh one section (naïve face culling — see module docs). Single-chunk
+/// convenience; boundary faces are drawn.
 pub fn mesh_section(section: &Section) -> ChunkMesh {
+    mesh_section_with(section, &Neighbors::NONE)
+}
+
+/// Naïve mesher with neighbour-aware seam culling. The correctness oracle for the
+/// greedy mesher.
+pub fn mesh_section_with(section: &Section, neighbors: &Neighbors) -> ChunkMesh {
     let mut vertices: Vec<ChunkVertex> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
 
@@ -137,7 +171,12 @@ pub fn mesh_section(section: &Section) -> ChunkMesh {
                 let color = block_color(block);
 
                 for face in &FACES {
-                    if !neighbour_is_air(section, x, y, z, face.dir) {
+                    let (nx, ny, nz) = (
+                        x as i32 + face.dir[0],
+                        y as i32 + face.dir[1],
+                        z as i32 + face.dir[2],
+                    );
+                    if !is_air(section, neighbors, nx, ny, nz) {
                         continue;
                     }
                     let base = vertices.len() as u32;
@@ -181,6 +220,11 @@ pub fn mesh_section(section: &Section) -> ChunkMesh {
 /// Single-section for now: out-of-bounds neighbours count as air (so boundary
 /// faces are emitted). Neighbour-aware seam culling is a separate M2 step.
 pub fn greedy_mesh_section(section: &Section) -> ChunkMesh {
+    greedy_mesh_section_with(section, &Neighbors::NONE)
+}
+
+/// Greedy mesher with neighbour-aware seam culling (see [`greedy_mesh_section`]).
+pub fn greedy_mesh_section_with(section: &Section, neighbors: &Neighbors) -> ChunkMesh {
     let n = Section::SIZE as i32;
     let mut vertices: Vec<ChunkVertex> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
@@ -206,15 +250,9 @@ pub fn greedy_mesh_section(section: &Section) -> ChunkMesh {
                         if block.is_air() {
                             continue;
                         }
-                        let nd = s + sign;
-                        let neighbour_air = nd < 0 || nd >= n || {
-                            let mut nb = c;
-                            nb[d] = nd;
-                            section
-                                .get(nb[0] as u32, nb[1] as u32, nb[2] as u32)
-                                .is_air()
-                        };
-                        if neighbour_air {
+                        let mut nb = c;
+                        nb[d] = s + sign;
+                        if is_air(section, neighbors, nb[0], nb[1], nb[2]) {
                             mask[(i + j * n) as usize] = Some(block);
                         }
                     }
@@ -523,6 +561,44 @@ mod tests {
             }
         }
         assert_eq!(greedy_mesh_section(&slab).quad_count(), 6);
+    }
+
+    #[test]
+    fn adjacent_chunks_cull_their_shared_seam() {
+        // Two full sections sharing the +x / -x boundary: the face between them
+        // must not be drawn from either side.
+        let full = {
+            let mut s = Section::new();
+            for z in 0..Section::SIZE {
+                for y in 0..Section::SIZE {
+                    for x in 0..Section::SIZE {
+                        s.set(x, y, z, STONE);
+                    }
+                }
+            }
+            s
+        };
+
+        // Lone full chunk: 6 outer quads.
+        assert_eq!(greedy_mesh_section(&full).quad_count(), 6);
+
+        // With a solid neighbour on +x, that face is gone: 5 quads.
+        let neighbours = Neighbors {
+            faces: [None, Some(&full), None, None, None, None],
+        };
+        let meshed = greedy_mesh_section_with(&full, &neighbours);
+        assert_eq!(meshed.quad_count(), 5);
+        // The culled face is the one pointing +x; no vertex should carry that normal.
+        assert!(
+            meshed.vertices.iter().all(|v| v.normal[0] <= 0.0),
+            "a +x face was drawn on the culled seam",
+        );
+
+        // The naïve oracle agrees: one 32x32 sheet of faces removed.
+        assert_eq!(
+            mesh_section_with(&full, &neighbours).quad_count(),
+            6 * 32 * 32 - 32 * 32,
+        );
     }
 
     #[test]
