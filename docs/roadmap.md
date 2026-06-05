@@ -56,7 +56,7 @@ own thing — the content/visual work from [`design.md`](design.md) §12 — int
 *in place* so they don't get deferred to the end (or lost).
 
 > Legend: ✅ done · 🛠 in progress · ⏳ planned · **✨ = exploration** (the
-> *interesting* bit, not infrastructure; numbered **E1–E11 in build order**) ·
+> *interesting* bit, not infrastructure; numbered **E1–E16 in build order**) ·
 > **D = dev tooling & process** (cross-cutting; see the D-series below). More
 > exploration candidates (researched and fit-graded) live in
 > [`exploration-backlog.md`](exploration-backlog.md).
@@ -236,6 +236,25 @@ then **pressure water** (compressible-mass; rendered as a separate vertex-displa
 (explode→carve→eject→rest→write→slump), and **growth** (moss/vines/crystals).
 - **Outcome:** water that finds its level, fire that spreads, things that grow and crumble.
 - **De-risks:** re-mesh churn (active-set + off-thread mesher + don't-mesh-water absorb it).
+
+### ✨ Features (E12–E16) — from the 3rd research pass (backlog §L–P)
+User-facing features, all rated *great fit* because they reuse machinery we already have.
+*(Build order is fluid — **E12 seeds is being pulled forward to build next**, ahead of the
+foliage pivot, since it's small, deterministic, and high-delight.)*
+- **✨ E12 — Shareable seeds & permalinks** — runtime seed + a `share` codec (URL fragment
+  `#s=…&…`, web + native); seed input / random / seed-of-the-day / copy-link; restore on
+  load. ⚠️ add a cross-target golden voxel-hash test before promising "identical worlds".
+- **✨ E13 — Photo / cinematic mode** — pause + free-cam + FOV/roll/exposure, vignette/
+  letterbox/hide-HUD, in-app screenshot (reuse the headless RTT path), Catmull-Rom camera
+  paths (→ deterministic headless flythroughs/clips); photo-mode-only DoF.
+- **✨ E14 — Creative / voxel editing** — DDA pick + wireframe highlight, brush edits over
+  the overlay (the *sand* dirty→re-mesh path), undo log, and **seed + sparse-delta** build
+  sharing (ties to E12).
+- **✨ E15 — Point-cloud creatures** — decorative wander/small-flock boids as splat clusters
+  with VS animation; camera-follows-creature; deterministic seed spawn. Hard no-gameplay
+  guardrails.
+- **✨ E16 — Reactive audio** — seeded generative music + a weather/biome-reactive mix;
+  `fundsp`+`kira` (native) / Web Audio (web); equalpower pan + one FDN reverb.
 
 ### M7 — Distance dissolve (LOD that's also the look) ⏳
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low

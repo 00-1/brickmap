@@ -209,6 +209,72 @@ Full agent detail is summarized here; the points/splat sibling pass lives in
   grows). 🔴 depth pre-pass (redundant on tilers; we're not fragment-bound) / 🔴 Hi-Z
   occlusion (compute-heavy, WebGPU-only — cave-culling already covers it).
 
+---
+
+## Third research pass (2026-06) — features & UX (→ E12–E16)
+
+A 5-agent pass on user-facing features. All five came back **great fit** because they
+reuse machinery we already have (overlay+dirty-remesh, the splat/particle pipeline, the
+deterministic seed, the headless render-to-texture path, the JS↔wasm setter bridge).
+
+### L. Shareable seeds & permalinks (→ **E12**, build first)
+- 🟢 Make `WORLD_SEED` **runtime** (App field, plumbed through worldgen/mesh_chunk) — the
+  prerequisite.
+- 🟢 State in the **URL fragment** `#s=…&x=…&yaw=…&w=…&t=<hex toggles>` (not query —
+  coexists with our `?v=` cache-bust; works on static Pages). Readable form + optional
+  base64url binary; version byte. Shared `share` codec module (no web-sys), used by web
+  *and* native.
+- 🟢 Seed UX: numeric **or text** seed (fold text→u32 via our own `hash`), show seed on the
+  HUD, **random**, **seed-of-the-day** (hash UTC date), **copy-link / copy-seed** buttons.
+- 🟢 Restore on load (read hash before building world); ⚠️ **live URL update is throttle-
+  fragile** (Safari ~100 `replaceState`/30s) — ship **copy-on-demand first**, defer live.
+- ⚠️ **Determinism caveat (the real risk):** the integer `hash()` is bit-identical
+  everywhere, but the `f32` `lerp/smoothstep/fbm` path can diverge web↔native (FMA
+  contraction) — though the final `height().round() as u32` likely masks it. **Add a
+  cross-target golden voxel-hash test before advertising "identical worlds"**; fixed-point
+  noise is the bulletproof fallback only if it fails. Camera pos in the URL is just a hint
+  (needn't be bit-exact).
+
+### M. Photo / cinematic mode (→ **E13**)
+- 🟢 Photo shell: pause + free-cam + FOV + **roll** + real **exposure** (one tonemap
+  multiply) — near-free. 🟢 **vignette + letterbox + hide-HUD** in the composite pass.
+- 🟢 **In-app screenshot** reusing the headless **render-to-texture** path (WebGPU ignores
+  `preserveDrawingBuffer`, so RTT is the only portable way — we already do it).
+- 🟢 **Cinematic spline paths** (centripetal Catmull-Rom + smoothstep ease + look-at) —
+  cheap CPU; lets the **headless tool render deterministic flythroughs** (turntables/clips
+  for the gallery). 🟡 **webm/mp4 clip capture** (MediaRecorder) of a path = the
+  share-the-look centrepiece. 🟡 **DoF** only far-field/half-res/8-tap/*photo-mode-only*
+  (🔴 never always-on; 🔴 compute/FidelityFX-class).
+
+### N. Creative / voxel editing (→ **E14**) — reuses the sand machinery exactly
+- 🟢 **DDA pick** (Amanatides–Woo) over the deterministic-worldgen voxel oracle → hit voxel
+  + face normal (remove vs place); a 1-draw wireframe highlight.
+- 🟢 **Edit = overlay write + the existing dirty→`mesh_chunk`→`upload_chunk` loop** (same as
+  a sand grain). Brushes (box/sphere/line) as pure functions; 🟡 bound flood-fill.
+- 🟢 **Undo/redo** as a per-voxel delta log. 🟢 **Sharing = seed + sparse deltas**
+  (`seed#<rle/varint edits>`) — ties to E12.
+- ⚠️ Gotchas: dirty the **neighbour** chunk when editing a border face (sand never hit
+  this); route web re-mesh through the budgeted loader; **version worldgen** so saved
+  builds round-trip.
+
+### O. Point-cloud creatures (→ **E15**) — decorative only, hard guardrails
+- 🟢 **Wander + small-flock boids** (cap flocks 20–60, **no** spatial accel structure),
+  feeding the existing instanced-billboard pipeline. 🟢 creature = **~4–12 splats** with
+  sin-based wingbeat/gait in the VS (no rig). 🟢 **camera-follows-creature** (exp-damped
+  chase/orbit) — the *alive anchor* that started the creatures idea, with no gameplay.
+- 🟢 **Deterministic spawn** `hash(seed, chunk)` + biome density; radius despawn (the cost
+  ceiling). 🔴 GPU-compute boids / kd-trees / perception / goals / pathfinding / rigs —
+  *any* of these is scope-creep into a game; lead with **flyers** (no terrain query).
+
+### P. Reactive audio (→ **E16**)
+- 🟢 **Seeded generative music** (pentatonic + sparse probabilistic triggers + incommensurate
+  drones = endless, per-seed theme). 🟢 **reactive layer** mapping the global weather/biome/
+  speed → smoothed params (`setTargetAtTime`/kira tweens). 🟢 **equalpower panning + one
+  algorithmic FDN reverb** (🔴 HRTF / convolver on mobile). 🟢 Rust: **`fundsp`** (synth) +
+  **`kira`** (mixer/tweens) over `cpal` (🔴 `rodio` — file playback, wrong model); optional
+  shared-WASM-DSP in an AudioWorklet for web/native parity. ⚠️ autoplay-unlock on first tap;
+  AudioWorklet/lookahead scheduling; hard voice cap; own seeded PRNG on a logical clock.
+
 ## Discarded (off-brand for us; see design §12)
 Global illumination & path tracing; ray-traced / ray-marched *primary* voxel
 renderers (incl. Teardown's renderer and sparse-tree DDA); photoreal/soft-natural
