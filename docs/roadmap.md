@@ -240,22 +240,28 @@ mechanism; particle/gravity/spawn dials can join later.
 A default **auto-fly orbit** so the build is watchable with no keyboard/mouse (mobile,
 or just hands-off). Manual input (click/WASD) takes over; `F` resumes the orbit.
 
-### D4 — Native Android app (+ auto-update) ⏳ &nbsp;*(partly blocked on the human)*
-A real native Android app (not a web wrapper): winit `android-activity` entry point +
-NDK cross-build + a CI APK job. **Two halves:**
-- **Build** (I can do, autonomously): the Android entry point + a CI job producing a
-  signed APK. Caveat: I can't test it here (no Android device/emulator), so it'd be
-  built blind.
-- **Auto-update on push** (needs the human's accounts/keys): a bare sideloaded APK
-  *cannot* auto-update. The realistic channels are **Google Play internal-testing
-  track** (true background auto-update; needs a $25 Play account + signing key + CI
-  publish) or **Firebase App Distribution** (tap-to-update; needs a Firebase project).
-  A self-hosted-APK + in-app updater is possible but Android still prompts per install.
+### D4 — Native Android app + downloadable APK ⏳ &nbsp;*(now unblocked — sideload, no store)*
+A real native Android app (not a web wrapper), packaged as an **APK you download from
+GitHub and sideload** — which sidesteps the store/auto-update blocker entirely.
+- **App:** winit `android-activity` entry point reusing the existing wgpu/winit code
+  path (wgpu runs on Android via Vulkan/GLES). The render code is already cross-platform;
+  this is mostly the entry shim + Android manifest/asset plumbing.
+- **Build + publish:** a CI job cross-compiles `aarch64-linux-android` (Android NDK +
+  `cargo-ndk`/`cargo-apk`/`xbuild`), packages a **debug/self-signed APK**, and uploads it
+  as a **GitHub Release asset** (and/or CI artifact) on tagged builds. The human enables
+  "install from unknown sources" and sideloads it. No Play account, no Firebase, no
+  signing-key ceremony.
+- **Pairs with D7 (gamepad):** native + a USB-C controller is the intended "fly it on the
+  phone" experience — better perf than the web build, and the controller works natively.
+- **Honest caveat:** I **cannot test the APK here** (no Android device/emulator in the
+  container), so it's built blind — the human installs + verifies on their phone, and we
+  iterate from their reports.
+- **Out of scope (still):** true background **auto-update** (re-download from GitHub, or
+  a later optional in-app version check). Store-channel auto-update (Play internal track /
+  Firebase) remains deferred and needs the human's accounts/keys.
 
-**Status/decision:** deferred. The auto-update half depends on the human picking and
-setting up a distribution channel; until then the **auto-updating web build is the
-mobile preview**. Revisit when native *performance* is the goal and the human is ready
-to stand up a Play/Firebase channel.
+**Status:** planned + actionable now (the auto-update requirement that blocked it is
+dropped; downloadable-APK is achievable autonomously, modulo the blind-build caveat).
 
 ### D5 — Web-render verification (headless browser) ⏳
 Verify the *actual* deployed web build (WebGL2 fallback + JS/wasm integration), not
@@ -271,6 +277,19 @@ what's off. **Norm going forward:** new visual/perf features land with a toggle 
 it's a cheap runtime branch. *(Not toggled: structural choices baked into data layout —
 packed vertices, palette storage — which get dedicated benchmarks instead. A
 greedy↔naïve mesh switch needs a re-mesh; deferred.)*
+
+### D7 — Gamepad / controller controls ⏳
+Fly the world with a **game controller** — the natural way to explore, especially on a
+phone with a USB-C/Bluetooth pad.
+- **Web:** poll the **Gamepad API** (`navigator.getGamepads()`) each frame; map left
+  stick → move, right stick → look, triggers/bumpers → up/down, a face button → toggle
+  auto-fly. Works in the mobile browser with the user's USB-C controller — testable now.
+- **Native:** the **`gilrs`** crate (cross-platform, incl. Android) feeding the same
+  `CameraController` actions, so the controller also works in the D4 Android app.
+- **Outcome:** pick up a pad and fly; auto-fly yields to stick input like WASD does.
+- **Fit:** small, high-value, and the missing input mode for hands-on mobile exploration
+  (complements D3 auto-fly). A good quick win — could land before/alongside E6 so the
+  foliage work is explorable with the controller as it develops.
 
 ## What we're deliberately *not* doing
 
