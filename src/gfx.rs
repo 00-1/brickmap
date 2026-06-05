@@ -12,24 +12,51 @@ use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::mesh::{ChunkMesh, ChunkVertex};
+use crate::mesh::{pack, ChunkMesh};
 use crate::scene::Frustum;
 
-/// Vertex buffer layout for the `mesh` contract's [`ChunkVertex`] (position,
-/// normal, colour). M2 swaps this for the packed face-vertex layout.
+/// One mesh instance to draw: a chunk mesh (chunk-local) at a world `origin`.
+#[derive(Clone)]
+pub struct ChunkInstance {
+    pub origin: Vec3,
+    pub mesh: ChunkMesh,
+}
+
+/// Vertex buffer layout for the **packed** face vertex: one `u32` per vertex
+/// (design §9–10), unpacked in the shader.
 const CHUNK_VERTEX_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-    array_stride: std::mem::size_of::<ChunkVertex>() as wgpu::BufferAddress,
+    array_stride: std::mem::size_of::<u32>() as wgpu::BufferAddress,
     step_mode: wgpu::VertexStepMode::Vertex,
-    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3],
+    attributes: &wgpu::vertex_attr_array![0 => Uint32],
 };
 
+/// Per-frame globals (bind group 0): the camera and the material palette.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct Uniforms {
-    mvp: [[f32; 4]; 4],
-    // Model rotation only — used to bring face normals into world space for shading.
-    model: [[f32; 4]; 4],
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct Globals {
+    view_proj: [[f32; 4]; 4],
+    palette: [[f32; 4]; PALETTE.len()],
 }
+
+/// Per-chunk uniform (bind group 1): the chunk's world origin (xyz; w unused).
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct ChunkUniform {
+    origin: [f32; 4],
+}
+
+/// Debug material palette, indexed by `material` id (M4 replaces it with a texture
+/// array). Index 0 / unknown render magenta so mistakes are loud.
+const PALETTE: [[f32; 4]; 8] = [
+    [0.95, 0.10, 0.95, 1.0], // 0: unused/unknown
+    [0.55, 0.55, 0.58, 1.0], // 1: stone
+    [0.55, 0.40, 0.25, 1.0], // 2: dirt
+    [0.40, 0.70, 0.35, 1.0], // 3: grass
+    [0.80, 0.78, 0.65, 1.0], // 4: sand
+    [0.95, 0.10, 0.95, 1.0], // 5
+    [0.95, 0.10, 0.95, 1.0], // 6
+    [0.95, 0.10, 0.95, 1.0], // 7
+];
 
 // Fallback surface size used when the windowing layer reports a degenerate size
 // (browsers can report 0x0 before the canvas is laid out). Should match the
@@ -52,13 +79,12 @@ pub struct State {
     size: winit::dpi::PhysicalSize<u32>,
 
     pipeline: wgpu::RenderPipeline,
-    /// One GPU buffer pair per chunk mesh. Vertices are in world space, so a single
-    /// view-projection draws them all (per-chunk transforms come with the packed
-    /// vertex). Frustum culling will skip draws here.
+    /// One packed vertex buffer + index buffer per chunk, with its world origin in
+    /// a per-chunk bind group and a world-space AABB for frustum culling.
     draws: Vec<ChunkDraw>,
 
-    uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: wgpu::BindGroup,
+    globals_buffer: wgpu::Buffer,
+    globals_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
 
     /// Frame counter, used to throttle the stats log.
@@ -68,17 +94,18 @@ pub struct State {
     window: Arc<Window>,
 }
 
-/// GPU buffers for one chunk mesh, plus its world-space AABB for frustum culling.
+/// GPU buffers for one chunk mesh, plus its world AABB and per-chunk origin binding.
 struct ChunkDraw {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     aabb_min: Vec3,
     aabb_max: Vec3,
+    origin_bind_group: wgpu::BindGroup,
 }
 
 impl State {
-    pub async fn new(window: Arc<Window>, meshes: &[ChunkMesh]) -> State {
+    pub async fn new(window: Arc<Window>, instances: &[ChunkInstance]) -> State {
         let mut size = window.inner_size();
         // Browsers can report a 0x0 (or 1x1) canvas before layout. Don't configure a
         // tiny surface — the page would stretch that single pixel across the whole
@@ -157,44 +184,51 @@ impl State {
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("uniforms"),
-            size: std::mem::size_of::<Uniforms>() as u64,
+        // A uniform-buffer bind group layout used for both globals and per-chunk.
+        let uniform_bgl = |label, visibility| {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some(label),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            })
+        };
+        let globals_bgl = uniform_bgl(
+            "globals-bgl",
+            wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+        );
+        let chunk_bgl = uniform_bgl("chunk-bgl", wgpu::ShaderStages::VERTEX);
+
+        let globals_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("globals"),
+            size: std::mem::size_of::<Globals>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("uniform-bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("uniform-bg"),
-            layout: &bind_group_layout,
+        let globals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("globals-bg"),
+            layout: &globals_bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
+                resource: globals_buffer.as_entire_binding(),
             }],
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline-layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
+            bind_group_layouts: &[Some(&globals_bgl), Some(&chunk_bgl)],
             immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("cube-pipeline"),
+            label: Some("chunk-pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -231,23 +265,43 @@ impl State {
             cache: None,
         });
 
-        let draws = meshes
+        let draws: Vec<ChunkDraw> = instances
             .iter()
-            .filter(|m| !m.is_empty())
-            .map(|m| ChunkDraw {
-                vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("chunk-vertices"),
-                    contents: bytemuck::cast_slice(&m.vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }),
-                index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("chunk-indices"),
-                    contents: bytemuck::cast_slice(&m.indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                }),
-                num_indices: m.indices.len() as u32,
-                aabb_min: Vec3::from(m.aabb.min),
-                aabb_max: Vec3::from(m.aabb.max),
+            .filter(|inst| !inst.mesh.is_empty())
+            .map(|inst| {
+                let packed: Vec<u32> = inst.mesh.vertices.iter().map(pack).collect();
+                let origin = ChunkUniform {
+                    origin: [inst.origin.x, inst.origin.y, inst.origin.z, 0.0],
+                };
+                let origin_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("chunk-origin"),
+                    contents: bytemuck::bytes_of(&origin),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+                let origin_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("chunk-origin-bg"),
+                    layout: &chunk_bgl,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: origin_buffer.as_entire_binding(),
+                    }],
+                });
+                ChunkDraw {
+                    vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("chunk-vertices"),
+                        contents: bytemuck::cast_slice(&packed),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    }),
+                    index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("chunk-indices"),
+                        contents: bytemuck::cast_slice(&inst.mesh.indices),
+                        usage: wgpu::BufferUsages::INDEX,
+                    }),
+                    num_indices: inst.mesh.indices.len() as u32,
+                    aabb_min: Vec3::from(inst.mesh.aabb.min) + inst.origin,
+                    aabb_max: Vec3::from(inst.mesh.aabb.max) + inst.origin,
+                    origin_bind_group,
+                }
             })
             .collect();
 
@@ -261,8 +315,8 @@ impl State {
             size,
             pipeline,
             draws,
-            uniform_buffer,
-            uniform_bind_group,
+            globals_buffer,
+            globals_bind_group,
             depth_view,
             frame_count: 0,
             window,
@@ -294,15 +348,15 @@ impl State {
         self.resize(self.size);
     }
 
-    /// Draw the scene from the given view-projection. The mesh lives in world
-    /// space (model = identity), so normals pass straight through.
+    /// Draw the scene from the given view-projection. Chunk vertices are packed and
+    /// chunk-local; the shader adds each chunk's world origin (bind group 1).
     pub fn render(&mut self, view_proj: Mat4) {
-        let uniforms = Uniforms {
-            mvp: view_proj.to_cols_array_2d(),
-            model: Mat4::IDENTITY.to_cols_array_2d(),
+        let globals = Globals {
+            view_proj: view_proj.to_cols_array_2d(),
+            palette: PALETTE,
         };
         self.queue
-            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+            .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
 
         use wgpu::CurrentSurfaceTexture as Cst;
         let frame = match self.surface.get_current_texture() {
@@ -355,7 +409,7 @@ impl State {
             });
 
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            pass.set_bind_group(0, &self.globals_bind_group, &[]);
 
             let frustum = Frustum::from_view_proj(view_proj);
             let mut drawn = 0u32;
@@ -364,6 +418,7 @@ impl State {
                 if !frustum.intersects_aabb(draw.aabb_min, draw.aabb_max) {
                     continue;
                 }
+                pass.set_bind_group(1, &draw.origin_bind_group, &[]);
                 pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
                 pass.set_index_buffer(draw.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..draw.num_indices, 0, 0..1);

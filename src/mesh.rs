@@ -1,25 +1,97 @@
 //! Turning voxels into geometry — the `mesh` layer from `docs/architecture.md`.
 //!
-//! M1 uses a **naïve** mesher: for every solid voxel, emit a quad on each face
-//! that borders air (or the section boundary). No greedy merging yet — that's M2,
-//! and this naïve version becomes the correctness oracle the greedy mesher is
-//! tested against. This module is pure CPU work: it knows `world` types but
-//! nothing about wgpu. Its output, [`ChunkMesh`], is the contract the renderer
-//! consumes.
-
-use bytemuck::{Pod, Zeroable};
+//! Two meshers: a **naïve** one (one quad per exposed voxel face) that is the
+//! correctness oracle, and the **greedy** one (merge coplanar, same-material faces
+//! into big quads) used for real. Both are neighbour-aware (cull faces across chunk
+//! borders) and emit the [`ChunkMesh`] contract the renderer consumes; vertices
+//! pack to a single `u32` ([`pack`]) at upload. Pure CPU work: knows `world` types,
+//! nothing about wgpu.
 
 use crate::world::{BlockId, Section};
 
-/// One mesh vertex. **Unpacked on purpose** for M1 (easy to read and debug);
-/// M2 replaces this with the ≤8-byte packed face vertex from design §9–10.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Pod, Zeroable)]
+/// One CPU-side mesh vertex (unpacked, easy to test). It is **packed to a single
+/// `u32`** by [`pack_vertex`] at GPU-upload time — that's the "compressed vertices"
+/// performance pillar (design §7.2, §9–10). `material` indexes the shader palette.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ChunkVertex {
     /// Chunk-local position, in voxel units (`0..=SIZE`).
     pub position: [f32; 3],
     pub normal: [f32; 3],
-    pub color: [f32; 3],
+    pub material: u16,
+}
+
+impl ChunkVertex {
+    pub fn new(position: [f32; 3], normal: [f32; 3], material: u16) -> Self {
+        ChunkVertex {
+            position,
+            normal,
+            material,
+        }
+    }
+}
+
+/// Face-direction index, shared by the packed vertex and the shader:
+/// `0:+X 1:-X 2:+Y 3:-Y 4:+Z 5:-Z`.
+pub const FACE_NORMALS: [[f32; 3]; 6] = [
+    [1.0, 0.0, 0.0],
+    [-1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, -1.0, 0.0],
+    [0.0, 0.0, 1.0],
+    [0.0, 0.0, -1.0],
+];
+
+fn normal_to_dir(n: [f32; 3]) -> u32 {
+    if n[0] > 0.5 {
+        0
+    } else if n[0] < -0.5 {
+        1
+    } else if n[1] > 0.5 {
+        2
+    } else if n[1] < -0.5 {
+        3
+    } else if n[2] > 0.5 {
+        4
+    } else {
+        5
+    }
+}
+
+/// Pack a face vertex into one `u32` (design §9–10). Bit layout, LSB→MSB:
+/// `x:6 | y:6 | z:6 | dir:3 | material:9 | ao:2`. Chunk-local positions span
+/// `0..=32` (6 bits); `ao` is reserved (written 0) until M4.
+pub fn pack_vertex(pos: [u32; 3], dir: u32, material: u32, ao: u32) -> u32 {
+    debug_assert!(
+        pos[0] <= 32 && pos[1] <= 32 && pos[2] <= 32,
+        "pos out of 6-bit range"
+    );
+    debug_assert!(dir < 6 && material < 512 && ao < 4, "field out of range");
+    (pos[0] & 0x3F)
+        | ((pos[1] & 0x3F) << 6)
+        | ((pos[2] & 0x3F) << 12)
+        | ((dir & 0x7) << 18)
+        | ((material & 0x1FF) << 21)
+        | ((ao & 0x3) << 30)
+}
+
+/// Inverse of [`pack_vertex`]: `([x,y,z], dir, material, ao)`.
+pub fn unpack_vertex(v: u32) -> ([u32; 3], u32, u32, u32) {
+    (
+        [v & 0x3F, (v >> 6) & 0x3F, (v >> 12) & 0x3F],
+        (v >> 18) & 0x7,
+        (v >> 21) & 0x1FF,
+        (v >> 30) & 0x3,
+    )
+}
+
+/// Pack a CPU [`ChunkVertex`] for upload (rounds the local position to a grid line).
+pub fn pack(v: &ChunkVertex) -> u32 {
+    let pos = [
+        v.position[0].round() as u32,
+        v.position[1].round() as u32,
+        v.position[2].round() as u32,
+    ];
+    pack_vertex(pos, normal_to_dir(v.normal), v.material as u32, 0)
 }
 
 /// Axis-aligned bounding box of a mesh, in chunk-local space. Used later for
@@ -137,18 +209,6 @@ fn is_air(section: &Section, neighbors: &Neighbors, x: i32, y: i32, z: i32) -> b
     }
 }
 
-/// A simple debug palette so blocks are distinguishable before real materials
-/// (textures arrive in M4). Unknown ids render magenta so mistakes are loud.
-fn block_color(block: BlockId) -> [f32; 3] {
-    match block.0 {
-        1 => [0.55, 0.55, 0.58], // stone
-        2 => [0.55, 0.40, 0.25], // dirt
-        3 => [0.40, 0.70, 0.35], // grass
-        4 => [0.80, 0.78, 0.65], // sand
-        _ => [0.95, 0.10, 0.95], // unknown
-    }
-}
-
 /// Mesh one section (naïve face culling — see module docs). Single-chunk
 /// convenience; boundary faces are drawn.
 pub fn mesh_section(section: &Section) -> ChunkMesh {
@@ -168,7 +228,6 @@ pub fn mesh_section_with(section: &Section, neighbors: &Neighbors) -> ChunkMesh 
                 if block.is_air() {
                     continue;
                 }
-                let color = block_color(block);
 
                 for face in &FACES {
                     let (nx, ny, nz) = (
@@ -181,15 +240,15 @@ pub fn mesh_section_with(section: &Section, neighbors: &Neighbors) -> ChunkMesh 
                     }
                     let base = vertices.len() as u32;
                     for corner in face.corners {
-                        vertices.push(ChunkVertex {
-                            position: [
+                        vertices.push(ChunkVertex::new(
+                            [
                                 (x + corner[0]) as f32,
                                 (y + corner[1]) as f32,
                                 (z + corner[2]) as f32,
                             ],
-                            normal: face.normal,
-                            color,
-                        });
+                            face.normal,
+                            block.0,
+                        ));
                     }
                     indices.extend_from_slice(&[
                         base,
@@ -344,7 +403,6 @@ fn emit_quad(
     };
     let mut normal = [0.0f32; 3];
     normal[d] = sign as f32;
-    let color = block_color(block);
 
     let (a, b, c, e) = (
         corner(i, j),
@@ -357,11 +415,7 @@ fn emit_quad(
 
     let base = vertices.len() as u32;
     for position in quad {
-        vertices.push(ChunkVertex {
-            position,
-            normal,
-            color,
-        });
+        vertices.push(ChunkVertex::new(position, normal, block.0));
     }
     indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
@@ -480,10 +534,7 @@ mod tests {
             let vmin = pos.iter().map(|p| p[v] as i32).min().unwrap();
             let vmax = pos.iter().map(|p| p[v] as i32).max().unwrap();
 
-            let c = mesh.vertices[base].color;
-            let mat = (c[0] * 255.0).round() as i32 * 1_000_000
-                + (c[1] * 255.0).round() as i32 * 1000
-                + (c[2] * 255.0).round() as i32;
+            let mat = mesh.vertices[base].material as i32;
 
             for uu in umin..umax {
                 for vv in vmin..vmax {
@@ -599,6 +650,33 @@ mod tests {
             mesh_section_with(&full, &neighbours).quad_count(),
             6 * 32 * 32 - 32 * 32,
         );
+    }
+
+    #[test]
+    fn packed_vertex_round_trips_every_field() {
+        // Edge values across each field's range.
+        for &pos in &[[0, 0, 0], [32, 0, 17], [1, 31, 32], [32, 32, 32]] {
+            for dir in 0..6u32 {
+                for &material in &[0u32, 1, 4, 255, 511] {
+                    let packed = pack_vertex(pos, dir, material, 0);
+                    let (p, d, m, ao) = unpack_vertex(packed);
+                    assert_eq!(p, pos);
+                    assert_eq!(d, dir);
+                    assert_eq!(m, material);
+                    assert_eq!(ao, 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pack_maps_normals_to_the_right_direction() {
+        for (dir, n) in FACE_NORMALS.iter().enumerate() {
+            let v = ChunkVertex::new([1.0, 2.0, 3.0], *n, 7);
+            let (_, d, m, _) = unpack_vertex(pack(&v));
+            assert_eq!(d as usize, dir);
+            assert_eq!(m, 7);
+        }
     }
 
     #[test]

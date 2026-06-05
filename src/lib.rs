@@ -18,8 +18,8 @@ mod gfx;
 pub mod mesh;
 pub mod scene;
 pub mod world;
-use gfx::State;
-use mesh::{greedy_mesh_section_with, ChunkMesh, Neighbors};
+use gfx::{ChunkInstance, State};
+use mesh::{greedy_mesh_section_with, Neighbors};
 use scene::{Action, Camera, CameraController};
 use world::{BlockId, Section, World};
 
@@ -42,9 +42,9 @@ struct App {
     // Only used on the web (async init handoff); inert on native.
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     proxy: Option<EventLoopProxy<AppEvent>>,
-    /// The scene to draw — one mesh per non-empty chunk, built on the CPU and
-    /// uploaded when the GPU is ready.
-    meshes: Vec<ChunkMesh>,
+    /// The scene to draw — one mesh per non-empty chunk (chunk-local, with its
+    /// world origin), built on the CPU and uploaded when the GPU is ready.
+    instances: Vec<ChunkInstance>,
 
     camera: Camera,
     controller: CameraController,
@@ -103,16 +103,16 @@ impl ApplicationHandler<AppEvent> for App {
         #[cfg(not(target_arch = "wasm32"))]
         {
             // Native: just block until the GPU is ready.
-            self.state = Some(pollster::block_on(State::new(window, &self.meshes)));
+            self.state = Some(pollster::block_on(State::new(window, &self.instances)));
         }
 
         #[cfg(target_arch = "wasm32")]
         {
             // Web: kick off async init and deliver the result via the proxy.
             let proxy = self.proxy.take().expect("proxy missing");
-            let meshes = self.meshes.clone();
+            let instances = self.instances.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let state = State::new(window, &meshes).await;
+                let state = State::new(window, &instances).await;
                 let _ = proxy.send_event(AppEvent::Initialized(state));
             });
         }
@@ -217,16 +217,16 @@ pub fn run() {
         .build()
         .expect("failed to build event loop");
 
-    let meshes = build_world_meshes(&demo_world());
+    let instances = build_world_meshes(&demo_world());
 
-    // Frame the camera on the whole scene from the combined bounds, then fly.
+    // Frame the camera on the whole scene from the combined world bounds, then fly.
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
-    for m in &meshes {
-        min = min.min(Vec3::from(m.aabb.min));
-        max = max.max(Vec3::from(m.aabb.max));
+    for inst in &instances {
+        min = min.min(Vec3::from(inst.mesh.aabb.min) + inst.origin);
+        max = max.max(Vec3::from(inst.mesh.aabb.max) + inst.origin);
     }
-    if meshes.is_empty() {
+    if instances.is_empty() {
         min = Vec3::ZERO;
         max = Vec3::splat(Section::SIZE as f32);
     }
@@ -237,7 +237,7 @@ pub fn run() {
     let mut app = App {
         state: None,
         proxy: Some(event_loop.create_proxy()),
-        meshes,
+        instances,
         camera: Camera::looking_at(eye, center),
         controller: CameraController::new(radius),
         last_frame: None,
@@ -285,11 +285,12 @@ fn terrain_height(wx: i32, wz: i32) -> u32 {
     h.round().clamp(1.0, (Section::SIZE - 1) as f32) as u32
 }
 
-/// Greedy-mesh each chunk with neighbour-aware seam culling, offset to its world
-/// position. App-level glue: it's allowed to touch `world` + `mesh` together.
-fn build_world_meshes(world: &World) -> Vec<ChunkMesh> {
+/// Greedy-mesh each chunk with neighbour-aware seam culling. Meshes stay
+/// chunk-local; the world `origin` travels alongside (the shader applies it).
+/// App-level glue: it's allowed to touch `world` + `mesh` together.
+fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
     let s = Section::SIZE as f32;
-    let mut meshes = Vec::new();
+    let mut instances = Vec::new();
     for ((cx, cy, cz), section) in world.chunks() {
         let neighbors = Neighbors {
             faces: [
@@ -301,29 +302,14 @@ fn build_world_meshes(world: &World) -> Vec<ChunkMesh> {
                 world.get((cx, cy, cz + 1)),
             ],
         };
-        let mut mesh = greedy_mesh_section_with(section, &neighbors);
+        let mesh = greedy_mesh_section_with(section, &neighbors);
         if mesh.is_empty() {
             continue;
         }
-        let [ox, oy, oz] = [cx as f32 * s, cy as f32 * s, cz as f32 * s];
-        for v in &mut mesh.vertices {
-            v.position[0] += ox;
-            v.position[1] += oy;
-            v.position[2] += oz;
-        }
-        mesh.aabb.min = [
-            mesh.aabb.min[0] + ox,
-            mesh.aabb.min[1] + oy,
-            mesh.aabb.min[2] + oz,
-        ];
-        mesh.aabb.max = [
-            mesh.aabb.max[0] + ox,
-            mesh.aabb.max[1] + oy,
-            mesh.aabb.max[2] + oz,
-        ];
-        meshes.push(mesh);
+        let origin = Vec3::new(cx as f32 * s, cy as f32 * s, cz as f32 * s);
+        instances.push(ChunkInstance { origin, mesh });
     }
-    meshes
+    instances
 }
 
 #[cfg(target_arch = "wasm32")]

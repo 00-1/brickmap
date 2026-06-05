@@ -129,7 +129,8 @@ treating absent neighbours as air).
 - [x] Greedy mesher; greedy==naïve oracle tests + "actually merges" tests.
       *(Correctness-first rectangle merging; the bitwise "binary" speed-up is a
       follow-up optimisation within M2.)*
-- [ ] 4-byte packed vertex with round-trip tests; shader unpacks + palette colour.
+- [x] 4-byte packed vertex with round-trip tests; shader unpacks + palette colour
+      (per-chunk world origin via a bind group; chunk-local positions).
 - [x] Neighbour-aware meshing; adjacent-chunk seam test passes.
 - [x] `World` chunk grid; many chunks drawn at their world origins.
       *(World-space baked vertices + per-chunk buffers; per-chunk transform via the
