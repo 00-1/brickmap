@@ -1,0 +1,206 @@
+//! Shareable world+view state (E12) — encode/decode to a compact URL-fragment string,
+//! so a link reproduces a world and a camera view. Deterministic generation means we
+//! only need to carry the seed + a few view params, not any world data. Pure logic, no
+//! `web-sys` — used by both the web (`location.hash`) and native (`--share`) paths.
+//!
+//! Format (readable, `&`-separated `k=v`, leading `#` tolerated):
+//! `v=1&s=<seed>&x=&y=&z=<pos>&yaw=&pit=<rad>&w=<wobble>&d=<colour steps>&t=<toggles hex>`
+//! Decode is lenient: unknown keys are ignored, missing keys take the default.
+
+/// The shareable state: which world (`seed`) and where/how we're viewing it.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ShareState {
+    pub seed: u32,
+    pub pos: [f32; 3],
+    pub yaw: f32,
+    pub pitch: f32,
+    pub wobble: f32,
+    pub color_steps: f32,
+    /// Feature-toggle bitmask (see `gfx::TOGGLE_LABELS`).
+    pub toggles: u32,
+}
+
+const VERSION: u32 = 1;
+
+impl ShareState {
+    /// Encode to the URL-fragment string (no leading `#`). Floats are trimmed to a
+    /// short precision — camera placement is a hint, not bit-exact.
+    pub fn encode(&self) -> String {
+        format!(
+            "v={}&s={}&x={:.2}&y={:.2}&z={:.2}&yaw={:.3}&pit={:.3}&w={:.0}&d={:.0}&t={:x}",
+            VERSION,
+            self.seed,
+            self.pos[0],
+            self.pos[1],
+            self.pos[2],
+            self.yaw,
+            self.pitch,
+            self.wobble,
+            self.color_steps,
+            self.toggles,
+        )
+    }
+
+    /// Decode from a fragment string, falling back to `default` for any missing/invalid
+    /// field. A leading `#` (as returned by `location.hash`) is tolerated. Returns
+    /// `None` only if there's no recognizable `seed` (so callers can keep their world).
+    pub fn decode(s: &str, default: ShareState) -> Option<ShareState> {
+        let s = s.strip_prefix('#').unwrap_or(s);
+        if s.trim().is_empty() {
+            return None;
+        }
+        let mut out = default;
+        let mut saw_seed = false;
+        for pair in s.split('&') {
+            let Some((k, v)) = pair.split_once('=') else {
+                continue;
+            };
+            match k {
+                "s" => {
+                    if let Ok(n) = v.parse::<u32>() {
+                        out.seed = n;
+                        saw_seed = true;
+                    }
+                }
+                "x" => set_f32(&mut out.pos[0], v),
+                "y" => set_f32(&mut out.pos[1], v),
+                "z" => set_f32(&mut out.pos[2], v),
+                "yaw" => set_f32(&mut out.yaw, v),
+                "pit" => set_f32(&mut out.pitch, v),
+                "w" => set_f32(&mut out.wobble, v),
+                "d" => set_f32(&mut out.color_steps, v),
+                "t" => {
+                    if let Ok(n) = u32::from_str_radix(v, 16) {
+                        out.toggles = n;
+                    }
+                }
+                _ => {} // unknown / version key: ignore
+            }
+        }
+        saw_seed.then_some(out)
+    }
+}
+
+fn set_f32(slot: &mut f32, v: &str) {
+    if let Ok(f) = v.parse::<f32>() {
+        if f.is_finite() {
+            *slot = f;
+        }
+    }
+}
+
+/// Turn a user-typed seed into a `u32`: a plain integer is used directly; anything else
+/// is folded to a seed via the same avalanche mix the world uses (so text seeds are
+/// stable + consistent across web and native). Empty → `None`.
+pub fn seed_from_text(text: &str) -> Option<u32> {
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Ok(n) = t.parse::<u32>() {
+        return Some(n);
+    }
+    // Fold the bytes through a multiply-xorshift mix (same shape as worldgen::hash).
+    let mut h: u32 = 0x9e37_79b9;
+    for &b in t.as_bytes() {
+        h = h.wrapping_add(b as u32);
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2c1b_3c6d);
+        h ^= h >> 12;
+        h = h.wrapping_mul(0x297a_2d39);
+        h ^= h >> 15;
+    }
+    Some(h)
+}
+
+/// Deterministic "seed of the day" from a `YYYY-MM-DD` string (everyone gets the same
+/// world on a given date, with no server).
+pub fn seed_of_the_day(date: &str) -> u32 {
+    seed_from_text(date).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> ShareState {
+        ShareState {
+            seed: 1337,
+            pos: [12.5, 40.0, -8.25],
+            yaw: 1.2,
+            pitch: -0.3,
+            wobble: 85.0,
+            color_steps: 4.0,
+            toggles: 0x7ff,
+        }
+    }
+
+    fn default() -> ShareState {
+        ShareState {
+            seed: 0,
+            pos: [0.0; 3],
+            yaw: 0.0,
+            pitch: 0.0,
+            wobble: 85.0,
+            color_steps: 4.0,
+            toggles: 0x7ff,
+        }
+    }
+
+    #[test]
+    fn round_trips_within_precision() {
+        let a = sample();
+        let b = ShareState::decode(&a.encode(), default()).unwrap();
+        assert_eq!(a.seed, b.seed);
+        assert_eq!(a.toggles, b.toggles);
+        for k in 0..3 {
+            assert!((a.pos[k] - b.pos[k]).abs() < 0.01, "pos[{k}]");
+        }
+        assert!((a.yaw - b.yaw).abs() < 0.001);
+        assert!((a.pitch - b.pitch).abs() < 0.001);
+        assert_eq!(a.wobble, b.wobble);
+        assert_eq!(a.color_steps, b.color_steps);
+    }
+
+    #[test]
+    fn decode_tolerates_hash_prefix_and_missing_keys() {
+        // Only a seed; everything else should fall back to the default.
+        let d = default();
+        let got = ShareState::decode("#s=42", d).unwrap();
+        assert_eq!(got.seed, 42);
+        assert_eq!(got.pos, d.pos);
+        assert_eq!(got.wobble, d.wobble);
+        assert_eq!(got.toggles, d.toggles);
+    }
+
+    #[test]
+    fn decode_without_seed_is_none() {
+        assert!(ShareState::decode("", default()).is_none());
+        assert!(ShareState::decode("#x=1&y=2", default()).is_none());
+    }
+
+    #[test]
+    fn decode_ignores_unknown_and_garbage() {
+        let got = ShareState::decode("v=1&s=7&future=xyz&x=oops&t=ff", default()).unwrap();
+        assert_eq!(got.seed, 7);
+        assert_eq!(got.toggles, 0xff);
+        assert_eq!(got.pos[0], default().pos[0]); // "oops" rejected → default
+    }
+
+    #[test]
+    fn seed_from_text_numeric_vs_text() {
+        assert_eq!(seed_from_text("1337"), Some(1337));
+        assert_eq!(seed_from_text("  42 "), Some(42));
+        assert_eq!(seed_from_text(""), None);
+        // Text is deterministic and (almost surely) not the trivial value.
+        let a = seed_from_text("aurora").unwrap();
+        assert_eq!(a, seed_from_text("aurora").unwrap());
+        assert_ne!(seed_from_text("aurora"), seed_from_text("nebula"));
+    }
+
+    #[test]
+    fn seed_of_the_day_is_stable() {
+        assert_eq!(seed_of_the_day("2026-06-05"), seed_of_the_day("2026-06-05"));
+        assert_ne!(seed_of_the_day("2026-06-05"), seed_of_the_day("2026-06-06"));
+    }
+}
