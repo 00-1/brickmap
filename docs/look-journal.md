@@ -18,6 +18,31 @@ the image · the call (keep / tune / drop) · why*. Snapshots live in the build 
 
 ---
 
+## E7 · Point-cloud trees + biome forests (2026-06)
+
+*What we did.* Grew the foliage layer into a **point-cloud forest**. Trees are splat
+clusters — a brown trunk climbing in ~0.6-voxel steps, topped by a rough-spherical green
+**canopy** of 16–30 points (per-tree xorshift RNG), with a few canopy tips pushed bright so
+the bloom lights them. Placement is a **jittered grid** (woods look planted, not gridded),
+gated by a forest-density roll tied to the **E8 biome lushness** — so trees thicken in wet
+grassland and vanish in deserts/snow. They reuse the E6 splat pipeline + buffer (just more
+instances), so there's no new draw path.
+
+*What it does to the image.* The grassland gains depth and silhouette — drifts of glowing
+green points reading as a woodland over the grass carpet, fading into the fog, with the
+desert biome staying bare. The Superbien point-cloud-forest mood is recognisable from the
+hero shot even at distance.
+
+*The call.* **Keep** — this is the destination look for the pivot. It's the same primitive
+(flat-shaded discs with gaps) doing trunk, leaf, and blade alike — coherent and on-thesis.
+
+*To tune later:* whole-tree wind sway (currently each splat only shimmers within its quad,
+not as a tree — would need ground-relative height in the VS); a lusher terrain palette
+under the canopy; cheap light-shafts / god-rays for the volumetric mood (deferred — the
+glow-through-bloom carries most of it for now); and foliage distance-LOD when M7 lands.
+
+---
+
 ## E6 · Ground foliage splats — the point-cloud pivot begins (2026-06)
 
 *What we did.* Stood up the **splat render path** — one unit quad, instanced per

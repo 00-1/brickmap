@@ -1,6 +1,6 @@
 # ✨ E7 — The forest & atmosphere
 
-> Status: **planned** ⏳ (skeleton; fleshed out just before building, per the roadmap
+> Status: **done** ✅ (core look; some atmosphere deferred — see acceptance). (skeleton; fleshed out just before building, per the roadmap
 > planning rule). Second rung of the point-cloud / foliage pivot — the *destination*
 > look. Builds on **E6** (the splat pipeline + ground foliage). Reference: the Superbien
 > point-cloud forest (glowing point trees, light shafts, ethereal density).
@@ -30,9 +30,16 @@
 - Animated creatures among the trees (still parked).
 
 ## Acceptance (provisional)
-- [ ] Point-cloud trees clustered into woods; canopy + trunk read clearly.
-- [ ] Light-shaft / glow atmosphere; lusher palette; the Superbien mood is recognisable.
-- [ ] Bounded + LOD'd on weak hardware; toggle; HUD count.
-- [ ] Native + web; CI green; docs synced; snapshot + render in chat.
+- [x] Point-cloud trees clustered into woods; canopy + trunk read clearly. *(`foliage::
+  scatter_trees`: jittered-grid placement gated by biome lushness; trunk + spherical canopy
+  splats. Reuses the E6 pipeline/buffer.)*
+- [~] Light-shaft / glow atmosphere; lusher palette; the Superbien mood is recognisable.
+  *(Glow via bright canopy tips through bloom + fog gives the mood; explicit god-ray
+  shafts and a lusher terrain palette are deferred — see look-journal "to tune later".)*
+- [x] Bounded on weak hardware (forest density gated by biome + stream radius); shares the
+  `foliage` toggle; HUD splat count. *(Foliage distance-LOD lands with M7.)*
+- [x] Native + web; CI green; docs synced; snapshot (`08-forest`) + render in chat.
 
-> Status: **planned** ⏳ — write the full brief once E6's splat path is proven.
+> Status: **done** ✅ (core look). Trees + biome forests landed and verified. Deferred to a
+> follow-up (tracked in the look-journal): whole-tree wind sway, god-ray shafts, lusher
+> terrain palette, foliage distance-LOD (with M7).

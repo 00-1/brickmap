@@ -190,7 +190,7 @@ cubes. Grounded in [`research-points-splatting.md`](research-points-splatting.md
 - **De-risks:** the splat pipeline (look + cost on weak hardware) and bounding the
   on-screen splat count — both reused by everything later in the pivot.
 
-### ✨ E7 — The forest & atmosphere *(exploration)* ⏳ &nbsp;→ [`milestones/E7-forest-atmosphere.md`](milestones/E7-forest-atmosphere.md)
+### ✨ E7 — The forest & atmosphere *(exploration)* ✅ &nbsp;→ [`milestones/E7-forest-atmosphere.md`](milestones/E7-forest-atmosphere.md)
 The *destination* look: **point-cloud trees**, layered vegetation, light shafts, glow,
 and a lusher palette — the Superbien point-cloud-forest mood. Reuses E6's splat pipeline.
 - **Outcome:** flying the world feels like the reference — drifts of glowing points
