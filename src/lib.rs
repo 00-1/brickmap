@@ -31,7 +31,11 @@ use mesh::{greedy_mesh_section_with, Neighbors};
 use particles::ParticleSystem;
 use scene::{Action, Camera, CameraController};
 use visibility::connectivity;
-use world::{ChunkCoord, Section, World};
+use world::{ChunkCoord, Section};
+// `World` is only used by the native headless renderer's fixed demo scene now;
+// the live app streams via self-generating workers (M6).
+#[cfg(not(target_arch = "wasm32"))]
+use world::World;
 
 /// Window/canvas init size. On the web this is also the canvas backing size.
 const INITIAL_SIZE: (u32, u32) = (960, 720);
@@ -55,9 +59,9 @@ struct App {
     camera: Camera,
     controller: CameraController,
     particles: ParticleSystem,
-    /// The procedural world, streamed in around the camera as it travels (M3). Only
-    /// chunks near the camera are resident; distant ones are evicted to bound memory.
-    world: World,
+    /// Off-thread chunk generation + meshing (M6); workers regenerate from the seed,
+    /// so the app keeps no `World` for streaming.
+    loader: ChunkLoader,
     /// Chunk coords currently uploaded to the GPU (the renderer's draw set).
     loaded: HashSet<ChunkCoord>,
     /// Cinematic auto-fly: on by default so the build is watchable with no input
@@ -109,88 +113,167 @@ impl App {
         let s = Section::SIZE as f32;
         let ccx = (self.camera.position.x / s).floor() as i32;
         let ccz = (self.camera.position.z / s).floor() as i32;
-
-        // Evict chunks (GPU + CPU) that have drifted beyond the radius (+1 hysteresis
-        // so a chunk straddling the boundary doesn't thrash). Field-split borrows.
         let keep = STREAM_RADIUS + 1;
+        let within = |coord: ChunkCoord| {
+            (coord.0 - ccx).abs() <= keep && coord.1 == 0 && (coord.2 - ccz).abs() <= keep
+        };
+
+        // Evict GPU draws that have drifted beyond the radius (+1 hysteresis). Workers
+        // self-generate, so there's no CPU-side world to prune. Field-split borrows.
         let state = self.state.as_mut().unwrap();
-        let world = &mut self.world;
         self.loaded.retain(|&coord| {
-            let (cx, _cy, cz) = coord;
-            if (cx - ccx).abs() > keep || (cz - ccz).abs() > keep {
-                state.remove_chunk(coord);
-                world.remove(coord);
-                false
-            } else {
+            if within(coord) {
                 true
+            } else {
+                state.remove_chunk(coord);
+                false
             }
         });
 
-        // Load nearest-missing chunks, ring by ring, until the frame budget runs out.
-        let mut budget = STREAM_BUDGET;
+        // Request nearest-missing chunks (cheap — dispatches a mesh job), ring by ring,
+        // up to a per-frame request budget. Not loaded and not already in flight.
+        let mut requests = STREAM_REQUESTS;
         'rings: for ring in 0..=STREAM_RADIUS {
             for dz in -ring..=ring {
                 for dx in -ring..=ring {
-                    // Only this ring's outer shell (Chebyshev distance == ring).
                     if dx.abs().max(dz.abs()) != ring {
-                        continue;
+                        continue; // outer shell of this ring only
                     }
                     let coord = (ccx + dx, 0, ccz + dz);
-                    if self.loaded.contains(&coord) {
+                    if self.loaded.contains(&coord) || self.loader.is_pending(coord) {
                         continue;
                     }
-                    let (cx, _cy, cz) = coord;
-                    // Generate this chunk and its 4 horizontal neighbours first, so
-                    // seam culling sees solid neighbours (no faces at chunk borders).
-                    ensure_chunk(&mut self.world, cx, cz);
-                    ensure_chunk(&mut self.world, cx - 1, cz);
-                    ensure_chunk(&mut self.world, cx + 1, cz);
-                    ensure_chunk(&mut self.world, cx, cz - 1);
-                    ensure_chunk(&mut self.world, cx, cz + 1);
-
-                    let section = self.world.get(coord).expect("just generated");
-                    let neighbors = Neighbors {
-                        faces: [
-                            self.world.get((cx - 1, 0, cz)),
-                            self.world.get((cx + 1, 0, cz)),
-                            None, // -y: open sky below the single chunk layer
-                            None, // +y: open sky above
-                            self.world.get((cx, 0, cz - 1)),
-                            self.world.get((cx, 0, cz + 1)),
-                        ],
-                    };
-                    let mesh = greedy_mesh_section_with(section, &neighbors);
-                    let origin = Vec3::new(cx as f32 * s, 0.0, cz as f32 * s);
-                    let inst = ChunkInstance {
-                        coord,
-                        origin,
-                        mesh,
-                        graph: connectivity(section),
-                    };
-                    self.state.as_mut().unwrap().upload_chunk(&inst);
-                    self.loaded.insert(coord);
-
-                    budget -= 1;
-                    if budget == 0 {
+                    self.loader.request(coord);
+                    requests -= 1;
+                    if requests == 0 {
                         break 'rings;
                     }
                 }
             }
         }
 
-        // Log only on frames that actually changed the draw set (quiet once settled).
-        if budget < STREAM_BUDGET {
-            if let Some(state) = self.state.as_ref() {
-                log::debug!("streaming: {} chunks resident", state.chunk_count());
+        // Drain finished meshes and upload them (bounded GPU work per frame). On native
+        // the meshing happened off-thread; on web `drain` does it inline, time-sliced.
+        for inst in self.loader.drain(STREAM_UPLOADS) {
+            if !within(inst.coord) {
+                continue; // camera moved on while it meshed — drop it
             }
+            self.state.as_mut().unwrap().upload_chunk(&inst);
+            self.loaded.insert(inst.coord);
         }
     }
 }
 
-/// Generate a terrain section at `(cx, 0, cz)` into `world` if it isn't there yet.
-fn ensure_chunk(world: &mut World, cx: i32, cz: i32) {
-    if !world.contains((cx, 0, cz)) {
-        world.insert((cx, 0, cz), worldgen::generate_section(cx, cz, WORLD_SEED));
+/// The pure off-thread worker: regenerate a chunk + its 4 horizontal neighbours from
+/// the seed, greedy-mesh it (neighbour-aware seam culling), and bake its connectivity
+/// graph. Self-contained and `Send`, so it can run on a rayon thread (M6).
+fn build_chunk_instance(coord: ChunkCoord, seed: u32) -> ChunkInstance {
+    let (cx, _cy, cz) = coord;
+    let section = worldgen::generate_section(cx, cz, seed);
+    let west = worldgen::generate_section(cx - 1, cz, seed);
+    let east = worldgen::generate_section(cx + 1, cz, seed);
+    let south = worldgen::generate_section(cx, cz - 1, seed);
+    let north = worldgen::generate_section(cx, cz + 1, seed);
+    let neighbors = Neighbors {
+        faces: [
+            Some(&west),
+            Some(&east),
+            None, // -y: open sky below the single chunk layer
+            None, // +y: open sky above
+            Some(&south),
+            Some(&north),
+        ],
+    };
+    let mesh = greedy_mesh_section_with(&section, &neighbors);
+    let s = Section::SIZE as f32;
+    ChunkInstance {
+        coord,
+        origin: Vec3::new(cx as f32 * s, 0.0, cz as f32 * s),
+        mesh,
+        graph: connectivity(&section),
+    }
+}
+
+/// Off-thread chunk loader (M6). Native dispatches mesh jobs to rayon and collects
+/// finished `ChunkInstance`s over a channel; web meshes inline, time-sliced. Same
+/// interface either way: `request` to enqueue, `drain` to collect.
+struct ChunkLoader {
+    /// Coords currently in flight (so we don't request them twice).
+    pending: HashSet<ChunkCoord>,
+    #[cfg(not(target_arch = "wasm32"))]
+    tx: std::sync::mpsc::Sender<ChunkInstance>,
+    #[cfg(not(target_arch = "wasm32"))]
+    rx: std::sync::mpsc::Receiver<ChunkInstance>,
+    #[cfg(target_arch = "wasm32")]
+    queue: std::collections::VecDeque<ChunkCoord>,
+}
+
+impl ChunkLoader {
+    fn new() -> ChunkLoader {
+        #[cfg(not(target_arch = "wasm32"))]
+        let (tx, rx) = std::sync::mpsc::channel();
+        ChunkLoader {
+            pending: HashSet::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            tx,
+            #[cfg(not(target_arch = "wasm32"))]
+            rx,
+            #[cfg(target_arch = "wasm32")]
+            queue: std::collections::VecDeque::new(),
+        }
+    }
+
+    fn is_pending(&self, coord: ChunkCoord) -> bool {
+        self.pending.contains(&coord)
+    }
+
+    fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Queue a chunk to be meshed. Native: dispatch a rayon job. Web: enqueue.
+    fn request(&mut self, coord: ChunkCoord) {
+        if !self.pending.insert(coord) {
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let tx = self.tx.clone();
+            rayon::spawn(move || {
+                let _ = tx.send(build_chunk_instance(coord, WORLD_SEED));
+            });
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.queue.push_back(coord);
+        }
+    }
+
+    /// Collect up to `budget` finished meshes. Native: non-blocking `try_recv`. Web:
+    /// mesh up to `budget` queued chunks inline (this is where the web cost lives).
+    fn drain(&mut self, budget: usize) -> Vec<ChunkInstance> {
+        let mut out = Vec::new();
+        #[cfg(not(target_arch = "wasm32"))]
+        for _ in 0..budget {
+            match self.rx.try_recv() {
+                Ok(inst) => {
+                    self.pending.remove(&inst.coord);
+                    out.push(inst);
+                }
+                Err(_) => break,
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        for _ in 0..budget {
+            match self.queue.pop_front() {
+                Some(coord) => {
+                    self.pending.remove(&coord);
+                    out.push(build_chunk_instance(coord, WORLD_SEED));
+                }
+                None => break,
+            }
+        }
+        out
     }
 }
 
@@ -394,8 +477,14 @@ impl ApplicationHandler<AppEvent> for App {
                         } else {
                             0.0
                         };
+                        let meshing = self.loader.pending_count();
+                        let meshing = if meshing > 0 {
+                            format!(" · meshing {meshing}")
+                        } else {
+                            String::new()
+                        };
                         let hud = format!(
-                            "{fps:.0} fps · {:.1} ms · {}/{} chunks · {} tris · {} fx{}",
+                            "{fps:.0} fps · {:.1} ms · {}/{} chunks · {} tris · {} fx{meshing}{}",
                             self.frame_ms_ema,
                             s.drawn_chunks,
                             s.total_chunks,
@@ -473,7 +562,7 @@ pub fn run() {
         camera,
         controller: CameraController::new(45.0),
         particles: ParticleSystem::new(Vec::new()),
-        world: World::new(),
+        loader: ChunkLoader::new(),
         loaded: HashSet::new(),
         auto_fly: true,
         auto_fly_angle: 0.0,
@@ -498,8 +587,11 @@ const WORLD_RADIUS: i32 = 2;
 /// Streaming radius around the camera, in chunks (Chebyshev). The world is one
 /// vertical layer of chunks (`cy == 0`) for M3.
 const STREAM_RADIUS: i32 = 5;
-/// Max chunks to generate + mesh per frame, to cap how long a hitch can get.
-const STREAM_BUDGET: usize = 4;
+/// Mesh jobs to dispatch per frame (cheap on native — just hands work to rayon). M6.
+const STREAM_REQUESTS: usize = 8;
+/// Finished meshes to upload to the GPU per frame (bounds main-thread upload work, and
+/// on web bounds inline meshing). M6.
+const STREAM_UPLOADS: usize = 4;
 
 /// How high above the terrain the cinematic camera cruises.
 const CRUISE_HEIGHT: f32 = 22.0;
@@ -679,5 +771,41 @@ pub mod controls {
             t.set(i, m & (1 << i) != 0);
         }
         t
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loader_meshes_a_chunk_off_thread() {
+        // The native loader dispatches to rayon; the mesh comes back via the channel.
+        let mut loader = ChunkLoader::new();
+        loader.request((0, 0, 0));
+        assert!(loader.is_pending((0, 0, 0)));
+
+        let mut done = Vec::new();
+        for _ in 0..2000 {
+            done.extend(loader.drain(8));
+            if !done.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert_eq!(done.len(), 1, "the off-thread mesh should have come back");
+        assert_eq!(done[0].coord, (0, 0, 0));
+        assert!(!done[0].mesh.is_empty(), "origin chunk should have terrain");
+        assert!(!loader.is_pending((0, 0, 0)), "pending cleared after drain");
+    }
+
+    #[test]
+    fn build_chunk_instance_is_deterministic() {
+        let a = build_chunk_instance((2, 0, -1), 1234);
+        let b = build_chunk_instance((2, 0, -1), 1234);
+        assert_eq!(a.coord, (2, 0, -1));
+        assert_eq!(a.mesh.vertices.len(), b.mesh.vertices.len());
+        assert_eq!(a.mesh.indices, b.mesh.indices);
+        assert!(!a.mesh.vertices.is_empty());
     }
 }

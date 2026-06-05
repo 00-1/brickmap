@@ -549,11 +549,6 @@ impl State {
         self.draws.remove(&coord);
     }
 
-    /// How many chunk draws are resident (for stats).
-    pub fn chunk_count(&self) -> usize {
-        self.draws.len()
-    }
-
     pub fn window(&self) -> &Window {
         &self.window
     }

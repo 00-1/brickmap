@@ -35,6 +35,9 @@ env_logger = "0.11"
 # Headless render-to-PNG (D1): software-Vulkan offscreen capture for golden-image
 # tests and self-checked renders. Native only.
 png = "0.17"
+# Off-thread chunk generation + meshing (M6). Web has no threads on Pages
+# (no SharedArrayBuffer), so the web build meshes on the main thread instead.
+rayon = "1"
 
 # --- Web / WASM-only -----------------------------------------------------
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -122,7 +122,7 @@ Everything platform-specific is isolated in `bm-platform` (+ small `cfg` shims i
 | World model | palette-compressed 32³ sections, **procedural + streamed** around the camera | palette-compressed sections, streaming |
 | Culling | frustum (per-chunk AABB) + visibility-graph cave cull (camera-flood; no-op on the surface world, ready for 3D) | frustum + visibility-graph cave culling |
 | Pipeline | forward pass → bloom post; baked AO + texture-array materials + hemispheric ambient + flood-fill block light + sky/fog | forward(+), texture-array materials, LOD |
-| Threading | single-thread (synchronous streaming + meshing on the main thread) | rayon (native) / workers (web) async meshing |
+| Threading | off-thread chunk gen + meshing (rayon) on native; web time-slices on the main thread | rayon (native) / workers (web) async meshing |
 
 Through M4 the data → mesh → GPU pipeline, the `world`↔`render` seam, streaming,
 and the first material/aesthetic layers are real. The remaining gaps above

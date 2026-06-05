@@ -153,9 +153,10 @@ it bites with 3D terrain. The HUD makes frustum culling's reduction visible now.
 - **Acceptance:** visibility-graph logic tested; HUD shows a measurable draw-call
   reduction on a cave-heavy scene.
 
-### M6 — Off the main thread (async meshing) ⏳
-A **rayon** job system that meshes off the critical path, with double-buffered GPU
-uploads; plus the web fallback (single-thread or `wasm-bindgen-rayon` workers).
+### M6 — Off the main thread (async meshing) ✅ &nbsp;→ [`milestones/M6-async-meshing.md`](milestones/M6-async-meshing.md)
+A **rayon** job system that meshes off the critical path; the main thread only
+dispatches jobs + uploads finished meshes. Web falls back to time-sliced main-thread
+meshing (no `wasm-bindgen-rayon` — Pages can't set the COOP/COEP headers it needs).
 - **Outcome:** no frame hitches while streaming/meshing.
 - **De-risks:** threading, and the known web threading constraint.
 - **Acceptance:** meshing never blocks a frame on native; web still functions
