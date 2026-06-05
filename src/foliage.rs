@@ -68,7 +68,8 @@ pub fn scatter(section: &Section, cx: i32, cz: i32, seed: u32, density: u32) -> 
                 continue;
             }
             let (wx, wz) = (cx * s + x as i32, cz * s + z as i32);
-            // A per-column thinning roll so not every grass cell is equally dense.
+            // A per-column thinning roll so not every grass cell is equally dense. (Biome
+            // lushness is applied by the caller scaling `density`, since it varies slowly.)
             let lushness = hash01(wx, wz, seed ^ 0x0f01_1a6e);
             let n = ((density as f32) * (0.35 + 0.65 * lushness)).round() as u32;
             for k in 0..n {

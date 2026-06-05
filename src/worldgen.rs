@@ -104,13 +104,37 @@ pub fn height(wx: i32, wz: i32, seed: u32) -> u32 {
         .clamp(1.0, (Section::SIZE - 1) as f32) as u32
 }
 
-/// The surface block at a column, by height band: sand at the waterline (beaches + lake
-/// floor), grass through the middle, snow on the peaks.
-fn surface_block(height: u32) -> BlockId {
+/// Low-frequency **temperature** field `[0, 1)` (cold → hot). Coarse so biomes span many
+/// chunks; offset seed so it's independent of the height noise.
+fn temperature(wx: i32, wz: i32, seed: u32) -> f32 {
+    fbm(wx as f32 * 0.0060, wz as f32 * 0.0060, seed ^ 0x00d4)
+}
+
+/// Low-frequency **humidity** field `[0, 1)` (dry → wet), independent of temperature.
+fn humidity(wx: i32, wz: i32, seed: u32) -> f32 {
+    fbm(
+        wx as f32 * 0.0070 + 11.0,
+        wz as f32 * 0.0070 + 7.0,
+        seed ^ 0x00e5,
+    )
+}
+
+/// How lush a column's foliage should be `[0, 1)` — driven by humidity (deserts bare,
+/// wetlands thick). Used by `foliage::scatter` to modulate density per column (E8 biomes).
+pub fn lushness(wx: i32, wz: i32, seed: u32) -> f32 {
+    ((humidity(wx, wz, seed) - 0.28) / 0.6).clamp(0.0, 1.0)
+}
+
+/// The surface block at a column from its height **and biome** (E8): sand at the
+/// waterline (beaches + lake floor), snow on peaks; otherwise the temperature/humidity
+/// biome decides — cold → snow, hot-and-dry → desert sand, else grass.
+fn surface_block(height: u32, temp: f32, humidity: f32) -> BlockId {
     if height <= SEA_LEVEL + 1 {
         SAND
-    } else if height >= 24 {
-        SNOW
+    } else if height >= 24 || temp < 0.32 {
+        SNOW // snowy peaks, and cold biomes (taiga / tundra)
+    } else if temp > 0.62 && humidity < 0.38 {
+        SAND // hot, dry desert
     } else {
         GRASS
     }
@@ -125,7 +149,7 @@ pub fn generate_section(cx: i32, cz: i32, seed: u32) -> Section {
         for x in 0..Section::SIZE {
             let (wx, wz) = (cx * s + x as i32, cz * s + z as i32);
             let h = height(wx, wz, seed);
-            let surface = surface_block(h);
+            let surface = surface_block(h, temperature(wx, wz, seed), humidity(wx, wz, seed));
             for y in 0..h.min(Section::SIZE) {
                 let depth = h - y;
                 let block = match depth {
@@ -209,9 +233,9 @@ mod tests {
         // the seed/worldgen version (E12 brief §5 caveat). The integer block-id path is
         // portable; the f32 noise feeding `height().round()` *may* drift across targets,
         // which is why a cross-target (wasm-in-CI) check is noted as a follow-up.
-        // Bump this when worldgen *intentionally* changes (last: E8 domain-warp +
-        // ridged mountains + sea-level water).
-        assert_eq!(voxel_hash(1337), 5_520_760_850_670_182_360);
+        // Bump this when worldgen *intentionally* changes (last: E8 temperature/humidity
+        // biomes selecting surface materials).
+        assert_eq!(voxel_hash(1337), 9_454_611_631_799_482_604);
         // Different seeds must give different worlds.
         assert_ne!(voxel_hash(1337), voxel_hash(1338));
         assert_ne!(voxel_hash(0), voxel_hash(1));
