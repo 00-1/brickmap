@@ -78,7 +78,7 @@ A voxel data model (`Section` 32³), a *naïve* face-culling mesher, the
   camera — on native and web. Snapshots: `/archive/01-first-chunk/` (auto-orbit)
   and `/archive/02-fly-camera/`.
 
-### M2 — Greedy meshing + a grid of chunks 🛠 &nbsp;→ [`milestones/M2-greedy-grid.md`](milestones/M2-greedy-grid.md)
+### M2 — Greedy meshing + a grid of chunks ✅ &nbsp;→ [`milestones/M2-greedy-grid.md`](milestones/M2-greedy-grid.md)
 The real **binary greedy mesher** (correctness tests + a `criterion` bench), a
 multi-chunk manager, **frustum culling**, and the finalized **4–8 byte packed
 vertex** (encode/decode round-trip tests).

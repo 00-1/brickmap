@@ -53,6 +53,13 @@ web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
 ] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "meshing"
+harness = false
+
 # wgpu shader compilation and validation are heavy; build deps optimised even in
 # debug so iteration on the spike stays fast on weak dev machines.
 [profile.dev.package."*"]

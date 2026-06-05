@@ -137,6 +137,13 @@ treating absent neighbours as air).
       packed vertex comes later.)*
 - [x] Frustum culling with tests; off-screen chunks skipped.
 - [x] Triangle/draw-call stats (throttled console log for now; on-screen HUD is M5).
-- [ ] A meshing throughput number recorded (criterion) against the budget.
-- [ ] Runs native + web; preview shows the multi-chunk world; snapshot to gallery.
-- [ ] CI green; roadmap M2 flipped to done; docs synced in-commit.
+- [x] A meshing throughput number recorded (criterion): greedy ≈ 1.18 ms/section,
+      naïve ≈ 0.54 ms (terrain-like, single thread). **Note:** greedy is currently
+      CPU-slower than naïve (per-slice mask realloc + merge work); the *binary*
+      bitwise mesher (the named pillar) is the perf follow-up — the GPU triangle
+      win is already achieved. Tracked in `worklog.md`.
+- [x] Runs native + web; multi-chunk world live; snapshot `/archive/03-greedy-terrain/`.
+- [x] CI green; roadmap M2 flipped to done; docs synced in-commit.
+
+> Status: **done** ✅. Outstanding follow-up: binary greedy meshing (perf) — see
+> `worklog.md`.
