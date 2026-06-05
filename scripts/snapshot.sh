@@ -28,8 +28,9 @@ CARGO_TARGET_DIR="$repo/target" cargo build --release --lib \
 rm -rf "$out"
 mkdir -p "$out"
 cp "$work/web/index.html" "$out/index.html"
-# Freeze the build-id/cache placeholders to this snapshot's id.
-sed -i "s/__CACHE_BUST__/$id/g; s/__BUILD_SHA__/$id/g" "$out/index.html"
+# Freeze the build-id/cache placeholders to this snapshot's id, and stamp the
+# snapshot's build time (the "built N ago" label keeps counting — these are history).
+sed -i "s/__CACHE_BUST__/$id/g; s/__BUILD_SHA__/$id/g; s/__BUILD_TIME__/$(date -u +%s)/g" "$out/index.html"
 wasm-bindgen --target web --no-typescript \
   --out-dir "$out/pkg" \
   "$repo/target/wasm32-unknown-unknown/release/brickmap.wasm"

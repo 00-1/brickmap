@@ -57,7 +57,8 @@ jobs:
           cp web/index.html dist/latest/index.html
           # Cache-bust the latest app's unhashed bundle with the commit SHA, and
           # stamp a short build id on the page.
-          sed -i "s/__CACHE_BUST__/${GITHUB_SHA}/g; s/__BUILD_SHA__/${GITHUB_SHA:0:7}/g" dist/latest/index.html
+          build_epoch=$(date -u +%s)
+          sed -i "s/__CACHE_BUST__/${GITHUB_SHA}/g; s/__BUILD_SHA__/${GITHUB_SHA:0:7}/g; s/__BUILD_TIME__/${build_epoch}/g" dist/latest/index.html
           # Version sentinel: fetched uncached by the page to self-heal a stale
           # cached index.html (see web/index.html). Full SHA, must match the baked one.
           printf '{"sha":"%s"}' "${GITHUB_SHA}" > dist/latest/version.json
