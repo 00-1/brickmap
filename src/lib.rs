@@ -14,6 +14,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
 mod gfx;
+pub mod mesh;
 pub mod world;
 use gfx::State;
 
