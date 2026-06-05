@@ -203,13 +203,17 @@ research (backlog §G): **ridged noise + domain warping** ✅ (landed — terrai
 valleys/spurs with ridge-line peaks instead of obvious axis-aligned fbm), **sea-level
 water** ✅ (lakes/seas up to `SEA_LEVEL`, stylised in E9), **biomes** ✅ (temp×humidity →
 materials + foliage density), **jittered-grid tree/foliage placement** ✅ (E7), **rivers** ✅
-(ridged-crest channels carved toward the waterline → water-filled ponds/channels), then the
-remaining pricey-but-foundational **vertical chunk stacks + 3D density → overhangs & caves**
-(stateless noise-intersection caves) — the bigger step, its own brief.
+(ridged-crest channels carved toward the waterline → water-filled ponds/channels), and
+**3D caves** ✅ (a thin band of a 3D noise hollows connected tunnels within the 32-tall
+layer, keeping a solid floor + surface skin — finally giving M5's dormant cave-culling real
+structure). Remaining: **vertical chunk stacks** (single→multi-layer streaming, for worlds
+taller than one section + caves/overhangs spanning layers) — the bigger architectural step,
+its own brief.
 - **Outcome:** varied biomed terrain with cliffs, rivers, woods, and caves to fly through.
 - **De-risks:** 3D-noise cost (gate to surface bands); unlocks the dormant cave-culling.
-- *Cheap 2D wins all landed (warp/ridged/water/biomes/rivers); only vertical chunks + 3D
-  caves remain — the bigger architectural step (single→multi-layer streaming), own brief.*
+- *All within-layer wins landed (warp/ridged/water/biomes/rivers/caves); only multi-layer
+  vertical chunk stacks remain — the bigger architectural step (single→multi-layer
+  streaming), warrants its own brief.*
 
 ### ✨ E9 — Weather, water & sound *(exploration)* ⏳
 From the research (backlog §H): a single **global weather state** (wind + gust + precip +

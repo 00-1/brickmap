@@ -63,6 +63,41 @@ fn fbm(x: f32, z: f32, seed: u32) -> f32 {
     sum / norm
 }
 
+/// Hash a 3D lattice point to `[0, 1)` (for the cave noise).
+fn hash3(x: i32, y: i32, z: i32, seed: u32) -> f32 {
+    let mut h = (x as u32)
+        .wrapping_mul(0x1657_4c2f)
+        .wrapping_add((y as u32).wrapping_mul(0x456b_2f1d))
+        .wrapping_add((z as u32).wrapping_mul(0x68b3_8d2b))
+        .wrapping_add(seed.wrapping_mul(0x9e37_79b9));
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2c1b_3c6d);
+    h ^= h >> 12;
+    h = h.wrapping_mul(0x297a_2d39);
+    h ^= h >> 15;
+    (h & 0x00ff_ffff) as f32 / 0x0100_0000 as f32
+}
+
+/// Trilinearly-interpolated 3D value noise.
+fn value_noise3(x: f32, y: f32, z: f32, seed: u32) -> f32 {
+    let (xi, yi, zi) = (x.floor() as i32, y.floor() as i32, z.floor() as i32);
+    let (xf, yf, zf) = (x - xi as f32, y - yi as f32, z - zi as f32);
+    let (u, v, w) = (smoothstep(xf), smoothstep(yf), smoothstep(zf));
+    let c = |dx, dy, dz| hash3(xi + dx, yi + dy, zi + dz, seed);
+    let x00 = lerp(c(0, 0, 0), c(1, 0, 0), u);
+    let x10 = lerp(c(0, 1, 0), c(1, 1, 0), u);
+    let x01 = lerp(c(0, 0, 1), c(1, 0, 1), u);
+    let x11 = lerp(c(0, 1, 1), c(1, 1, 1), u);
+    lerp(lerp(x00, x10, v), lerp(x01, x11, v), w)
+}
+
+/// 3D fractal noise (2 octaves) → `[0, 1)`, for carving caves.
+fn fbm3(x: f32, y: f32, z: f32, seed: u32) -> f32 {
+    let a = value_noise3(x, y, z, seed);
+    let b = value_noise3(x * 2.1, y * 2.1, z * 2.1, seed.wrapping_add(8101));
+    (a * 2.0 + b) / 3.0
+}
+
 /// Ridged noise → `[0, 1)` with sharp **ridge lines** (mountain crests) instead of
 /// fbm's rounded hills: fold the noise around its midpoint and square the result.
 fn ridged(x: f32, z: f32, seed: u32) -> f32 {
@@ -172,6 +207,24 @@ pub fn generate_section(cx: i32, cz: i32, seed: u32) -> Section {
                 };
                 section.set(x, y, z, block);
             }
+            // Carve caves (E8): a thin band of a 3D noise hollows out connected tunnels.
+            // Keep a solid floor (y < 2) and a 2-voxel surface skin so the ground +
+            // foliage stay intact (caves break out only on slopes/cliffs). This finally
+            // gives the dormant M5 cave-culling some 3D structure to work on.
+            for y in 2..h.min(Section::SIZE) {
+                if h - y < 2 {
+                    continue; // surface skin
+                }
+                let c = fbm3(
+                    wx as f32 * 0.07,
+                    y as f32 * 0.11,
+                    wz as f32 * 0.07,
+                    seed ^ 0x00ca,
+                );
+                if (c - 0.5).abs() < 0.07 {
+                    section.set(x, y, z, BlockId::AIR);
+                }
+            }
             // Fill still water above low (sub-sea-level) columns up to the waterline.
             if h < SEA_LEVEL {
                 for y in h..SEA_LEVEL.min(Section::SIZE) {
@@ -246,8 +299,8 @@ mod tests {
         // the seed/worldgen version (E12 brief §5 caveat). The integer block-id path is
         // portable; the f32 noise feeding `height().round()` *may* drift across targets,
         // which is why a cross-target (wasm-in-CI) check is noted as a follow-up.
-        // Bump this when worldgen *intentionally* changes (last: E8 river carving).
-        assert_eq!(voxel_hash(1337), 13_325_205_047_348_946_567);
+        // Bump this when worldgen *intentionally* changes (last: E8 cave carving).
+        assert_eq!(voxel_hash(1337), 1_384_714_140_180_096_454);
         // Different seeds must give different worlds.
         assert_ne!(voxel_hash(1337), voxel_hash(1338));
         assert_ne!(voxel_hash(0), voxel_hash(1));
