@@ -57,6 +57,7 @@ Every push to `main` auto-deploys the WASM build to **GitHub Pages**:
 - [`docs/architecture.md`](docs/architecture.md) — module/crate boundaries and the
   sacred world-data ↔ renderer seam.
 - [`docs/spikes.md`](docs/spikes.md) — what we de-risk first, and the spike backlog.
+- [`docs/roadmap.md`](docs/roadmap.md) — milestone ladder and how we plan.
 - [`docs/development.md`](docs/development.md) — workflow, code-quality gates, and
   testing strategy.
 
