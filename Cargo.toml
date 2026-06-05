@@ -1,0 +1,57 @@
+[package]
+name = "brickmap"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.94"
+description = "A high-performance, cross-platform voxel rendering engine."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/00-1/brickmap"
+
+# The crate is both a library (so it can be compiled to a `cdylib` for the web /
+# WASM target and reused by tests) and a binary (the native desktop entry point).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "brickmap"
+path = "src/main.rs"
+
+[dependencies]
+# --- Core, all targets ---------------------------------------------------
+wgpu = "29"
+winit = "0.30"
+glam = "0.33"
+bytemuck = { version = "1", features = ["derive"] }
+log = "0.4"
+cfg-if = "1"
+
+# --- Native-only ---------------------------------------------------------
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "0.4"
+env_logger = "0.11"
+
+# --- Web / WASM-only -----------------------------------------------------
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Enable the GLES/WebGL backend so the spike still renders on browsers that
+# lack WebGPU. Web is a low-priority target, but the fallback is nearly free
+# here and widens reach without touching the native path.
+wgpu = { version = "29", features = ["webgl"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+console_log = "1"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Element",
+    "HtmlCanvasElement",
+] }
+
+# wgpu shader compilation and validation are heavy; build deps optimised even in
+# debug so iteration on the spike stays fast on weak dev machines.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
