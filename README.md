@@ -9,14 +9,19 @@ graphical: storing, meshing, culling, and drawing very large voxel worlds fast.
 It is a personal-interest project, so it favours **interesting and correct** over
 shipping speed.
 
-> **Status: E3 done.** An **endless, streamed** procedural voxel world you fly
-> across (greedy-meshed, palette-compressed, frustum-culled), with **baked ambient
-> occlusion**, **procedural texture-array materials**, a sky/horizon + distance fog,
-> bloom, and **emissive crystals that cast cheap baked "fake-GI" light** onto the
-> terrain — on desktop *and* the web, from one code path. The look is a deliberate
-> low-fi "expose the tech" pass; see the [look journal](docs/look-journal.md). There's
-> a perf HUD, visibility-graph cave culling (M5), and **off-thread (rayon) meshing**
-> so flying doesn't hitch (M6). Next: LOD (M7). See [`docs/roadmap.md`](docs/roadmap.md).
+> **Status: the point-cloud forest (E6–E8, E12, E14).** An **endless, streamed**
+> procedural voxel world you fly across — greedy-meshed, palette-compressed, frustum +
+> cave-culled, off-thread (rayon) meshed — now grown into a **point-cloud forest**: a
+> shared splat pipeline draws wind-swept grass, layered undergrowth, and **point-cloud
+> trees** over terrain with **temperature/humidity biomes** (grassland ↔ desert ↔ snow),
+> **domain-warped + ridged** relief, **rivers**, stylised animated **water**, and
+> **3D-noise caves**. Plus **shareable seeds** (type/🎲/daily + copy-link), in-world
+> **voxel editing** (place/break/undo through one command seam — multiplayer groundwork),
+> an opt-in distance-dissolve "melt", baked AO, procedural materials, emissive "fake-GI"
+> crystals, sky/fog, and bloom — on desktop *and* the web, one code path. The look is a
+> deliberate low-fi "expose the tech" pass; see the [look journal](docs/look-journal.md).
+> Next: profiling on real weak hardware (M8b) + multiplayer (N1). See
+> [`docs/roadmap.md`](docs/roadmap.md).
 
 ## North star
 

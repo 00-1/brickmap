@@ -115,15 +115,16 @@ Everything platform-specific is isolated in `bm-platform` (+ small `cfg` shims i
 
 ## 7. Current vs target (honesty section)
 
-| Concern | Today (M4) | Target |
+| Concern | Today (E6–E8, E12, E14) | Target |
 |---|---|---|
-| Crate layout | one `brickmap` crate, modules `world` / `worldgen` / `mesh` / `scene` / `particles` / `textures` / `gfx` + app | the 7-crate workspace in §3 |
-| Geometry | greedy-meshed chunks, **8-byte packed** face vertices (pos/dir/material/ao + block light) | greedy-meshed chunks, ≤8-byte packed face vertices |
-| World model | palette-compressed 32³ sections, **procedural + streamed** around the camera | palette-compressed sections, streaming |
-| Culling | frustum (per-chunk AABB) + visibility-graph cave cull (camera-flood; no-op on the surface world, ready for 3D) | frustum + visibility-graph cave culling |
-| Pipeline | forward pass → bloom post; baked AO + texture-array materials + hemispheric ambient + flood-fill block light + sky/fog | forward(+), texture-array materials, LOD |
+| Crate layout | one `brickmap` crate, modules `world` / `worldgen` / `mesh` / `scene` / `particles` / `foliage` / `edit` / `share` / `sim` / `textures` / `visibility` / `post` / `gfx` + app | the 7-crate workspace in §3 |
+| Geometry | greedy-meshed chunks, **8-byte packed** face vertices (pos/dir/material/ao + block light); **instanced billboard splats** for foliage/trees | greedy-meshed chunks + a splat layer, ≤8-byte packed face vertices |
+| World model | palette-compressed 32³ sections, **procedural + streamed** around the camera; **runtime seed**; domain-warp/ridged/biomes/rivers/3D caves; sand overlay + **voxel edits via one `edit::Edit`/`apply` command seam** | palette-compressed sections, streaming, multi-layer vertical stacks |
+| Culling | frustum (per-chunk AABB) + visibility-graph cave cull (now has 3D cave structure to flood); **front-to-back** sort | frustum + visibility-graph cave culling |
+| Pipeline | forward pass → bloom post; **splat pass** (foliage); baked AO + texture-array materials + ambient + flood-fill block light + sky/fog + stylised water + opt-in distance-dissolve; depth `storeOp:Discard` | forward(+), texture-array materials, true point-decimation LOD |
 | Threading | off-thread chunk gen + meshing (rayon) on native; web time-slices on the main thread | rayon (native) / workers (web) async meshing |
 
-Through M4 the data → mesh → GPU pipeline, the `world`↔`render` seam, streaming,
-and the first material/aesthetic layers are real. The remaining gaps above
-(occlusion culling, async meshing, LOD, the crate split) are the later pillars.
+The data → mesh → GPU pipeline, the `world`↔`render` seam, streaming, async meshing,
+culling, the material/aesthetic layers, the **foliage/point-cloud splat layer**, and the
+**editing command seam** are real. Remaining gaps: multi-layer vertical chunk streaming,
+true point-decimation LOD (M7 perf half), the crate split, and on-hardware profiling (M8b).
