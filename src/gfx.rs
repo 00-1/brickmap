@@ -41,8 +41,12 @@ const CHUNK_VERTEX_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBuffe
 struct Globals {
     view_proj: [[f32; 4]; 4],
     palette: [[f32; 4]; PALETTE.len()],
-    /// x = wobble snap, y = colour steps, z/w reserved.
+    /// x = wobble snap, y = colour steps, z = fog start, w = fog end.
     params: [f32; 4],
+    /// Camera world position (xyz); w unused. For distance fog.
+    camera_pos: [f32; 4],
+    /// Fog / sky colour (rgb); w unused.
+    fog_color: [f32; 4],
 }
 
 /// Per-chunk uniform (bind group 1): the chunk's world origin (xyz; w unused).
@@ -77,6 +81,18 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     b: 0.06,
     a: 1.0,
 };
+
+/// Distance fog (world units): terrain fades to the sky colour between these, so the
+/// streaming load edge (~5 chunks ≈ 160 u) dissolves instead of popping in.
+const FOG_START: f32 = 72.0;
+const FOG_END: f32 = 176.0;
+/// Fog colour — matches `CLEAR_COLOR` so geometry fades into the background.
+const FOG_COLOR: [f32; 4] = [
+    CLEAR_COLOR.r as f32,
+    CLEAR_COLOR.g as f32,
+    CLEAR_COLOR.b as f32,
+    1.0,
+];
 
 pub struct State {
     surface: wgpu::Surface<'static>,
@@ -432,11 +448,19 @@ impl State {
 
     /// Draw the scene from the given view-projection, plus the live particles. Chunk
     /// vertices are packed and chunk-local; the shader adds each chunk's world origin.
-    pub fn render(&mut self, view_proj: Mat4, particles: &[ParticleInstance], aesthetic: [f32; 2]) {
+    pub fn render(
+        &mut self,
+        view_proj: Mat4,
+        camera_pos: Vec3,
+        particles: &[ParticleInstance],
+        aesthetic: [f32; 2],
+    ) {
         let globals = Globals {
             view_proj: view_proj.to_cols_array_2d(),
             palette: PALETTE,
-            params: [aesthetic[0], aesthetic[1], 0.0, 0.0],
+            params: [aesthetic[0], aesthetic[1], FOG_START, FOG_END],
+            camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
+            fog_color: FOG_COLOR,
         };
         self.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));

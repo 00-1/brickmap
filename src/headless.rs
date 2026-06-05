@@ -29,7 +29,15 @@ struct Globals {
     view_proj: [[f32; 4]; 4],
     palette: [[f32; 4]; 8],
     params: [f32; 4],
+    camera_pos: [f32; 4],
+    fog_color: [f32; 4],
 }
+
+/// Distance fog (terrain fades to the sky/clear colour). The live cruise camera
+/// flies low over the terrain; this headless hero shot frames the whole demo world
+/// from far back, so its fog pushes out to match — only the far edge fades.
+const FOG_START: f32 = 150.0;
+const FOG_END: f32 = 300.0;
 
 /// Default aesthetic dials (must match the windowed defaults in `lib`).
 pub const DEFAULT_AESTHETIC: [f32; 2] = [85.0, 4.0];
@@ -178,7 +186,14 @@ pub fn capture(width: u32, height: u32, path: &str) {
             .view_proj(width as f32 / height as f32)
             .to_cols_array_2d(),
         palette: PALETTE,
-        params: [DEFAULT_AESTHETIC[0], DEFAULT_AESTHETIC[1], 0.0, 0.0],
+        params: [
+            DEFAULT_AESTHETIC[0],
+            DEFAULT_AESTHETIC[1],
+            FOG_START,
+            FOG_END,
+        ],
+        camera_pos: [camera.position.x, camera.position.y, camera.position.z, 0.0],
+        fog_color: [CLEAR.r as f32, CLEAR.g as f32, CLEAR.b as f32, 1.0],
     };
     let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("globals"),

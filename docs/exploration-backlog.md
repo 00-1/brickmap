@@ -69,7 +69,8 @@ expensive / off-brand. Each idea: *what · why interesting · rough sketch · co
 - 🟢 **Emissive blocks + bloom** for neon/lava/crystal glow. *Cost:* 🟢 one bright
   channel + a cheap blur. Huge atmosphere-per-cycle.
 - 🟢 **Day–night palette shift + distance fog.** *Cost:* 🟢 a few shader constants;
-  fog also hides LOD pops (M7) and bounds draw distance.
+  fog also hides LOD pops (M7) and bounds draw distance. **Distance fog shipped early**
+  (post-M3) to hide the streaming load edge — see roadmap E3; day–night still open.
 
 ## D. The "expose-the-tech" aesthetic — cheapest personality (maps to ✨E1, §11)
 

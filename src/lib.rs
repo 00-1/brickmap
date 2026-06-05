@@ -333,7 +333,12 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
                     // `render` handles lost/outdated/transient surfaces internally.
-                    state.render(view_proj, &particles, [self.wobble, self.color_steps]);
+                    state.render(
+                        view_proj,
+                        self.camera.position,
+                        &particles,
+                        [self.wobble, self.color_steps],
+                    );
                     // Drive a continuous loop so held keys animate.
                     state.window().request_redraw();
                 }

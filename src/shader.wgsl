@@ -6,7 +6,9 @@
 struct Globals {
     view_proj: mat4x4<f32>,
     palette: array<vec4<f32>, 8>,
-    params: vec4<f32>, // x = wobble snap, y = colour steps (live dials, D2)
+    params: vec4<f32>,     // x = wobble snap, y = colour steps (D2); z = fog start, w = fog end
+    camera_pos: vec4<f32>, // xyz = camera world position
+    fog_color: vec4<f32>,  // rgb = fog / sky colour
 };
 @group(0) @binding(0)
 var<uniform> globals: Globals;
@@ -21,6 +23,7 @@ struct VsOut {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec3<f32>,
     @location(1) normal: vec3<f32>,
+    @location(2) world_pos: vec3<f32>,
 };
 
 @vertex
@@ -57,6 +60,7 @@ fn vs_main(@location(0) packed: u32) -> VsOut {
 
     out.normal = normal;
     out.color = globals.palette[min(material, 7u)].rgb;
+    out.world_pos = world_pos;
     return out;
 }
 
@@ -81,6 +85,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let threshold = (bayer[py * 4u + px] + 0.5) / 16.0;
     let steps = max(globals.params.y, 1.0);
     c = floor(c * steps + threshold) / steps;
+
+    // Distance fog: fade terrain into the sky colour so the streaming load edge
+    // dissolves instead of popping. Cheap — one distance + a smoothstep + a mix.
+    let fog_dist = distance(in.world_pos, globals.camera_pos.xyz);
+    let fog = smoothstep(globals.params.z, globals.params.w, fog_dist);
+    c = mix(c, globals.fog_color.rgb, fog);
 
     return vec4<f32>(c, 1.0);
 }

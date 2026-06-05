@@ -128,6 +128,10 @@ artifacts the tech produces.
 Flood-fill block + **coloured sky/emissive light** (a cheap *fake GI* — light visibly
 bleeds around corners), plus bloom and distance fog. The highest beauty-per-cycle on
 the backlog ([`exploration-backlog.md`](exploration-backlog.md) §C).
+- **Distance fog landed early** ✅ — pulled forward out of this cluster because it
+  directly hides the M3 streaming load edge (terrain fades to the sky colour instead
+  of popping in). Per-fragment distance → `smoothstep` → mix to fog colour, tuned to
+  the cruise camera. The rest of E3 (flood-fill light, emissive, bloom) is still ⏳.
 - **Outcome:** mood and glow — what makes "pretty voxel" demos pretty, faked without
   ray tracing.
 - **Why here:** builds on M4's materials, and implements the "lighting data path"
