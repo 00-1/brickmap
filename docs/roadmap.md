@@ -56,10 +56,19 @@ own thing — the content/visual work from [`design.md`](design.md) §12 — int
 *in place* so they don't get deferred to the end (or lost).
 
 > Legend: ✅ done · 🛠 in progress · ⏳ planned · **✨ = exploration** (the
-> *interesting* bit, not infrastructure; numbered **E1–E5 in build order**) ·
+> *interesting* bit, not infrastructure; numbered **E1–E7 in build order**) ·
 > **D = dev tooling & process** (cross-cutting; see the D-series below). More
 > exploration candidates (researched and fit-graded) live in
 > [`exploration-backlog.md`](exploration-backlog.md).
+
+> **Aesthetic direction (set 2026-06): the point-cloud / foliage pivot.** We're steering
+> the look toward a **lush, foliage-heavy, point-cloud forest** (refs: capslpop voxel
+> splatting, Superbien). The remaining rungs form one arc around a shared **splat render
+> path**: **E6** builds it + ground foliage, **E7** is the forest + atmosphere, and **M7**
+> reuses it to dissolve distant terrain into points (LOD that's also the look). Rationale
+> + the cheap recipe + what to avoid are in
+> [`research-points-splatting.md`](research-points-splatting.md). Meshed cubes stay the
+> near-field base; splats are the layer on top (that's where points win on weak hardware).
 
 ### M0 — Foundation & rig ✅
 Planning docs, the cross-platform render spike (one cube, desktop + web), CI, and
@@ -172,12 +181,34 @@ same engine with more rules (deferred).
 - **Why here:** needs a real world to disturb (M3) and async meshing (M6) to stay
   smooth. (A cheap prototype could be spiked sooner if we're itching for it.)
 
-### M7 — Distance is cheap (LOD) ⏳
-**Octree-mip chunk LOD** with distance selection and transition handling.
-- **Outcome:** long view distances with bounded triangle counts.
-- **De-risks:** distant-geometry cost.
-- **Acceptance:** triangle count stays bounded as view distance grows; LOD
-  selection tested.
+### ✨ E6 — Splats & ground foliage *(exploration)* ⏳ &nbsp;→ [`milestones/E6-foliage-splats.md`](milestones/E6-foliage-splats.md)
+First rung of the **point-cloud / foliage aesthetic pivot** (see the note below). Stand
+up the **splat render path** (instanced camera-facing billboard points) and use it for
+**wind-swept ground foliage** scattered on the terrain — the world stops being bare
+cubes. Grounded in [`research-points-splatting.md`](research-points-splatting.md).
+- **Outcome:** a lush, alive grassy field of points that sways; toggleable.
+- **De-risks:** the splat pipeline (look + cost on weak hardware) and bounding the
+  on-screen splat count — both reused by everything later in the pivot.
+
+### ✨ E7 — The forest & atmosphere *(exploration)* ⏳ &nbsp;→ [`milestones/E7-forest-atmosphere.md`](milestones/E7-forest-atmosphere.md)
+The *destination* look: **point-cloud trees**, layered vegetation, light shafts, glow,
+and a lusher palette — the Superbien point-cloud-forest mood. Reuses E6's splat pipeline.
+- **Outcome:** flying the world feels like the reference — drifts of glowing points
+  forming a forest, atmospheric and alive.
+- **De-risks:** density/perf at forest scale, and the aesthetic itself (heavy look-journal).
+
+### M7 — Distance dissolve (LOD that's also the look) ⏳
+Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
+value on a surface world), dissolve distant **terrain into points** via E6's splat
+pipeline + a **dithered (Bayer) mesh→points crossfade** — bounding far cost *and*
+sidestepping LOD seams, while extending the point-cloud look to the whole world.
+- **Outcome:** long view distances with bounded cost; terrain melts into a pixel haze at
+  the horizon (with the fog) instead of popping.
+- **De-risks:** distant-geometry cost; the crossfade staying stable (no twinkle/crawl —
+  use screen-locked Bayer, not blue noise).
+- **Acceptance:** far cost bounded as view distance grows (HUD); crossfade is stable;
+  dissolve logic tested. *(Octree-mip meshes remain a fallback if points lose the perf
+  A/B on the reference iGPU.)*
 
 ### M8 — Hit the budget (profiling & polish) ⏳
 Profile on the **reference iGPU and phone** (design §8), tighten to the frame
