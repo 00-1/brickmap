@@ -1,0 +1,9 @@
+# Rust build artifacts
+/target
+
+# Generated web bundle (produced by `wasm-bindgen`; see README "Running on the web")
+/web/pkg
+
+# Editor / OS noise
+*.swp
+.DS_Store
