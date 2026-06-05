@@ -56,7 +56,8 @@ own thing — the content/visual work from [`design.md`](design.md) §12 — int
 *in place* so they don't get deferred to the end (or lost).
 
 > Legend: ✅ done · 🛠 in progress · ⏳ planned · **✨ = exploration** (the
-> *interesting* bit, not infrastructure).
+> *interesting* bit, not infrastructure). More exploration candidates (researched
+> and fit-graded) live in [`exploration-backlog.md`](exploration-backlog.md).
 
 ### M0 — Foundation & rig ✅
 Planning docs, the cross-platform render spike (one cube, desktop + web), CI, and
