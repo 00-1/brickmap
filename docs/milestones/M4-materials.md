@@ -1,6 +1,6 @@
 # M4 — It starts to look like brickmap
 
-> Status: **in progress** 🛠. Part of the ladder in [`../roadmap.md`](../roadmap.md).
+> Status: **done** ✅. Part of the ladder in [`../roadmap.md`](../roadmap.md).
 > Builds on M3 (a streamed world) and E1 (the wobble/dither aesthetic pass).
 
 ## Goal · Outcome · De-risk
@@ -63,9 +63,13 @@
 ## Acceptance checklist
 
 - [x] Baked AO in the greedy mesher; AO tests pass; visible corner darkening.
-- [ ] Texture-array materials (procedural), per-face, nearest + mips; tiling UVs.
-- [ ] Runs native + web (GL2 texture-array path works).
-- [ ] Look-journal page started; a snapshot + render in chat.
-- [ ] CI green; docs synced (lockstep rule).
+- [x] Texture-array materials (procedural), per-face, nearest + mips; tiling UVs.
+- [x] Runs native + web (texture_2d_array is core in WebGL2/GLES3; wasm builds — web
+      *visual* check still pending D5).
+- [x] Look-journal page started ([`../look-journal.md`](../look-journal.md));
+      snapshot `08-materials` + renders in chat.
+- [x] CI green; docs synced (lockstep rule).
 
-> Status: **in progress** 🛠 — starting with baked AO.
+> Status: **done** ✅ — baked AO + procedural texture-array materials (nearest + mips);
+> look journal started. Deferred to follow-ups: real authored textures, damage decals,
+> and the AO-vs-posterisation tension noted in the journal.

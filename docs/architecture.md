@@ -115,14 +115,15 @@ Everything platform-specific is isolated in `bm-platform` (+ small `cfg` shims i
 
 ## 7. Current vs target (honesty section)
 
-| Concern | Today (M1) | Target |
+| Concern | Today (M4) | Target |
 |---|---|---|
-| Crate layout | one `brickmap` crate, modules `world` / `mesh` / `scene` / `gfx` + app | the 7-crate workspace in §3 |
-| Geometry | naïve-meshed single chunk, fat 36-byte vertices (pos+normal+colour) | greedy-meshed chunks, ≤8-byte packed face vertices |
-| World model | dense 32³ `Section`, one hand-built chunk | palette-compressed sections, streaming |
-| Culling | per-voxel face culling only | frustum + visibility-graph cave culling |
-| Pipeline | single forward pass, depth buffer, flat per-face shading | forward(+), texture-array materials, LOD |
-| Threading | single-thread (meshed once at startup) | rayon (native) / workers (web) async meshing |
+| Crate layout | one `brickmap` crate, modules `world` / `worldgen` / `mesh` / `scene` / `particles` / `textures` / `gfx` + app | the 7-crate workspace in §3 |
+| Geometry | greedy-meshed chunks, **4-byte packed** face vertices (pos/dir/material/ao) | greedy-meshed chunks, ≤8-byte packed face vertices |
+| World model | palette-compressed 32³ sections, **procedural + streamed** around the camera | palette-compressed sections, streaming |
+| Culling | frustum culling (per-chunk AABB) | frustum + visibility-graph cave culling |
+| Pipeline | single forward pass, depth buffer, baked AO + texture-array materials + distance fog | forward(+), texture-array materials, LOD |
+| Threading | single-thread (synchronous streaming + meshing on the main thread) | rayon (native) / workers (web) async meshing |
 
-M1 proved the data → mesh → GPU pipeline and the `world`↔`render` seam. The
-structure above is what we grow into, one performance pillar at a time.
+Through M4 the data → mesh → GPU pipeline, the `world`↔`render` seam, streaming,
+and the first material/aesthetic layers are real. The remaining gaps above
+(occlusion culling, async meshing, LOD, the crate split) are the later pillars.

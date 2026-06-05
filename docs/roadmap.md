@@ -114,11 +114,11 @@ screen" and a direct test of the §11 look (design §12).
 - **Acceptance:** palette pack/unpack round-trip tests; memory-per-section
   measured; chunks load/unload without leaks as the camera moves.
 
-### M4 — It starts to look like brickmap 🛠 &nbsp;→ [`milestones/M4-materials.md`](milestones/M4-materials.md)
+### M4 — It starts to look like brickmap ✅ &nbsp;→ [`milestones/M4-materials.md`](milestones/M4-materials.md)
 **Texture-array materials** (per-face texture id, nearest sampling, mips), baked
 **ambient occlusion** in the mesher, and the first real **aesthetic exploration** —
-starting the "look journal" (design §11): deliberately surfacing and curating the
-artifacts the tech produces.
+the [look journal](look-journal.md) (design §11): deliberately surfacing and curating
+the artifacts the tech produces.
 - **Outcome:** a textured, AO-shaded world with an emerging, opinionated look.
 - **De-risks:** the material path and the first concrete aesthetic decisions.
 - **Acceptance:** AO values tested in the mesher; texture-array path works on web

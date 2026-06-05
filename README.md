@@ -9,11 +9,13 @@ graphical: storing, meshing, culling, and drawing very large voxel worlds fast.
 It is a personal-interest project, so it favours **interesting and correct** over
 shipping speed.
 
-> **Status: M1 done.** Planning docs, the cross-platform render path, and the
-> first voxel milestone: a hand-built 32³ chunk, meshed on the CPU (naïve face
-> culling) and drawn through wgpu, that you can **fly around** (pointer-lock
-> camera) on desktop *and* the web. Next up is binary greedy meshing + multiple
-> chunks (M2). See [`docs/roadmap.md`](docs/roadmap.md).
+> **Status: M4 done.** An **endless, streamed** procedural voxel world you fly
+> across (greedy-meshed, palette-compressed, frustum-culled), with **baked ambient
+> occlusion**, **procedural texture-array materials**, distance fog, and emissive
+> particle debris — on desktop *and* the web, from one code path. The look is a
+> deliberate low-fi "expose the tech" pass (wobble + dither + posterised textures);
+> see the [look journal](docs/look-journal.md). Next: cheap light & atmosphere (E3).
+> See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## North star
 

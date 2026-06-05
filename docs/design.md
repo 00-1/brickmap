@@ -210,7 +210,8 @@ the mesher lands.
 
 > This is a first-class design pillar, weighted alongside performance. It is also
 > the part most likely to evolve; treat the *principles* here as committed and the
-> specific examples as illustrative.
+> specific examples as illustrative. The running record of concrete look decisions
+> lives in the **[look journal](look-journal.md)** (started M4).
 
 ### The intent
 
