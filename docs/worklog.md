@@ -88,5 +88,21 @@ pause for input; log decisions/questions here and keep moving.
   *performance* is the goal. Not attempting it in the unattended run (unverifiable +
   partly blocked). Web-on-mobile remains the preview.
 
-- Next: **M3 — procedural world** (palette storage + noise terrain + streaming). The
-  next big *content* milestone, and very testable. Renders to chat as it lands.
+- **M3 — procedural world (parts 1–2 of 3 done):**
+  - **Part 1 — noise terrain:** dependency-free fractal value noise; a 5×5 world of
+    rolling hills, snowy peaks, sandy lows. Snapshot `/archive/06-procedural-world/`.
+  - **Part 2 — palette storage:** `Section` now palette-compressed (~4 KiB vs 64 KiB
+    for low-diversity chunks). Transparent swap, tested. **Note:** palette `get` is bit
+    extraction → slows meshing; the fix (decompress section to a dense scratch buffer
+    before meshing) is queued with the binary-greedy follow-up.
+  - **Part 3 — streaming (next):** load/unload chunks around a *travelling* camera for
+    an endless world. Needs a dynamic renderer (chunks keyed by coord, add/remove at
+    runtime) + a forward-drifting auto-fly. Bigger and harder to verify (load/unload is
+    a behaviour over time, not one frame) — proceeding carefully.
+
+- **QUESTION (logged, not blocking) — D5 web-render verification:** to verify the
+  *actual* deployed web build (WebGL2 fallback + browser integration), drive a headless
+  Chromium against a locally-served build (localhost dodges the sandbox network block).
+  Heavier; my native llvmpipe render already covers the WebGPU path. Candidate D5.
+
+- Next: **M3 part 3 — streaming**, then M4 (materials). Renders to chat as they land.

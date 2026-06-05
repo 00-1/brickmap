@@ -105,9 +105,9 @@ screen" and a direct test of the §11 look (design §12).
 - **Why here:** needs M2's meshed chunks to shatter; placed *before* more
   infrastructure on purpose, so something distinctive lands early.
 
-### M3 — A world to fly through ⏳
-**Palette-compressed** section storage, **procedural** (noise) terrain, and chunk
-**streaming** around the camera (load/unload; synchronous is fine here).
+### M3 — A world to fly through 🛠 &nbsp;→ [`milestones/M3-world.md`](milestones/M3-world.md)
+**Palette-compressed** section storage ✅ and **procedural** (noise) terrain ✅ done;
+chunk **streaming** around a travelling camera (load/unload) is the remaining piece.
 - **Outcome:** endless-feeling procedural terrain you can fly across.
 - **De-risks:** storage RAM/bandwidth and the streaming model.
 - **Acceptance:** palette pack/unpack round-trip tests; memory-per-section
@@ -214,6 +214,12 @@ NDK cross-build + a CI APK job. **Two halves:**
 setting up a distribution channel; until then the **auto-updating web build is the
 mobile preview**. Revisit when native *performance* is the goal and the human is ready
 to stand up a Play/Firebase channel.
+
+### D5 — Web-render verification (headless browser) ⏳
+Verify the *actual* deployed web build (WebGL2 fallback + JS/wasm integration), not
+just the WebGPU path, by driving a headless **Chromium against a locally-served build**
+(localhost avoids the sandbox's network block; Chromium can use llvmpipe/swiftshader).
+Lower priority — the native llvmpipe render already covers WebGPU faithfully.
 
 ## What we're deliberately *not* doing
 

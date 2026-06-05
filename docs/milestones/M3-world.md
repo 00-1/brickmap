@@ -70,10 +70,13 @@
 
 ## Acceptance checklist
 
-- [ ] Palette-compressed `Section` behind the unchanged API; round-trip + memory
+- [x] Palette-compressed `Section` behind the unchanged API; round-trip + memory
       tests pass.
-- [ ] Procedural noise terrain; deterministic; layered materials.
+- [x] Procedural noise terrain; deterministic; layered materials (snow/grass/sand).
 - [ ] Streaming: chunks load/unload around the camera; renderer updates at runtime.
-- [ ] A bigger world than M2's 3×3, flown across without memory blow-up.
-- [ ] Runs native + web; snapshot the new world to the gallery + a render in chat.
+- [x] A bigger world than M2's 3×3 (5×5), snapshotted (`/archive/06-procedural-world/`).
+- [x] Runs native + web; snapshot + render in chat (terrain). *(Streaming render TBD.)*
 - [ ] CI green; docs synced (per the lockstep rule).
+
+> Status: **parts 1–2 done** 🛠 (noise terrain + palette storage). Part 3 (streaming +
+> travelling camera) in progress.
