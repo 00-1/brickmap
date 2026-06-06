@@ -693,6 +693,16 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                 }
+                // Android (D7): winit surfaces gamepad *buttons* here (the D-pad arrives
+                // as arrow keys above; shoulders/triggers/A come through as Android native
+                // keycodes). Feed them to the pad — its per-frame poll applies turn +
+                // up/down + the auto-fly toggle. (Analog sticks aren't exposed by winit.)
+                #[cfg(target_os = "android")]
+                if let PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Android(code)) =
+                    key.physical_key
+                {
+                    self.pad.on_android_key(code, key.state.is_pressed());
+                }
             }
             // Click to capture the pointer for mouselook (and to re-capture after
             // Esc / tabbing away). Idempotent, so re-clicking is harmless.

@@ -100,10 +100,9 @@ mod tests {
 
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub use native::Pad;
-#[cfg(target_os = "android")]
-pub use stub::Pad;
 #[cfg(target_arch = "wasm32")]
 pub use web::Pad;
+// (Android re-exports `android::Pad` next to its module definition below.)
 
 /// Desktop pad via `gilrs`.
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
@@ -215,18 +214,67 @@ mod web {
     }
 }
 
-/// Android (+ any other) stub — no pad yet; the web build covers phone + USB-C pad.
+/// Android pad, fed from winit's `KeyboardInput`. winit drains the Android input queue
+/// itself and surfaces gamepad **buttons** as key events (D-pad → arrows, face/shoulder
+/// buttons → `Unidentified(NativeKeyCode::Android(code))`) — but it does *not* expose the
+/// analog **stick** axes (joystick `MotionEvent`s are treated as touch). So a native pad
+/// here is digital: D-pad moves (via the normal arrow-key path), shoulders turn, triggers
+/// go up/down, A toggles auto-fly. Full analog sticks need bypassing winit's input loop
+/// (a bigger change) — the web build keeps the full-stick experience meanwhile.
 #[cfg(target_os = "android")]
-mod stub {
+mod android {
     use super::PadInput;
-    pub struct Pad;
+
+    // Android `KEYCODE_BUTTON_*` values (frameworks/native KeyCodes).
+    const BUTTON_A: u32 = 96;
+    const BUTTON_L1: u32 = 102;
+    const BUTTON_R1: u32 = 103;
+    const BUTTON_L2: u32 = 104;
+    const BUTTON_R2: u32 = 105;
+
+    #[derive(Default)]
+    pub struct Pad {
+        turn_left: bool,
+        turn_right: bool,
+        up: bool,
+        down: bool,
+        toggle_pending: bool,
+    }
+
     impl Pad {
         #[allow(clippy::new_without_default)]
         pub fn new() -> Pad {
-            Pad
+            Pad::default()
         }
+
+        /// Feed an Android gamepad button (native keycode) from winit's `KeyboardInput`.
+        /// Returns `true` if it was a button we handle. Shoulders turn, triggers raise/
+        /// lower, A toggles auto-fly (on press).
+        pub fn on_android_key(&mut self, keycode: u32, pressed: bool) -> bool {
+            match keycode {
+                BUTTON_L1 => self.turn_left = pressed,
+                BUTTON_R1 => self.turn_right = pressed,
+                BUTTON_R2 => self.up = pressed,
+                BUTTON_L2 => self.down = pressed,
+                BUTTON_A => {
+                    if pressed {
+                        self.toggle_pending = true;
+                    }
+                }
+                _ => return false,
+            }
+            true
+        }
+
         pub fn poll(&mut self) -> PadInput {
-            PadInput::default()
+            let look_x = (self.turn_right as i32 - self.turn_left as i32) as f32;
+            let vertical = (self.up as i32 - self.down as i32) as f32;
+            let toggle = std::mem::take(&mut self.toggle_pending);
+            // Movement (forward/strafe) comes from the D-pad via the normal arrow-key
+            // path, so leave those zero here; we contribute turn + vertical + toggle.
+            PadInput::from_raw(0.0, 0.0, vertical, look_x, 0.0, toggle)
         }
     }
 }
+#[cfg(target_os = "android")]
+pub use android::Pad;
