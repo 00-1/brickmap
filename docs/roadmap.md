@@ -321,11 +321,15 @@ a quad per label — negligible.
   same text path so the controls are identical on every platform (the long-promised "no DOM
   UI" step; today web uses HTML controls).
 
-### ✨ E18 — Colossal bodies *(exploration)* 🛠
-Enormous **human figures** in the world, in **two kinds** (decided 2026-06): **ethereal
-point-forms** you drift through (always points — misty, non-collidable) and **solid voxel
-structures** you explore (Shadow-of-the-Colossus / doom-cover energy, visible afar, overwhelming
-up close).
+### ✨ E18 — Colossal structures *(exploration)* 🛠
+Enormous seed-placed giants in the world (a "structure" layer, independent of chunk terrain),
+in **ethereal point-forms** you drift through and **solid voxel** forms you explore. **Two
+content kinds (pivot 2026-06):**
+1. **Tube-tech relics** — *procedural*, the original "skeleton" generator reworked into wild
+   non-human **tangles of tubes** ("ancient mechanical giant tech"; the limbs-everywhere look
+   we found more interesting than a literal body). The main procedural structure.
+2. **Human figures** — from real **CC0 models** (sourced: the MakeHuman base mesh, CC0 — see
+   `assets/base-human.obj`), via a sampling/`voxelize` pipeline. A separate, later track.
 - ✅ **Ethereal point-forms, posed + placed** (`src/body.rs`): a procedural **posed skeleton**
   (male/female proportions; natural **collapsed/fallen** poses — sprawled limbs, jittered per
   seed) → surface cells emitted as points reusing the splat pipeline (glow, palettise, fog,
@@ -334,10 +338,10 @@ up close).
   chunk terrain; more structure kinds to follow). Deterministic; tested (surface shell, lies
   flat, sex/seed vary, scatter on-ground). Verified headless: fallen giants strewn across the
   world, plain + palettised.
-- ⏳ **Real anatomy (needs assets):** the procedural figure is a placeholder — real
-  anatomically-correct male/female bodies need **CC0 model files** (e.g. **MakeHuman** exports,
-  Smithsonian CC0 scans) dropped in, consumed by a planned offline **`voxelize`** tool (mesh →
-  surface/solid grid → points or chunks). Sourcing is the human's call (provenance/licence).
+- 🛠 **Human figures (CC0 model sourced):** `assets/base-human.obj` is the MakeHuman base mesh
+  (CC0; 19k verts) — fetched from GitHub, provenance in `assets/base-human.LICENSE.txt`. Next:
+  an OBJ loader + surface-sampler (point-form) and a `voxelize` (solid) so real anatomy slots
+  in behind the same placement/render. A separate track from the tube-tech relics.
 - ✅ **Solid / explorable kind (headless):** `body::figure_voxels` voxelises a posed figure to
   solid world voxels; `body_chunk_instances` buckets them into 32³ sections (multi-layer) and
   greedy-meshes each → a giant of meshed cubes that shades/AOs/palettises like terrain. Verified

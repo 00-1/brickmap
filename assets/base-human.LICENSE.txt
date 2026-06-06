@@ -1,0 +1,11 @@
+base-human.obj — the MakeHuman base mesh.
+
+Source: https://github.com/makehumancommunity/makehuman
+        makehuman/data/3dobjs/base.obj  (fetched 2026-06)
+
+Licence: CC0 (public domain). The mesh's own header states it was "explicitly
+released as CC0 in september 2020". Copyright holders at release: Data Collection
+AB (https://www.datacollection.se).
+
+Used here as source geometry for the colossal-figure structures (E18): the
+`voxelize`/sampling pipeline turns it into point-forms and (later) solid voxels.
