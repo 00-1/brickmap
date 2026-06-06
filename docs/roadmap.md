@@ -338,8 +338,11 @@ up close).
   anatomically-correct male/female bodies need **CC0 model files** (e.g. **MakeHuman** exports,
   Smithsonian CC0 scans) dropped in, consumed by a planned offline **`voxelize`** tool (mesh →
   surface/solid grid → points or chunks). Sourcing is the human's call (provenance/licence).
-- ⏳ **Solid / explorable kind:** voxelise into chunks + greedy-mesh (mesh-near, points-far via
-  M7) — for a giant you can land on. Content framing: monument, not gore.
+- ✅ **Solid / explorable kind (headless):** `body::figure_voxels` voxelises a posed figure to
+  solid world voxels; `body_chunk_instances` buckets them into 32³ sections (multi-layer) and
+  greedy-meshes each → a giant of meshed cubes that shades/AOs/palettises like terrain. Verified
+  headless (a pale reclining voxel colossus). ⏳ Live wiring next (its chunks need to draw
+  alongside terrain without colliding with the stream map — built blind, verify in-app).
 - 🛠 **Live placement (built blind — verify in-app):** `structures::colossi_near` seed-places
   giants on a coarse cell grid across the infinite world; the app streams them in/out around the
   camera (rebuilding the point buffer only when the in-range cell set changes) and draws them

@@ -1305,6 +1305,66 @@ pub(crate) fn frame_camera(instances: &[ChunkInstance]) -> (Camera, Vec3, f32) {
 }
 
 /// Greedy-mesh each chunk with neighbour-aware seam culling. Meshes stay
+/// Voxelise a fallen colossus (E18) and greedy-mesh it into drawable chunk instances — the
+/// **solid / explorable** kind (vs the ethereal points). Buckets the figure's solid voxels into
+/// 32³ sections (multi-layer in y), meshes each with its body-internal neighbours so interior
+/// seams are culled, and returns instances positioned in the world. `material` tints the body.
+/// Native for now (used by the headless demo); the live solid path comes with E18's next stage.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn body_chunk_instances(
+    placement: body::Placement,
+    material: world::BlockId,
+) -> Vec<ChunkInstance> {
+    use std::collections::HashMap;
+    let n = Section::SIZE as i32;
+    let voxels = body::figure_voxels(
+        placement.pos,
+        placement.voxel,
+        placement.yaw,
+        placement.sex,
+        placement.seed,
+    );
+    let mut sections: HashMap<ChunkCoord, Section> = HashMap::new();
+    for v in voxels {
+        let cc = (v.x.div_euclid(n), v.y.div_euclid(n), v.z.div_euclid(n));
+        let sec = sections.entry(cc).or_default();
+        sec.set(
+            v.x.rem_euclid(n) as u32,
+            v.y.rem_euclid(n) as u32,
+            v.z.rem_euclid(n) as u32,
+            material,
+        );
+    }
+    let s = Section::SIZE as f32;
+    let mut out = Vec::new();
+    for (&coord, sec) in &sections {
+        let (cx, cy, cz) = coord;
+        let nb = |dx, dy, dz| sections.get(&(cx + dx, cy + dy, cz + dz));
+        let neighbors = Neighbors {
+            faces: [
+                nb(-1, 0, 0),
+                nb(1, 0, 0),
+                nb(0, -1, 0),
+                nb(0, 1, 0),
+                nb(0, 0, -1),
+                nb(0, 0, 1),
+            ],
+        };
+        let mesh = greedy_mesh_section_with(sec, &neighbors);
+        if mesh.is_empty() {
+            continue;
+        }
+        out.push(ChunkInstance {
+            coord,
+            origin: Vec3::new(cx as f32 * s, cy as f32 * s, cz as f32 * s),
+            mesh,
+            graph: connectivity(sec),
+            foliage: Vec::new(),
+        });
+    }
+    out
+}
+
 /// chunk-local; the world `origin` travels alongside (the shader applies it).
 /// App-level glue: it's allowed to touch `world` + `mesh` together. Used by the
 /// native headless renderer (the live app meshes incrementally via streaming).

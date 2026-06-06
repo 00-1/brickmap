@@ -114,6 +114,21 @@ pub fn capture_view(
     // overdraw behind nearer ones. Opaque output is order-independent, so this is a pure
     // perf change — the render is identical, which also verifies the windowed app's sort.
     let mut instances = instances;
+    // Solid colossus demo (E18): one voxelised, greedy-meshed fallen giant to explore — the
+    // solid kind alongside the ethereal points, rendered like terrain (shaded/AO/palettised).
+    {
+        let gy = crate::worldgen::height(40, 40, crate::WORLD_SEED) as f32;
+        instances.extend(crate::body_chunk_instances(
+            crate::body::Placement {
+                pos: glam::Vec3::new(40.0, gy, 40.0),
+                yaw: 0.7,
+                sex: crate::body::Sex::Male,
+                voxel: 1.0,
+                seed: 4242,
+            },
+            crate::world::BlockId(5), // snow → pale "bone"
+        ));
+    }
     instances.sort_by(|a, b| {
         let c = |i: &crate::gfx::ChunkInstance| {
             (glam::Vec3::from(i.mesh.aabb.min) + glam::Vec3::from(i.mesh.aabb.max)) * 0.5 + i.origin

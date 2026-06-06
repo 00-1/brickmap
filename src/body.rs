@@ -253,6 +253,59 @@ pub fn figure_points(
     out
 }
 
+/// Voxelise a fallen figure into **solid world-voxel coordinates** (interior + surface), so it
+/// can be greedy-meshed into an explorable structure (the solid kind, vs the ethereal points).
+/// Same placement transform as [`figure_points`] (`feet`/`voxel`/`yaw`/`sex`/`seed`). Returns
+/// integer voxel coords; the caller buckets them into sections + meshes.
+pub fn figure_voxels(feet: Vec3, voxel: f32, yaw: f32, sex: Sex, seed: u32) -> Vec<glam::IVec3> {
+    let (caps, (head_c, head_r)) = collapsed(sex, seed);
+    let mut mlo = head_c - Vec3::splat(head_r);
+    let mut mhi = head_c + Vec3::splat(head_r);
+    for c in &caps {
+        mlo = mlo.min(c.a.min(c.b) - Vec3::splat(c.r));
+        mhi = mhi.max(c.a.max(c.b) + Vec3::splat(c.r));
+    }
+    let solid_at = |m: Vec3| {
+        (m - head_c).length() <= head_r || caps.iter().any(|c| seg_dist(m, c.a, c.b) <= c.r)
+    };
+    let (sy, cy) = yaw.sin_cos();
+    // model → world (lowest point sits at feet.y; XZ yawed; scaled by voxel).
+    let to_world = |m: Vec3| {
+        let wx = m.x * cy - m.z * sy;
+        let wz = m.x * sy + m.z * cy;
+        feet + Vec3::new(wx * voxel, (m.y - mlo.y) * voxel, wz * voxel)
+    };
+    // World-space AABB from the 8 model-box corners.
+    let mut wlo = Vec3::splat(f32::MAX);
+    let mut whi = Vec3::splat(f32::MIN);
+    for &cx in &[mlo.x, mhi.x] {
+        for &cyy in &[mlo.y, mhi.y] {
+            for &cz in &[mlo.z, mhi.z] {
+                let w = to_world(Vec3::new(cx, cyy, cz));
+                wlo = wlo.min(w);
+                whi = whi.max(w);
+            }
+        }
+    }
+    // world → model (inverse of to_world): undo feet/scale, inverse-yaw, re-add mlo.y.
+    let inv = |w: Vec3| {
+        let l = (w - feet) / voxel;
+        Vec3::new(l.x * cy + l.z * sy, l.y + mlo.y, -l.x * sy + l.z * cy)
+    };
+    let mut out = Vec::new();
+    for iy in (wlo.y.floor() as i32)..=(whi.y.ceil() as i32) {
+        for iz in (wlo.z.floor() as i32)..=(whi.z.ceil() as i32) {
+            for ix in (wlo.x.floor() as i32)..=(whi.x.ceil() as i32) {
+                let w = Vec3::new(ix as f32 + 0.5, iy as f32 + 0.5, iz as f32 + 0.5);
+                if solid_at(inv(w)) {
+                    out.push(glam::IVec3::new(ix, iy, iz));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// One placed body structure: where it lies, which way it faces, its sex, scale, and pose seed.
 #[derive(Copy, Clone, Debug)]
 pub struct Placement {
