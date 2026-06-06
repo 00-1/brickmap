@@ -1,12 +1,11 @@
-//! Colossal bodies (E18) — giant fallen human figures, placed in the world as **structures**
-//! (seed-driven, independent of chunk terrain; the first of a category we'll grow). Built here
-//! procedurally as a *posed skeleton* (male/female proportions, natural collapsed poses) and
-//! emitted as **surface points** ([`crate::foliage::SplatInstance`]) so they render through the
-//! existing splat billboard pipeline — ethereal forms you drift through (no collision).
-//!
-//! The procedural figure is a **placeholder for real CC0 anatomy**: once models are dropped in,
-//! the planned `voxelize` tool replaces [`figure_points`]'s geometry while the posing,
-//! placement, and rendering around it stay. Pure logic (no wgpu); deterministic from the seed.
+//! Colossal figures (E18) — giant fallen forms placed in the world as **structures** (see
+//! `structures`): seed-driven, independent of chunk terrain. Built procedurally as a *posed
+//! skeleton* (two builds via [`Sex`]; natural collapsed poses) and emitted as **surface points**
+//! ([`crate::foliage::SplatInstance`]) so they render through the existing splat billboard
+//! pipeline — ethereal forms you drift through (no collision). These procedural colossi are a
+//! structure type in their own right; real anatomically-correct models are a separate, later
+//! thing (an offline `voxelize` of CC0 meshes would slot in behind the same posing/placement).
+//! Pure logic (no wgpu); deterministic from the seed.
 
 use glam::Vec3;
 

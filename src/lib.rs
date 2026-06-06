@@ -34,6 +34,7 @@ mod post;
 pub mod scene;
 pub mod share;
 pub mod sim;
+pub mod structures;
 pub mod text;
 pub mod textures;
 pub mod visibility;
@@ -117,6 +118,9 @@ struct App {
     /// Undo log of inverse edits (E14): each editing action pushes the edit that reverts
     /// it. The forward edits are the future broadcast/share payload (N1 groundwork).
     undo: Vec<edit::Edit>,
+    /// Colossal structures (E18): the cell keys of the giants currently in range, so we only
+    /// rebuild their point set when the camera moves into/out of a new cell.
+    structure_cells: Vec<(i32, i32)>,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
     /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
@@ -159,6 +163,7 @@ impl App {
         self.loaded.clear();
         self.overlay.clear();
         self.sim_active.clear();
+        self.structure_cells.clear(); // force the new seed's colossi to rebuild next frame
         self.loader.set_seed(seed);
         let ground = worldgen::height(
             self.camera.position.x.floor() as i32,
@@ -338,6 +343,33 @@ impl App {
             wobble: self.wobble,
             color_steps: self.color_steps,
             toggles: self.toggles.to_mask(),
+        }
+    }
+
+    /// Stream colossal structures (E18) around the camera: seed-placed fallen giants. Only
+    /// rebuilds the (heavy) point set when the in-range set of cells changes — i.e. when the
+    /// camera crosses into a new structure cell — not every frame.
+    fn update_structures(&mut self) {
+        if self.state.is_none() {
+            return;
+        }
+        let seed = self.seed;
+        let placements =
+            structures::colossi_near(seed, self.camera.position, STRUCTURE_RADIUS, |x, z| {
+                worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
+            });
+        let mut keys: Vec<(i32, i32)> = placements.iter().map(structures::cell_key).collect();
+        keys.sort_unstable();
+        if keys == self.structure_cells {
+            return; // same giants in range — nothing to rebuild
+        }
+        self.structure_cells = keys;
+        let pts: Vec<foliage::SplatInstance> = placements
+            .iter()
+            .flat_map(|p| body::figure_points(p.pos, p.voxel, p.yaw, p.sex, p.seed, COLOSSUS_COLOR))
+            .collect();
+        if let Some(state) = self.state.as_mut() {
+            state.set_structure_points(&pts);
         }
     }
 
@@ -840,6 +872,8 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 // Stream chunks in/out around the (possibly moved) camera.
                 self.stream();
+                // Stream colossal structures (E18) in/out around the camera.
+                self.update_structures();
                 // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
                 self.sim(dt);
                 // Ambient debris bursts ahead of the camera so the flight sweeps
@@ -1107,6 +1141,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         toggles: Toggles::from_mask(view.toggles),
         seed: view.seed,
         undo: Vec::new(),
+        structure_cells: Vec::new(),
         pad: gamepad::Pad::new(),
         // Start the drone on the world seed so the dirge matches the world (native; a no-op
         // None if there's no audio device). Web starts audio from the page on first tap.
@@ -1188,6 +1223,12 @@ const WORLD_RADIUS: i32 = 2;
 const STREAM_RADIUS: i32 = 5;
 /// Mesh jobs to dispatch per frame (cheap on native — just hands work to rayon). M6.
 const STREAM_REQUESTS: usize = 8;
+
+/// How far (world units) to stream colossal structures (E18) around the camera. A little
+/// beyond the chunk stream radius (≈160) so a giant resolves at the fog edge as you approach.
+const STRUCTURE_RADIUS: f32 = 210.0;
+/// The ethereal colossi's tint (cool pale; the palette recolours it in the house look).
+const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
 /// Finished meshes to upload to the GPU per frame (bounds main-thread upload work, and
 /// on web bounds inline meshing). M6.
 const STREAM_UPLOADS: usize = 4;

@@ -292,6 +292,12 @@ pub struct State {
     /// live on each `ChunkDraw`. Shares the globals (group 0).
     splat_pipeline: wgpu::RenderPipeline,
 
+    // Colossal structures (E18): all in-range giants' points in one growable instance buffer,
+    // drawn with the splat pipeline. Updated from the app when the in-range set changes.
+    structure_splats: wgpu::Buffer,
+    structure_count: u32,
+    structure_capacity: usize,
+
     // Particles (E2): an instanced emissive-cube pipeline + a growable instance buffer.
     particle_pipeline: wgpu::RenderPipeline,
     cube_vertex_buffer: wgpu::Buffer,
@@ -569,6 +575,13 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let structure_capacity = 16384usize;
+        let structure_splats = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("structure-splats"),
+            size: (structure_capacity * std::mem::size_of::<SplatInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         // --- Foliage splats (E6): instanced billboards sharing the globals group ---
         let splat_pipeline = build_splat_pipeline(&device, &globals_bgl, config.format);
@@ -620,6 +633,9 @@ impl State {
             palette_on,
             pixel_scale,
             splat_pipeline,
+            structure_splats,
+            structure_count: 0,
+            structure_capacity,
             particle_pipeline,
             cube_vertex_buffer,
             cube_index_buffer,
@@ -636,6 +652,26 @@ impl State {
     /// Update the in-engine text overlay (HUD), drawn each frame over the finished image.
     pub fn set_hud(&mut self, text: &str) {
         self.hud.set_text(&self.device, &self.queue, text);
+    }
+
+    /// Replace the colossal-structure point set (E18). Grows the instance buffer if needed.
+    /// Called from the app only when the in-range set of giants changes (not every frame).
+    pub fn set_structure_points(&mut self, points: &[SplatInstance]) {
+        self.structure_count = points.len() as u32;
+        if points.is_empty() {
+            return;
+        }
+        if points.len() > self.structure_capacity {
+            self.structure_capacity = points.len().next_power_of_two();
+            self.structure_splats = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("structure-splats"),
+                size: (self.structure_capacity * std::mem::size_of::<SplatInstance>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        self.queue
+            .write_buffer(&self.structure_splats, 0, bytemuck::cast_slice(points));
     }
 
     /// Reconfigure the palette post-process (E10) and re-upload its uniform. `on == false`
@@ -925,6 +961,15 @@ impl State {
                     pass.draw(0..6, 0..*count);
                     splats += count;
                 }
+            }
+
+            // Colossal structures (E18): the in-range giants, one instanced draw, same pipeline.
+            if self.structure_count > 0 {
+                pass.set_pipeline(&self.splat_pipeline);
+                pass.set_bind_group(0, &self.globals_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.structure_splats.slice(..));
+                pass.draw(0..6, 0..self.structure_count);
+                splats += self.structure_count;
             }
 
             // Record stats for the HUD; still log occasionally on native.

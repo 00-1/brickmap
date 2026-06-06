@@ -340,8 +340,11 @@ up close).
   surface/solid grid → points or chunks). Sourcing is the human's call (provenance/licence).
 - ⏳ **Solid / explorable kind:** voxelise into chunks + greedy-mesh (mesh-near, points-far via
   M7) — for a giant you can land on. Content framing: monument, not gore.
-- ⏳ **Live placement:** wire `scatter_fallen` into the streamed `gfx` world (built blind here —
-  no live GPU/display — so the human verifies in-app). Today the field is headless-only.
+- 🛠 **Live placement (built blind — verify in-app):** `structures::colossi_near` seed-places
+  giants on a coarse cell grid across the infinite world; the app streams them in/out around the
+  camera (rebuilding the point buffer only when the in-range cell set changes) and draws them
+  through the splat pipeline. Pure placement logic tested; the GPU path mirrors foliage. No
+  display here, so the human confirms the feel/density/scale in the running app.
 - **Outcome:** drift through ghostly fallen giants strewn across the seeded world; later, land
   on a solid one and explore.
 - **Perf:** a ~300-voxel-tall body is millions of surface voxels — only near chunks mesh, far
