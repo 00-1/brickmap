@@ -459,6 +459,26 @@ pub fn capture_view(
         usage: wgpu::BufferUsages::VERTEX,
     });
 
+    // In-world text demo (E17): a few glowing inscriptions standing on the terrain, in mixed
+    // scripts (Greek + Latin), to verify the world-text billboard path offscreen.
+    let mut world_text =
+        crate::text::WorldText::new(&device, COLOR_FORMAT, DEPTH_FORMAT, &globals_bgl);
+    for (txt, x, z, col) in [
+        ("ΒΡΙΚΜΑΠ", -20i32, 0i32, [0.95, 0.97, 0.75]),
+        ("brickmap", 24, -28, [0.75, 0.9, 1.0]),
+        ("ΔΟΟΜ", 40, 34, [0.95, 0.6, 0.4]),
+    ] {
+        let gy = crate::worldgen::height(x, z, crate::WORLD_SEED) as f32;
+        world_text.add(
+            &device,
+            &queue,
+            txt,
+            glam::Vec3::new(x as f32, gy + 9.0, z as f32),
+            6.0,
+            col,
+        );
+    }
+
     // Foliage splats (E6): instanced billboards sharing the globals; one buffer for all.
     let splat_pipeline = crate::gfx::build_splat_pipeline(&device, &globals_bgl, COLOR_FORMAT);
     let splat_vbuf = (!foliage_all.is_empty()).then(|| {
@@ -537,6 +557,8 @@ pub fn capture_view(
                 0..particle_instances.len() as u32,
             );
         }
+        // In-world text inscriptions (E17), depth-tested against the scene.
+        world_text.draw(&mut pass, &globals_bind_group);
     }
     // Bloom: composite scene + glow. With a palette it lands in `post`, which the palette
     // pass then maps into `target`; without one it composites straight into `target`.

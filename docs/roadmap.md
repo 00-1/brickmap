@@ -302,13 +302,20 @@ User-facing features, all rated *great fit* because they reuse machinery we alre
     re-seeds with the world. (Android audio still a follow-up.)
   - ⏳ **Reactive layer**: speed/biome/weather → cutoff/level tweens; voice cap; one FDN reverb.
 
-### ✨ E17 — In-world text *(exploration)* ⏳
+### ✨ E17 — In-world text *(exploration)* 🛠
 Render text **inside the 3D world**, cheaply, by reusing the bitmap-font HUD rasteriser + the
 splat billboard path: a string → a small texture → world-space quads (flat-on-surface or
 camera-facing). **An existing writing system** (decided 2026-06 — *not* procedural runes):
 inscriptions, markers, signage. Lo-fi by construction; **emissive glyphs become point lights**;
 the palette + dither recolour and crumble them like everything else. Cost: one tiny texture +
 a quad per label — negligible.
+- ✅ **Capability** (`src/text.rs` + `text.wgsl`): a multi-script rasteriser (Basic Latin +
+  Greek + Hiragana + Standard Galactic via `font8x8`) → `WorldText`, camera-facing billboards
+  drawn **in the scene pass** (depth-tested, emissive, palettised + fogged like the world).
+  Verified headless (a Greek inscription glowing over the terrain).
+- ⏳ **Live placement (a content/aesthetic decision):** wire `WorldText` into the streamed
+  `gfx` world — where inscriptions appear, in which script, saying what. Held for direction;
+  the renderer is ready.
 - **Outcome:** glowing text/inscriptions scattered in the dark world, on-aesthetic.
 - **Substrate for an eventual in-engine UI** — moving the toggles/sliders off the DOM onto the
   same text path so the controls are identical on every platform (the long-promised "no DOM

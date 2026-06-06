@@ -33,6 +33,7 @@ mod post;
 pub mod scene;
 pub mod share;
 pub mod sim;
+pub mod text;
 pub mod textures;
 pub mod visibility;
 pub mod world;
