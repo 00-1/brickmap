@@ -336,6 +336,9 @@ pub struct State {
     start: web_time::Instant,
     /// In-engine text overlay (HUD), drawn the same way on every platform.
     hud: crate::hud::HudOverlay,
+    /// In-world text (E17): seed-placed glowing inscriptions, drawn as camera-facing billboards
+    /// inside the scene pass. Rebuilt by the app when the in-range set changes.
+    text: crate::text::WorldText,
 
     // The window must outlive the surface; keep an Arc so `Surface<'static>` is sound.
     window: Arc<Window>,
@@ -623,6 +626,7 @@ impl State {
         let scene_view = create_scene_view(&device, config.format, iw, ih);
         let bloom = Bloom::new(&device, config.format, iw, ih);
         let hud = crate::hud::HudOverlay::new(&device, config.format);
+        let text = crate::text::WorldText::new(&device, config.format, DEPTH_FORMAT, &globals_bgl);
 
         // Palette post-process (E10), off by default so the live preview is unchanged until
         // a palette is chosen. Defaults to the full `mono` ramp with ordered dithering.
@@ -681,6 +685,7 @@ impl State {
             last_stats: DrawStats::default(),
             start: web_time::Instant::now(),
             hud,
+            text,
             window,
         }
     }
@@ -688,6 +693,27 @@ impl State {
     /// Update the in-engine text overlay (HUD), drawn each frame over the finished image.
     pub fn set_hud(&mut self, text: &str) {
         self.hud.set_text(&self.device, &self.queue, text);
+    }
+
+    /// Replace the in-world inscriptions (E17): clears the current labels and rebuilds them
+    /// from `labels` = `(text, script, center, world_height, color)`. Called by the app only
+    /// when the in-range set changes (not every frame), so the per-label texture upload is rare.
+    pub fn set_text_labels(
+        &mut self,
+        labels: &[(String, crate::text::Script, Vec3, f32, [f32; 3])],
+    ) {
+        self.text.clear();
+        for (s, script, center, height, color) in labels {
+            self.text.add_script(
+                &self.device,
+                &self.queue,
+                s,
+                *script,
+                *center,
+                *height,
+                *color,
+            );
+        }
     }
 
     /// Replace the colossal-structure point set (E18). Grows the instance buffer if needed.
@@ -1072,6 +1098,10 @@ impl State {
                 pass.draw(0..6, 0..self.creature_count);
                 splats += self.creature_count;
             }
+
+            // In-world text (E17): glowing inscriptions, camera-facing billboards in the scene
+            // pass (depth-tested against the world, palettised + fogged, glow through bloom).
+            self.text.draw(&mut pass, &self.globals_bind_group);
 
             // Record stats for the HUD; still log occasionally on native.
             self.last_stats = DrawStats {

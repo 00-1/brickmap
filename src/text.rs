@@ -2,9 +2,10 @@
 //! the tiny `font8x8` bitmap font, so the renderer can draw it on a **world-space billboard**
 //! (glowing inscriptions in the world), the same low-fi pixel font as the HUD.
 //!
-//! Existing writing systems only (not procedural runes): `font8x8` carries Basic Latin plus
-//! Greek, Hiragana, and the Standard Galactic Alphabet — so an "unusual but real" script is
-//! just a matter of which characters you pass. Pure logic; the GPU side lives in `gfx`.
+//! Five writing systems via explicit [`Script`] selection: Latin, Greek, and Hiragana (from
+//! `font8x8`), the Standard Galactic Alphabet (also `font8x8`, in the Private Use Area), and a
+//! small hand-authored Elder-Futhark-style **runic** set. Real scripts, abstract content. Pure
+//! logic; the GPU side lives in `gfx`.
 
 use bytemuck::{Pod, Zeroable};
 use font8x8::UnicodeFonts;
@@ -13,27 +14,147 @@ use glam::Vec3;
 /// Glyph cell size (px).
 pub const GLYPH: usize = 8;
 
-/// Look a character up across the font sets we ship (Basic Latin → Latin-1 → Greek →
-/// Hiragana → Standard Galactic). `None` if no set has it.
-fn glyph(c: char) -> Option<[u8; 8]> {
-    font8x8::BASIC_FONTS
-        .get(c)
-        .or_else(|| font8x8::LATIN_FONTS.get(c))
-        .or_else(|| font8x8::GREEK_FONTS.get(c))
-        .or_else(|| font8x8::HIRAGANA_FONTS.get(c))
-        .or_else(|| font8x8::SGA_FONTS.get(c))
+/// A writing system to render a string in. Several real scripts ship in `font8x8`; `Galactic`
+/// (Standard Galactic Alphabet) is keyed by Latin codepoints, so it needs an *explicit* script
+/// (the Latin fallback would otherwise shadow it). `Runic` is our own small Elder-Futhark-style
+/// set (a fifth, deliberately ancient-looking system). `Auto` is the multi-set fallback chain.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Script {
+    Auto,
+    Latin,
+    Greek,
+    Hiragana,
+    Galactic,
+    Runic,
 }
 
-/// Rasterise `text` to a tightly-packed RGBA buffer: **white glyphs on a fully transparent
-/// background** (one 8×8 cell per char), so a billboard can alpha-test the glyphs and tint
-/// them. Unknown glyphs render blank (a space). Returns `(width, height, pixels)`.
+impl Script {
+    /// The five concrete writing systems, for seeded variety (excludes `Auto`).
+    pub const ALL: [Script; 5] = [
+        Script::Latin,
+        Script::Greek,
+        Script::Hiragana,
+        Script::Galactic,
+        Script::Runic,
+    ];
+}
+
+/// A small Elder-Futhark-style runic set (hand-authored 8×8 bitmaps): a fifth, ancient-feeling
+/// writing system beyond what `font8x8` ships. Any letter maps onto one of these angular staves
+/// (abstract, not a faithful transliteration); spaces stay blank. Bit `col` = column `col` from
+/// the left, matching [`rasterize`].
+fn runic(c: char) -> Option<[u8; 8]> {
+    if c == ' ' {
+        return None;
+    }
+    // Each rune is 8 rows of 8 chars; '#' = lit pixel. Angular, vertical-stave forms.
+    const P: [[&str; 8]; 12] = [
+        [
+            "  #     ", "  ##    ", "  # #   ", "  ##    ", "  # #   ", "  #     ", "  #     ",
+            "  #     ",
+        ],
+        [
+            "  ###   ", "  #  #  ", "  #  #  ", "  #  #  ", "  #  #  ", "  #  #  ", "  #  #  ",
+            "  #  #  ",
+        ],
+        [
+            "  #     ", "  ##    ", "  # #   ", "  # #   ", "  ##    ", "  #     ", "  #     ",
+            "  #     ",
+        ],
+        [
+            "  #     ", "  ##    ", "  # #   ", "  #     ", "  ##    ", "  # #   ", "  #     ",
+            "  #     ",
+        ],
+        [
+            "  ##    ", "  # #   ", "  ##    ", "  # #   ", "  #  #  ", "  #     ", "  #     ",
+            "  #     ",
+        ],
+        [
+            "     #  ", "    #   ", "   #    ", "  #     ", "   #    ", "    #   ", "     #  ",
+            "        ",
+        ],
+        [
+            "#     # ", " #   #  ", "  # #   ", "   #    ", "  # #   ", " #   #  ", "#     # ",
+            "        ",
+        ],
+        [
+            "  ##    ", "  # #   ", "  ##    ", "  #     ", "  #     ", "  #     ", "  #     ",
+            "  #     ",
+        ],
+        [
+            "  #  #  ", "  #  #  ", "  #  #  ", "  ####  ", "  #  #  ", "  #  #  ", "  #  #  ",
+            "  #  #  ",
+        ],
+        [
+            "  #     ", "  #     ", "  #     ", "  #     ", "  #     ", "  #     ", "  #     ",
+            "  #     ",
+        ],
+        [
+            "  ####  ", "     #  ", "    #   ", "   #    ", "  #     ", "  #     ", "  ####  ",
+            "        ",
+        ],
+        [
+            "   #    ", "  ###   ", " # # #  ", "   #    ", "   #    ", "   #    ", "   #    ",
+            "   #    ",
+        ],
+    ];
+    let rows = P[(c as usize).wrapping_mul(7) % P.len()];
+    let mut g = [0u8; 8];
+    for (r, line) in rows.iter().enumerate() {
+        for (col, b) in line.as_bytes().iter().enumerate().take(GLYPH) {
+            if *b != b' ' {
+                g[r] |= 1 << col;
+            }
+        }
+    }
+    Some(g)
+}
+
+/// Look a character up in a given `script`. `Auto` walks the whole fallback chain; the explicit
+/// scripts hit one set (so e.g. Standard Galactic isn't shadowed by Basic Latin). `None` if the
+/// chosen set has no glyph for `c`.
+fn glyph(script: Script, c: char) -> Option<[u8; 8]> {
+    match script {
+        Script::Auto => font8x8::BASIC_FONTS
+            .get(c)
+            .or_else(|| font8x8::LATIN_FONTS.get(c))
+            .or_else(|| font8x8::GREEK_FONTS.get(c))
+            .or_else(|| font8x8::HIRAGANA_FONTS.get(c))
+            .or_else(|| font8x8::SGA_FONTS.get(c)),
+        Script::Latin => font8x8::BASIC_FONTS
+            .get(c)
+            .or_else(|| font8x8::LATIN_FONTS.get(c)),
+        Script::Greek => font8x8::GREEK_FONTS.get(c),
+        Script::Hiragana => font8x8::HIRAGANA_FONTS.get(c),
+        // SGA lives in the Private Use Area (U+E541..=U+E55A = a..z), so map Latin letters onto it.
+        Script::Galactic => {
+            let lc = c.to_ascii_lowercase();
+            if lc.is_ascii_lowercase() {
+                char::from_u32(0xE541 + (lc as u32 - 'a' as u32))
+                    .and_then(|gc| font8x8::SGA_FONTS.get(gc))
+            } else {
+                None
+            }
+        }
+        Script::Runic => runic(c),
+    }
+}
+
+/// Rasterise `text` in the `Auto` fallback script. See [`rasterize_script`].
 pub fn rasterize(text: &str) -> (u32, u32, Vec<u8>) {
+    rasterize_script(text, Script::Auto)
+}
+
+/// Rasterise `text` (in `script`) to a tightly-packed RGBA buffer: **white glyphs on a fully
+/// transparent background** (one 8×8 cell per char), so a billboard can alpha-test the glyphs
+/// and tint them. Unknown glyphs render blank (a space). Returns `(width, height, pixels)`.
+pub fn rasterize_script(text: &str, script: Script) -> (u32, u32, Vec<u8>) {
     let n = text.chars().count().max(1);
     let w = (n * GLYPH) as u32;
     let h = GLYPH as u32;
     let mut px = vec![0u8; (w * h * 4) as usize]; // transparent (alpha 0)
     for (gi, c) in text.chars().enumerate() {
-        let Some(bits_rows) = glyph(c) else {
+        let Some(bits_rows) = glyph(script, c) else {
             continue;
         };
         for (row, bits) in bits_rows.iter().enumerate() {
@@ -166,8 +287,13 @@ impl WorldText {
         }
     }
 
-    /// Add an inscription: `text` rasterised, billboarded at `center`, `world_height` tall
-    /// (its width follows the text's aspect), tinted `color`.
+    /// Drop all labels (so the live world can rebuild the in-range set). The backing GPU
+    /// textures/buffers are released with their bind groups.
+    pub fn clear(&mut self) {
+        self.labels.clear();
+    }
+
+    /// Add an inscription in the `Auto` fallback script. See [`WorldText::add_script`].
     pub fn add(
         &mut self,
         device: &wgpu::Device,
@@ -177,7 +303,31 @@ impl WorldText {
         world_height: f32,
         color: [f32; 3],
     ) {
-        let (w, h, px) = rasterize(text);
+        self.add_script(
+            device,
+            queue,
+            text,
+            Script::Auto,
+            center,
+            world_height,
+            color,
+        );
+    }
+
+    /// Add an inscription: `text` rasterised in `script`, billboarded at `center`,
+    /// `world_height` tall (its width follows the text's aspect), tinted `color`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_script(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        text: &str,
+        script: Script,
+        center: Vec3,
+        world_height: f32,
+        color: [f32; 3],
+    ) {
+        let (w, h, px) = rasterize_script(text, script);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("worldtext-tex"),
             size: wgpu::Extent3d {
@@ -292,6 +442,19 @@ mod tests {
             assert!(
                 px.chunks_exact(4).any(|p| p[3] == 255),
                 "expected glyph pixels for {s:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_scripts_render_glyphs() {
+        // Galactic (shadowed by Latin under Auto) and our Runic set must light pixels when
+        // their script is chosen explicitly.
+        for script in [Script::Galactic, Script::Runic, Script::Latin] {
+            let (_, _, px) = rasterize_script("ABCD", script);
+            assert!(
+                px.chunks_exact(4).any(|p| p == [255, 255, 255, 255]),
+                "expected glyph pixels for {script:?}"
             );
         }
     }

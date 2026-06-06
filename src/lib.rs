@@ -137,6 +137,9 @@ struct App {
     /// loosely tethered to the camera, advanced + re-uploaded every frame so they drift and
     /// shimmer through the fly-through. Cheap (≈ a few hundred splats).
     creatures: creatures::Swarm,
+    /// In-world text (E17): the set of inscription cells currently in range. Lets the app
+    /// rebuild the giants' label textures only when the in-range set changes (not every frame).
+    text_cells: std::collections::HashSet<(i32, i32)>,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
     /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
@@ -180,6 +183,7 @@ impl App {
         self.overlay.clear();
         self.sim_active.clear();
         self.structures.clear(); // force the new seed's colossi to rebuild next frame
+        self.text_cells.clear(); // and the new seed's inscriptions
         self.loader.set_seed(seed);
         let ground = worldgen::height(
             self.camera.position.x.floor() as i32,
@@ -425,6 +429,32 @@ impl App {
         if let Some(state) = self.state.as_mut() {
             state.set_structure_points(&pts);
             state.set_structure_meshes(&meshes);
+        }
+    }
+
+    /// Stream in-world inscriptions (E17) around the camera, the same cache-on-change way as the
+    /// colossi: regenerate the in-range set each frame (cheap — string composition), and only
+    /// rebuild the label textures on the GPU when the set of in-range cells actually changes.
+    fn update_inscriptions(&mut self) {
+        if self.state.is_none() {
+            return;
+        }
+        let seed = self.seed;
+        let marks =
+            structures::inscriptions_near(seed, self.camera.position, TEXT_RADIUS, |x, z| {
+                worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
+            });
+        let wanted: std::collections::HashSet<(i32, i32)> = marks.iter().map(|m| m.cell).collect();
+        if wanted == self.text_cells {
+            return;
+        }
+        self.text_cells = wanted;
+        let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = marks
+            .into_iter()
+            .map(|m| (m.text, m.script, m.pos, m.height, m.color))
+            .collect();
+        if let Some(state) = self.state.as_mut() {
+            state.set_text_labels(&labels);
         }
     }
 
@@ -999,6 +1029,8 @@ impl ApplicationHandler<AppEvent> for App {
                 self.stream();
                 // Stream colossal structures (E18) in/out around the camera.
                 self.update_structures();
+                // Stream in-world inscriptions (E17) in/out around the camera.
+                self.update_inscriptions();
                 // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
                 // camera) and re-upload its points each frame so they drift through the scene.
                 self.creatures.update(dt, self.camera.position);
@@ -1277,6 +1309,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         // A small swarm of drifting wisps tethered to the camera's start (re-tethered each
         // frame to the live camera in the redraw loop). Seed-driven off the world seed.
         creatures: creatures::Swarm::new(view.seed ^ 0xE15_E15, 7, pos, 80.0),
+        text_cells: std::collections::HashSet::new(),
         pad: gamepad::Pad::new(),
         // Start the drone on the world seed so the dirge matches the world (native; a no-op
         // None if there's no audio device). Web starts audio from the page on first tap.
@@ -1362,6 +1395,8 @@ const STREAM_REQUESTS: usize = 8;
 /// How far (world units) to stream colossal structures (E18) around the camera. A little
 /// beyond the chunk stream radius (≈160) so a giant resolves at the fog edge as you approach.
 const STRUCTURE_RADIUS: f32 = 210.0;
+/// Radius (world units) within which in-world inscriptions (E17) are streamed in around the camera.
+const TEXT_RADIUS: f32 = 150.0;
 /// The ethereal colossi's tint (cool pale; the palette recolours it in the house look).
 const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
 /// How many newly-entered colossi to generate per frame (the rest wait for later frames), so

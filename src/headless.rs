@@ -477,22 +477,27 @@ pub fn capture_view(
         usage: wgpu::BufferUsages::VERTEX,
     });
 
-    // In-world text demo (E17): a few glowing inscriptions standing on the terrain, in mixed
-    // scripts (Greek + Latin), to verify the world-text billboard path offscreen.
+    // In-world text demo (E17): small glowing inscriptions standing on the terrain, one per
+    // writing system (Latin, Greek, Hiragana, Standard Galactic, Runic), to verify the
+    // world-text billboard path — and all five scripts — offscreen.
+    use crate::text::Script;
     let mut world_text =
         crate::text::WorldText::new(&device, COLOR_FORMAT, DEPTH_FORMAT, &globals_bgl);
-    for (txt, x, z, col) in [
-        ("ΒΡΙΚΜΑΠ", -20i32, 0i32, [0.95, 0.97, 0.75]),
-        ("brickmap", 24, -28, [0.75, 0.9, 1.0]),
-        ("ΔΟΟΜ", 40, 34, [0.95, 0.6, 0.4]),
+    for (txt, script, x, z, col) in [
+        ("brickmap", Script::Latin, -24i32, 4i32, [0.75, 0.9, 1.0]),
+        ("ΔΟΟΜ", Script::Greek, 18, -22, [0.95, 0.6, 0.4]),
+        ("あおい", Script::Hiragana, 40, 30, [0.55, 0.95, 0.55]),
+        ("relic", Script::Galactic, -36, -30, [0.95, 0.85, 0.4]),
+        ("futhark", Script::Runic, 8, 40, [0.8, 0.6, 0.95]),
     ] {
         let gy = crate::worldgen::height(x, z, crate::WORLD_SEED) as f32;
-        world_text.add(
+        world_text.add_script(
             &device,
             &queue,
             txt,
-            glam::Vec3::new(x as f32, gy + 9.0, z as f32),
-            6.0,
+            script,
+            glam::Vec3::new(x as f32, gy + 6.0, z as f32),
+            3.0,
             col,
         );
     }

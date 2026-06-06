@@ -7,6 +7,7 @@
 use glam::Vec3;
 
 use crate::relic::Placement;
+use crate::text::Script;
 
 /// World-unit spacing of the candidate grid (one possible colossus per cell).
 const CELL: f32 = 200.0;
@@ -74,6 +75,110 @@ pub fn cell_key(p: &Placement) -> (i32, i32) {
     )
 }
 
+/// World-unit spacing of the inscription grid (E17) — denser than the colossi so glowing
+/// text turns up fairly often as you fly.
+const ICELL: f32 = 82.0;
+/// Fraction of inscription cells that actually hold a marker.
+const IPRESENCE: f32 = 0.5;
+
+/// One seed-placed in-world inscription (E17): where it floats, what it says, in which script.
+pub struct Inscription {
+    /// Grid cell (the change key, so the app only rebuilds label textures when the set changes).
+    pub cell: (i32, i32),
+    pub pos: Vec3,
+    pub text: String,
+    pub script: Script,
+    pub height: f32,
+    pub color: [f32; 3],
+}
+
+/// Per-script character pool to assemble abstract "words" from (Latin/Galactic/Runic all draw
+/// from Latin letters — Galactic/Runic remap them to their own glyphs).
+fn pool(script: Script) -> &'static str {
+    match script {
+        Script::Greek => "αβγδεζηθικλμνξοπρστυφχψω",
+        Script::Hiragana => "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん",
+        _ => "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    }
+}
+
+/// Compose a deterministic abstract inscription (1–2 short "words") from a cell hash: a script,
+/// a few glyphs, a glowing tint, and a small world height ("a few words attached to a voxel").
+fn compose(h: u32) -> (String, Script, f32, [f32; 3]) {
+    let script = Script::ALL[(h % Script::ALL.len() as u32) as usize];
+    let chars: Vec<char> = pool(script).chars().collect();
+    let mut state = h | 1;
+    let mut rng = || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        state
+    };
+    let words = 1 + ((h >> 2) & 1); // 1 or 2 words
+    let mut s = String::new();
+    for wi in 0..words {
+        if wi > 0 {
+            s.push(' ');
+        }
+        let len = 2 + (rng() % 4) as usize; // 2..=5 glyphs
+        for _ in 0..len {
+            s.push(chars[rng() as usize % chars.len()]);
+        }
+    }
+    // Dim, glowing tints (recoloured anyway by the palette); kept emissive so they bloom.
+    const TINTS: [[f32; 3]; 4] = [
+        [0.95, 0.55, 0.20], // amber
+        [0.40, 0.85, 0.95], // cyan
+        [0.55, 0.95, 0.45], // green
+        [0.75, 0.50, 0.95], // violet
+    ];
+    let color = TINTS[((h >> 7) % 4) as usize];
+    let height = 0.9 + ((h >> 9) % 4) as f32 * 0.15; // ~0.9–1.35 world units tall
+    (s, script, height, color)
+}
+
+/// All inscription markers within `radius` of `cam`, deterministic in `seed`; `ground(x, z)`
+/// floats each just above the surface. Mirrors [`colossi_near`]'s coarse-grid scheme.
+pub fn inscriptions_near(
+    seed: u32,
+    cam: Vec3,
+    radius: f32,
+    ground: impl Fn(f32, f32) -> f32,
+) -> Vec<Inscription> {
+    let reach = (radius / ICELL).ceil() as i32 + 1;
+    let (ccx, ccz) = (
+        (cam.x / ICELL).floor() as i32,
+        (cam.z / ICELL).floor() as i32,
+    );
+    let mut out = Vec::new();
+    for cz in (ccz - reach)..=(ccz + reach) {
+        for cx in (ccx - reach)..=(ccx + reach) {
+            let h = hash(cx ^ 0x1111, cz ^ 0x2222, seed.wrapping_add(0x7E47_0000));
+            if (h & 0xFFFF) as f32 / 65536.0 >= IPRESENCE {
+                continue;
+            }
+            let jx = ((h >> 16) & 0xFF) as f32 / 255.0;
+            let jz = ((h >> 24) & 0xFF) as f32 / 255.0;
+            let x = cx as f32 * ICELL + jx * ICELL;
+            let z = cz as f32 * ICELL + jz * ICELL;
+            if (x - cam.x).powi(2) + (z - cam.z).powi(2) > radius * radius {
+                continue;
+            }
+            let (text, script, height, color) = compose(h);
+            out.push(Inscription {
+                cell: (cx, cz),
+                // Float just above the surface — a small label tethered to the ground voxel.
+                pos: Vec3::new(x, ground(x, z) + 1.3 + height * 0.5, z),
+                text,
+                script,
+                height,
+                color,
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +207,25 @@ mod tests {
         let keys_a: Vec<_> = a.iter().map(cell_key).collect();
         let keys_b: Vec<_> = b.iter().map(cell_key).collect();
         assert_ne!(keys_a, keys_b);
+    }
+
+    #[test]
+    fn inscriptions_deterministic_and_nonempty() {
+        let g = |_x: f32, _z: f32| 12.0;
+        let cam = Vec3::new(60.0, 0.0, -40.0);
+        let a = inscriptions_near(2024, cam, 300.0, g);
+        let b = inscriptions_near(2024, cam, 300.0, g);
+        assert!(
+            !a.is_empty(),
+            "some inscriptions should be in a 300-unit radius"
+        );
+        assert_eq!(a.len(), b.len());
+        for (m, n) in a.iter().zip(&b) {
+            assert_eq!(m.cell, n.cell);
+            assert_eq!(m.text, n.text); // same seed → same words/script
+            assert!(!m.text.is_empty());
+            // Floated above the supplied ground height.
+            assert!(m.pos.y > 12.0);
+        }
     }
 }
