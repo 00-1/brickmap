@@ -53,12 +53,15 @@ pub struct Toggles {
     /// Distance-dissolve (M7): stipple distant terrain/foliage into a pixel haze. Opt-in
     /// (default off) since it's a strong stylistic choice.
     pub melt: bool,
+    /// Directional sun (E3). On by default; turn it off to light the world only by the
+    /// in-world emissive point lights (crystals) + dim ambient — a dark, point-lit mood.
+    pub sun: bool,
 }
 
 /// Short labels for the toggles, in index order (HUD + web checkboxes).
-pub const TOGGLE_LABELS: [&str; 13] = [
+pub const TOGGLE_LABELS: [&str; 14] = [
     "cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief", "sand",
-    "foliage", "melt",
+    "foliage", "melt", "sun",
 ];
 
 impl Default for Toggles {
@@ -77,6 +80,7 @@ impl Default for Toggles {
             sand: true,
             foliage: true,
             melt: false, // opt-in (M7 distance dissolve)
+            sun: true,
         }
     }
 }
@@ -97,6 +101,7 @@ impl Toggles {
             self.sand,
             self.foliage,
             self.melt,
+            self.sun,
         ][i]
     }
 
@@ -115,6 +120,7 @@ impl Toggles {
             10 => self.sand = v,
             11 => self.foliage = v,
             12 => self.melt = v,
+            13 => self.sun = v,
             _ => {}
         }
     }
@@ -718,7 +724,8 @@ impl State {
             view_proj: view_proj.to_cols_array_2d(),
             palette: PALETTE,
             params: [aesthetic[0], aesthetic[1], fog_start, fog_end],
-            camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, 0.0],
+            // w = directional-sun flag (0 = off → point-lit only).
+            camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, flag(toggles.sun)],
             fog_color: FOG_COLOR,
             flags: [
                 flag(toggles.ao),

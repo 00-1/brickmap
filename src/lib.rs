@@ -659,6 +659,8 @@ fn toggle_index(code: KeyCode) -> Option<usize> {
         KeyCode::Digit8 => 7,
         KeyCode::Digit9 => 8,
         KeyCode::Digit0 => 9,
+        // Letters for the toggles past the number row: L = sun (E3 point-lit mood).
+        KeyCode::KeyL => 13,
         _ => return None,
     })
 }

@@ -13,8 +13,10 @@ const CRYSTAL: BlockId = BlockId(6);
 /// Still water filling low columns up to `SEA_LEVEL` (E8). Opaque for now; stylised
 /// transparent/animated water is E9.
 const WATER: BlockId = BlockId(7);
-/// Fraction of columns that sprout a surface crystal (rare — they should feel special).
-const CRYSTAL_CHANCE: f32 = 0.0022;
+/// Fraction of columns that sprout a surface crystal. These double as the world's point
+/// lights (E3), so they're seeded densely enough that with the sun off the landscape still
+/// reads as pools of light in the dark — but sparse enough to feel like scattered glimmers.
+const CRYSTAL_CHANCE: f32 = 0.008;
 
 /// Hash a lattice point to `[0, 1)`.
 fn hash(x: i32, z: i32, seed: u32) -> f32 {
@@ -299,8 +301,9 @@ mod tests {
         // the seed/worldgen version (E12 brief §5 caveat). The integer block-id path is
         // portable; the f32 noise feeding `height().round()` *may* drift across targets,
         // which is why a cross-target (wasm-in-CI) check is noted as a follow-up.
-        // Bump this when worldgen *intentionally* changes (last: E8 cave carving).
-        assert_eq!(voxel_hash(1337), 1_384_714_140_180_096_454);
+        // Bump this when worldgen *intentionally* changes (last: E3 denser point-light
+        // crystals — CRYSTAL_CHANCE 0.0022 → 0.008 — so the sun-off world reads).
+        assert_eq!(voxel_hash(1337), 1_027_499_614_070_972_416);
         // Different seeds must give different worlds.
         assert_ne!(voxel_hash(1337), voxel_hash(1338));
         assert_ne!(voxel_hash(0), voxel_hash(1));

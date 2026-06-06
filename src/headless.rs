@@ -75,7 +75,7 @@ pub struct PaletteSpec {
 /// Render the demo scene to a PNG at `path`. Panics on setup failure (it's a dev
 /// tool); the most likely cause is a missing software-Vulkan ICD.
 pub fn capture(width: u32, height: u32, path: &str) {
-    capture_view(width, height, path, None, None, None);
+    capture_view(width, height, path, None, None, None, true);
 }
 
 /// As [`capture`], but with an optional camera override (`eye` looking at `target`) so
@@ -89,6 +89,7 @@ pub fn capture_view(
     eye: Option<glam::Vec3>,
     target: Option<glam::Vec3>,
     palette: Option<PaletteSpec>,
+    sun: bool,
 ) {
     let instances = crate::build_world_meshes(&crate::demo_world());
     let camera = match (eye, target) {
@@ -291,7 +292,13 @@ pub fn capture_view(
             FOG_START,
             FOG_END,
         ],
-        camera_pos: [camera.position.x, camera.position.y, camera.position.z, 0.0],
+        // w = directional-sun flag (0 = point-lit only), mirroring `gfx`.
+        camera_pos: [
+            camera.position.x,
+            camera.position.y,
+            camera.position.z,
+            if sun { 1.0 } else { 0.0 },
+        ],
         // Horizon band of the sky gradient (see sky.wgsl) so terrain melts into it.
         fog_color: [0.30, 0.33, 0.42, 1.0],
         // All features on for the hero shot (AO, block light, emissive, relief).

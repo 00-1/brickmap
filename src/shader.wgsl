@@ -131,10 +131,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sky_ambient = vec3<f32>(0.17, 0.22, 0.31);
     let ground_ambient = vec3<f32>(0.06, 0.05, 0.05);
     // Strong, slightly warm key light so lit faces stay bright against the dim ambient.
-    let sun = vec3<f32>(1.05, 0.97, 0.82) * (1.0 * diffuse);
-    // Baked block light (flood-fill, E3): the crystal's colour spills onto nearby
-    // surfaces and bleeds around corners. Quadratic falloff for a tighter pool.
-    let block = in.block_light * in.block_light * 1.6 * globals.flags.y;
+    // `camera_pos.w` is the sun on/off flag — off (0) leaves the world lit only by the
+    // in-world point lights + ambient, for a dark, point-lit mood.
+    let sun = vec3<f32>(1.05, 0.97, 0.82) * (1.0 * diffuse) * globals.camera_pos.w;
+    // Baked block light (flood-fill, E3): an emitter's colour spills onto nearby surfaces
+    // and bleeds around corners. A softer-than-quadratic curve widens the pool so the
+    // points actually light the world (especially with the sun off), boosted so near a
+    // light reads bright. `flags.y` toggles it.
+    let bl = in.block_light;
+    let block = bl * (bl * 0.5 + 0.5) * 2.6 * globals.flags.y;
     let light = mix(ground_ambient, sky_ambient, up) + sun + block;
     // Baked ambient occlusion: deepen it into a contact shadow. Concave corners (ao 0)
     // sink to ~0.16 brightness and the curve is biased dark so even partial occlusion

@@ -15,7 +15,7 @@ fn main() {
     if args.first().map(String::as_str) == Some("palettes") {
         let width: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(960);
         let height: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(720);
-        brickmap::headless::capture_view(width, height, "palette-off.png", None, None, None);
+        brickmap::headless::capture_view(width, height, "palette-off.png", None, None, None, true);
         for (i, pal) in brickmap::palette::PALETTES.iter().enumerate() {
             let spec = brickmap::headless::PaletteSpec {
                 index: i,
@@ -23,7 +23,7 @@ fn main() {
                 dither: 1.0,
             };
             let path = format!("palette-{}.png", pal.name);
-            brickmap::headless::capture_view(width, height, &path, None, None, Some(spec));
+            brickmap::headless::capture_view(width, height, &path, None, None, Some(spec), true);
         }
         // Low-count + dither demos: prove a 2–3 colour palette still reads as extra shades
         // via ordered dithering (the "fake more colours" goal). `<name>-<count>[-nodither]`.
@@ -35,7 +35,15 @@ fn main() {
                     dither,
                 };
                 let path = format!("palette-{name}-{count}{suffix}.png");
-                brickmap::headless::capture_view(width, height, &path, None, None, Some(spec));
+                brickmap::headless::capture_view(
+                    width,
+                    height,
+                    &path,
+                    None,
+                    None,
+                    Some(spec),
+                    true,
+                );
             }
         }
         return;
@@ -61,5 +69,8 @@ fn main() {
         (None, None)
     };
 
-    brickmap::headless::capture_view(width, height, &path, eye, target, None);
+    // `nosun` anywhere in the args turns the directional sun off (point-lit only).
+    let sun = !args.iter().any(|a| a == "nosun");
+
+    brickmap::headless::capture_view(width, height, &path, eye, target, None, sun);
 }
