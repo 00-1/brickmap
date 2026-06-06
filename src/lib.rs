@@ -15,6 +15,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
+pub mod audio;
 pub mod edit;
 pub mod foliage;
 pub mod gamepad;

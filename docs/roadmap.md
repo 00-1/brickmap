@@ -262,10 +262,16 @@ foliage pivot, since it's small, deterministic, and high-delight.)*
 - **✨ E15 — Point-cloud creatures** — decorative wander/small-flock boids as splat clusters
   with VS animation; camera-follows-creature; deterministic seed spawn. Hard no-gameplay
   guardrails.
-- **✨ E16 — Reactive audio** — seeded generative music + a weather/biome-reactive mix;
+- **✨ E16 — Reactive audio** 🛠 — seeded generative music + a weather/biome-reactive mix;
   `fundsp`+`kira` (native) / Web Audio (web); equalpower pan + one FDN reverb.
   **Direction: dark/heavy doom-drone (Sleep — *Dopesmoker*)** — slow, downtuned, crushing
   sustained drones, minor/Phrygian, sparse + hypnotic; per-seed dirge.
+  - ✅ **Synth core** (`src/audio.rs`): dependency-free per-seed doom drone — stacked
+    detuned oscillators (sub + body + power-chord fifth + faint Phrygian ♭2) → hard
+    waveshaping → a slowly-swept resonant low-pass → slow amplitude swell. Verified by
+    rendering to WAV (`cargo run --bin drone`) + spectral check (dark, sub-heavy, breathing).
+  - ⏳ **Playback I/O**: cpal (native) / Web Audio (web) feeding `Drone::next_frame`; then
+    the reactive layer (speed/biome → cutoff/level tweens) + voice cap + autoplay-unlock.
 
 ### M7 — Distance dissolve (LOD that's also the look) 🛠
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
