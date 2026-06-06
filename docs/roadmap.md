@@ -343,16 +343,15 @@ content kinds (pivot 2026-06):**
   splat pipeline like the relics. Verified headless: a recognisable human point-figure. Tested
   (OBJ parse, sample count/bounds, rests-on-ground). ⏳ Next: solid voxelisation of the mesh +
   live placement; baking a compact asset (so it needn't ship the raw OBJ to the web).
-- ✅ **Solid / explorable kind (headless):** `relic::relic_voxels` voxelises a relic to solid
-  world voxels; `relic_chunk_instances` buckets them into 32³ sections (multi-layer) and
-  greedy-meshes each → a giant of meshed cubes that shades/AOs/palettises like terrain. Verified
-  headless. ⏳ Live wiring next (its chunks must draw alongside terrain without colliding with the
-  stream map — built blind, verify in-app).
-- 🛠 **Live placement (built blind — verify in-app):** `structures::colossi_near` seed-places
-  giants on a coarse cell grid across the infinite world; the app streams them in/out around the
-  camera (rebuilding the point buffer only when the in-range cell set changes) and draws them
-  through the splat pipeline. Pure placement logic tested; the GPU path mirrors foliage. No
-  display here, so the human confirms the feel/density/scale in the running app.
+- 🛠 **Solid / explorable kind, now live (built blind):** `relic::relic_voxels` →
+  `relic_chunk_instances` greedy-meshes a relic into chunk instances; `gfx` draws them via a
+  separate `structure_draws` list (terrain pipeline, out of the stream map). ~1 in 3 placed
+  relics is solid (the rest ethereal). Verify the solid giants in-app.
+- 🛠 **Live placement, cached + budgeted (built blind):** `structures::colossi_near` seed-places
+  giants (ethereal + solid) on a coarse cell grid; the app **caches each giant's geometry per
+  cell** and generates at most one new one per frame, so crossing cells no longer regenerates
+  everything at once — the fix for the framerate hitch. Points are smaller/sparser now (coarser
+  sampling), which also cuts the generation cost and overdraw. Verify feel/density/perf in-app.
 - **Outcome:** drift through ghostly fallen giants strewn across the seeded world; later, land
   on a solid one and explore.
 - **Perf:** a ~300-voxel-tall body is millions of surface voxels — only near chunks mesh, far

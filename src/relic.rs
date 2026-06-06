@@ -137,12 +137,20 @@ pub fn relic_points(
     seed: u32,
     color: [f32; 3],
 ) -> Vec<SplatInstance> {
+    // Sample the surface on a *coarse* grid (STEP model-units per cell): fewer, sparser points
+    // — smaller/airier ethereal look, and far cheaper to generate (the cell-crossing cost that
+    // was hitching the framerate scales with 1/STEP³).
+    const STEP: f32 = 1.5;
     let caps = tangle(seed);
     let (lo, hi) = bounds(&caps);
     let dim = hi - lo;
-    let (nx, ny, nz) = (dim.x as i32 + 2, dim.y as i32 + 2, dim.z as i32 + 2);
+    let (nx, ny, nz) = (
+        (dim.x / STEP) as i32 + 2,
+        (dim.y / STEP) as i32 + 2,
+        (dim.z / STEP) as i32 + 2,
+    );
     let solid_at = |gx: i32, gy: i32, gz: i32| -> bool {
-        let p = lo + Vec3::new(gx as f32, gy as f32, gz as f32);
+        let p = lo + Vec3::new(gx as f32, gy as f32, gz as f32) * STEP;
         caps.iter().any(|c| seg_dist(p, c.a, c.b) <= c.r)
     };
     let idx = |x: i32, y: i32, z: i32| ((y * nz + z) * nx + x) as usize;
@@ -176,7 +184,7 @@ pub fn relic_points(
                 if !exposed {
                     continue;
                 }
-                let m = lo + Vec3::new(x as f32, y as f32, z as f32);
+                let m = lo + Vec3::new(x as f32, y as f32, z as f32) * STEP;
                 let (mx, my, mz) = (m.x, m.y - lo.y, m.z);
                 let wx = mx * cy - mz * sy;
                 let wz = mx * sy + mz * cy;
@@ -184,7 +192,8 @@ pub fn relic_points(
                 let v = 0.85 + 0.15 * rng.unit();
                 out.push(SplatInstance {
                     offset: [world.x, world.y, world.z],
-                    size: voxel * 0.55,
+                    // Smaller than before (was 0.55) — airier points, less overdraw.
+                    size: voxel * 0.24,
                     color: [color[0] * v, color[1] * v, color[2] * v],
                     sway: rng.unit() * std::f32::consts::TAU,
                 });
@@ -236,13 +245,15 @@ pub fn relic_voxels(feet: Vec3, voxel: f32, yaw: f32, seed: u32) -> Vec<glam::IV
     out
 }
 
-/// One placed relic structure: where it rests, its yaw, scale, and generative seed.
+/// One placed relic structure: where it rests, its yaw, scale, generative seed, and whether it
+/// renders **solid** (greedy-meshed, explorable) vs **ethereal** (points, drift-through).
 #[derive(Copy, Clone, Debug)]
 pub struct Placement {
     pub pos: Vec3,
     pub yaw: f32,
     pub voxel: f32,
     pub seed: u32,
+    pub solid: bool,
 }
 
 /// Seed-driven scatter of relics across a square region centred on the origin (half-extent
@@ -264,6 +275,7 @@ pub fn scatter(
                 yaw: rng.range(0.0, std::f32::consts::TAU),
                 voxel: rng.range(1.1, 1.7),
                 seed: rng.0 | 1,
+                solid: false, // demo scatter is ethereal; the live placer decides per relic
             }
         })
         .collect()
@@ -276,7 +288,7 @@ mod tests {
     #[test]
     fn relic_has_a_surface_shell() {
         let pts = relic_points(Vec3::ZERO, 1.0, 0.0, 7, [0.7; 3]);
-        assert!(pts.len() > 300, "too few surface points: {}", pts.len());
+        assert!(pts.len() > 120, "too few surface points: {}", pts.len());
         assert!(pts.iter().all(|p| p.size > 0.0));
     }
 

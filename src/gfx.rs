@@ -297,6 +297,9 @@ pub struct State {
     structure_splats: wgpu::Buffer,
     structure_count: u32,
     structure_capacity: usize,
+    /// Solid colossal structures (E18): extra greedy-meshed chunk draws (the giants you can
+    /// land on), drawn with the terrain pipeline but kept out of the streaming `draws` map.
+    structure_draws: Vec<ChunkDraw>,
 
     // Particles (E2): an instanced emissive-cube pipeline + a growable instance buffer.
     particle_pipeline: wgpu::RenderPipeline,
@@ -636,6 +639,7 @@ impl State {
             structure_splats,
             structure_count: 0,
             structure_capacity,
+            structure_draws: Vec::new(),
             particle_pipeline,
             cube_vertex_buffer,
             cube_index_buffer,
@@ -672,6 +676,15 @@ impl State {
         }
         self.queue
             .write_buffer(&self.structure_splats, 0, bytemuck::cast_slice(points));
+    }
+
+    /// Replace the solid colossal-structure meshes (E18) — greedy-meshed giant instances drawn
+    /// with the terrain pipeline. Rebuilt by the app when the in-range set changes.
+    pub fn set_structure_meshes(&mut self, instances: &[ChunkInstance]) {
+        self.structure_draws = instances
+            .iter()
+            .filter_map(|inst| build_chunk_draw(&self.device, &self.chunk_bind_group_layout, inst))
+            .collect();
     }
 
     /// Reconfigure the palette post-process (E10) and re-upload its uniform. `on == false`
@@ -938,6 +951,17 @@ impl State {
             let mut drawn = 0u32;
             let mut triangles = 0u32;
             for draw in &visible_draws {
+                pass.set_bind_group(1, &draw.origin_bind_group, &[]);
+                pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
+                pass.set_index_buffer(draw.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..draw.num_indices, 0, 0..1);
+                drawn += 1;
+                triangles += draw.num_indices / 3;
+            }
+
+            // Solid colossal structures (E18): same chunk pipeline + material, their own origin
+            // per draw. Not frustum-culled (few, large); cheap relative to terrain.
+            for draw in &self.structure_draws {
                 pass.set_bind_group(1, &draw.origin_bind_group, &[]);
                 pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
                 pass.set_index_buffer(draw.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
