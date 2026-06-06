@@ -31,19 +31,28 @@
       html,
       body {
         margin: 0;
-        height: 100%;
+        /* min-height (not height:100%) + flex-start so a tall page on a small
+           screen scrolls instead of centring its overflow off the top/bottom —
+           the controls below the canvas stay reachable on mobile. */
+        min-height: 100vh;
+        box-sizing: border-box;
+        padding: 12px 8px;
         background: #05060a;
         color: #c8d0e0;
         font: 14px/1.4 system-ui, sans-serif;
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
         gap: 12px;
       }
       canvas {
         border: 1px solid #1c2233;
         image-rendering: pixelated;
+        /* Scale the fixed-resolution canvas down to fit narrow screens (keeping
+           its 4:3 aspect), so it never overflows and pushes the controls away. */
+        max-width: 100%;
+        height: auto;
       }
       /* Fullscreen: scale the canvas to fill the screen, preserving its 4:3 aspect
          (letterboxed) so the render isn't distorted. Pixelated keeps it crisp-chunky. */
@@ -160,7 +169,7 @@
       // Palette colour counts, indexed like PALETTES in palette.rs (mono is 4, rest 5).
       const PALETTE_LEN = [4, 5, 5, 5, 5, 5];
       // Order must match TOGGLE_LABELS in gfx.rs.
-      const TOGGLES = ["cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief", "sand", "foliage", "melt"];
+      const TOGGLES = ["cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief", "sand", "foliage", "melt", "sun"];
 
       // Parse the URL hash fragment (#s=…&w=…&…) the same way the Rust `share` codec
       // does, so the page controls reflect a restored world on load.
@@ -228,7 +237,8 @@
             el.addEventListener("input", pushPalette));
 
           // Build the feature-toggle checkboxes, reflecting any restored toggle mask.
-          const mask = hp.t !== undefined ? parseInt(hp.t, 16) : 0xfff;
+          // Default mask: everything on except melt (bit 12); sun (bit 13) on → 0x2fff.
+          const mask = hp.t !== undefined ? parseInt(hp.t, 16) : 0x2fff;
           const box = document.getElementById("toggles");
           TOGGLES.forEach((name, i) => {
             const label = document.createElement("label");
