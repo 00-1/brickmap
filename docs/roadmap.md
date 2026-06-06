@@ -70,12 +70,15 @@ own thing — the content/visual work from [`design.md`](design.md) §12 — int
 > per-seed **doom-drone** (E16, "Sleep — *Dopesmoker*"). The palette + dither stack is what
 > made the look click (it "saved the project aesthetically").
 >
-> The earlier target — a **lush, bright point-cloud forest** (capslpop / Superbien) — supplied
-> the **tech spine that survives**: the shared **splat render path** (E6 ground foliage, E7
-> forest, M7 mesh→points dissolve;
-> [`research-points-splatting.md`](research-points-splatting.md)). But the *mood* resolved far
-> darker — foliage and points are simply recoloured by the palette. Meshed cubes stay the
-> near-field base; splats/points are the layer on top (where points win on weak hardware).
+> **The lush point-cloud vegetation stays central** — ground foliage, undergrowth, and
+> point-cloud trees (E6/E7) are very much part of the look, *within* the dark/murky brief.
+> What changed is the **mood, not the content**: we still want a foliage-heavy, point-cloud
+> world — just **dim and murky**, recoloured by the palette and lit into the dark, rather than
+> the **bright, sunny forest** the earlier note targeted (capslpop / Superbien supplied the
+> tech, not the brightness). Meshed cubes stay the near-field base; the shared **splat render
+> path** (E6 foliage, E7 forest, M7 mesh→points dissolve;
+> [`research-points-splatting.md`](research-points-splatting.md)) carries the foliage + points
+> on top, where points win on weak hardware.
 > **Treat the splat path + the palette/dither/lighting/doom-audio stack as the identity; new
 > content (text, colossal bodies) plugs into it.**
 
