@@ -15,7 +15,16 @@ fn main() {
     if args.first().map(String::as_str) == Some("palettes") {
         let width: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(960);
         let height: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(720);
-        brickmap::headless::capture_view(width, height, "palette-off.png", None, None, None, true);
+        brickmap::headless::capture_view(
+            width,
+            height,
+            "palette-off.png",
+            None,
+            None,
+            None,
+            true,
+            1,
+        );
         for (i, pal) in brickmap::palette::PALETTES.iter().enumerate() {
             let spec = brickmap::headless::PaletteSpec {
                 index: i,
@@ -23,7 +32,7 @@ fn main() {
                 dither: 1.0,
             };
             let path = format!("palette-{}.png", pal.name);
-            brickmap::headless::capture_view(width, height, &path, None, None, Some(spec), true);
+            brickmap::headless::capture_view(width, height, &path, None, None, Some(spec), true, 1);
         }
         // Low-count + dither demos: prove a 2–3 colour palette still reads as extra shades
         // via ordered dithering (the "fake more colours" goal). `<name>-<count>[-nodither]`.
@@ -43,6 +52,7 @@ fn main() {
                     None,
                     Some(spec),
                     true,
+                    1,
                 );
             }
         }
@@ -90,5 +100,8 @@ fn main() {
         }
     });
 
-    brickmap::headless::capture_view(width, height, &path, eye, target, palette, sun);
+    // `scale=<n>` sets the pixel-scale / internal-resolution divisor (E10 halftone dial).
+    let scale = tok("scale=").map(|s| s as u32).unwrap_or(1);
+
+    brickmap::headless::capture_view(width, height, &path, eye, target, palette, sun, scale);
 }

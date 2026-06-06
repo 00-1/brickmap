@@ -329,8 +329,12 @@ impl PalettePass {
             multiview_mask: None,
             cache: None,
         });
+        // Nearest sampling: this pass doubles as the present/upscale of the (optionally
+        // low-res) internal buffer, so we want crisp fat pixels, not a blurred upscale.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("palette-sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
         let ubuf = device.create_buffer(&wgpu::BufferDescriptor {

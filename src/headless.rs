@@ -75,13 +75,14 @@ pub struct PaletteSpec {
 /// Render the demo scene to a PNG at `path`. Panics on setup failure (it's a dev
 /// tool); the most likely cause is a missing software-Vulkan ICD.
 pub fn capture(width: u32, height: u32, path: &str) {
-    capture_view(width, height, path, None, None, None, true);
+    capture_view(width, height, path, None, None, None, true, 1);
 }
 
 /// As [`capture`], but with an optional camera override (`eye` looking at `target`) so
 /// the dev tool can frame the world from any angle — invaluable for verifying features
 /// (water, rivers, caves) that the default hero shot hides. Both `None` → the default
 /// whole-world framing.
+#[allow(clippy::too_many_arguments)]
 pub fn capture_view(
     width: u32,
     height: u32,
@@ -90,7 +91,12 @@ pub fn capture_view(
     target: Option<glam::Vec3>,
     palette: Option<PaletteSpec>,
     sun: bool,
+    scale: u32,
 ) {
+    // Internal render resolution (E10 pixel scale): scene + post render at (iw, ih), then the
+    // present/palette pass upscales (nearest) to the full-res `target`.
+    let scale = scale.clamp(1, 8);
+    let (iw, ih) = ((width / scale).max(1), (height / scale).max(1));
     let instances = crate::build_world_meshes(&crate::demo_world());
     let camera = match (eye, target) {
         (Some(e), Some(t)) => crate::scene::Camera::looking_at(e, t),
@@ -152,12 +158,13 @@ pub fn capture_view(
     });
     let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
-    // Offscreen scene target (bloom reads this, then composites into `target`).
+    // Offscreen scene target (bloom reads this, then composites into `target`). At the
+    // internal resolution (iw, ih).
     let scene = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("headless-scene"),
         size: wgpu::Extent3d {
-            width,
-            height,
+            width: iw,
+            height: ih,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -172,8 +179,8 @@ pub fn capture_view(
     let depth = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("headless-depth"),
         size: wgpu::Extent3d {
-            width,
-            height,
+            width: iw,
+            height: ih,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -254,19 +261,23 @@ pub fn capture_view(
         cache: None,
     });
     let sky_pipeline = crate::gfx::build_sky_pipeline(&device, COLOR_FORMAT);
-    let bloom = crate::post::Bloom::new(&device, COLOR_FORMAT, width, height);
+    let bloom = crate::post::Bloom::new(&device, COLOR_FORMAT, iw, ih);
 
-    // Palette post-process (E10). When requested, bloom composites into an intermediate
-    // `post` texture, the palette pass maps it down to the curated palette, and writes the
-    // final `target`. Skipped entirely (bloom → target) when `palette` is None.
-    let palette_pass = palette.map(|spec| {
+    // Present/palette pass (E10). Bloom composites into an intermediate `post` texture at the
+    // internal resolution; this pass then writes the full-res `target`, palettising (when a
+    // palette is requested) and always upscaling by the pixel scale with nearest sampling.
+    // Needed whenever there's a palette *or* an upscale; otherwise bloom writes `target` direct.
+    let palette_pass = (palette.is_some() || scale > 1).then(|| {
         let pass = crate::palette::PalettePass::new(&device, COLOR_FORMAT);
-        pass.set(&queue, spec.index, spec.count, spec.dither, true);
+        match palette {
+            Some(spec) => pass.set(&queue, spec.index, spec.count, spec.dither, true),
+            None => pass.set(&queue, 0, 1, 0.0, false), // passthrough (upscale only)
+        }
         let post = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("headless-post"),
             size: wgpu::Extent3d {
-                width,
-                height,
+                width: iw,
+                height: ih,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,

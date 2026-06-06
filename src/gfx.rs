@@ -279,9 +279,14 @@ pub struct State {
     /// intermediate bloom lands in before the palette maps it to the surface; its bind group
     /// is rebuilt on resize.
     palette: crate::palette::PalettePass,
+    /// Low-res *internal* buffer the scene + post chain render into; the palette pass then
+    /// presents it to the surface with nearest sampling, upscaling by `pixel_scale` (E10).
     palette_view: wgpu::TextureView,
     palette_bind_group: wgpu::BindGroup,
     palette_on: bool,
+    /// Internal-resolution divisor (1 = native; 2,3,4… = chunkier + cheaper). The signature
+    /// halftone made deliberate, and the biggest single perf dial.
+    pixel_scale: u32,
 
     /// Foliage splats (E6): an instanced billboard pipeline; per-chunk instance buffers
     /// live on each `ChunkDraw`. Shares the globals (group 0).
@@ -568,9 +573,12 @@ impl State {
         // --- Foliage splats (E6): instanced billboards sharing the globals group ---
         let splat_pipeline = build_splat_pipeline(&device, &globals_bgl, config.format);
 
-        let depth_view = create_depth_view(&device, &config);
-        let scene_view = create_scene_view(&device, &config);
-        let bloom = Bloom::new(&device, config.format, config.width, config.height);
+        // Internal render resolution starts at native (pixel_scale = 1).
+        let pixel_scale = 1u32;
+        let (iw, ih) = (config.width.max(1), config.height.max(1));
+        let depth_view = create_depth_view(&device, iw, ih);
+        let scene_view = create_scene_view(&device, config.format, iw, ih);
+        let bloom = Bloom::new(&device, config.format, iw, ih);
         let hud = crate::hud::HudOverlay::new(&device, config.format);
 
         // Palette post-process (E10), off by default so the live preview is unchanged until
@@ -587,7 +595,7 @@ impl State {
             palette_dither,
             palette_on,
         );
-        let palette_view = create_scene_view(&device, &config);
+        let palette_view = create_scene_view(&device, config.format, iw, ih);
         let palette_bind_group = palette.make_bind_group(&device, &palette_view);
 
         State {
@@ -610,6 +618,7 @@ impl State {
             palette_view,
             palette_bind_group,
             palette_on,
+            pixel_scale,
             splat_pipeline,
             particle_pipeline,
             cube_vertex_buffer,
@@ -682,14 +691,39 @@ impl State {
         self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
-        self.depth_view = create_depth_view(&self.device, &self.config);
-        self.scene_view = create_scene_view(&self.device, &self.config);
-        self.bloom
-            .resize(&self.device, self.config.width, self.config.height);
-        self.palette_view = create_scene_view(&self.device, &self.config);
+        self.rebuild_targets();
+    }
+
+    /// Internal render size = surface size / pixel scale (≥ 1px).
+    fn internal_size(&self) -> (u32, u32) {
+        let s = self.pixel_scale.max(1);
+        (
+            (self.config.width / s).max(1),
+            (self.config.height / s).max(1),
+        )
+    }
+
+    /// (Re)create every internal-resolution target (scene/depth/bloom/palette) + the palette
+    /// bind group. Called on surface resize and on pixel-scale change.
+    fn rebuild_targets(&mut self) {
+        let (iw, ih) = self.internal_size();
+        self.depth_view = create_depth_view(&self.device, iw, ih);
+        self.scene_view = create_scene_view(&self.device, self.config.format, iw, ih);
+        self.bloom.resize(&self.device, iw, ih);
+        self.palette_view = create_scene_view(&self.device, self.config.format, iw, ih);
         self.palette_bind_group = self
             .palette
             .make_bind_group(&self.device, &self.palette_view);
+    }
+
+    /// Set the internal-resolution divisor (1 = native; higher = chunkier + cheaper). Rebuilds
+    /// the internal targets when it changes (E10 pixel scale / halftone dial).
+    pub fn set_pixel_scale(&mut self, scale: u32) {
+        let scale = scale.clamp(1, 8);
+        if scale != self.pixel_scale {
+            self.pixel_scale = scale;
+            self.rebuild_targets();
+        }
     }
 
     /// Reconfigure at the current size — used to recover a lost/outdated surface.
@@ -921,26 +955,27 @@ impl State {
             }
         }
 
-        // Bloom: bright-pass + blur the scene target, composite scene + glow. With the
-        // palette pass on it lands in `palette_view`, which the palette then maps to the
-        // surface; otherwise it composites straight to the surface. Bloom toggled off → the
-        // scene is copied straight through instead of composited.
-        let post_target = if self.palette_on {
-            &self.palette_view
-        } else {
-            &view
-        };
+        // Post chain (all at the internal resolution): bloom composites scene + glow into the
+        // internal `palette_view`, then the palette pass *presents* it to the surface — it
+        // palettises (when on) and always upscales by the pixel scale with nearest sampling.
+        // Bloom toggled off → the scene is copied straight through instead of composited.
         if toggles.bloom {
-            self.bloom
-                .render(&self.device, &mut encoder, &self.scene_view, post_target);
+            self.bloom.render(
+                &self.device,
+                &mut encoder,
+                &self.scene_view,
+                &self.palette_view,
+            );
         } else {
-            self.bloom
-                .blit(&self.device, &mut encoder, &self.scene_view, post_target);
+            self.bloom.blit(
+                &self.device,
+                &mut encoder,
+                &self.scene_view,
+                &self.palette_view,
+            );
         }
-        if self.palette_on {
-            self.palette
-                .render(&mut encoder, &self.palette_bind_group, &view);
-        }
+        self.palette
+            .render(&mut encoder, &self.palette_bind_group, &view);
 
         // In-engine text overlay (HUD), composited last — identical on every platform.
         self.hud.draw(
@@ -1225,38 +1260,38 @@ pub(crate) fn build_material_bind_group(
     })
 }
 
-/// Offscreen colour target the scene renders into (same format as the surface), so
-/// the bloom post-chain can read it before compositing to the surface.
+/// Offscreen colour target the scene renders into (same format as the surface), so the
+/// post chain can read it before presenting to the surface. Sized at the *internal*
+/// resolution (`width`/`height` already divided by the pixel scale, E10).
 fn create_scene_view(
     device: &wgpu::Device,
-    config: &wgpu::SurfaceConfiguration,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
 ) -> wgpu::TextureView {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scene-color"),
         size: wgpu::Extent3d {
-            width: config.width,
-            height: config.height,
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: config.format,
+        format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-fn create_depth_view(
-    device: &wgpu::Device,
-    config: &wgpu::SurfaceConfiguration,
-) -> wgpu::TextureView {
+fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth-texture"),
         size: wgpu::Extent3d {
-            width: config.width,
-            height: config.height,
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,

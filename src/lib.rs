@@ -98,6 +98,8 @@ struct App {
     palette_index: usize,
     palette_count: u32,
     palette_dither: f32,
+    /// Internal-resolution divisor (E10): 1 = native, higher = chunkier "fat pixels" + cheaper.
+    pixel_scale: u32,
     /// Timestamp of the previous frame, for frame-rate-independent movement.
     last_frame: Option<Instant>,
     /// Whether the pointer is captured (mouselook active).
@@ -236,6 +238,12 @@ impl App {
             }
             KeyCode::BracketRight => {
                 self.palette_dither = (self.palette_dither + 0.25).min(2.0);
+                return true;
+            }
+            // Pixel scale (E10): K cycles the internal-resolution divisor 1→2→3→4→1.
+            KeyCode::KeyK => {
+                self.pixel_scale = self.pixel_scale % 4 + 1;
+                log::info!("pixel scale → {}", self.pixel_scale);
                 return true;
             }
             // Audio (E16): M mutes/unmutes the drone (desktop only).
@@ -851,6 +859,7 @@ impl ApplicationHandler<AppEvent> for App {
                     self.palette_index = pidx;
                     self.palette_count = pcount;
                     self.palette_dither = pdither;
+                    self.pixel_scale = controls::pixel_scale();
                     if let Some(seed) = controls::take_pending_seed() {
                         self.set_seed(seed);
                     }
@@ -867,13 +876,14 @@ impl ApplicationHandler<AppEvent> for App {
 
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
-                    // Push the current palette selection (E10) before drawing.
+                    // Push the current palette selection + pixel scale (E10) before drawing.
                     state.set_palette(
                         self.palette_index,
                         self.palette_count,
                         self.palette_dither,
                         self.palette_on,
                     );
+                    state.set_pixel_scale(self.pixel_scale);
                     // `render` handles lost/outdated/transient surfaces internally.
                     state.render(
                         view_proj,
@@ -1087,6 +1097,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         palette_index: 11,
         palette_count: 5,
         palette_dither: 1.5,
+        pixel_scale: 1,
         last_frame: None,
         cursor_locked: false,
         frame_ms_ema: 0.0,
@@ -1333,6 +1344,8 @@ pub mod controls {
         static PALETTE_INDEX: Cell<u32> = const { Cell::new(11) };
         static PALETTE_COUNT: Cell<u32> = const { Cell::new(5) };
         static PALETTE_DITHER: Cell<f32> = const { Cell::new(1.5) };
+        /// Internal-resolution divisor (E10 pixel scale): 1 = native, higher = chunkier.
+        static PIXEL_SCALE: Cell<u32> = const { Cell::new(1) };
         /// Feature-toggle bitmask, one bit per switch. `0xFFF` = bits 0–11 on (cull…foliage),
         /// melt (12) + sun (13) off — the dark, point-lit default.
         static TOGGLES: Cell<u32> = const { Cell::new(0xFFF) };
@@ -1428,6 +1441,15 @@ pub mod controls {
             PALETTE_COUNT.with(Cell::get),
             PALETTE_DITHER.with(Cell::get),
         )
+    }
+
+    /// Internal-resolution divisor (E10 pixel scale), set from the page.
+    #[wasm_bindgen]
+    pub fn set_pixel_scale(scale: u32) {
+        PIXEL_SCALE.with(|c| c.set(scale.clamp(1, 8)));
+    }
+    pub(crate) fn pixel_scale() -> u32 {
+        PIXEL_SCALE.with(Cell::get)
     }
 
     /// Switch to a seed parsed from user text (numeric or folded). Returns the resolved

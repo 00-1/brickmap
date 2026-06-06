@@ -94,6 +94,7 @@
     >
       <label>wobble <input type="range" id="dial-wobble" min="20" max="400" value="85" /></label>
       <label>dither <input type="range" id="dial-steps" min="2" max="16" step="1" value="4" /></label>
+      <label>pixel <input type="range" id="dial-pixel" min="1" max="6" step="1" value="1" title="internal resolution / halftone scale" /></label>
     </div>
 
     <!-- Colour palette (E10): recolour the finished image onto a small, restrained ramp
@@ -185,6 +186,7 @@
         set_wobble,
         set_color_steps,
         set_palette,
+        set_pixel_scale,
         set_toggle,
         set_seed,
         set_seed_text,
@@ -244,6 +246,8 @@
           if (hp.d !== undefined) steps.value = hp.d;
           wobble.addEventListener("input", () => set_wobble(parseFloat(wobble.value)));
           steps.addEventListener("input", () => set_color_steps(parseFloat(steps.value)));
+          const pixel = document.getElementById("dial-pixel");
+          pixel.addEventListener("input", () => set_pixel_scale(parseInt(pixel.value, 10)));
 
           // Palette controls (E10): push the whole selection on any change.
           const palOn = document.getElementById("pal-on");

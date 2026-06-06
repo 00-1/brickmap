@@ -251,10 +251,12 @@ The aesthetic pass that **became the identity** (backlog §I; see the aesthetic 
   indexed-**storage** bandwidth win remains an optional perf refinement under M8.)*
 - ✅ **Deep shadows + sun-off point-lighting + doom audio** — see E3 refinements and E16;
   together with the palette they *are* the look.
-- ⏳ **Deliberate low-res internal buffer (the "pixel-scale" dial)** — render small + upscale
-  so the dithered **halftone is intentional and cross-platform** (today it only appears
-  incidentally when a device upscales the canvas). Also the **biggest single perf dial**
-  (shared with M8's dynamic resolution). **The most-requested next aesthetic knob.**
+- ✅ **Deliberate low-res internal buffer (the "pixel-scale" dial)** — the scene + post chain
+  render into a low-res internal buffer; the palette pass then *presents* it to the surface
+  with **nearest** sampling, upscaling by the scale, so the dithered **halftone is intentional
+  and cross-platform** (no longer only when a device upscales the canvas). The HUD stays
+  full-res/crisp. Web `pixel` slider (1–6) + native key `K`; also the **biggest single perf
+  dial** (fewer fragments). Verified headless (`screenshot … scale=N`).
 - ⏳ Depth/normal **"ink" outlines** (voxel creases as a blueprint grid) and a
   **G-buffer-as-art** mode.
 - **De-risks:** done — funnelling the frame through a tiny palette + dither *is* the look.
