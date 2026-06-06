@@ -533,6 +533,17 @@ pub fn capture_view(
         ));
         log::info!("human figure: {} mesh tris → points", mesh.tris.len());
     }
+
+    // Drifting wisps demo (E15): a swarm stepped a few seconds so the swirl is mid-motion,
+    // emitted as points. (Static still here; the live app animates them each frame.)
+    {
+        let focus = glam::Vec3::new(0.0, 18.0, 0.0);
+        let mut swarm = crate::creatures::Swarm::new(crate::WORLD_SEED, 10, focus, 70.0);
+        for _ in 0..180 {
+            swarm.update(1.0 / 60.0, focus);
+        }
+        body_points.extend(swarm.points());
+    }
     let body_vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("body-instances"),
         contents: bytemuck::cast_slice(&body_points),
