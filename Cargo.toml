@@ -47,6 +47,10 @@ rayon = "1"
 # free of NDK input plumbing (web's Gamepad API covers phone + USB-C pad for now).
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
 gilrs = "0.11"
+# Cross-platform audio output (E16) for the doom-drone. Desktop only for now — the web
+# uses Web Audio (no crate), and Android audio is a follow-up (keeps the APK NDK-light).
+# On Linux this needs the ALSA dev headers (libasound2-dev) at build time; see CI.
+cpal = "0.17"
 
 # --- Web / WASM-only -----------------------------------------------------
 [target.'cfg(target_arch = "wasm32")'.dependencies]

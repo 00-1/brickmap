@@ -130,9 +130,16 @@ pub struct Drone {
     amp_lfo: Lfo,
     filt_l: Svf,
     filt_r: Svf,
-    drive: f32,
+    base_drive: f32,
     res: f32,
     master: f32,
+    // --- Live, settable params (the in-game audio sliders drive these) ---
+    /// Master volume `0..1`.
+    vol: f32,
+    /// Distortion/heaviness multiplier on the per-seed base drive (`~0.3..2.5`).
+    drive_mul: f32,
+    /// Murk ↔ openness `0..1`: scales the filter cutoff sweep (low = darker/muffled).
+    tone: f32,
 }
 
 impl Drone {
@@ -217,12 +224,28 @@ impl Drone {
             },
             filt_l: Svf::default(),
             filt_r: Svf::default(),
-            drive: rng.range(2.6, 4.2),
+            base_drive: rng.range(2.6, 4.2),
             res: rng.range(0.35, 0.6),
             // Headroom so the resonant filter's overshoot doesn't slam the hard clamp
             // (that clips harshly — unlike the musical tanh saturation upstream).
             master: 0.68,
+            vol: 0.9,
+            drive_mul: 1.0,
+            tone: 0.4,
         }
+    }
+
+    /// Master volume, `0..1`.
+    pub fn set_volume(&mut self, v: f32) {
+        self.vol = v.clamp(0.0, 1.0);
+    }
+    /// Heaviness: multiplier on the per-seed distortion drive (clamped `0.3..2.5`).
+    pub fn set_drive(&mut self, m: f32) {
+        self.drive_mul = m.clamp(0.3, 2.5);
+    }
+    /// Murk ↔ openness, `0..1` (low = darker/muffled, high = brighter).
+    pub fn set_tone(&mut self, t: f32) {
+        self.tone = t.clamp(0.0, 1.0);
     }
 
     /// Render the next stereo frame (`[left, right]`), each in roughly `[-1, 1]`.
@@ -237,18 +260,31 @@ impl Drone {
             r += s * p.sin();
         }
         // Tame the summed level before distortion, then waveshape hard for the doom grit.
+        // Heaviness scales the drive.
         let pre = 0.42;
-        let dl = (self.drive * l * pre).tanh();
-        let dr = (self.drive * r * pre).tanh();
+        let drive = self.base_drive * self.drive_mul;
+        let dl = (drive * l * pre).tanh();
+        let dr = (drive * r * pre).tanh();
 
-        let cutoff = self.cutoff_lfo.step(self.sr);
+        // Murk: scale the cutoff sweep (tone 0 → ×0.5 darker, 1 → ×2.5 brighter).
+        let tone_scale = 0.5 + self.tone * 2.0;
+        let cutoff = (self.cutoff_lfo.step(self.sr) * tone_scale).clamp(60.0, self.sr * 0.45);
         let amp = self.amp_lfo.step(self.sr);
         // Step the second LFO read for R off the same value (mono modulation, stereo audio).
         let fl = self.filt_l.lowpass(dl, cutoff, self.res, self.sr);
         let fr = self.filt_r.lowpass(dr, cutoff, self.res, self.sr);
 
-        let g = self.master * amp;
+        let g = self.master * amp * self.vol;
         [(fl * g).clamp(-1.0, 1.0), (fr * g).clamp(-1.0, 1.0)]
+    }
+
+    /// Fill an interleaved stereo buffer (`L, R, L, R, …`) — for live audio callbacks.
+    pub fn render_block(&mut self, out: &mut [f32]) {
+        for frame in out.chunks_exact_mut(2) {
+            let [l, r] = self.next_frame();
+            frame[0] = l;
+            frame[1] = r;
+        }
     }
 
     /// Render `seconds` of audio into an interleaved stereo `Vec<f32>` (L, R, L, R, …).

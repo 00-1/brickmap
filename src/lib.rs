@@ -16,6 +16,9 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
 pub mod audio;
+// Native (desktop) audio output via cpal; web uses Web Audio, Android is a follow-up.
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub mod audio_native;
 pub mod edit;
 pub mod foliage;
 pub mod gamepad;
@@ -112,6 +115,9 @@ struct App {
     undo: Vec<edit::Edit>,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
+    /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    audio: Option<audio_native::AudioEngine>,
 }
 
 impl App {
@@ -230,6 +236,15 @@ impl App {
             }
             KeyCode::BracketRight => {
                 self.palette_dither = (self.palette_dither + 0.25).min(2.0);
+                return true;
+            }
+            // Audio (E16): M mutes/unmutes the drone (desktop only).
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            KeyCode::KeyM => {
+                if let Some(a) = &self.audio {
+                    let on = a.toggle();
+                    log::info!("audio {}", if on { "on" } else { "muted" });
+                }
                 return true;
             }
             _ => {}
@@ -1079,6 +1094,10 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         seed: view.seed,
         undo: Vec::new(),
         pad: gamepad::Pad::new(),
+        // Start the drone on the world seed so the dirge matches the world (native; a no-op
+        // None if there's no audio device). Web starts audio from the page on first tap.
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        audio: audio_native::AudioEngine::start(view.seed),
     }
 }
 
@@ -1318,6 +1337,56 @@ pub mod controls {
         static PENDING_SEED: Cell<Option<u32>> = const { Cell::new(None) };
         /// The app's current share string, refreshed each HUD tick for "copy link".
         static CURRENT_SHARE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+        /// The live doom-drone (E16). The page's Web Audio ScriptProcessor pulls blocks via
+        /// `audio_block`; sliders nudge its params. `None` until `audio_init` (on first tap).
+        static AUDIO: std::cell::RefCell<Option<crate::audio::Drone>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// (Re)create the drone for `seed` at the audio context's sample rate. Called from the
+    /// page when the user enables audio (a user gesture, required to start a Web AudioContext)
+    /// and whenever the world seed changes, so the dirge matches the world.
+    #[wasm_bindgen]
+    pub fn audio_init(seed: u32, sample_rate: f32) {
+        AUDIO.with(|a| *a.borrow_mut() = Some(crate::audio::Drone::new(seed, sample_rate as u32)));
+    }
+
+    /// Render `frames` interleaved stereo samples (L, R, …) for the Web Audio callback.
+    /// Silent (zeros) until `audio_init`.
+    #[wasm_bindgen]
+    pub fn audio_block(frames: usize) -> Vec<f32> {
+        let mut out = vec![0.0f32; frames * 2];
+        AUDIO.with(|a| {
+            if let Some(d) = a.borrow_mut().as_mut() {
+                d.render_block(&mut out);
+            }
+        });
+        out
+    }
+
+    /// Live audio params from the page sliders.
+    #[wasm_bindgen]
+    pub fn set_audio_volume(v: f32) {
+        AUDIO.with(|a| {
+            if let Some(d) = a.borrow_mut().as_mut() {
+                d.set_volume(v);
+            }
+        });
+    }
+    #[wasm_bindgen]
+    pub fn set_audio_drive(m: f32) {
+        AUDIO.with(|a| {
+            if let Some(d) = a.borrow_mut().as_mut() {
+                d.set_drive(m);
+            }
+        });
+    }
+    #[wasm_bindgen]
+    pub fn set_audio_tone(t: f32) {
+        AUDIO.with(|a| {
+            if let Some(d) = a.borrow_mut().as_mut() {
+                d.set_tone(t);
+            }
+        });
     }
 
     /// Seed the control cells from a restored view on startup (so the page reflects it).

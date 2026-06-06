@@ -130,6 +130,17 @@
       <label>dither <input type="range" id="pal-dither" min="0" max="2" step="0.25" value="1" /></label>
     </div>
 
+    <!-- Drone audio (E16): per-seed doom-drone. Must be enabled by a tap (browser autoplay
+         policy). Sliders nudge the live synth: volume, heaviness (distortion), murk (filter). -->
+    <div
+      style="display: flex; gap: 18px; flex-wrap: wrap; align-items: center; justify-content: center; color: #8a93a8; font-size: 12px; margin-top: 8px"
+    >
+      <label><input type="checkbox" id="aud-on" /> 🔊 drone</label>
+      <label>volume <input type="range" id="aud-vol" min="0" max="1" step="0.02" value="0.7" /></label>
+      <label>heaviness <input type="range" id="aud-drive" min="0.3" max="2.5" step="0.05" value="1" /></label>
+      <label>murk <input type="range" id="aud-murk" min="0" max="1" step="0.02" value="0.4" /></label>
+    </div>
+
     <!-- Feature toggles (D6): checkboxes flip renderer features via wasm. The HUD
          (top-left) shows what's off. Generated from the label list below. -->
     <div
@@ -179,6 +190,11 @@
         set_seed_text,
         seed_of_the_day,
         current_share,
+        audio_init,
+        audio_block,
+        set_audio_volume,
+        set_audio_drive,
+        set_audio_tone,
       } from "./pkg/brickmap.js?v=__CACHE_BUST__";
       // Palette colour counts, indexed like PALETTES in palette.rs (mono is 4, rest 5).
       const PALETTE_LEN = [4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
@@ -250,6 +266,53 @@
           [palOn, palCount, palDither].forEach((el) =>
             el.addEventListener("input", pushPalette));
 
+          // Drone audio (E16). Web Audio needs a user gesture to start, so the synth only
+          // spins up when the "drone" checkbox is ticked. A ScriptProcessorNode pulls
+          // interleaved stereo blocks straight from the wasm synth each callback.
+          let audioCtx = null, audioNode = null;
+          const audOn = document.getElementById("aud-on");
+          const audVol = document.getElementById("aud-vol");
+          const audDrive = document.getElementById("aud-drive");
+          const audMurk = document.getElementById("aud-murk");
+          // Resolve the current world seed (so the dirge matches the world) from the share.
+          const audioSeed = () => {
+            const m = /(?:^|&)s=([^&]+)/.exec(current_share() || "");
+            const s = m ? parseInt(m[1], 10) : parseInt(seedInput.value, 10);
+            return Number.isFinite(s) ? s >>> 0 : 1337;
+          };
+          const pushAudioParams = () => {
+            set_audio_volume(parseFloat(audVol.value));
+            set_audio_drive(parseFloat(audDrive.value));
+            set_audio_tone(parseFloat(audMurk.value));
+          };
+          function startAudio() {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            if (!audioCtx) audioCtx = new Ctx();
+            audioCtx.resume();
+            audio_init(audioSeed(), audioCtx.sampleRate);
+            pushAudioParams();
+            audioNode = audioCtx.createScriptProcessor(2048, 0, 2);
+            audioNode.onaudioprocess = (e) => {
+              const out = e.outputBuffer;
+              const frames = out.length;
+              const buf = audio_block(frames); // interleaved L,R,L,R…
+              const L = out.getChannelData(0), R = out.getChannelData(1);
+              for (let i = 0; i < frames; i++) { L[i] = buf[2 * i]; R[i] = buf[2 * i + 1]; }
+            };
+            audioNode.connect(audioCtx.destination);
+          }
+          function stopAudio() {
+            if (audioNode) { audioNode.disconnect(); audioNode.onaudioprocess = null; audioNode = null; }
+          }
+          audOn.addEventListener("change", () => audOn.checked ? startAudio() : stopAudio());
+          [audVol, audDrive, audMurk].forEach((el) =>
+            el.addEventListener("input", pushAudioParams));
+          // Re-seed the dirge when the world seed changes (only if audio is live).
+          window.__reinitAudio = (s) => {
+            if (audioCtx && audioNode) audio_init(s >>> 0, audioCtx.sampleRate), pushAudioParams();
+          };
+
           // Build the feature-toggle checkboxes, reflecting any restored toggle mask.
           // Default mask: everything on except melt (bit 12); sun (bit 13) on → 0x2fff.
           const mask = hp.t !== undefined ? parseInt(hp.t, 16) : 0x2fff;
@@ -270,17 +333,17 @@
           if (hp.s !== undefined) seedInput.value = hp.s;
           const applyText = () => {
             const s = set_seed_text(seedInput.value);
-            if (seedInput.value.trim() !== "") flash("seed " + s);
+            if (seedInput.value.trim() !== "") { flash("seed " + s); window.__reinitAudio(s); }
           };
           document.getElementById("seed-go").addEventListener("click", applyText);
           seedInput.addEventListener("keydown", (e) => { if (e.key === "Enter") applyText(); });
           document.getElementById("seed-random").addEventListener("click", () => {
             const s = (Math.floor(Math.random() * 4294967296)) >>> 0;
-            set_seed(s); seedInput.value = s; flash("seed " + s);
+            set_seed(s); seedInput.value = s; flash("seed " + s); window.__reinitAudio(s);
           });
           document.getElementById("seed-daily").addEventListener("click", () => {
             const s = seed_of_the_day(new Date().toISOString().slice(0, 10));
-            set_seed(s); seedInput.value = s; flash("daily " + s);
+            set_seed(s); seedInput.value = s; flash("daily " + s); window.__reinitAudio(s);
           });
           document.getElementById("copy-link").addEventListener("click", () => {
             const url = location.origin + location.pathname + "#" + current_share();

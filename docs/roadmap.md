@@ -270,8 +270,11 @@ foliage pivot, since it's small, deterministic, and high-delight.)*
     detuned oscillators (sub + body + power-chord fifth + faint Phrygian ♭2) → hard
     waveshaping → a slowly-swept resonant low-pass → slow amplitude swell. Verified by
     rendering to WAV (`cargo run --bin drone`) + spectral check (dark, sub-heavy, breathing).
-  - ⏳ **Playback I/O**: cpal (native) / Web Audio (web) feeding `Drone::next_frame`; then
-    the reactive layer (speed/biome → cutoff/level tweens) + voice cap + autoplay-unlock.
+  - ✅ **Playback I/O**: live in-game — Web Audio (ScriptProcessor pulling wasm synth blocks,
+    autoplay-unlocked on first tap) + cpal (native) feeding `Drone::next_frame`. In-game
+    controls: volume / heaviness / murk sliders (web) + mute key M (native); the dirge
+    re-seeds with the world. (Android audio still a follow-up.)
+  - ⏳ **Reactive layer**: speed/biome/weather → cutoff/level tweens; voice cap; one FDN reverb.
 
 ### M7 — Distance dissolve (LOD that's also the look) 🛠
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
