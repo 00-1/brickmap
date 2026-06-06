@@ -57,15 +57,36 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: cargo apk build --lib
 
-      - name: Locate + stage the APK
+      - name: Align, re-sign (v1+v2+v3) + stage the APK
         id: apk
         shell: bash
         run: |
-          apk="$(find target -name '*.apk' | head -n1)"
+          set -euo pipefail
+          # Prefer cargo-apk's final output under */apk/, else any apk.
+          apk="$(find target -path '*/apk/*.apk' | head -n1 || true)"
+          [ -z "$apk" ] && apk="$(find target -name '*.apk' | head -n1 || true)"
           if [ -z "$apk" ]; then echo "no APK produced"; exit 1; fi
+          echo "cargo-apk produced: $apk"
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          echo "build-tools: $BT"
+          # cargo-apk's debug APK can be rejected by modern Android as an "invalid
+          # package" (no zipalign / only a v1 signature). zipalign + apksigner re-sign
+          # (v1+v2+v3) with a debug keystore makes it installable.
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
           mkdir -p dist
-          cp "$apk" dist/brickmap-android-arm64.apk
-          echo "built: $apk"
+          "$BT/zipalign" -f -p 4 "$apk" aligned.apk
+          "$BT/apksigner" sign \
+            --ks "$HOME/.android/debug.keystore" --ks-pass pass:android \
+            --ks-key-alias androiddebugkey --key-pass pass:android \
+            --out dist/brickmap-android-arm64.apk aligned.apk
+          "$BT/apksigner" verify --verbose dist/brickmap-android-arm64.apk
+          ls -la dist/brickmap-android-arm64.apk
 
       - name: Upload artifact (also downloadable from this run)
         uses: actions/upload-artifact@v4
