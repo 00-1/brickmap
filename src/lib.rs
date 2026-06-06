@@ -16,6 +16,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
 pub mod audio;
+pub mod body;
 // Native (desktop) audio output via cpal; web uses Web Audio, Android is a follow-up.
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub mod audio_native;
@@ -1098,7 +1099,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         palette_index: 11,
         palette_count: 5,
         palette_dither: 1.5,
-        pixel_scale: 1,
+        pixel_scale: 2,
         last_frame: None,
         cursor_locked: false,
         frame_ms_ema: 0.0,
@@ -1346,7 +1347,8 @@ pub mod controls {
         static PALETTE_COUNT: Cell<u32> = const { Cell::new(5) };
         static PALETTE_DITHER: Cell<f32> = const { Cell::new(1.5) };
         /// Internal-resolution divisor (E10 pixel scale): 1 = native, higher = chunkier.
-        static PIXEL_SCALE: Cell<u32> = const { Cell::new(1) };
+        /// Default 2 — the deliberate halftone is part of the house look (slider keeps 1–6).
+        static PIXEL_SCALE: Cell<u32> = const { Cell::new(2) };
         /// Feature-toggle bitmask, one bit per switch. `0xFFF` = bits 0–11 on (cull…foliage),
         /// melt (12) + sun (13) off — the dark, point-lit default.
         static TOGGLES: Cell<u32> = const { Cell::new(0xFFF) };

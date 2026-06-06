@@ -489,6 +489,20 @@ pub fn capture_view(
         })
     });
 
+    // Colossal body demo (E18): an ethereal point-form giant standing on the terrain, drawn
+    // through the same splat pipeline (drift-through, no collision). One point per surface cell.
+    let body_feet = {
+        let gy = crate::worldgen::height(0, 0, crate::WORLD_SEED) as f32;
+        glam::Vec3::new(0.0, gy, 0.0)
+    };
+    let body_points =
+        crate::body::humanoid_points(body_feet, 1.4, [0.60, 0.72, 0.92], crate::WORLD_SEED);
+    let body_vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("body-instances"),
+        contents: bytemuck::cast_slice(&body_points),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+
     // Row pitch must be aligned to 256 bytes for texture-to-buffer copies.
     let unpadded_bpr = width * 4;
     let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -544,6 +558,13 @@ pub fn capture_view(
             pass.set_bind_group(0, &globals_bind_group, &[]);
             pass.set_vertex_buffer(0, buf.slice(..));
             pass.draw(0..6, 0..foliage_all.len() as u32);
+        }
+        // Ethereal colossal body (E18) — same splat pipeline, its own instance buffer.
+        if !body_points.is_empty() {
+            pass.set_pipeline(&splat_pipeline);
+            pass.set_bind_group(0, &globals_bind_group, &[]);
+            pass.set_vertex_buffer(0, body_vbuf.slice(..));
+            pass.draw(0..6, 0..body_points.len() as u32);
         }
         if !particle_instances.is_empty() {
             pass.set_pipeline(&particle_pipeline);

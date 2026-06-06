@@ -321,14 +321,23 @@ a quad per label — negligible.
   same text path so the controls are identical on every platform (the long-promised "no DOM
   UI" step; today web uses HTML controls).
 
-### ✨ E18 — Colossal fallen bodies *(exploration)* ⏳ &nbsp;*(depends on M7 point-LOD)*
-Enormous fallen **human figures as voxel structures** — **visible from afar, overwhelming up
-close** (Shadow-of-the-Colossus / doom-cover energy). Pipeline: source anatomy from a **CC0**
-model (e.g. **MakeHuman**) → an offline **`voxelize` dev tool** (mesh → solid/shell voxel grid
-→ compact baked asset) → placed as a static voxel volume **chunked exactly like terrain**
-(reuses greedy mesh + streaming + culling). **Mesh-near / points-far** via M7's point-cloud
-LOD — the body literally *made of points* at distance — is both the LOD and the look.
-- **Outcome:** a giant body on the horizon resolving into solid, oppressive voxels as you near.
+### ✨ E18 — Colossal bodies *(exploration)* 🛠
+Enormous **human figures** in the world, in **two kinds** (decided 2026-06): **ethereal
+point-forms** you drift through (always points — misty, non-collidable) and **solid voxel
+structures** you explore (Shadow-of-the-Colossus / doom-cover energy, visible afar, overwhelming
+up close).
+- ✅ **Ethereal point-form** (`src/body.rs`): a procedural giant humanoid (capsule/sphere
+  blockout, no assets) → its **surface cells emitted as points** that reuse the splat billboard
+  pipeline (so they glow, palettise, fog, dissolve — and you fly through them, no collision).
+  Deterministic; tested (shell not volume, symmetric, scales). Verified headless: a ~120-tall
+  misty colossus standing over the world, plain and palettised.
+- ⏳ **Solid / explorable kind:** voxelise into chunks + greedy-mesh (mesh-near, points-far via
+  M7) — for the giant you can land on and explore.
+- ⏳ **Real anatomy:** a CC0 model (e.g. **MakeHuman**) → an offline **`voxelize`** dev tool
+  (mesh → solid/shell grid → baked asset), replacing the blockout. Content framing: monument,
+  not gore.
+- ⏳ **Live placement:** rare, seeded colossi in the streamed world (held with text placement).
+- **Outcome:** drift through a ghostly giant of points; later, land on a solid one and explore.
 - **Perf:** a ~300-voxel-tall body is millions of surface voxels — only near chunks mesh, far
   chunks are cheap point sets / voxel mips (bandwidth-bound; chunk-LOD essential).
 - **De-risk first** with a *procedural humanoid blockout* (capsule torso/limbs/head, no assets)
