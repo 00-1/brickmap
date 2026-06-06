@@ -9,18 +9,24 @@ graphical: storing, meshing, culling, and drawing very large voxel worlds fast.
 It is a personal-interest project, so it favours **interesting and correct** over
 shipping speed.
 
-> **Status: the point-cloud forest (E6–E8, E12, E14).** An **endless, streamed**
-> procedural voxel world you fly across — greedy-meshed, palette-compressed, frustum +
-> cave-culled, off-thread (rayon) meshed — now grown into a **point-cloud forest**: a
-> shared splat pipeline draws wind-swept grass, layered undergrowth, and **point-cloud
-> trees** over terrain with **temperature/humidity biomes** (grassland ↔ desert ↔ snow),
-> **domain-warped + ridged** relief, **rivers**, stylised animated **water**, and
-> **3D-noise caves**. Plus **shareable seeds** (type/🎲/daily + copy-link), in-world
-> **voxel editing** (place/break/undo through one command seam — multiplayer groundwork),
-> an opt-in distance-dissolve "melt", baked AO, procedural materials, emissive "fake-GI"
-> crystals, sky/fog, and bloom — on desktop *and* the web, one code path. The look is a
-> deliberate low-fi "expose the tech" pass; see the [look journal](docs/look-journal.md).
-> Next: profiling on real weak hardware (M8b) + multiplayer (N1). See
+> **Status: a dark, grimy, configurable look + per-seed doom audio, over an endless world.**
+> An **endless, streamed** procedural voxel world you fly across — greedy-meshed,
+> palette-compressed, frustum + cave-culled, off-thread (rayon) meshed — with a shared
+> **splat pipeline** for wind-swept grass, undergrowth, and **point-cloud trees**, over
+> **biomes**, **domain-warped + ridged** relief, **rivers**, stylised **water**, and
+> **3D-noise caves**.
+>
+> The identity that *emerged* is low-fi, **"expose the tech"**: a **configurable palette
+> post-process** (20 curated 1–2-hue palettes — a luminance gradient-map with ordered
+> **dithering** that reads as a halftone at low resolution), **deep shadows** with an
+> optional **sun-off, point-lit** mood (coloured emissive crystals the only light), and a
+> per-seed **doom-drone** (Sleep/*Dopesmoker*-flavoured, cross-platform audio). Plus
+> **shareable seeds**, in-world **voxel editing** (one command seam — multiplayer
+> groundwork), an opt-in distance-dissolve "melt", baked AO, procedural materials, sky/fog,
+> and bloom — on desktop, the web, **and a sideloadable Android APK**, one code path. See the
+> [look journal](docs/look-journal.md).
+> Next: in-world **text** + **colossal fallen bodies** (E17/E18), the **pixel-scale** halftone
+> dial, profiling on weak hardware (M8b), multiplayer (N1). See
 > [`docs/roadmap.md`](docs/roadmap.md).
 
 ## North star

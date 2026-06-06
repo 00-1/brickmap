@@ -56,19 +56,28 @@ own thing — the content/visual work from [`design.md`](design.md) §12 — int
 *in place* so they don't get deferred to the end (or lost).
 
 > Legend: ✅ done · 🛠 in progress · ⏳ planned · **✨ = exploration** (the
-> *interesting* bit, not infrastructure; numbered **E1–E16 in build order**) ·
+> *interesting* bit, not infrastructure; numbered **E1–E18 in build order**) ·
 > **D = dev tooling & process** (cross-cutting; see the D-series below). More
 > exploration candidates (researched and fit-graded) live in
 > [`exploration-backlog.md`](exploration-backlog.md).
 
-> **Aesthetic direction (set 2026-06): the point-cloud / foliage pivot.** We're steering
-> the look toward a **lush, foliage-heavy, point-cloud forest** (refs: capslpop voxel
-> splatting, Superbien). The remaining rungs form one arc around a shared **splat render
-> path**: **E6** builds it + ground foliage, **E7** is the forest + atmosphere, and **M7**
-> reuses it to dissolve distant terrain into points (LOD that's also the look). Rationale
-> + the cheap recipe + what to avoid are in
-> [`research-points-splatting.md`](research-points-splatting.md). Meshed cubes stay the
-> near-field base; splats are the layer on top (that's where points win on weak hardware).
+> **Aesthetic identity (resolved 2026-06).** The look the project *found* — and committed to
+> — is **dark, grimy, low-fi, "exposing the tech."** Its spine is the **configurable palette**
+> (E10): the finished frame is mapped onto a small restrained ramp (20 curated 1–2-hue
+> palettes) with **ordered (Bayer) dithering**, which at low internal resolution reads as a
+> **halftone dot-screen**. It pairs with **deep shadows + a dim ambient floor**, an optional
+> **sun-off, point-lit mood** (the world lit only by coloured emissive crystals), and a
+> per-seed **doom-drone** (E16, "Sleep — *Dopesmoker*"). The palette + dither stack is what
+> made the look click (it "saved the project aesthetically").
+>
+> The earlier target — a **lush, bright point-cloud forest** (capslpop / Superbien) — supplied
+> the **tech spine that survives**: the shared **splat render path** (E6 ground foliage, E7
+> forest, M7 mesh→points dissolve;
+> [`research-points-splatting.md`](research-points-splatting.md)). But the *mood* resolved far
+> darker — foliage and points are simply recoloured by the palette. Meshed cubes stay the
+> near-field base; splats/points are the layer on top (where points win on weak hardware).
+> **Treat the splat path + the palette/dither/lighting/doom-audio stack as the identity; new
+> content (text, colossal bodies) plugs into it.**
 
 ### M0 — Foundation & rig ✅
 Planning docs, the cross-platform render spike (one cube, desktop + web), CI, and
@@ -141,6 +150,10 @@ and distance fog. The highest beauty-per-cycle on the backlog
 - **Distance fog landed early** (pulled forward to hide the M3 streaming load edge);
   the rest — ambient, sky, bloom, emissive crystals, flood-fill light — landed as
   slices 1–4. Deferred: cross-chunk light, day–night shift, view-ray sky.
+- **Refined later (2026-06), folded into the E10 aesthetic spine:** deepened shadows + a
+  dim ambient floor (wider light→dark range), a `sun` toggle (a dark **point-lit-only**
+  mood), and **varied-colour emissive crystals** at higher density — so a sun-off world
+  reads as scattered pools of coloured light.
 - **Outcome:** mood and glow — what makes "pretty voxel" demos pretty, faked without
   ray tracing.
 - **Why here:** builds on M4's materials, and implements the "lighting data path"
@@ -224,15 +237,24 @@ sky; and **procedural ambient audio** (wind/birds/water, web + native).
 - **Outcome:** a living, weathered, audible world — the mood, coherent across systems.
 - **De-risks:** coupling many effects to one cheap state; keeping water off the re-mesh path.
 
-### ✨ E10 — Palette & aesthetic spine *(exploration)* ⏳
-A second aesthetic pass (backlog §I): **indexed palette + colour cycling** (render to a
-scalar index → tiny palette LUT; structural quantization, a bandwidth *win*, reskin by
-swapping a strip), **depth/normal "ink" outlines** (voxel creases as a blueprint grid), a
-**deliberate low-res internal buffer** (aesthetic + the biggest perf dial), banded
-lighting folded into the index, and a **G-buffer-as-art** mode.
-- **Outcome:** a coherent "the renderer only has N colours, a pixel grid, and a depth/
-  normal buffer — and it shows you all three" identity.
-- **De-risks:** the funnel-everything-through-an-index discipline (which *is* the look).
+### ✨ E10 — Palette & aesthetic spine *(exploration)* 🛠
+The aesthetic pass that **became the identity** (backlog §I; see the aesthetic note above).
+- ✅ **Configurable palette post-process** — the finished frame is mapped onto a small
+  restrained ramp by **luminance** (a tonal gradient-map, sRGB-correct), with **Bayer
+  ordered dithering** to fake extra shades (even 2–3 colours read as a smooth/halftone
+  gradient). **20 curated 1–2-hue palettes** (dark-leaning; two-hue ones pop the point
+  lights in a complementary accent). In-engine + web controls (palette / colour-count /
+  dither). *(This is a post-process map, not the originally-sketched render-to-index; the
+  indexed-**storage** bandwidth win remains an optional perf refinement under M8.)*
+- ✅ **Deep shadows + sun-off point-lighting + doom audio** — see E3 refinements and E16;
+  together with the palette they *are* the look.
+- ⏳ **Deliberate low-res internal buffer (the "pixel-scale" dial)** — render small + upscale
+  so the dithered **halftone is intentional and cross-platform** (today it only appears
+  incidentally when a device upscales the canvas). Also the **biggest single perf dial**
+  (shared with M8's dynamic resolution). **The most-requested next aesthetic knob.**
+- ⏳ Depth/normal **"ink" outlines** (voxel creases as a blueprint grid) and a
+  **G-buffer-as-art** mode.
+- **De-risks:** done — funnelling the frame through a tiny palette + dither *is* the look.
 
 ### ✨ E11 — More dynamic voxels *(exploration)* ⏳
 Extend E5 onto a proper substrate (backlog §J): **block/Margolus CA** (free
@@ -243,10 +265,9 @@ then **pressure water** (compressible-mass; rendered as a separate vertex-displa
 - **Outcome:** water that finds its level, fire that spreads, things that grow and crumble.
 - **De-risks:** re-mesh churn (active-set + off-thread mesher + don't-mesh-water absorb it).
 
-### ✨ Features (E12–E16) — from the 3rd research pass (backlog §L–P)
+### ✨ Features (E12–E18) — from the research passes (backlog §L–P) + 2026-06 ideas
 User-facing features, all rated *great fit* because they reuse machinery we already have.
-*(Build order is fluid — **E12 seeds is being pulled forward to build next**, ahead of the
-foliage pivot, since it's small, deterministic, and high-delight.)*
+*(Build order is fluid. E12 ✅, E14/E16 🛠; E17–E18 are the new 2026-06 directions.)*
 - **✨ E12 — Shareable seeds & permalinks** ✅ — runtime seed + a `share` codec (URL fragment
   `#s=…&…`, web + native); seed input / 🎲 random / 📅 seed-of-the-day / copy-link / copy-seed;
   restore on load; seed on the HUD. Golden voxel-hash test guards same-target determinism;
@@ -276,6 +297,33 @@ foliage pivot, since it's small, deterministic, and high-delight.)*
     re-seeds with the world. (Android audio still a follow-up.)
   - ⏳ **Reactive layer**: speed/biome/weather → cutoff/level tweens; voice cap; one FDN reverb.
 
+### ✨ E17 — In-world text *(exploration)* ⏳
+Render text **inside the 3D world**, cheaply, by reusing the bitmap-font HUD rasteriser + the
+splat billboard path: a string → a small texture → world-space quads (flat-on-surface or
+camera-facing). **An existing writing system** (decided 2026-06 — *not* procedural runes):
+inscriptions, markers, signage. Lo-fi by construction; **emissive glyphs become point lights**;
+the palette + dither recolour and crumble them like everything else. Cost: one tiny texture +
+a quad per label — negligible.
+- **Outcome:** glowing text/inscriptions scattered in the dark world, on-aesthetic.
+- **Substrate for an eventual in-engine UI** — moving the toggles/sliders off the DOM onto the
+  same text path so the controls are identical on every platform (the long-promised "no DOM
+  UI" step; today web uses HTML controls).
+
+### ✨ E18 — Colossal fallen bodies *(exploration)* ⏳ &nbsp;*(depends on M7 point-LOD)*
+Enormous fallen **human figures as voxel structures** — **visible from afar, overwhelming up
+close** (Shadow-of-the-Colossus / doom-cover energy). Pipeline: source anatomy from a **CC0**
+model (e.g. **MakeHuman**) → an offline **`voxelize` dev tool** (mesh → solid/shell voxel grid
+→ compact baked asset) → placed as a static voxel volume **chunked exactly like terrain**
+(reuses greedy mesh + streaming + culling). **Mesh-near / points-far** via M7's point-cloud
+LOD — the body literally *made of points* at distance — is both the LOD and the look.
+- **Outcome:** a giant body on the horizon resolving into solid, oppressive voxels as you near.
+- **Perf:** a ~300-voxel-tall body is millions of surface voxels — only near chunks mesh, far
+  chunks are cheap point sets / voxel mips (bandwidth-bound; chunk-LOD essential).
+- **De-risk first** with a *procedural humanoid blockout* (capsule torso/limbs/head, no assets)
+  to prove placement + the mesh→points dissolve before sourcing real anatomy.
+- **Open decisions:** model source/licence (recommend MakeHuman CC0); content framing
+  (environmental art / monument, not gore).
+
 ### M7 — Distance dissolve (LOD that's also the look) 🛠
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
 value on a surface world), dissolve distant **terrain into points** via E6's splat
@@ -290,8 +338,13 @@ sidestepping LOD seams, while extending the point-cloud look to the whole world.
   A/B on the reference iGPU.)*
 - **Landed (look):** an opt-in `melt` toggle — terrain + foliage stipple into a pixel haze
   toward the horizon via the shared screen-locked Bayer threshold (default off; on-thesis).
-- **Deferred (perf):** the bounded-cost half — decimating distant chunks into actual point
-  sets so *primitives* drop with distance (today fragments are discarded, geometry isn't).
+- **Deferred (perf) → a general point-cloud render mode:** decimate distant chunks (and any
+  voxel volume) into actual **point sets** so *primitives* drop with distance — today
+  fragments are discarded but geometry isn't. Points are **sized camera-facing billboards**
+  (any size; true 1px `PointList` points are size-locked in wgpu, so we use billboards),
+  shrinking with distance — cheap when small/far, the killer being overdraw when big/near.
+  This same mode is the **far-LOD substrate for E18 colossal bodies** (mesh-near, points-far)
+  and the home for "clouds of small pixels".
 
 ### M8 — Hit the budget (perf systems + profiling) 🛠
 Two halves. **(a) Engine perf systems** (doable now, no special hardware; from research
