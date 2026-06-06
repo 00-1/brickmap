@@ -401,6 +401,11 @@ wire the lighting data path, record real numbers. *(Skip: depth pre-pass, Hi-Z �
   Discard` (free tiler bandwidth) — verified byte-identical headless. *(Shared static quad
   index buffer was evaluated and **rejected**: the greedy mesher flips each quad's diagonal
   by AO, so a fixed index pattern would regress the AO look.)*
+- **Landed (a, streaming hitch):** the periodic chunk-crossing stall (web inline-meshed a whole
+  ring at once — measured ~11 ms/chunk × 4 = ~43 ms spikes) is fixed by **(i)** a generated-
+  section cache so each section is built once, not 5× as a neighbour, and **(ii)** a per-frame
+  **time budget** on inline meshing so a ring spreads over frames instead of one freeze. (Native
+  meshes off-thread already.)
 - **Blocked (b):** profiling needs the reference iGPU + phone to measure — logged in
   `docs/unattended-questions.md` for when the hardware's available.
 

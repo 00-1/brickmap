@@ -77,7 +77,7 @@ impl Default for Toggles {
             block_light: true,
             emissive: true,
             relief: true,
-            sand: true,
+            sand: false, // off by default — the falling-sand sim's re-meshing costs FPS
             foliage: true,
             melt: false, // opt-in (M7 distance dissolve)
             sun: false,  // default to the dark, point-lit mood (the resolved identity)

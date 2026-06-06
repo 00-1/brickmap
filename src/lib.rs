@@ -589,7 +589,20 @@ fn mesh_chunk(coord: ChunkCoord, center: &Section, seed: u32) -> ChunkInstance {
             Some(&north),
         ],
     };
-    let mesh = greedy_mesh_section_with(center, &neighbors);
+    mesh_chunk_core(coord, center, &neighbors, seed)
+}
+
+/// Mesh `center` against pre-built `neighbors` + scatter foliage + bake connectivity. The
+/// shared core of [`mesh_chunk`] and the cached web builder (so neither regenerates sections
+/// the other already has).
+fn mesh_chunk_core(
+    coord: ChunkCoord,
+    center: &Section,
+    neighbors: &Neighbors,
+    seed: u32,
+) -> ChunkInstance {
+    let (cx, _cy, cz) = coord;
+    let mesh = greedy_mesh_section_with(center, neighbors);
     let s = Section::SIZE as f32;
     // Biome lushness varies slowly (E8), so sample it once at the chunk centre to scale
     // foliage density: wet biomes thick, dry ones thin (deserts/snow have no grass at all).
@@ -608,6 +621,40 @@ fn mesh_chunk(coord: ChunkCoord, center: &Section, seed: u32) -> ChunkInstance {
         graph: connectivity(center),
         foliage,
     }
+}
+
+/// A cache of generated sections keyed by `(cx, cz)` (the world is one chunk layer), so the
+/// web meshing path generates each section once instead of regenerating its 4 neighbours every
+/// time — ~60% of the per-chunk cost. Used by the web `ChunkLoader::drain`.
+#[cfg(any(target_arch = "wasm32", test))]
+type SectionCache = std::collections::HashMap<(i32, i32), Section>;
+
+/// Build a chunk's [`ChunkInstance`], pulling its own + neighbour sections from `cache`
+/// (generating + caching on a miss). The big web streaming win — see [`SectionCache`].
+#[cfg(any(target_arch = "wasm32", test))]
+fn build_chunk_instance_cached(
+    coord: ChunkCoord,
+    seed: u32,
+    cache: &mut SectionCache,
+) -> ChunkInstance {
+    let (cx, _cy, cz) = coord;
+    for (dx, dz) in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)] {
+        cache
+            .entry((cx + dx, cz + dz))
+            .or_insert_with(|| worldgen::generate_section(cx + dx, cz + dz, seed));
+    }
+    let center = &cache[&(cx, cz)];
+    let neighbors = Neighbors {
+        faces: [
+            cache.get(&(cx - 1, cz)),
+            cache.get(&(cx + 1, cz)),
+            None,
+            None,
+            cache.get(&(cx, cz - 1)),
+            cache.get(&(cx, cz + 1)),
+        ],
+    };
+    mesh_chunk_core(coord, center, &neighbors, seed)
 }
 
 /// The pure off-thread streaming worker: regenerate a chunk from the seed and mesh it.
@@ -634,6 +681,9 @@ struct ChunkLoader {
     rx: std::sync::mpsc::Receiver<(u64, ChunkInstance)>,
     #[cfg(target_arch = "wasm32")]
     queue: std::collections::VecDeque<ChunkCoord>,
+    /// Generated-section cache so the inline web mesher doesn't regenerate neighbours 5×.
+    #[cfg(target_arch = "wasm32")]
+    cache: SectionCache,
 }
 
 impl ChunkLoader {
@@ -650,6 +700,8 @@ impl ChunkLoader {
             rx,
             #[cfg(target_arch = "wasm32")]
             queue: std::collections::VecDeque::new(),
+            #[cfg(target_arch = "wasm32")]
+            cache: SectionCache::new(),
         }
     }
 
@@ -668,7 +720,10 @@ impl ChunkLoader {
         self.epoch += 1;
         self.pending.clear();
         #[cfg(target_arch = "wasm32")]
-        self.queue.clear();
+        {
+            self.queue.clear();
+            self.cache.clear();
+        }
     }
 
     /// Queue a chunk to be meshed. Native: dispatch a rayon job. Web: enqueue.
@@ -709,13 +764,28 @@ impl ChunkLoader {
             }
         }
         #[cfg(target_arch = "wasm32")]
-        for _ in 0..budget {
-            match self.queue.pop_front() {
-                Some(coord) => {
-                    self.pending.remove(&coord);
-                    out.push(build_chunk_instance(coord, self.seed));
+        {
+            // Mesh inline, but cap the work this frame by a *time* budget (not just a count):
+            // a chunk crossing queues a whole ring, and meshing them all at once is the
+            // ~1–2 s periodic hitch. The section cache makes each chunk cheaper too.
+            let start = web_time::Instant::now();
+            while out.len() < budget {
+                let Some(coord) = self.queue.pop_front() else {
+                    break;
+                };
+                self.pending.remove(&coord);
+                out.push(build_chunk_instance_cached(
+                    coord,
+                    self.seed,
+                    &mut self.cache,
+                ));
+                if start.elapsed().as_secs_f32() * 1000.0 >= STREAM_MESH_BUDGET_MS {
+                    break;
                 }
-                None => break,
+            }
+            // Bound the cache (rare; ~150–200 live around the camera).
+            if self.cache.len() > 600 {
+                self.cache.clear();
             }
         }
         out
@@ -1271,8 +1341,12 @@ const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
 /// crossing structure cells spreads the heavy point/mesh generation instead of hitching.
 const STRUCTURE_GEN_BUDGET: u32 = 1;
 /// Finished meshes to upload to the GPU per frame (bounds main-thread upload work, and
-/// on web bounds inline meshing). M6.
+/// on web caps inline meshing alongside the time budget). M6.
 const STREAM_UPLOADS: usize = 4;
+/// Web only: max wall-time (ms) spent meshing chunks inline in one frame, so crossing a chunk
+/// boundary (which queues a ring) spreads over frames instead of a single ~1–2 s hitch.
+#[cfg(target_arch = "wasm32")]
+const STREAM_MESH_BUDGET_MS: f32 = 5.0;
 
 /// Ground-foliage density (E6): target splats per grass column (hash-thinned per
 /// column for a natural look). Bounded by the stream radius + per-chunk grass area.
@@ -1488,9 +1562,9 @@ pub mod controls {
         /// Internal-resolution divisor (E10 pixel scale): 1 = native, higher = chunkier.
         /// Default 2 — the deliberate halftone is part of the house look (slider keeps 1–6).
         static PIXEL_SCALE: Cell<u32> = const { Cell::new(2) };
-        /// Feature-toggle bitmask, one bit per switch. `0xFFF` = bits 0–11 on (cull…foliage),
-        /// melt (12) + sun (13) off — the dark, point-lit default.
-        static TOGGLES: Cell<u32> = const { Cell::new(0xFFF) };
+        /// Feature-toggle bitmask, one bit per switch. `0xBFF` = bits 0–11 on except sand (10),
+        /// with melt (12) + sun (13) off — the dark, point-lit default; sand off (sim costs FPS).
+        static TOGGLES: Cell<u32> = const { Cell::new(0xBFF) };
         /// A seed change requested from the page, consumed by the app next frame.
         static PENDING_SEED: Cell<Option<u32>> = const { Cell::new(None) };
         /// The app's current share string, refreshed each HUD tick for "copy link".
@@ -1670,6 +1744,52 @@ pub mod controls {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "timing probe, run explicitly with --ignored --nocapture"]
+    fn time_build_chunk_instance() {
+        // Warm up, then time the full per-chunk web streaming cost (generate the chunk + its
+        // 4 neighbours, greedy-mesh, scatter foliage, connectivity).
+        for c in 0..8 {
+            std::hint::black_box(build_chunk_instance((c, 0, 0), WORLD_SEED));
+        }
+        let n = 64;
+        let t = std::time::Instant::now();
+        for c in 0..n {
+            std::hint::black_box(build_chunk_instance((c, 0, c * 3), WORLD_SEED));
+        }
+        let per = t.elapsed().as_secs_f64() * 1000.0 / n as f64;
+        eprintln!("build_chunk_instance: {per:.2} ms/chunk  → {STREAM_UPLOADS}/frame = {:.1} ms/frame burst", per * STREAM_UPLOADS as f64);
+
+        // Breakdown: a single section generate vs the mesh+foliage.
+        let t = std::time::Instant::now();
+        for c in 0..n {
+            std::hint::black_box(worldgen::generate_section(c, c * 3, WORLD_SEED));
+        }
+        let gen = t.elapsed().as_secs_f64() * 1000.0 / n as f64;
+        eprintln!("  generate_section: {gen:.2} ms each  (build regenerates 5: self + 4 neighbours = {:.1} ms)", gen * 5.0);
+
+        // The fix: a shared section cache (the web path), so each section is generated once.
+        let mut cache = SectionCache::new();
+        for c in 0..8 {
+            std::hint::black_box(build_chunk_instance_cached(
+                (c, 0, 0),
+                WORLD_SEED,
+                &mut cache,
+            ));
+        }
+        cache.clear();
+        let t = std::time::Instant::now();
+        for c in 0..n {
+            std::hint::black_box(build_chunk_instance_cached(
+                (c, 0, 0),
+                WORLD_SEED,
+                &mut cache,
+            ));
+        }
+        let cached = t.elapsed().as_secs_f64() * 1000.0 / n as f64;
+        eprintln!("  build_chunk_instance_cached (shared cache, web path): {cached:.2} ms/chunk  ({:.0}% of uncached)", cached / per * 100.0);
+    }
 
     #[test]
     fn loader_meshes_a_chunk_off_thread() {

@@ -329,9 +329,9 @@
           }
 
           // Build the feature-toggle checkboxes, reflecting any restored toggle mask.
-          // Default mask 0xfff: bits 0–11 on (cull…foliage); melt (12) + sun (13) off — the
-          // dark, point-lit house default.
-          const mask = hp.t !== undefined ? parseInt(hp.t, 16) : 0xfff;
+          // Default mask 0xbff: bits 0–11 on except sand (10); melt (12) + sun (13) off — the
+          // dark, point-lit house default, sand off (its sim costs FPS).
+          const mask = hp.t !== undefined ? parseInt(hp.t, 16) : 0xbff;
           const box = document.getElementById("toggles");
           TOGGLES.forEach((name, i) => {
             const label = document.createElement("label");
