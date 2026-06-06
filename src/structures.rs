@@ -137,6 +137,25 @@ fn compose(h: u32) -> (String, Script, f32, [f32; 3]) {
     (s, script, height, color)
 }
 
+/// A monument inscription for a colossus (E17×E18): a glowing label at the giant's base, so the
+/// fallen giants read as ancient *labelled* monuments. Composed from the colossus's own seed
+/// (a different salt than the grid markers), a touch taller/brighter than a scattered marker.
+pub fn colossus_label(p: &Placement) -> Inscription {
+    let (text, script, _h, color) = compose(p.seed ^ 0x00C0_1055);
+    Inscription {
+        cell: (
+            (p.pos.x / CELL).floor() as i32,
+            (p.pos.z / CELL).floor() as i32,
+        ),
+        // Float a few blocks above the giant's feet so it reads as a plaque at the base.
+        pos: p.pos + Vec3::new(0.0, 3.0, 0.0),
+        text,
+        script,
+        height: 1.8,
+        color,
+    }
+}
+
 /// All inscription markers within `radius` of `cam`, deterministic in `seed`; `ground(x, z)`
 /// floats each just above the surface. Mirrors [`colossi_near`]'s coarse-grid scheme.
 pub fn inscriptions_near(
@@ -207,6 +226,22 @@ mod tests {
         let keys_a: Vec<_> = a.iter().map(cell_key).collect();
         let keys_b: Vec<_> = b.iter().map(cell_key).collect();
         assert_ne!(keys_a, keys_b);
+    }
+
+    #[test]
+    fn colossus_label_floats_above_feet_and_is_deterministic() {
+        let p = Placement {
+            pos: Vec3::new(40.0, 18.0, -12.0),
+            yaw: 0.7,
+            voxel: 1.3,
+            seed: 12345,
+            solid: false,
+        };
+        let a = colossus_label(&p);
+        let b = colossus_label(&p);
+        assert_eq!(a.text, b.text); // same colossus → same inscription
+        assert!(!a.text.is_empty());
+        assert!(a.pos.y > p.pos.y, "label should float above the giant's feet");
     }
 
     #[test]

@@ -139,7 +139,7 @@ struct App {
     creatures: creatures::Swarm,
     /// In-world text (E17): the set of inscription cells currently in range. Lets the app
     /// rebuild the giants' label textures only when the in-range set changes (not every frame).
-    text_cells: std::collections::HashSet<(i32, i32)>,
+    text_cells: std::collections::HashSet<(i32, i32, u8)>,
     /// Previous-frame camera position, for the reactive-audio (E16) flight-speed estimate.
     audio_prev_pos: Option<Vec3>,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
@@ -442,17 +442,26 @@ impl App {
             return;
         }
         let seed = self.seed;
-        let marks =
-            structures::inscriptions_near(seed, self.camera.position, TEXT_RADIUS, |x, z| {
-                worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
-            });
-        let wanted: std::collections::HashSet<(i32, i32)> = marks.iter().map(|m| m.cell).collect();
+        let ground =
+            |x: f32, z: f32| worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32;
+        // Scattered grid markers (tag 0) + a monument label at each nearby colossus (tag 1). The
+        // tag keeps the two grids' cell keys distinct so change-detection can't conflate them.
+        let marks = structures::inscriptions_near(seed, self.camera.position, TEXT_RADIUS, ground);
+        let colossi = structures::colossi_near(seed, self.camera.position, TEXT_RADIUS, ground);
+        let mut wanted: std::collections::HashSet<(i32, i32, u8)> =
+            std::collections::HashSet::new();
+        wanted.extend(marks.iter().map(|m| (m.cell.0, m.cell.1, 0u8)));
+        wanted.extend(colossi.iter().map(|p| {
+            let c = structures::cell_key(p);
+            (c.0, c.1, 1u8)
+        }));
         if wanted == self.text_cells {
             return;
         }
         self.text_cells = wanted;
         let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = marks
             .into_iter()
+            .chain(colossi.iter().map(structures::colossus_label))
             .map(|m| (m.text, m.script, m.pos, m.height, m.color))
             .collect();
         if let Some(state) = self.state.as_mut() {

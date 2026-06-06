@@ -340,6 +340,10 @@ like everything else. Cost: one tiny texture + a quad per label — negligible.
   few glyphs + a glowing tint, **small and tethered just above a ground voxel** ("a few words on a
   voxel"). Streamed in/out around the camera and cached per cell (textures rebuilt only when the
   in-range set changes), pushed via `State::set_text_labels`. Verified headless (all five scripts).
+- ✅ **Inscribed colossi (E17×E18):** each nearby colossus also gets a **monument label** at its
+  base (`structures::colossus_label`, composed from the giant's own seed), so the fallen giants
+  read as ancient *labelled* monuments. Merged into the same streamed label set (tagged so the two
+  placement grids' cell keys can't conflate in change-detection).
 - **Outcome:** glowing abstract inscriptions scattered in the dark world, on-aesthetic.
 - **Substrate for an eventual in-engine UI** — moving the toggles/sliders off the DOM onto the
   same text path so the controls are identical on every platform (the long-promised "no DOM
