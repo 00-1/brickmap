@@ -489,14 +489,17 @@ pub fn capture_view(
         })
     });
 
-    // Colossal body demo (E18): an ethereal point-form giant standing on the terrain, drawn
-    // through the same splat pipeline (drift-through, no collision). One point per surface cell.
-    let body_feet = {
-        let gy = crate::worldgen::height(0, 0, crate::WORLD_SEED) as f32;
-        glam::Vec3::new(0.0, gy, 0.0)
-    };
-    let body_points =
-        crate::body::humanoid_points(body_feet, 1.4, [0.60, 0.72, 0.92], crate::WORLD_SEED);
+    // Colossal body demo (E18): seed-scattered *fallen* giants (male + female, natural collapsed
+    // poses) lying on the terrain, drawn through the splat pipeline (drift-through, no collision).
+    let body_points: Vec<crate::foliage::SplatInstance> =
+        crate::body::scatter_fallen(crate::WORLD_SEED, 70.0, 5, |x, z| {
+            crate::worldgen::height(x.floor() as i32, z.floor() as i32, crate::WORLD_SEED) as f32
+        })
+        .into_iter()
+        .flat_map(|pl| {
+            crate::body::figure_points(pl.pos, pl.voxel, pl.yaw, pl.sex, pl.seed, [0.62, 0.72, 0.9])
+        })
+        .collect();
     let body_vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("body-instances"),
         contents: bytemuck::cast_slice(&body_points),

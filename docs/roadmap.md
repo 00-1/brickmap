@@ -326,18 +326,24 @@ Enormous **human figures** in the world, in **two kinds** (decided 2026-06): **e
 point-forms** you drift through (always points — misty, non-collidable) and **solid voxel
 structures** you explore (Shadow-of-the-Colossus / doom-cover energy, visible afar, overwhelming
 up close).
-- ✅ **Ethereal point-form** (`src/body.rs`): a procedural giant humanoid (capsule/sphere
-  blockout, no assets) → its **surface cells emitted as points** that reuse the splat billboard
-  pipeline (so they glow, palettise, fog, dissolve — and you fly through them, no collision).
-  Deterministic; tested (shell not volume, symmetric, scales). Verified headless: a ~120-tall
-  misty colossus standing over the world, plain and palettised.
+- ✅ **Ethereal point-forms, posed + placed** (`src/body.rs`): a procedural **posed skeleton**
+  (male/female proportions; natural **collapsed/fallen** poses — sprawled limbs, jittered per
+  seed) → surface cells emitted as points reusing the splat pipeline (glow, palettise, fog,
+  dissolve; drift-through, no collision). `scatter_fallen(seed, …)` lays a **seed-driven field**
+  of male+female colossi on the terrain — the first **"structure"** layer (placed independent of
+  chunk terrain; more structure kinds to follow). Deterministic; tested (surface shell, lies
+  flat, sex/seed vary, scatter on-ground). Verified headless: fallen giants strewn across the
+  world, plain + palettised.
+- ⏳ **Real anatomy (needs assets):** the procedural figure is a placeholder — real
+  anatomically-correct male/female bodies need **CC0 model files** (e.g. **MakeHuman** exports,
+  Smithsonian CC0 scans) dropped in, consumed by a planned offline **`voxelize`** tool (mesh →
+  surface/solid grid → points or chunks). Sourcing is the human's call (provenance/licence).
 - ⏳ **Solid / explorable kind:** voxelise into chunks + greedy-mesh (mesh-near, points-far via
-  M7) — for the giant you can land on and explore.
-- ⏳ **Real anatomy:** a CC0 model (e.g. **MakeHuman**) → an offline **`voxelize`** dev tool
-  (mesh → solid/shell grid → baked asset), replacing the blockout. Content framing: monument,
-  not gore.
-- ⏳ **Live placement:** rare, seeded colossi in the streamed world (held with text placement).
-- **Outcome:** drift through a ghostly giant of points; later, land on a solid one and explore.
+  M7) — for a giant you can land on. Content framing: monument, not gore.
+- ⏳ **Live placement:** wire `scatter_fallen` into the streamed `gfx` world (built blind here —
+  no live GPU/display — so the human verifies in-app). Today the field is headless-only.
+- **Outcome:** drift through ghostly fallen giants strewn across the seeded world; later, land
+  on a solid one and explore.
 - **Perf:** a ~300-voxel-tall body is millions of surface voxels — only near chunks mesh, far
   chunks are cheap point sets / voxel mips (bandwidth-bound; chunk-LOD essential).
 - **De-risk first** with a *procedural humanoid blockout* (capsule torso/limbs/head, no assets)
