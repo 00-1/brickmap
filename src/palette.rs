@@ -125,6 +125,119 @@ pub const PALETTES: &[Palette] = &[
             [0.78, 0.98, 0.34],
         ],
     },
+    // --- Batch 2 (10 more): a wider spread of one- and two-hue ramps, all dark-leaning to
+    // suit the grimy mood. Two-hue ones (oxide, bruise, cobalt, slime) put a clashing accent
+    // at the bright end so the point lights pop in a complementary colour.
+    Palette {
+        // Verdigris teal base with a rust-orange pop — weathered copper/patina.
+        name: "oxide",
+        colors: &[
+            [0.05, 0.07, 0.07],
+            [0.10, 0.20, 0.19],
+            [0.21, 0.38, 0.34],
+            [0.55, 0.34, 0.16],
+            [0.93, 0.62, 0.26],
+        ],
+    },
+    Palette {
+        // Deep indigo base, sickly acid yellow-green pop — a bruise.
+        name: "bruise",
+        colors: &[
+            [0.05, 0.04, 0.08],
+            [0.16, 0.10, 0.24],
+            [0.31, 0.16, 0.34],
+            [0.48, 0.30, 0.30],
+            [0.82, 0.88, 0.32],
+        ],
+    },
+    Palette {
+        // Cold deep-sea blue ramp, black → cyan-white.
+        name: "abyss",
+        colors: &[
+            [0.02, 0.03, 0.06],
+            [0.06, 0.12, 0.24],
+            [0.12, 0.28, 0.45],
+            [0.31, 0.53, 0.67],
+            [0.80, 0.93, 0.97],
+        ],
+    },
+    Palette {
+        // Toxic green ramp, near-black → acid lime-white.
+        name: "venom",
+        colors: &[
+            [0.03, 0.05, 0.03],
+            [0.08, 0.18, 0.08],
+            [0.18, 0.36, 0.14],
+            [0.42, 0.66, 0.22],
+            [0.82, 0.98, 0.60],
+        ],
+    },
+    Palette {
+        // Lava ramp: black → blood → orange → yellow-white. Brighter/hotter than ember.
+        name: "magma",
+        colors: &[
+            [0.04, 0.02, 0.02],
+            [0.24, 0.05, 0.03],
+            [0.55, 0.14, 0.05],
+            [0.86, 0.42, 0.10],
+            [1.00, 0.88, 0.48],
+        ],
+    },
+    Palette {
+        // Oily black → brown → amber — tar, sump, crude.
+        name: "tar",
+        colors: &[
+            [0.03, 0.03, 0.03],
+            [0.14, 0.10, 0.07],
+            [0.28, 0.20, 0.10],
+            [0.50, 0.36, 0.16],
+            [0.86, 0.68, 0.32],
+        ],
+    },
+    Palette {
+        // Navy base with a hot-orange pop — classic complementary blue/orange.
+        name: "cobalt",
+        colors: &[
+            [0.04, 0.05, 0.10],
+            [0.09, 0.13, 0.28],
+            [0.16, 0.25, 0.46],
+            [0.62, 0.40, 0.18],
+            [1.00, 0.66, 0.26],
+        ],
+    },
+    Palette {
+        // Dark teal base with a magenta pop — toxic slime.
+        name: "slime",
+        colors: &[
+            [0.04, 0.06, 0.07],
+            [0.10, 0.20, 0.20],
+            [0.18, 0.36, 0.34],
+            [0.52, 0.18, 0.42],
+            [0.94, 0.36, 0.72],
+        ],
+    },
+    Palette {
+        // Muted sepia → cream — old parchment, candlelight. Soft and warm.
+        name: "parchment",
+        colors: &[
+            [0.06, 0.05, 0.04],
+            [0.20, 0.16, 0.11],
+            [0.40, 0.33, 0.22],
+            [0.64, 0.56, 0.40],
+            [0.92, 0.86, 0.70],
+        ],
+    },
+    Palette {
+        // Cold blue → ice white — frost, distinct from mist (bluer, colder).
+        name: "frost",
+        colors: &[
+            [0.04, 0.05, 0.09],
+            [0.14, 0.20, 0.31],
+            [0.30, 0.43, 0.55],
+            [0.58, 0.73, 0.83],
+            [0.90, 0.97, 1.00],
+        ],
+    },
 ];
 
 /// Max palette colours the shader uniform holds.
