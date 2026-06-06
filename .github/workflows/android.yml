@@ -48,11 +48,14 @@ jobs:
       - name: Install cargo-apk
         run: cargo install cargo-apk
 
-      - name: Build APK (release)
+      - name: Build APK (debug-signed, sideloadable)
+        # cargo-apk auto-generates a debug keystore and signs with it — no key
+        # ceremony, sideloadable. (`--release` would demand a configured release
+        # keystore; a release-signed, optimised APK is the perf follow-up.)
         env:
           ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-        run: cargo apk build --release --lib
+        run: cargo apk build --lib
 
       - name: Locate the APK
         id: apk
