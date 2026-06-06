@@ -327,20 +327,21 @@ mechanism; particle/gravity/spawn dials can join later.
 A default **auto-fly orbit** so the build is watchable with no keyboard/mouse (mobile,
 or just hands-off). Manual input (click/WASD) takes over; `F` resumes the orbit.
 
-### D4 — Native Android app + downloadable APK 🛠 &nbsp;*(sideload, no store)*
+### D4 — Native Android app + downloadable APK ✅ &nbsp;*(sideload, no store; device-verified)*
 A real native Android app (not a web wrapper), packaged as an **APK you download from
-GitHub and sideload** — which sidesteps the store/auto-update blocker entirely.
+GitHub and sideload**. **Verified on a real phone (2026-06): installs, launches, and the
+release build is fast** — the first real-hardware confirmation of the weak-hardware perf goal.
 - **App:** ✅ winit `android-activity` entry point (`android_main` in `lib.rs`, behind
   `cfg(target_os = "android")`) reusing the existing wgpu/winit code path via a shared
-  `run_event_loop`; logs to logcat via `android_logger`. **The Android target typechecks
-  (`cargo check --target aarch64-linux-android`)** — code de-risked; lifecycle robustness
-  (surface recreate on suspend/resume) is a v1 follow-up.
-- **Build + publish:** ✅ `.github/workflows/android.yml` — installs the NDK + cargo-apk,
-  `cargo apk build --release --lib` (metadata in `Cargo.toml` `[package.metadata.android]`,
-  arm64, debug-signed), uploads the **APK as a workflow artifact** and attaches it to a
-  **Release** on `v*` tags. The human enables "install from unknown sources" and sideloads.
-  No Play account, no Firebase, no signing-key ceremony. *(cargo-apk packaging + NDK link
-  are CI-only — I can't run them in-container; being brought to green via CI logs.)*
+  `run_event_loop`; logs to logcat via `android_logger`. *(Lifecycle robustness — surface
+  recreate on suspend/resume — is a follow-up.)*
+- **Build + publish:** ✅ `.github/workflows/android.yml` — NDK + cargo-apk,
+  `cargo apk build --release --lib` (optimised), then **zipalign + apksigner re-sign
+  (v1+v2+v3)** with a committed stable sideload keystore so it installs and updates in
+  place. Published to a rolling **`dev` GitHub Release** → a direct, phone-friendly download
+  (workflow artifacts can't be fetched on mobile). `v*` tags also publish versioned assets.
+- **Input:** D7 digital controller (D-pad/buttons; analog sticks are a winit limitation).
+- **Retired:** the initial debug-APK path (was only a pipeline-de-risking stepping stone).
 - **Pairs with D7 (gamepad):** native + a USB-C controller is the intended "fly it on the
   phone" experience — better perf than the web build, and the controller works natively.
 - **Honest caveat:** I **cannot test the APK here** (no Android device/emulator in the
