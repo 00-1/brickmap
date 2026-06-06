@@ -48,14 +48,13 @@ jobs:
       - name: Install cargo-apk
         run: cargo install cargo-apk
 
-      - name: Build APK (debug-signed, sideloadable)
-        # cargo-apk auto-generates a debug keystore and signs with it — no key
-        # ceremony, sideloadable. (`--release` would demand a configured release
-        # keystore; a release-signed, optimised APK is the perf follow-up.)
+      - name: Build APK (release, optimised)
+        # Release profile → optimised native code (the debug APK ran far too slow).
+        # Signed via the committed release.keystore (see Cargo.toml signing.release).
         env:
           ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-        run: cargo apk build --lib
+        run: cargo apk build --release --lib
 
       - name: Align, re-sign (v1+v2+v3) + stage the APK
         id: apk
@@ -69,21 +68,13 @@ jobs:
           echo "cargo-apk produced: $apk"
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
           echo "build-tools: $BT"
-          # cargo-apk's debug APK can be rejected by modern Android as an "invalid
-          # package" (no zipalign / only a v1 signature). zipalign + apksigner re-sign
-          # (v1+v2+v3) with a debug keystore makes it installable.
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" \
-              -storepass android -keypass android -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-          fi
+          # zipalign + apksigner re-sign (v1+v2+v3) with the committed sideload key, so
+          # the APK installs on modern Android and successive builds update in place.
           mkdir -p dist
           "$BT/zipalign" -f -p 4 "$apk" aligned.apk
           "$BT/apksigner" sign \
-            --ks "$HOME/.android/debug.keystore" --ks-pass pass:android \
-            --ks-key-alias androiddebugkey --key-pass pass:android \
+            --ks release.keystore --ks-pass pass:brickmap \
+            --ks-key-alias brickmap --key-pass pass:brickmap \
             --out dist/brickmap-android-arm64.apk aligned.apk
           "$BT/apksigner" verify --verbose dist/brickmap-android-arm64.apk
           ls -la dist/brickmap-android-arm64.apk

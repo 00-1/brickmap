@@ -87,6 +87,13 @@ target_sdk_version = 34
 [package.metadata.android.application]
 label = "brickmap"
 
+# Self-signed sideload key (committed `release.keystore`) so `cargo apk build --release`
+# can produce a release APK and successive sideloaded builds update in place. This is NOT
+# a Play upload key — it only governs sideload continuity, so a public password is fine.
+[package.metadata.android.signing.release]
+path = "release.keystore"
+keystore_password = "brickmap"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = "0.5"
 
