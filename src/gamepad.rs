@@ -17,6 +17,8 @@ pub struct PadInput {
     pub look_y: f32,   // + = look down (matches mouse dy)
     /// Rising-edge "toggle auto-fly" (face button A / cross).
     pub toggle_fly: bool,
+    /// Rising-edge "toggle melt / distance-dissolve" (face button Y / triangle).
+    pub toggle_melt: bool,
     /// Any stick/button engaged this frame (so the app can yield auto-fly to the pad).
     pub active: bool,
 }
@@ -35,6 +37,7 @@ impl PadInput {
     /// Build a normalised input from raw stick/button readings (already in the +forward/
     /// +right/+up convention). Applies the deadzone and sets `active`. `look_*` are raw
     /// (scaled by the caller into pixels). Pure — unit-tested.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_raw(
         strafe: f32,
         forward: f32,
@@ -42,6 +45,7 @@ impl PadInput {
         look_x: f32,
         look_y: f32,
         toggle_fly: bool,
+        toggle_melt: bool,
     ) -> PadInput {
         let strafe = deadzone(strafe);
         let forward = deadzone(forward);
@@ -52,7 +56,8 @@ impl PadInput {
             || vertical != 0.0
             || lx != 0.0
             || ly != 0.0
-            || toggle_fly;
+            || toggle_fly
+            || toggle_melt;
         PadInput {
             strafe,
             forward,
@@ -60,6 +65,7 @@ impl PadInput {
             look_x: lx,
             look_y: ly,
             toggle_fly,
+            toggle_melt,
             active,
         }
     }
@@ -85,12 +91,14 @@ mod tests {
 
     #[test]
     fn from_raw_sets_active_and_deadzones() {
-        let idle = PadInput::from_raw(0.05, -0.05, 0.0, 0.1, 0.0, false);
+        let idle = PadInput::from_raw(0.05, -0.05, 0.0, 0.1, 0.0, false, false);
         assert!(!idle.active, "tiny drift should read as idle");
-        let moving = PadInput::from_raw(0.9, 0.0, 0.0, 0.0, 0.0, false);
+        let moving = PadInput::from_raw(0.9, 0.0, 0.0, 0.0, 0.0, false, false);
         assert!(moving.active);
         assert!(moving.strafe > 0.5);
-        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, true).active); // button only
+        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, true, false).active); // fly button
+        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, false, true).active);
+        // melt button
     }
 }
 
@@ -113,6 +121,7 @@ mod native {
     pub struct Pad {
         gilrs: Option<Gilrs>,
         prev_toggle: bool,
+        prev_melt: bool,
     }
 
     impl Pad {
@@ -123,6 +132,7 @@ mod native {
             Pad {
                 gilrs,
                 prev_toggle: false,
+                prev_melt: false,
             }
         }
 
@@ -145,11 +155,22 @@ mod native {
             let up = gp.is_pressed(Button::RightTrigger);
             let down = gp.is_pressed(Button::LeftTrigger);
             let vertical = (up as i32 - down as i32) as f32;
-            // Toggle auto-fly on the rising edge of South (A / cross).
+            // Toggle auto-fly on the rising edge of South (A / cross); toggle melt on North (Y).
             let toggle_now = gp.is_pressed(Button::South);
             let toggle_fly = toggle_now && !self.prev_toggle;
             self.prev_toggle = toggle_now;
-            PadInput::from_raw(strafe, forward, vertical, look_x, look_y, toggle_fly)
+            let melt_now = gp.is_pressed(Button::North);
+            let toggle_melt = melt_now && !self.prev_melt;
+            self.prev_melt = melt_now;
+            PadInput::from_raw(
+                strafe,
+                forward,
+                vertical,
+                look_x,
+                look_y,
+                toggle_fly,
+                toggle_melt,
+            )
         }
     }
 }
@@ -161,17 +182,22 @@ mod web {
 
     pub struct Pad {
         prev_toggle: bool,
+        prev_melt: bool,
     }
 
     impl Pad {
         #[allow(clippy::new_without_default)]
         pub fn new() -> Pad {
-            Pad { prev_toggle: false }
+            Pad {
+                prev_toggle: false,
+                prev_melt: false,
+            }
         }
 
         pub fn poll(&mut self) -> PadInput {
             let Some(pad) = first_gamepad() else {
                 self.prev_toggle = false;
+                self.prev_melt = false;
                 return PadInput::default();
             };
             let axes = pad.axes();
@@ -191,10 +217,21 @@ mod web {
             let look_x = axis(2);
             let look_y = axis(3); // +down already (web Y is +down)
             let vertical = (pressed(5) as i32 - pressed(4) as i32) as f32; // RB up, LB down
-            let toggle_now = pressed(0);
+            let toggle_now = pressed(0); // A / cross
             let toggle_fly = toggle_now && !self.prev_toggle;
             self.prev_toggle = toggle_now;
-            PadInput::from_raw(strafe, forward, vertical, look_x, look_y, toggle_fly)
+            let melt_now = pressed(3); // Y / triangle
+            let toggle_melt = melt_now && !self.prev_melt;
+            self.prev_melt = melt_now;
+            PadInput::from_raw(
+                strafe,
+                forward,
+                vertical,
+                look_x,
+                look_y,
+                toggle_fly,
+                toggle_melt,
+            )
         }
     }
 
@@ -233,10 +270,11 @@ mod android {
         ry: f32,
         up: bool,
         down: bool,
-        // Digital shoulder turn (fallback / extra), and the auto-fly toggle edge.
+        // Digital shoulder turn (fallback / extra), and the toggle edges.
         turn_left: bool,
         turn_right: bool,
         toggle_pending: bool,
+        melt_pending: bool,
     }
 
     impl Pad {
@@ -287,6 +325,11 @@ mod android {
                                 self.toggle_pending = true;
                             }
                         }
+                        Keycode::ButtonY => {
+                            if pressed {
+                                self.melt_pending = true;
+                            }
+                        }
                         _ => return false,
                     }
                     true
@@ -301,7 +344,8 @@ mod android {
             let look_x = self.rx + (self.turn_right as i32 - self.turn_left as i32) as f32;
             let vertical = (self.up as i32 - self.down as i32) as f32;
             let toggle = std::mem::take(&mut self.toggle_pending);
-            PadInput::from_raw(self.lx, -self.ly, vertical, look_x, self.ry, toggle)
+            let melt = std::mem::take(&mut self.melt_pending);
+            PadInput::from_raw(self.lx, -self.ly, vertical, look_x, self.ry, toggle, melt)
         }
     }
 }

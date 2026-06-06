@@ -510,7 +510,8 @@ phone with a USB-C/Bluetooth pad.
   CI). Both feed a normalised `PadInput` → the new analog `CameraController::add_move` +
   `add_look`.
 - **Mapping:** left stick → move, right stick → look, bumpers → up/down, **A** → toggle
-  auto-fly; deadzoned, analog (partial-stick = slower). Pure mapping + deadzone unit-tested.
+  auto-fly, **Y** → toggle the `melt` distance-dissolve (so the effect is easy to A/B with a pad
+  in hand); deadzoned, analog (partial-stick = slower). Pure mapping + deadzone unit-tested.
 - **Android-native pad:** **full analog** — since winit drains the Android input queue and
   drops the joystick axes, `android_main` drives the loop with `pump_app_events` and drains
   the input queue *itself first*, reading sticks + triggers from `MotionEvent` axes and

@@ -994,6 +994,11 @@ impl ApplicationHandler<AppEvent> for App {
                 if pad.toggle_fly {
                     self.auto_fly = !self.auto_fly;
                 }
+                // Y / triangle toggles the distance-dissolve "melt" so it's easy to see the
+                // effect with a pad in hand (the same switch as the `melt` feature toggle).
+                if pad.toggle_melt {
+                    self.toggles.melt = !self.toggles.melt;
+                }
                 let stick = pad.strafe != 0.0
                     || pad.forward != 0.0
                     || pad.vertical != 0.0
