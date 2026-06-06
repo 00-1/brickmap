@@ -199,7 +199,12 @@ pub fn relic_points(
                 if !exposed {
                     continue;
                 }
-                let m = lo + Vec3::new(x as f32, y as f32, z as f32) * STEP;
+                // Jitter each point off its grid cell (up to ~¾ of a cell) so the cloud reads
+                // as natural scatter, not a regular lattice.
+                let j = STEP * 0.75;
+                let m = lo
+                    + Vec3::new(x as f32, y as f32, z as f32) * STEP
+                    + Vec3::new(rng.range(-j, j), rng.range(-j, j), rng.range(-j, j));
                 let (mx, my, mz) = (m.x, m.y - lo.y, m.z);
                 let wx = mx * cy - mz * sy;
                 let wz = mx * sy + mz * cy;
