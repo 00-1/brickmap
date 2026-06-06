@@ -89,11 +89,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     // Slight centre-bright shading so blades aren't flat discs.
     let d = 1.0 - dot(in.uv, in.uv) * 1.2;
-    // Light the foliage with the world, not fullbright: a dim ambient floor + a sun term
-    // gated by the sun flag (camera_pos.w). With the sun off the foliage sinks into the dark
-    // with everything else — dimly lit, not sunny/vibrant — keeping the grimy mood coherent.
-    let world_light = 0.25 + 0.55 * globals.camera_pos.w;
-    let lit = in.color * (0.7 + 0.3 * d) * world_light;
+    let lit = in.color * (0.7 + 0.3 * d);
     let rgb = mix(lit, globals.fog_color.rgb, in.fog);
     return vec4<f32>(rgb, 1.0);
 }
