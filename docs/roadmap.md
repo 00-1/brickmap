@@ -368,18 +368,20 @@ it's a cheap runtime branch. *(Not toggled: structural choices baked into data l
 packed vertices, palette storage — which get dedicated benchmarks instead. A
 greedy↔naïve mesh switch needs a re-mesh; deferred.)*
 
-### D7 — Gamepad / controller controls ⏳
+### D7 — Gamepad / controller controls 🛠
 Fly the world with a **game controller** — the natural way to explore, especially on a
 phone with a USB-C/Bluetooth pad.
-- **Web:** poll the **Gamepad API** (`navigator.getGamepads()`) each frame; map left
-  stick → move, right stick → look, triggers/bumpers → up/down, a face button → toggle
-  auto-fly. Works in the mobile browser with the user's USB-C controller — testable now.
-- **Native:** the **`gilrs`** crate (cross-platform, incl. Android) feeding the same
-  `CameraController` actions, so the controller also works in the D4 Android app.
+- **Web:** ✅ poll the **Gamepad API** (`navigator.getGamepads()`) each frame (`gamepad::web`).
+- **Native desktop:** ✅ **`gilrs`** (`gamepad::native`), behind a desktop-only Cargo cfg
+  (excluded on Android to keep the APK build NDK-free; needs `libudev-dev` on Linux, now in
+  CI). Both feed a normalised `PadInput` → the new analog `CameraController::add_move` +
+  `add_look`.
+- **Mapping:** left stick → move, right stick → look, bumpers → up/down, **A** → toggle
+  auto-fly; deadzoned, analog (partial-stick = slower). Pure mapping + deadzone unit-tested.
+- **Android-native pad:** deferred (stub) — the web build covers phone + USB-C pad for now.
 - **Outcome:** pick up a pad and fly; auto-fly yields to stick input like WASD does.
-- **Fit:** small, high-value, and the missing input mode for hands-on mobile exploration
-  (complements D3 auto-fly). A good quick win — could land before/alongside E6 so the
-  foliage work is explorable with the controller as it develops.
+- **Status:** all three targets compile (native clippy+tests, wasm, android); **runtime is
+  built blind** (no pad/browser/device here) — verified by the human with a controller.
 
 ### D8 — Downloadable desktop builds (Windows + Linux) 🛠
 A native desktop binary you download and run — best perf + native controller (D7),

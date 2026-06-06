@@ -17,6 +17,7 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 
 pub mod edit;
 pub mod foliage;
+pub mod gamepad;
 mod gfx;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
@@ -98,6 +99,8 @@ struct App {
     /// Undo log of inverse edits (E14): each editing action pushes the edit that reverts
     /// it. The forward edits are the future broadcast/share payload (N1 groundwork).
     undo: Vec<edit::Edit>,
+    /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
+    pad: gamepad::Pad,
 }
 
 impl App {
@@ -710,6 +713,29 @@ impl ApplicationHandler<AppEvent> for App {
                     .map(|t| (now - t).as_secs_f32().min(0.1))
                     .unwrap_or(0.0);
                 self.last_frame = Some(now);
+
+                // Gamepad (D7): poll the pad and feed analog move + look. The A button
+                // toggles auto-fly; any stick/look input yields auto-fly to manual (like
+                // WASD/mouse do).
+                let pad = self.pad.poll();
+                if pad.toggle_fly {
+                    self.auto_fly = !self.auto_fly;
+                }
+                let stick = pad.strafe != 0.0
+                    || pad.forward != 0.0
+                    || pad.vertical != 0.0
+                    || pad.look_x != 0.0
+                    || pad.look_y != 0.0;
+                if stick {
+                    self.auto_fly = false;
+                    self.controller
+                        .add_move(pad.strafe, pad.vertical, pad.forward);
+                    self.controller.add_look(
+                        pad.look_x * gamepad::LOOK_SPEED,
+                        pad.look_y * gamepad::LOOK_SPEED,
+                    );
+                }
+
                 if self.auto_fly {
                     // Cinematic travel: cruise forward, banking gently, hugging the
                     // terrain — an endless flight that streams the world in around us.
@@ -939,6 +965,7 @@ fn run_event_loop(event_loop: EventLoop<AppEvent>) {
         toggles: Toggles::from_mask(view.toggles),
         seed: view.seed,
         undo: Vec::new(),
+        pad: gamepad::Pad::new(),
     };
 
     event_loop.run_app(&mut app).expect("event loop error");

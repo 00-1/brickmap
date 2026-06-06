@@ -39,6 +39,12 @@ png = "0.17"
 # (no SharedArrayBuffer), so the web build meshes on the main thread instead.
 rayon = "1"
 
+# --- Desktop-only (native, not Android) ----------------------------------
+# Gamepad/controller input (D7) via gilrs. Excluded on Android to keep the APK build
+# free of NDK input plumbing (web's Gamepad API covers phone + USB-C pad for now).
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+gilrs = "0.11"
+
 # --- Web / WASM-only -----------------------------------------------------
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Enable the GLES/WebGL backend so the spike still renders on browsers that
@@ -55,6 +61,9 @@ web-sys = { version = "0.3", features = [
     "Location",
     "Element",
     "HtmlCanvasElement",
+    "Navigator",
+    "Gamepad",
+    "GamepadButton",
 ] }
 
 # --- Android-only (D4) ---------------------------------------------------

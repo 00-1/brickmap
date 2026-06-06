@@ -25,6 +25,9 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
+      - name: Linux build deps (gilrs → libudev, D7 gamepad)
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+
       - name: Formatting
         run: cargo fmt --all --check
 

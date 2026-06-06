@@ -116,6 +116,9 @@ pub struct CameraController {
     /// Look delta (in pixels) accumulated since the last `update`.
     look_dx: f32,
     look_dy: f32,
+    /// Analog movement accumulated since the last `update` (gamepad sticks): x = strafe
+    /// (+right), y = vertical (+up), z = forward (+forward). Magnitude ≤ ~1 = speed scale.
+    move_analog: Vec3,
     /// Movement speed, world units per second.
     pub speed: f32,
     /// Look sensitivity, radians per pixel.
@@ -133,6 +136,7 @@ impl CameraController {
             down: false,
             look_dx: 0.0,
             look_dy: 0.0,
+            move_analog: Vec3::ZERO,
             speed,
             sensitivity: 0.0035,
         }
@@ -153,6 +157,12 @@ impl CameraController {
     pub fn add_look(&mut self, dx: f32, dy: f32) {
         self.look_dx += dx;
         self.look_dy += dy;
+    }
+
+    /// Feed analog movement for this frame (gamepad left stick + triggers). Accumulated
+    /// alongside the digital WASD actions and consumed in `update`.
+    pub fn add_move(&mut self, strafe: f32, vertical: f32, forward: f32) {
+        self.move_analog += Vec3::new(strafe, vertical, forward);
     }
 
     /// Integrate accumulated input into `camera` over `dt` seconds.
@@ -185,8 +195,16 @@ impl CameraController {
         if self.down {
             dir -= Vec3::Y;
         }
-        if dir != Vec3::ZERO {
-            camera.position += dir.normalize() * self.speed * dt;
+        // Analog (gamepad) movement along the same basis; preserves partial-stick speed.
+        dir += right * self.move_analog.x
+            + Vec3::Y * self.move_analog.y
+            + forward * self.move_analog.z;
+        self.move_analog = Vec3::ZERO;
+        // Cap the magnitude at 1 (so diagonals / digital+analog don't exceed `speed`),
+        // but let a gently-held stick move slower than full.
+        let moved = dir.clamp_length_max(1.0);
+        if moved != Vec3::ZERO {
+            camera.position += moved * self.speed * dt;
         }
     }
 }

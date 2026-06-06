@@ -46,6 +46,10 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
+      - name: Linux build deps (gilrs → libudev, D7 gamepad)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+
       - name: Build (release)
         run: cargo build --release --bin brickmap
 
