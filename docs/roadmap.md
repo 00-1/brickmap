@@ -234,7 +234,9 @@ its own brief.
 - **De-risks:** 3D-noise cost (gate to surface bands); unlocks the dormant cave-culling.
 - *All within-layer wins landed (warp/ridged/water/biomes/rivers/caves); only multi-layer
   vertical chunk stacks remain — the bigger architectural step (single→multi-layer
-  streaming), warrants its own brief.*
+  streaming). Brief written: [`milestones/E8-vertical-stacks.md`](milestones/E8-vertical-stacks.md)
+  (`ChunkCoord` is already 3D, so it's mostly removing the `cy == 0` / `y = 0` hardcodes +
+  filling worldgen by absolute world-y + wiring the ±Y mesher neighbours).*
 
 ### ✨ E9 — Weather, water & sound *(exploration)* ⏳
 From the research (backlog §H): a single **global weather state** (wind + gust + precip +
