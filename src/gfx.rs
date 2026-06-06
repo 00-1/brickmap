@@ -267,6 +267,16 @@ pub struct State {
     scene_view: wgpu::TextureView,
     bloom: Bloom,
 
+    /// Palette post-process (E10): maps the finished image onto a small, configurable
+    /// colour ramp with ordered dithering. When `palette_on` is false the pass is skipped
+    /// and bloom composites straight to the surface (unchanged look). `palette_view` is the
+    /// intermediate bloom lands in before the palette maps it to the surface; its bind group
+    /// is rebuilt on resize.
+    palette: crate::palette::PalettePass,
+    palette_view: wgpu::TextureView,
+    palette_bind_group: wgpu::BindGroup,
+    palette_on: bool,
+
     /// Foliage splats (E6): an instanced billboard pipeline; per-chunk instance buffers
     /// live on each `ChunkDraw`. Shares the globals (group 0).
     splat_pipeline: wgpu::RenderPipeline,
@@ -557,6 +567,23 @@ impl State {
         let bloom = Bloom::new(&device, config.format, config.width, config.height);
         let hud = crate::hud::HudOverlay::new(&device, config.format);
 
+        // Palette post-process (E10), off by default so the live preview is unchanged until
+        // a palette is chosen. Defaults to the full `mono` ramp with ordered dithering.
+        let palette = crate::palette::PalettePass::new(&device, config.format);
+        let palette_index = 0usize;
+        let palette_count = crate::palette::PALETTES[palette_index].colors.len() as u32;
+        let palette_dither = 1.0f32;
+        let palette_on = false;
+        palette.set(
+            &queue,
+            palette_index,
+            palette_count,
+            palette_dither,
+            palette_on,
+        );
+        let palette_view = create_scene_view(&device, &config);
+        let palette_bind_group = palette.make_bind_group(&device, &palette_view);
+
         State {
             surface,
             device,
@@ -573,6 +600,10 @@ impl State {
             depth_view,
             scene_view,
             bloom,
+            palette,
+            palette_view,
+            palette_bind_group,
+            palette_on,
             splat_pipeline,
             particle_pipeline,
             cube_vertex_buffer,
@@ -590,6 +621,20 @@ impl State {
     /// Update the in-engine text overlay (HUD), drawn each frame over the finished image.
     pub fn set_hud(&mut self, text: &str) {
         self.hud.set_text(&self.device, &self.queue, text);
+    }
+
+    /// Reconfigure the palette post-process (E10) and re-upload its uniform. `on == false`
+    /// makes the pass a no-op (the bloom output reaches the surface unchanged). `count` is
+    /// clamped to the chosen palette's length inside [`crate::palette::PalettePass::set`].
+    pub fn set_palette(&mut self, index: usize, count: u32, dither: f32, on: bool) {
+        self.palette_on = on;
+        self.palette.set(
+            &self.queue,
+            index.min(crate::palette::PALETTES.len() - 1),
+            count.max(1),
+            dither,
+            on,
+        );
     }
 
     /// Last frame's draw counts, for the perf HUD.
@@ -635,6 +680,10 @@ impl State {
         self.scene_view = create_scene_view(&self.device, &self.config);
         self.bloom
             .resize(&self.device, self.config.width, self.config.height);
+        self.palette_view = create_scene_view(&self.device, &self.config);
+        self.palette_bind_group = self
+            .palette
+            .make_bind_group(&self.device, &self.palette_view);
     }
 
     /// Reconfigure at the current size — used to recover a lost/outdated surface.
@@ -865,14 +914,25 @@ impl State {
             }
         }
 
-        // Bloom: bright-pass + blur the scene target, composite scene + glow → surface.
-        // Toggled off → copy the scene straight through.
+        // Bloom: bright-pass + blur the scene target, composite scene + glow. With the
+        // palette pass on it lands in `palette_view`, which the palette then maps to the
+        // surface; otherwise it composites straight to the surface. Bloom toggled off → the
+        // scene is copied straight through instead of composited.
+        let post_target = if self.palette_on {
+            &self.palette_view
+        } else {
+            &view
+        };
         if toggles.bloom {
             self.bloom
-                .render(&self.device, &mut encoder, &self.scene_view, &view);
+                .render(&self.device, &mut encoder, &self.scene_view, post_target);
         } else {
             self.bloom
-                .blit(&self.device, &mut encoder, &self.scene_view, &view);
+                .blit(&self.device, &mut encoder, &self.scene_view, post_target);
+        }
+        if self.palette_on {
+            self.palette
+                .render(&mut encoder, &self.palette_bind_group, &view);
         }
 
         // In-engine text overlay (HUD), composited last — identical on every platform.

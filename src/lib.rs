@@ -23,6 +23,7 @@ mod gfx;
 pub mod headless;
 pub mod hud;
 pub mod mesh;
+pub mod palette;
 pub mod particles;
 mod post;
 pub mod scene;
@@ -85,6 +86,14 @@ struct App {
     /// driven by `controls`; on native they stay at the defaults.
     wobble: f32,
     color_steps: f32,
+    /// Palette post-process (E10): selection pushed to the renderer each frame. `on` gates
+    /// the whole pass; `index` picks a `palette::PALETTES` entry; `count` is how many of its
+    /// colours to use; `dither` is the ordered-dither spread. Driven by native keys or, on
+    /// the web, the page controls.
+    palette_on: bool,
+    palette_index: usize,
+    palette_count: u32,
+    palette_dither: f32,
     /// Timestamp of the previous frame, for frame-rate-independent movement.
     last_frame: Option<Instant>,
     /// Whether the pointer is captured (mouselook active).
@@ -149,6 +158,29 @@ impl App {
         log::info!("seed → {seed}");
     }
 
+    /// Cycle the palette post-process (E10): off → palette 0 → … → last → off. When turning a
+    /// palette on, reset the colour count to that palette's full length.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn cycle_palette(&mut self) {
+        let n = palette::PALETTES.len();
+        if !self.palette_on {
+            self.palette_on = true;
+            self.palette_index = 0;
+        } else if self.palette_index + 1 < n {
+            self.palette_index += 1;
+        } else {
+            self.palette_on = false;
+            self.palette_index = 0;
+        }
+        self.palette_count = palette::PALETTES[self.palette_index].colors.len() as u32;
+        let name = palette::PALETTES[self.palette_index].name;
+        if self.palette_on {
+            log::info!("palette → {name} ({} colours)", self.palette_count);
+        } else {
+            log::info!("palette → off");
+        }
+    }
+
     /// Dev seed keys on native: `R` reseeds to a fresh random world, `P` prints the
     /// current share string. Returns whether the key was handled. No-op on web (the page
     /// has buttons for these).
@@ -174,6 +206,29 @@ impl App {
             }
             KeyCode::KeyU => {
                 self.undo_edit();
+                return true;
+            }
+            // Palette post-process (E10): C cycles off → each palette → off; -/= change the
+            // colour count; [ / ] lower/raise the dither spread.
+            KeyCode::KeyC => {
+                self.cycle_palette();
+                return true;
+            }
+            KeyCode::Minus => {
+                self.palette_count = self.palette_count.saturating_sub(1).max(1);
+                return true;
+            }
+            KeyCode::Equal => {
+                let max = palette::PALETTES[self.palette_index].colors.len() as u32;
+                self.palette_count = (self.palette_count + 1).min(max);
+                return true;
+            }
+            KeyCode::BracketLeft => {
+                self.palette_dither = (self.palette_dither - 0.25).max(0.0);
+                return true;
+            }
+            KeyCode::BracketRight => {
+                self.palette_dither = (self.palette_dither + 0.25).min(2.0);
                 return true;
             }
             _ => {}
@@ -773,6 +828,11 @@ impl ApplicationHandler<AppEvent> for App {
                     self.wobble = controls::wobble();
                     self.color_steps = controls::color_steps();
                     self.toggles = controls::toggles();
+                    let (pon, pidx, pcount, pdither) = controls::palette();
+                    self.palette_on = pon;
+                    self.palette_index = pidx;
+                    self.palette_count = pcount;
+                    self.palette_dither = pdither;
                     if let Some(seed) = controls::take_pending_seed() {
                         self.set_seed(seed);
                     }
@@ -789,6 +849,13 @@ impl ApplicationHandler<AppEvent> for App {
 
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
+                    // Push the current palette selection (E10) before drawing.
+                    state.set_palette(
+                        self.palette_index,
+                        self.palette_count,
+                        self.palette_dither,
+                        self.palette_on,
+                    );
                     // `render` handles lost/outdated/transient surfaces internally.
                     state.render(
                         view_proj,
@@ -822,8 +889,17 @@ impl ApplicationHandler<AppEvent> for App {
                         } else {
                             String::new()
                         };
+                        let pal = if self.palette_on {
+                            format!(
+                                " · {} {}c",
+                                palette::PALETTES[self.palette_index].name,
+                                self.palette_count
+                            )
+                        } else {
+                            String::new()
+                        };
                         let hud = format!(
-                            "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats{meshing}{}",
+                            "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats{pal}{meshing}{}",
                             self.frame_ms_ema,
                             self.seed,
                             s.drawn_chunks,
@@ -988,6 +1064,10 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         auto_fly_angle: 0.0,
         wobble: view.wobble,
         color_steps: view.color_steps,
+        palette_on: false,
+        palette_index: 0,
+        palette_count: palette::PALETTES[0].colors.len() as u32,
+        palette_dither: 1.0,
         last_frame: None,
         cursor_locked: false,
         frame_ms_ema: 0.0,
@@ -1224,6 +1304,11 @@ pub mod controls {
     thread_local! {
         static WOBBLE: Cell<f32> = const { Cell::new(85.0) };
         static COLOR_STEPS: Cell<f32> = const { Cell::new(4.0) };
+        /// Palette post-process (E10): enabled flag, palette index, colour count, dither.
+        static PALETTE_ON: Cell<bool> = const { Cell::new(false) };
+        static PALETTE_INDEX: Cell<u32> = const { Cell::new(0) };
+        static PALETTE_COUNT: Cell<u32> = const { Cell::new(4) };
+        static PALETTE_DITHER: Cell<f32> = const { Cell::new(1.0) };
         /// Feature-toggle bitmask, one bit per switch; all 12 on by default.
         static TOGGLES: Cell<u32> = const { Cell::new(0xFFF) };
         /// A seed change requested from the page, consumed by the app next frame.
@@ -1249,6 +1334,25 @@ pub mod controls {
     #[wasm_bindgen]
     pub fn set_color_steps(value: f32) {
         COLOR_STEPS.with(|c| c.set(value));
+    }
+
+    /// Configure the palette post-process (E10) from the page: which palette `index`, how
+    /// many of its colours (`count`), the ordered-dither `spread`, and whether it's on.
+    #[wasm_bindgen]
+    pub fn set_palette(index: u32, count: u32, spread: f32, enabled: bool) {
+        PALETTE_INDEX.with(|c| c.set(index));
+        PALETTE_COUNT.with(|c| c.set(count.max(1)));
+        PALETTE_DITHER.with(|c| c.set(spread));
+        PALETTE_ON.with(|c| c.set(enabled));
+    }
+
+    pub(crate) fn palette() -> (bool, usize, u32, f32) {
+        (
+            PALETTE_ON.with(Cell::get),
+            PALETTE_INDEX.with(Cell::get) as usize,
+            PALETTE_COUNT.with(Cell::get),
+            PALETTE_DITHER.with(Cell::get),
+        )
     }
 
     /// Switch to a seed parsed from user text (numeric or folded). Returns the resolved

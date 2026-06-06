@@ -87,6 +87,26 @@
       <label>dither <input type="range" id="dial-steps" min="2" max="16" step="1" value="4" /></label>
     </div>
 
+    <!-- Colour palette (E10): recolour the finished image onto a small, restrained ramp
+         with ordered dithering. Enable, pick a palette, dial the colour count + dither. -->
+    <div
+      style="display: flex; gap: 18px; flex-wrap: wrap; align-items: center; justify-content: center; color: #8a93a8; font-size: 12px; margin-top: 8px"
+    >
+      <label><input type="checkbox" id="pal-on" /> palette</label>
+      <label>which
+        <select id="pal-which" style="background:#0d1018;color:#cfe;border:1px solid #1c2233">
+          <option value="0">mono</option>
+          <option value="1">verdant</option>
+          <option value="2">ash</option>
+          <option value="3">ember</option>
+          <option value="4">dusk</option>
+          <option value="5">mist</option>
+        </select>
+      </label>
+      <label>colours <input type="range" id="pal-count" min="2" max="5" step="1" value="5" /></label>
+      <label>dither <input type="range" id="pal-dither" min="0" max="2" step="0.25" value="1" /></label>
+    </div>
+
     <!-- Feature toggles (D6): checkboxes flip renderer features via wasm. The HUD
          (top-left) shows what's off. Generated from the label list below. -->
     <div
@@ -130,12 +150,15 @@
       import init, {
         set_wobble,
         set_color_steps,
+        set_palette,
         set_toggle,
         set_seed,
         set_seed_text,
         seed_of_the_day,
         current_share,
       } from "./pkg/brickmap.js?v=__CACHE_BUST__";
+      // Palette colour counts, indexed like PALETTES in palette.rs (mono is 4, rest 5).
+      const PALETTE_LEN = [4, 5, 5, 5, 5, 5];
       // Order must match TOGGLE_LABELS in gfx.rs.
       const TOGGLES = ["cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief", "sand", "foliage", "melt"];
 
@@ -182,6 +205,27 @@
           if (hp.d !== undefined) steps.value = hp.d;
           wobble.addEventListener("input", () => set_wobble(parseFloat(wobble.value)));
           steps.addEventListener("input", () => set_color_steps(parseFloat(steps.value)));
+
+          // Palette controls (E10): push the whole selection on any change.
+          const palOn = document.getElementById("pal-on");
+          const palWhich = document.getElementById("pal-which");
+          const palCount = document.getElementById("pal-count");
+          const palDither = document.getElementById("pal-dither");
+          const pushPalette = () => set_palette(
+            parseInt(palWhich.value, 10),
+            parseInt(palCount.value, 10),
+            parseFloat(palDither.value),
+            palOn.checked,
+          );
+          // When the palette changes, clamp the colour-count slider to its length.
+          palWhich.addEventListener("change", () => {
+            const len = PALETTE_LEN[parseInt(palWhich.value, 10)] || 5;
+            palCount.max = len;
+            if (parseInt(palCount.value, 10) > len) palCount.value = len;
+            pushPalette();
+          });
+          [palOn, palCount, palDither].forEach((el) =>
+            el.addEventListener("input", pushPalette));
 
           // Build the feature-toggle checkboxes, reflecting any restored toggle mask.
           const mask = hp.t !== undefined ? parseInt(hp.t, 16) : 0xfff;

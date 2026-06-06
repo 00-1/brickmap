@@ -62,10 +62,20 @@ const PALETTE: [[f32; 4]; 8] = [
     [0.18, 0.38, 0.62, 1.0], // water
 ];
 
+/// How to drive the palette post-process for a headless capture: which entry of
+/// [`crate::palette::PALETTES`], how many of its colours to use, and the dither spread.
+/// `None` (the default) skips the pass entirely so the hero shot is unchanged.
+#[derive(Copy, Clone)]
+pub struct PaletteSpec {
+    pub index: usize,
+    pub count: u32,
+    pub dither: f32,
+}
+
 /// Render the demo scene to a PNG at `path`. Panics on setup failure (it's a dev
 /// tool); the most likely cause is a missing software-Vulkan ICD.
 pub fn capture(width: u32, height: u32, path: &str) {
-    capture_view(width, height, path, None, None);
+    capture_view(width, height, path, None, None, None);
 }
 
 /// As [`capture`], but with an optional camera override (`eye` looking at `target`) so
@@ -78,6 +88,7 @@ pub fn capture_view(
     path: &str,
     eye: Option<glam::Vec3>,
     target: Option<glam::Vec3>,
+    palette: Option<PaletteSpec>,
 ) {
     let instances = crate::build_world_meshes(&crate::demo_world());
     let camera = match (eye, target) {
@@ -243,6 +254,31 @@ pub fn capture_view(
     });
     let sky_pipeline = crate::gfx::build_sky_pipeline(&device, COLOR_FORMAT);
     let bloom = crate::post::Bloom::new(&device, COLOR_FORMAT, width, height);
+
+    // Palette post-process (E10). When requested, bloom composites into an intermediate
+    // `post` texture, the palette pass maps it down to the curated palette, and writes the
+    // final `target`. Skipped entirely (bloom → target) when `palette` is None.
+    let palette_pass = palette.map(|spec| {
+        let pass = crate::palette::PalettePass::new(&device, COLOR_FORMAT);
+        pass.set(&queue, spec.index, spec.count, spec.dither, true);
+        let post = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("headless-post"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: COLOR_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let post_view = post.create_view(&wgpu::TextureViewDescriptor::default());
+        let bg = pass.make_bind_group(&device, &post_view);
+        (pass, post_view, bg)
+    });
 
     let globals = Globals {
         view_proj: camera
@@ -484,8 +520,15 @@ pub fn capture_view(
             );
         }
     }
-    // Bloom: composite scene + glow into `target`, which is then read back.
-    bloom.render(&device, &mut encoder, &scene_view, &target_view);
+    // Bloom: composite scene + glow. With a palette it lands in `post`, which the palette
+    // pass then maps into `target`; without one it composites straight into `target`.
+    match &palette_pass {
+        Some((pass, post_view, bg)) => {
+            bloom.render(&device, &mut encoder, &scene_view, post_view);
+            pass.render(&mut encoder, bg, &target_view);
+        }
+        None => bloom.render(&device, &mut encoder, &scene_view, &target_view),
+    }
     // In-engine HUD overlay — same code path as the live app, so the hero shot verifies it.
     let mut hud = crate::hud::HudOverlay::new(&device, COLOR_FORMAT);
     hud.set_text(
