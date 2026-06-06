@@ -110,6 +110,10 @@
           <option value="3">ember</option>
           <option value="4">dusk</option>
           <option value="5">mist</option>
+          <option value="6">rust</option>
+          <option value="7">neon</option>
+          <option value="8">sodium</option>
+          <option value="9">bog</option>
         </select>
       </label>
       <label>colours <input type="range" id="pal-count" min="2" max="5" step="1" value="5" /></label>
@@ -167,7 +171,7 @@
         current_share,
       } from "./pkg/brickmap.js?v=__CACHE_BUST__";
       // Palette colour counts, indexed like PALETTES in palette.rs (mono is 4, rest 5).
-      const PALETTE_LEN = [4, 5, 5, 5, 5, 5];
+      const PALETTE_LEN = [4, 5, 5, 5, 5, 5, 5, 5, 5, 5];
       // Order must match TOGGLE_LABELS in gfx.rs.
       const TOGGLES = ["cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief", "sand", "foliage", "melt", "sun"];
 

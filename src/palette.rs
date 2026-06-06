@@ -76,6 +76,55 @@ pub const PALETTES: &[Palette] = &[
             [0.92, 0.95, 0.92],
         ],
     },
+    // --- Two-hue palettes: a dark, grimy base ramp with a contrasting accent at the bright
+    // end. Because the look maps luminance onto the ramp, that accent lands on highlights —
+    // i.e. the point lights — so they "pop" in a clashing hue against the base. Best with
+    // the sun off.
+    Palette {
+        // Red base with pops of green (the requested look): a blood/rust ramp, acid-green
+        // glints where the light hits.
+        name: "rust",
+        colors: &[
+            [0.06, 0.04, 0.05],
+            [0.24, 0.07, 0.07],
+            [0.48, 0.13, 0.10],
+            [0.74, 0.28, 0.16],
+            [0.46, 0.92, 0.38],
+        ],
+    },
+    Palette {
+        // Deep purple → hot magenta, with a cyan pop. Synthwave-in-a-cave.
+        name: "neon",
+        colors: &[
+            [0.04, 0.03, 0.07],
+            [0.15, 0.07, 0.22],
+            [0.36, 0.10, 0.40],
+            [0.82, 0.18, 0.60],
+            [0.40, 0.95, 0.96],
+        ],
+    },
+    Palette {
+        // Cold slate base with warm sodium-amber pops — streetlights through fog.
+        name: "sodium",
+        colors: &[
+            [0.04, 0.05, 0.07],
+            [0.10, 0.15, 0.19],
+            [0.20, 0.28, 0.30],
+            [0.62, 0.40, 0.14],
+            [1.00, 0.78, 0.34],
+        ],
+    },
+    Palette {
+        // Dark soil/olive base with an acid-lime pop — toxic bog.
+        name: "bog",
+        colors: &[
+            [0.05, 0.05, 0.04],
+            [0.15, 0.13, 0.09],
+            [0.28, 0.24, 0.12],
+            [0.40, 0.46, 0.16],
+            [0.78, 0.98, 0.34],
+        ],
+    },
 ];
 
 /// Max palette colours the shader uniform holds.
