@@ -24,6 +24,9 @@ glam = "0.33"
 bytemuck = { version = "1", features = ["derive"] }
 log = "0.4"
 cfg-if = "1"
+# Tiny public-domain 8x8 bitmap font for the in-engine text overlay (HUD now, more UI
+# text later). Used on every platform so text rendering is identical. Pure data.
+font8x8 = "0.3"
 # Cross-platform monotonic clock (std::time on native, performance.now on web) for
 # frame-rate-independent camera movement.
 web-time = "1"

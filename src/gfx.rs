@@ -284,6 +284,8 @@ pub struct State {
     last_stats: DrawStats,
     /// Start time, for the foliage wind animation (E6).
     start: web_time::Instant,
+    /// In-engine text overlay (HUD), drawn the same way on every platform.
+    hud: crate::hud::HudOverlay,
 
     // The window must outlive the surface; keep an Arc so `Surface<'static>` is sound.
     window: Arc<Window>,
@@ -553,6 +555,7 @@ impl State {
         let depth_view = create_depth_view(&device, &config);
         let scene_view = create_scene_view(&device, &config);
         let bloom = Bloom::new(&device, config.format, config.width, config.height);
+        let hud = crate::hud::HudOverlay::new(&device, config.format);
 
         State {
             surface,
@@ -579,8 +582,14 @@ impl State {
             frame_count: 0,
             last_stats: DrawStats::default(),
             start: web_time::Instant::now(),
+            hud,
             window,
         }
+    }
+
+    /// Update the in-engine text overlay (HUD), drawn each frame over the finished image.
+    pub fn set_hud(&mut self, text: &str) {
+        self.hud.set_text(&self.device, &self.queue, text);
     }
 
     /// Last frame's draw counts, for the perf HUD.
@@ -865,6 +874,15 @@ impl State {
             self.bloom
                 .blit(&self.device, &mut encoder, &self.scene_view, &view);
         }
+
+        // In-engine text overlay (HUD), composited last — identical on every platform.
+        self.hud.draw(
+            &self.queue,
+            &mut encoder,
+            &view,
+            self.config.width,
+            self.config.height,
+        );
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();

@@ -21,6 +21,7 @@ pub mod gamepad;
 mod gfx;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
+pub mod hud;
 pub mod mesh;
 pub mod particles;
 mod post;
@@ -832,14 +833,12 @@ impl ApplicationHandler<AppEvent> for App {
                             s.splats,
                             self.toggles.off_summary(),
                         );
+                        // In-engine text overlay on every platform (no DOM HUD).
+                        state.set_hud(&hud);
                         #[cfg(not(target_arch = "wasm32"))]
                         state.window().set_title(&format!("brickmap — {hud}"));
                         #[cfg(target_arch = "wasm32")]
-                        {
-                            set_hud(&hud);
-                            // Keep the page's "copy link" payload fresh.
-                            controls::set_current_share(&share_str);
-                        }
+                        controls::set_current_share(&share_str); // keep copy-link fresh
                     }
 
                     // Drive a continuous loop so held keys animate.
@@ -1193,17 +1192,6 @@ pub(crate) fn build_world_meshes(world: &World) -> Vec<ChunkInstance> {
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub fn wasm_start() {
     run();
-}
-
-/// Push the perf-HUD text into the page's overlay element (web only).
-#[cfg(target_arch = "wasm32")]
-fn set_hud(text: &str) {
-    if let Some(el) = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id("hud"))
-    {
-        el.set_text_content(Some(text));
-    }
 }
 
 fn init_logging() {

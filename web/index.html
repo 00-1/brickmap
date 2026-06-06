@@ -54,21 +54,9 @@
         background: #05060a;
         border: 0;
       }
-      /* Perf HUD overlay (M5) — top-left, monospace, set from wasm each frame. */
-      #hud {
-        position: fixed;
-        top: 8px;
-        left: 10px;
-        font: 12px/1.3 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-        color: #8affc8;
-        text-shadow: 0 1px 2px #000;
-        pointer-events: none;
-        white-space: nowrap;
-      }
     </style>
   </head>
   <body>
-    <div id="hud"></div>
     <canvas id="brickmap-canvas" width="960" height="720"></canvas>
     <p>
       brickmap — auto-flying. <b>Click</b> or <b>WASD</b> to take control

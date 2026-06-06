@@ -486,6 +486,19 @@ pub fn capture_view(
     }
     // Bloom: composite scene + glow into `target`, which is then read back.
     bloom.render(&device, &mut encoder, &scene_view, &target_view);
+    // In-engine HUD overlay — same code path as the live app, so the hero shot verifies it.
+    let mut hud = crate::hud::HudOverlay::new(&device, COLOR_FORMAT);
+    hud.set_text(
+        &device,
+        &queue,
+        &format!(
+            "brickmap {} - {} chunks - seed {}",
+            crate::BUILD,
+            instances.len(),
+            crate::WORLD_SEED
+        ),
+    );
+    hud.draw(&queue, &mut encoder, &target_view, width, height);
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &target,
