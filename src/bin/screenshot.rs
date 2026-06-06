@@ -24,6 +24,7 @@ fn main() {
             None,
             true,
             1,
+            false,
         );
         for (i, pal) in brickmap::palette::PALETTES.iter().enumerate() {
             let spec = brickmap::headless::PaletteSpec {
@@ -32,7 +33,17 @@ fn main() {
                 dither: 1.0,
             };
             let path = format!("palette-{}.png", pal.name);
-            brickmap::headless::capture_view(width, height, &path, None, None, Some(spec), true, 1);
+            brickmap::headless::capture_view(
+                width,
+                height,
+                &path,
+                None,
+                None,
+                Some(spec),
+                true,
+                1,
+                false,
+            );
         }
         // Low-count + dither demos: prove a 2–3 colour palette still reads as extra shades
         // via ordered dithering (the "fake more colours" goal). `<name>-<count>[-nodither]`.
@@ -53,6 +64,7 @@ fn main() {
                     Some(spec),
                     true,
                     1,
+                    false,
                 );
             }
         }
@@ -81,6 +93,8 @@ fn main() {
 
     // `nosun` anywhere in the args turns the directional sun off (point-lit only).
     let sun = !args.iter().any(|a| a == "nosun");
+    // `ink` anywhere in the args turns on the E10 blueprint-grid voxel-edge overlay.
+    let ink = args.iter().any(|a| a == "ink");
 
     // Optional palette tokens, for reproducing a "found" look: `pal=<index>`,
     // `count=<n>`, `dither=<f>`. Any one of them enables the palette pass (E10).
@@ -103,5 +117,5 @@ fn main() {
     // `scale=<n>` sets the pixel-scale / internal-resolution divisor (E10 halftone dial).
     let scale = tok("scale=").map(|s| s as u32).unwrap_or(1);
 
-    brickmap::headless::capture_view(width, height, &path, eye, target, palette, sun, scale);
+    brickmap::headless::capture_view(width, height, &path, eye, target, palette, sun, scale, ink);
 }

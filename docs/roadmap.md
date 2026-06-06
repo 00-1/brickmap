@@ -262,8 +262,14 @@ The aesthetic pass that **became the identity** (backlog §I; see the aesthetic 
   and cross-platform** (no longer only when a device upscales the canvas). The HUD stays
   full-res/crisp. Web `pixel` slider (1–6) + native key `K`; also the **biggest single perf
   dial** (fewer fragments). Verified headless (`screenshot … scale=N`).
-- ⏳ Depth/normal **"ink" outlines** (voxel creases as a blueprint grid) and a
-  **G-buffer-as-art** mode.
+- ✅ **"Ink" blueprint-grid outlines** (2026-06): a cheap **in-shader** voxel-edge overlay — the
+  chunk fragment darkens thin lines along voxel boundaries (from the per-voxel world `uv` + face
+  normal), so the cube lattice reads as drawn-on ink. No G-buffer/depth pass needed; fades with
+  the fog so distant edges don't fizz. Opt-in `ink` toggle (default off) — native key `I`, web
+  checkbox, share bit. Verified headless (close-up A/B).
+- ⏳ **G-buffer-as-art** mode (normals/depth presented as the look) — deferred: the forward
+  renderer keeps no normal buffer, so this needs a normal/world-pos target (a bigger change) and
+  is lower value than the ink grid; parked as the remaining E10 idea.
 - **De-risks:** done — funnelling the frame through a tiny palette + dither *is* the look.
 
 ### ✨ E11 — More dynamic voxels *(exploration)* ⏳

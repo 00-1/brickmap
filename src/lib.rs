@@ -872,8 +872,10 @@ fn toggle_index(code: KeyCode) -> Option<usize> {
         KeyCode::Digit8 => 7,
         KeyCode::Digit9 => 8,
         KeyCode::Digit0 => 9,
-        // Letters for the toggles past the number row: L = sun (E3 point-lit mood).
+        // Letters for the toggles past the number row: L = sun (E3 point-lit mood),
+        // I = ink blueprint-grid (E10).
         KeyCode::KeyL => 13,
+        KeyCode::KeyI => 14,
         _ => return None,
     })
 }

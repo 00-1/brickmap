@@ -203,6 +203,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let fog_dist = distance(in.world_pos, globals.camera_pos.xyz);
     let fog = smoothstep(globals.params.z, globals.params.w, fog_dist);
 
+    // "Ink" blueprint grid (E10, opt-in via fog_color.w): darken thin lines along voxel edges
+    // so the cube lattice reads as drawn-on ink, exposing the grid. The in-plane cell coords
+    // are the same per-voxel world `uv` the material tiles on; the lines fade out with the fog
+    // so distant edges don't fizz into noise.
+    if (globals.fog_color.w > 0.5) {
+        let e = abs(fract(uv) - vec2<f32>(0.5)); // 0 at the cell centre → 0.5 at the voxel edges
+        let line = max(e.x, e.y);
+        let ink = smoothstep(0.44, 0.48, line) * (1.0 - fog);
+        c = mix(c, vec3<f32>(0.02, 0.025, 0.04), ink * 0.9);
+    }
+
     // Distance dissolve (M7, opt-in via cam_up.w): past the fog start, stipple the
     // terrain away with the same Bayer threshold so it crumbles into a pixel haze toward
     // the horizon instead of a hard fog wall. Capped so some stipple survives into the fog.

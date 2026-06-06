@@ -56,12 +56,15 @@ pub struct Toggles {
     /// Directional sun (E3). On by default; turn it off to light the world only by the
     /// in-world emissive point lights (crystals) + dim ambient — a dark, point-lit mood.
     pub sun: bool,
+    /// "Ink" blueprint grid (E10): darken thin lines along voxel edges so the cube lattice
+    /// reads as drawn-on ink. Opt-in (default off) — a strong stylistic overlay.
+    pub ink: bool,
 }
 
 /// Short labels for the toggles, in index order (HUD + web checkboxes).
-pub const TOGGLE_LABELS: [&str; 14] = [
+pub const TOGGLE_LABELS: [&str; 15] = [
     "cull", "cave", "sky", "sparks", "bloom", "fog", "ao", "light", "glow", "relief", "sand",
-    "foliage", "melt", "sun",
+    "foliage", "melt", "sun", "ink",
 ];
 
 impl Default for Toggles {
@@ -81,6 +84,7 @@ impl Default for Toggles {
             foliage: true,
             melt: false, // opt-in (M7 distance dissolve)
             sun: false,  // default to the dark, point-lit mood (the resolved identity)
+            ink: false,  // opt-in (E10 blueprint-grid overlay)
         }
     }
 }
@@ -102,6 +106,7 @@ impl Toggles {
             self.foliage,
             self.melt,
             self.sun,
+            self.ink,
         ][i]
     }
 
@@ -121,6 +126,7 @@ impl Toggles {
             11 => self.foliage = v,
             12 => self.melt = v,
             13 => self.sun = v,
+            14 => self.ink = v,
             _ => {}
         }
     }
@@ -902,7 +908,8 @@ impl State {
             params: [aesthetic[0], aesthetic[1], fog_start, fog_end],
             // w = directional-sun flag (0 = off → point-lit only).
             camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, flag(toggles.sun)],
-            fog_color: FOG_COLOR,
+            // w carries the "ink" blueprint-grid flag (E10) for the chunk shader.
+            fog_color: [FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2], flag(toggles.ink)],
             flags: [
                 flag(toggles.ao),
                 flag(toggles.block_light),

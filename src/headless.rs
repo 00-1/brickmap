@@ -76,7 +76,7 @@ pub struct PaletteSpec {
 /// Render the demo scene to a PNG at `path`. Panics on setup failure (it's a dev
 /// tool); the most likely cause is a missing software-Vulkan ICD.
 pub fn capture(width: u32, height: u32, path: &str) {
-    capture_view(width, height, path, None, None, None, true, 1);
+    capture_view(width, height, path, None, None, None, true, 1, false);
 }
 
 /// As [`capture`], but with an optional camera override (`eye` looking at `target`) so
@@ -93,6 +93,7 @@ pub fn capture_view(
     palette: Option<PaletteSpec>,
     sun: bool,
     scale: u32,
+    ink: bool,
 ) {
     // Internal render resolution (E10 pixel scale): scene + post render at (iw, ih), then the
     // present/palette pass upscales (nearest) to the full-res `target`.
@@ -326,8 +327,8 @@ pub fn capture_view(
             camera.position.z,
             if sun { 1.0 } else { 0.0 },
         ],
-        // Horizon band of the sky gradient (see sky.wgsl) so terrain melts into it.
-        fog_color: [0.30, 0.33, 0.42, 1.0],
+        // Horizon band of the sky gradient (see sky.wgsl); w = ink blueprint-grid flag (E10).
+        fog_color: [0.30, 0.33, 0.42, if ink { 1.0 } else { 0.0 }],
         // All features on for the hero shot (AO, block light, emissive, relief).
         flags: [1.0, 1.0, 1.0, 1.0],
         // Camera basis for billboarding foliage; w = a fixed wind time for the still.
