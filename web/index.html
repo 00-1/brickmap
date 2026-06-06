@@ -45,6 +45,15 @@
         border: 1px solid #1c2233;
         image-rendering: pixelated;
       }
+      /* Fullscreen: scale the canvas to fill the screen, preserving its 4:3 aspect
+         (letterboxed) so the render isn't distorted. Pixelated keeps it crisp-chunky. */
+      canvas:fullscreen {
+        width: 100vw;
+        height: 100vh;
+        object-fit: contain;
+        background: #05060a;
+        border: 0;
+      }
       /* Perf HUD overlay (M5) — top-left, monospace, set from wasm each frame. */
       #hud {
         position: fixed;
@@ -67,6 +76,7 @@
       <b>F</b> to resume auto-fly. <b>Gamepad</b>: left stick move, right stick look,
       bumpers up/down, <b>A</b> toggles auto-fly. <a href="../">build gallery →</a>
     </p>
+    <button id="go-fullscreen" type="button">⛶ fullscreen</button>
     <!-- Shareable seeds (E12): type a seed, roll a random one, get the seed-of-the-day,
          or copy a link/seed to reproduce this exact world + view elsewhere. -->
     <div
@@ -166,6 +176,17 @@
           }
         })
         .finally(() => {
+          // Fullscreen the canvas (must be from a user gesture — hence the button).
+          const canvas = document.getElementById("brickmap-canvas");
+          document.getElementById("go-fullscreen").addEventListener("click", () => {
+            if (document.fullscreenElement) {
+              document.exitFullscreen?.();
+            } else {
+              const req = canvas.requestFullscreen || canvas.webkitRequestFullscreen;
+              req?.call(canvas).catch(() => {});
+            }
+          });
+
           const hp = parseHash();
           const wobble = document.getElementById("dial-wobble");
           const steps = document.getElementById("dial-steps");
