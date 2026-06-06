@@ -379,6 +379,12 @@ sidestepping LOD seams, while extending the point-cloud look to the whole world.
   A/B on the reference iGPU.)*
 - **Landed (look):** an opt-in `melt` toggle — terrain + foliage stipple into a pixel haze
   toward the horizon via the shared screen-locked Bayer threshold (default off; on-thesis).
+- **Landed (look — ethereal recession):** point-rendered things (foliage, the misty point-colossi,
+  wisps) **back away from the camera as you close in** — the splat VS pushes each splat outward in
+  the horizontal plane within ~11 blocks, up to ~5 blocks of drift, so you can never quite touch the
+  dots; the misty giants part around you as you drift through. Computed from the fixed instance
+  offset (no feedback), so it's stable + free (no CPU/per-frame state). Tunable via `splat.wgsl`
+  consts (`recede_r`, `recede_max`).
 - **Landed (LOD, for structures):** **solid relics dissolve mesh→dots by distance** (E18), done
   **in the shader**: a solid relic's mesh (origin.w flag) stipples out over `RELIC_LOD..+BAND`
   using the screen-stable Bayer threshold, so it crumbles gradually into sparse dots as it

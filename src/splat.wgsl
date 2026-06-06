@@ -46,12 +46,25 @@ fn vs_main(
     let up = globals.cam_up.xyz;
     let time = globals.cam_right.w;
 
+    // Ethereal recession: point-rendered things back away from the camera as you close in,
+    // so foliage and the misty point-colossi drift off by a few blocks instead of letting you
+    // reach them — you can never quite touch the dots. Pushed from the *fixed* instance offset
+    // (a function of position, not the displaced result, so there's no feedback oscillation),
+    // and in the horizontal plane so they slide away across the ground rather than sinking.
+    let to_splat = offset - globals.camera_pos.xyz;
+    let flat = vec3<f32>(to_splat.x, 0.0, to_splat.z);
+    let fd = length(flat);
+    let recede_r = 11.0;  // begins receding within ~11 blocks (horizontal)
+    let recede_max = 5.0; // up to ~5 blocks of drift when you're right on top
+    let push = recede_max * smoothstep(recede_r, 0.0, fd);
+    let center = offset + select(vec3<f32>(0.0), flat / fd, fd > 0.001) * push;
+
     // Wind: nudge the blade sideways, strongest at the top (q.y > 0), incoherent via the
     // per-splat phase. Cheap sin, no per-frame state.
     let topness = q.y + 0.5; // 0 at base, 1 at top
     let gust = sin(time * 1.7 + sway) * 0.18 * topness * size;
 
-    let world = offset
+    let world = center
         + right * (q.x * size + gust)
         + up * (q.y * size);
 
