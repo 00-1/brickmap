@@ -72,5 +72,23 @@ fn main() {
     // `nosun` anywhere in the args turns the directional sun off (point-lit only).
     let sun = !args.iter().any(|a| a == "nosun");
 
-    brickmap::headless::capture_view(width, height, &path, eye, target, None, sun);
+    // Optional palette tokens, for reproducing a "found" look: `pal=<index>`,
+    // `count=<n>`, `dither=<f>`. Any one of them enables the palette pass (E10).
+    let tok = |key: &str| {
+        args.iter()
+            .find_map(|a| a.strip_prefix(key).and_then(|v| v.parse::<f32>().ok()))
+    };
+    let palette = (tok("pal=").or(tok("count=")).or(tok("dither=")).is_some()).then(|| {
+        let index = tok("pal=").unwrap_or(0.0) as usize;
+        let count = tok("count=")
+            .map(|c| c as u32)
+            .unwrap_or_else(|| brickmap::palette::PALETTES[index].colors.len() as u32);
+        brickmap::headless::PaletteSpec {
+            index,
+            count,
+            dither: tok("dither=").unwrap_or(1.0),
+        }
+    });
+
+    brickmap::headless::capture_view(width, height, &path, eye, target, palette, sun);
 }
