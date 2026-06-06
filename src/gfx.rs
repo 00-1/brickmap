@@ -80,7 +80,7 @@ impl Default for Toggles {
             sand: true,
             foliage: true,
             melt: false, // opt-in (M7 distance dissolve)
-            sun: true,
+            sun: false,  // default to the dark, point-lit mood (the resolved identity)
         }
     }
 }

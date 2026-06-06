@@ -48,9 +48,10 @@ impl AudioEngine {
 
         let shared = Arc::new(Shared {
             enabled: AtomicBool::new(true),
-            volume: AtomicU32::new(0.5f32.to_bits()),
-            drive: AtomicU32::new(1.0f32.to_bits()),
-            tone: AtomicU32::new(0.4f32.to_bits()),
+            // Defaults match the web house mix: loud-ish, heavy distortion, fairly open.
+            volume: AtomicU32::new(0.85f32.to_bits()),
+            drive: AtomicU32::new(1.9f32.to_bits()),
+            tone: AtomicU32::new(0.7f32.to_bits()),
         });
 
         let mut drone = crate::audio::Drone::new(seed, sample_rate);

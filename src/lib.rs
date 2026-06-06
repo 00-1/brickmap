@@ -1082,10 +1082,11 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         auto_fly_angle: 0.0,
         wobble: view.wobble,
         color_steps: view.color_steps,
-        palette_on: false,
-        palette_index: 0,
-        palette_count: palette::PALETTES[0].colors.len() as u32,
-        palette_dither: 1.0,
+        // House look by default: the `bruise` palette (index 11), all 5 colours, heavy dither.
+        palette_on: true,
+        palette_index: 11,
+        palette_count: 5,
+        palette_dither: 1.5,
         last_frame: None,
         cursor_locked: false,
         frame_ms_ema: 0.0,
@@ -1327,11 +1328,13 @@ pub mod controls {
         static WOBBLE: Cell<f32> = const { Cell::new(85.0) };
         static COLOR_STEPS: Cell<f32> = const { Cell::new(4.0) };
         /// Palette post-process (E10): enabled flag, palette index, colour count, dither.
-        static PALETTE_ON: Cell<bool> = const { Cell::new(false) };
-        static PALETTE_INDEX: Cell<u32> = const { Cell::new(0) };
-        static PALETTE_COUNT: Cell<u32> = const { Cell::new(4) };
-        static PALETTE_DITHER: Cell<f32> = const { Cell::new(1.0) };
-        /// Feature-toggle bitmask, one bit per switch; all 12 on by default.
+        /// Default to the chosen house look: `bruise` (index 11), all 5 colours, heavy dither.
+        static PALETTE_ON: Cell<bool> = const { Cell::new(true) };
+        static PALETTE_INDEX: Cell<u32> = const { Cell::new(11) };
+        static PALETTE_COUNT: Cell<u32> = const { Cell::new(5) };
+        static PALETTE_DITHER: Cell<f32> = const { Cell::new(1.5) };
+        /// Feature-toggle bitmask, one bit per switch. `0xFFF` = bits 0–11 on (cull…foliage),
+        /// melt (12) + sun (13) off — the dark, point-lit default.
         static TOGGLES: Cell<u32> = const { Cell::new(0xFFF) };
         /// A seed change requested from the page, consumed by the app next frame.
         static PENDING_SEED: Cell<Option<u32>> = const { Cell::new(None) };
