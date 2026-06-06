@@ -375,6 +375,11 @@ sidestepping LOD seams, while extending the point-cloud look to the whole world.
   A/B on the reference iGPU.)*
 - **Landed (look):** an opt-in `melt` toggle — terrain + foliage stipple into a pixel haze
   toward the horizon via the shared screen-locked Bayer threshold (default off; on-thesis).
+- **Landed (LOD, for structures):** **solid relics dissolve mesh↔points by distance** (E18) —
+  greedy-meshed within `STRUCTURE_LOD`, their cached point cloud beyond it, switching as you
+  approach. A real LOD (far giants are cheap points, near ones solid) *and* the look. Per-relic
+  hard switch for now (fog-subdued); a Bayer cross-fade band is the polish. Terrain dissolve to
+  points is still the deferred general case below.
 - **Deferred (perf) → a general point-cloud render mode:** decimate distant chunks (and any
   voxel volume) into actual **point sets** so *primitives* drop with distance — today
   fragments are discarded but geometry isn't. Points are **sized camera-facing billboards**

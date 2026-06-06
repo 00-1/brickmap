@@ -66,6 +66,15 @@ enum AppEvent {
     Initialized(State),
 }
 
+/// One cached colossal relic (E18): its world position plus both renderable forms. Ethereal
+/// relics leave `meshes` empty (always points); solid relics carry both and pick by distance
+/// (the mesh→points dissolve). Generated once on cell-entry, kept until the cell leaves range.
+struct CachedRelic {
+    pos: Vec3,
+    points: Vec<foliage::SplatInstance>,
+    meshes: Vec<ChunkInstance>,
+}
+
 struct App {
     state: Option<State>,
     // Only used on the web (async init handoff); inert on native.
@@ -119,12 +128,14 @@ struct App {
     /// Undo log of inverse edits (E14): each editing action pushes the edit that reverts
     /// it. The forward edits are the future broadcast/share payload (N1 groundwork).
     undo: Vec<edit::Edit>,
-    /// Colossal structures (E18): per-cell cache of the in-range giants' geometry (ethereal
-    /// points and/or solid meshed instances), keyed by structure cell. Lets us generate a giant
-    /// only when its cell enters range (budgeted, ≤1/frame) instead of regenerating everything
-    /// on every cell crossing — the fix for the streaming framerate hitch.
-    structures:
-        std::collections::HashMap<(i32, i32), (Vec<foliage::SplatInstance>, Vec<ChunkInstance>)>,
+    /// Colossal structures (E18): per-cell cache of the in-range giants' geometry, keyed by
+    /// structure cell. Lets us generate a giant only when its cell enters range (budgeted,
+    /// ≤1/frame) instead of regenerating everything on every cell crossing (the streaming-hitch
+    /// fix), and pick its LOD (mesh near ↔ points far) per frame from the cached pair.
+    structures: std::collections::HashMap<(i32, i32), CachedRelic>,
+    /// Solid relics currently within the mesh LOD radius (drawn as meshes, not points). Tracked
+    /// so the combined buffers rebuild only when a relic crosses the mesh↔points distance (M7).
+    structure_near: Vec<(i32, i32)>,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
     /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
@@ -168,6 +179,7 @@ impl App {
         self.overlay.clear();
         self.sim_active.clear();
         self.structures.clear(); // force the new seed's colossi to rebuild next frame
+        self.structure_near.clear();
         self.loader.set_seed(seed);
         let ground = worldgen::height(
             self.camera.position.x.floor() as i32,
@@ -351,19 +363,20 @@ impl App {
     }
 
     /// Stream colossal structures (E18) around the camera: seed-placed tube-tech relics, some
-    /// ethereal (points), some solid (meshed). Caches each giant's geometry per cell and
-    /// generates at most [`STRUCTURE_GEN_BUDGET`] new ones per frame, so crossing into new cells
-    /// never regenerates everything at once (the framerate-hitch fix). Rebuilds + re-uploads the
-    /// combined buffers only when the cached set actually changes.
+    /// ethereal (always points), some solid. Caches each giant's geometry per cell and generates
+    /// at most [`STRUCTURE_GEN_BUDGET`] new ones per frame (the streaming-hitch fix). Solid relics
+    /// **dissolve** by distance (M7): meshed when near, their point-cloud when far — so a giant
+    /// resolves from points to solid as you approach, and far ones cost little. Rebuilds the
+    /// combined buffers only when the cached set *or* the near/far split changes.
     fn update_structures(&mut self) {
         if self.state.is_none() {
             return;
         }
         let seed = self.seed;
-        let placements =
-            structures::colossi_near(seed, self.camera.position, STRUCTURE_RADIUS, |x, z| {
-                worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
-            });
+        let cam = self.camera.position;
+        let placements = structures::colossi_near(seed, cam, STRUCTURE_RADIUS, |x, z| {
+            worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
+        });
         let wanted: std::collections::HashSet<(i32, i32)> =
             placements.iter().map(structures::cell_key).collect();
 
@@ -372,7 +385,9 @@ impl App {
         self.structures.retain(|k, _| wanted.contains(k));
         let mut changed = self.structures.len() != before;
 
-        // Generate newly-entered giants, budgeted so the cost spreads over frames.
+        // Generate newly-entered giants, budgeted so the cost spreads over frames. Solid relics
+        // cache *both* a mesh and a point cloud (for the distance dissolve); ethereal ones only
+        // points.
         let mut budget = STRUCTURE_GEN_BUDGET;
         for p in &placements {
             let key = structures::cell_key(p);
@@ -383,27 +398,55 @@ impl App {
                 break;
             }
             budget -= 1;
-            let entry = if p.solid {
-                (Vec::new(), relic_chunk_instances(*p, world::BlockId(5)))
+            let points = relic::relic_points(p.pos, p.voxel, p.yaw, p.seed, COLOSSUS_COLOR);
+            let meshes = if p.solid {
+                relic_chunk_instances(*p, world::BlockId(5))
             } else {
-                (
-                    relic::relic_points(p.pos, p.voxel, p.yaw, p.seed, COLOSSUS_COLOR),
-                    Vec::new(),
-                )
+                Vec::new()
             };
-            self.structures.insert(key, entry);
+            self.structures.insert(
+                key,
+                CachedRelic {
+                    pos: p.pos,
+                    points,
+                    meshes,
+                },
+            );
+            changed = true;
+        }
+
+        // Distance dissolve: which *solid* relics are within the mesh LOD radius right now.
+        let mut near: Vec<(i32, i32)> = self
+            .structures
+            .iter()
+            .filter(|(_, r)| {
+                !r.meshes.is_empty()
+                    && (r.pos - cam).length_squared() < STRUCTURE_LOD * STRUCTURE_LOD
+            })
+            .map(|(k, _)| *k)
+            .collect();
+        near.sort_unstable();
+        if near != self.structure_near {
+            self.structure_near = near;
             changed = true;
         }
         if !changed {
             return;
         }
 
-        // Rebuild the combined point + mesh sets from the cache and upload.
+        // Rebuild combined sets: ethereal → points; solid near → mesh; solid far → its points.
+        let near: std::collections::HashSet<(i32, i32)> =
+            self.structure_near.iter().copied().collect();
         let mut pts: Vec<foliage::SplatInstance> = Vec::new();
         let mut meshes: Vec<ChunkInstance> = Vec::new();
-        for (p, m) in self.structures.values() {
-            pts.extend_from_slice(p);
-            meshes.extend(m.iter().cloned());
+        for (key, r) in &self.structures {
+            if r.meshes.is_empty() {
+                pts.extend_from_slice(&r.points); // ethereal
+            } else if near.contains(key) {
+                meshes.extend(r.meshes.iter().cloned()); // solid, near → meshed
+            } else {
+                pts.extend_from_slice(&r.points); // solid, far → dissolved to points
+            }
         }
         if let Some(state) = self.state.as_mut() {
             state.set_structure_points(&pts);
@@ -1250,6 +1293,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         seed: view.seed,
         undo: Vec::new(),
         structures: std::collections::HashMap::new(),
+        structure_near: Vec::new(),
         pad: gamepad::Pad::new(),
         // Start the drone on the world seed so the dirge matches the world (native; a no-op
         // None if there's no audio device). Web starts audio from the page on first tap.
@@ -1335,6 +1379,10 @@ const STREAM_REQUESTS: usize = 8;
 /// How far (world units) to stream colossal structures (E18) around the camera. A little
 /// beyond the chunk stream radius (≈160) so a giant resolves at the fog edge as you approach.
 const STRUCTURE_RADIUS: f32 = 210.0;
+/// Distance (world units) at which a *solid* relic dissolves between its mesh (nearer) and its
+/// point cloud (farther) — M7 "mesh near / points far". Set inside the stream radius, out where
+/// fog is thickening, so the swap is subdued.
+const STRUCTURE_LOD: f32 = 135.0;
 /// The ethereal colossi's tint (cool pale; the palette recolours it in the house look).
 const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
 /// How many newly-entered colossi to generate per frame (the rest wait for later frames), so
