@@ -215,29 +215,27 @@ mod web {
 }
 
 /// Android pad, fed from winit's `KeyboardInput`. winit drains the Android input queue
-/// itself and surfaces gamepad **buttons** as key events (D-pad → arrows, face/shoulder
-/// buttons → `Unidentified(NativeKeyCode::Android(code))`) — but it does *not* expose the
-/// analog **stick** axes (joystick `MotionEvent`s are treated as touch). So a native pad
-/// here is digital: D-pad moves (via the normal arrow-key path), shoulders turn, triggers
-/// go up/down, A toggles auto-fly. Full analog sticks need bypassing winit's input loop
-/// (a bigger change) — the web build keeps the full-stick experience meanwhile.
+/// itself, so on Android we **drain the input queue ourselves** (before winit, see
+/// `lib::android_main`) and read the full analog **sticks + triggers** from MotionEvents
+/// plus buttons from KeyEvents. Left stick moves, right stick looks, shoulders add turn,
+/// triggers go up/down, A toggles auto-fly.
 #[cfg(target_os = "android")]
 mod android {
     use super::PadInput;
-
-    // Android `KEYCODE_BUTTON_*` values (frameworks/native KeyCodes).
-    const BUTTON_A: u32 = 96;
-    const BUTTON_L1: u32 = 102;
-    const BUTTON_R1: u32 = 103;
-    const BUTTON_L2: u32 = 104;
-    const BUTTON_R2: u32 = 105;
+    use winit::platform::android::activity::input::{Axis, InputEvent, KeyAction, Keycode};
 
     #[derive(Default)]
     pub struct Pad {
-        turn_left: bool,
-        turn_right: bool,
+        // Latest analog stick + trigger state (read straight from MotionEvents).
+        lx: f32,
+        ly: f32,
+        rx: f32,
+        ry: f32,
         up: bool,
         down: bool,
+        // Digital shoulder turn (fallback / extra), and the auto-fly toggle edge.
+        turn_left: bool,
+        turn_right: bool,
         toggle_pending: bool,
     }
 
@@ -247,32 +245,63 @@ mod android {
             Pad::default()
         }
 
-        /// Feed an Android gamepad button (native keycode) from winit's `KeyboardInput`.
-        /// Returns `true` if it was a button we handle. Shoulders turn, triggers raise/
-        /// lower, A toggles auto-fly (on press).
-        pub fn on_android_key(&mut self, keycode: u32, pressed: bool) -> bool {
-            match keycode {
-                BUTTON_L1 => self.turn_left = pressed,
-                BUTTON_R1 => self.turn_right = pressed,
-                BUTTON_R2 => self.up = pressed,
-                BUTTON_L2 => self.down = pressed,
-                BUTTON_A => {
-                    if pressed {
-                        self.toggle_pending = true;
-                    }
+        /// Feed one Android input event. We drain the input queue ourselves (before
+        /// winit) precisely so we can read the analog **stick** axes that winit drops.
+        /// Returns `true` if it was a gamepad input we consumed.
+        pub fn handle_android_input(&mut self, ev: &InputEvent) -> bool {
+            match ev {
+                InputEvent::MotionEvent(m) => {
+                    let Some(p) = m.pointers().next() else {
+                        return false;
+                    };
+                    // Gamepad sticks/triggers are normalised (−1..1 / 0..1). Touchscreen
+                    // MotionEvents report *pixel* coords → out of range → ignored, so a
+                    // stray screen touch can't fling the camera.
+                    let ax = |a: Axis| {
+                        let v = p.axis_value(a);
+                        if v.abs() <= 1.05 {
+                            v
+                        } else {
+                            0.0
+                        }
+                    };
+                    self.lx = ax(Axis::X);
+                    self.ly = ax(Axis::Y);
+                    self.rx = ax(Axis::Z);
+                    self.ry = ax(Axis::Rz);
+                    let lt = ax(Axis::Ltrigger).max(ax(Axis::Brake));
+                    let rt = ax(Axis::Rtrigger).max(ax(Axis::Gas));
+                    self.down = lt > 0.5;
+                    self.up = rt > 0.5;
+                    true
                 }
-                _ => return false,
+                InputEvent::KeyEvent(k) => {
+                    let pressed = matches!(k.action(), KeyAction::Down);
+                    match k.key_code() {
+                        Keycode::ButtonL1 => self.turn_left = pressed,
+                        Keycode::ButtonR1 => self.turn_right = pressed,
+                        Keycode::ButtonR2 => self.up = pressed,
+                        Keycode::ButtonL2 => self.down = pressed,
+                        Keycode::ButtonA => {
+                            if pressed {
+                                self.toggle_pending = true;
+                            }
+                        }
+                        _ => return false,
+                    }
+                    true
+                }
+                _ => false,
             }
-            true
         }
 
         pub fn poll(&mut self) -> PadInput {
-            let look_x = (self.turn_right as i32 - self.turn_left as i32) as f32;
+            // Android joystick Y is +down, so forward = −ly. Right stick = look; shoulders
+            // add a digital turn on top of the right-stick X.
+            let look_x = self.rx + (self.turn_right as i32 - self.turn_left as i32) as f32;
             let vertical = (self.up as i32 - self.down as i32) as f32;
             let toggle = std::mem::take(&mut self.toggle_pending);
-            // Movement (forward/strafe) comes from the D-pad via the normal arrow-key
-            // path, so leave those zero here; we contribute turn + vertical + toggle.
-            PadInput::from_raw(0.0, 0.0, vertical, look_x, 0.0, toggle)
+            PadInput::from_raw(self.lx, -self.ly, vertical, look_x, self.ry, toggle)
         }
     }
 }

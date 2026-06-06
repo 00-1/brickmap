@@ -379,11 +379,13 @@ phone with a USB-C/Bluetooth pad.
   `add_look`.
 - **Mapping:** left stick → move, right stick → look, bumpers → up/down, **A** → toggle
   auto-fly; deadzoned, analog (partial-stick = slower). Pure mapping + deadzone unit-tested.
-- **Android-native pad:** **digital** — winit drains the Android input queue and surfaces
-  gamepad *buttons* as key events (D-pad → arrows → move; shoulders → turn; triggers →
-  up/down; A → auto-fly), fed into the same `Pad`/`PadInput` path. **Analog sticks are not
-  exposed by winit** (joystick `MotionEvent`s are treated as touch) — full sticks need
-  bypassing winit's input loop (a bigger change); the web build keeps the full-stick pad.
+- **Android-native pad:** **full analog** — since winit drains the Android input queue and
+  drops the joystick axes, `android_main` drives the loop with `pump_app_events` and drains
+  the input queue *itself first*, reading sticks + triggers from `MotionEvent` axes and
+  buttons from `KeyEvent`s into the same `Pad`/`PadInput` path. Left stick moves, right
+  stick looks, shoulders add turn, triggers go up/down, A toggles auto-fly. Touch is
+  range-gated out so a screen tap can't fling the camera. *(Built blind — on-device tuning
+  expected.)*
 - **Outcome:** pick up a pad and fly; auto-fly yields to stick input like WASD does.
 - **Status:** all three targets compile (native clippy+tests, wasm, android); **runtime is
   built blind** (no pad/browser/device here) — verified by the human with a controller.

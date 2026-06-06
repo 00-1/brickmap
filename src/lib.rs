@@ -693,16 +693,8 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                 }
-                // Android (D7): winit surfaces gamepad *buttons* here (the D-pad arrives
-                // as arrow keys above; shoulders/triggers/A come through as Android native
-                // keycodes). Feed them to the pad — its per-frame poll applies turn +
-                // up/down + the auto-fly toggle. (Analog sticks aren't exposed by winit.)
-                #[cfg(target_os = "android")]
-                if let PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Android(code)) =
-                    key.physical_key
-                {
-                    self.pad.on_android_key(code, key.state.is_pressed());
-                }
+                // (Android gamepad input is read directly in `android_main`, not via
+                // winit key events — see `gamepad::android` + the pump loop.)
             }
             // Click to capture the pointer for mouselook (and to re-capture after
             // Esc / tabbing away). Idempotent, so re-clicking is harmless.
@@ -905,24 +897,53 @@ pub fn run() {
     run_event_loop(event_loop);
 }
 
-/// Android entry point. `cargo-apk` / `android-activity` calls this with the platform's
-/// `AndroidApp`, which we thread into the winit event loop. The rest of the app is the
-/// same cross-platform path. (Built blind — verified on-device by the human.)
+/// Android entry point. `android-activity` calls this with the `AndroidApp`. We thread it
+/// into winit for the window/surface + lifecycle, but **drive the loop ourselves** with
+/// `pump_app_events` so we can drain the input queue *before* winit each frame — winit
+/// consumes Android input and drops the gamepad stick axes, so reading it first is the
+/// only way to get analog sticks. (Built blind — verified on-device.)
 #[cfg(target_os = "android")]
 #[no_mangle]
-fn android_main(app: winit::platform::android::activity::AndroidApp) {
+fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
+    use winit::platform::android::activity::InputStatus;
     use winit::platform::android::EventLoopBuilderExtAndroid;
+    use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
+
     init_logging();
-    let event_loop = EventLoop::<AppEvent>::with_user_event()
-        .with_android_app(app)
+    let mut event_loop = EventLoop::<AppEvent>::with_user_event()
+        .with_android_app(android_app.clone())
         .build()
         .expect("failed to build event loop");
-    run_event_loop(event_loop);
+    let mut app = build_app(&event_loop);
+
+    loop {
+        // 1) Drain Android input ourselves → feed the pad (sticks + buttons).
+        if let Ok(mut events) = android_app.input_events_iter() {
+            while events.next(|event| {
+                if app.pad.handle_android_input(event) {
+                    InputStatus::Handled
+                } else {
+                    InputStatus::Unhandled
+                }
+            }) {}
+        }
+        // 2) Pump winit (lifecycle + redraw). Vsync present throttles the frame rate.
+        match event_loop.pump_app_events(Some(std::time::Duration::from_millis(4)), &mut app) {
+            PumpStatus::Exit(_) => break,
+            PumpStatus::Continue => {}
+        }
+    }
 }
 
-/// Set up the world/view + `App` and run the (already-built) event loop. Shared by the
-/// desktop/web entry (`run`) and the Android entry (`android_main`).
+/// Desktop/web: build the app and run the event loop to completion.
 fn run_event_loop(event_loop: EventLoop<AppEvent>) {
+    let mut app = build_app(&event_loop);
+    event_loop.run_app(&mut app).expect("event loop error");
+}
+
+/// Set up the world/view + `App`. Shared by the desktop/web entry (`run`) and the Android
+/// entry (`android_main`, which then drives the loop itself).
+fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
     // The default world/view: start above the terrain at the origin, looking along +x;
     // streaming fills the world in around us on the first frames.
     let default_ground = worldgen::height(0, 0, WORLD_SEED) as f32;
@@ -952,7 +973,7 @@ fn run_event_loop(event_loop: EventLoop<AppEvent>) {
     #[cfg(target_arch = "wasm32")]
     controls::init_from(&view);
 
-    let mut app = App {
+    App {
         state: None,
         proxy: Some(event_loop.create_proxy()),
         camera,
@@ -976,9 +997,7 @@ fn run_event_loop(event_loop: EventLoop<AppEvent>) {
         seed: view.seed,
         undo: Vec::new(),
         pad: gamepad::Pad::new(),
-    };
-
-    event_loop.run_app(&mut app).expect("event loop error");
+    }
 }
 
 /// Resolve the initial world/view, overriding `default` from a shared link or CLI seed.
