@@ -822,7 +822,7 @@ impl ApplicationHandler<AppEvent> for App {
                             String::new()
                         };
                         let hud = format!(
-                            "{fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats{meshing}{}",
+                            "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats{meshing}{}",
                             self.frame_ms_ema,
                             self.seed,
                             s.drawn_chunks,
@@ -1046,6 +1046,10 @@ fn initial_view(default: share::ShareState) -> share::ShareState {
 
 /// Seed for the world (the default + the headless demo).
 const WORLD_SEED: u32 = 1337;
+
+/// Short build id (git SHA), embedded at compile time by `build.rs`; shown in the HUD on
+/// every platform so a screenshot/report says exactly which build it is.
+const BUILD: &str = env!("BRICKMAP_BUILD");
 
 /// A fresh pseudo-random seed from the wall clock (native `R` key). splitmix64-style
 /// mix so nearby nanos still produce well-spread seeds.
