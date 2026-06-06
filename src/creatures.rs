@@ -94,6 +94,7 @@ impl Wisp {
                     self.tint[2] * glow,
                 ],
                 sway: 0.0,
+                alpha: 1.0,
             });
         }
     }

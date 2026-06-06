@@ -32,8 +32,9 @@ struct Globals {
     camera_pos: [f32; 4],
     fog_color: [f32; 4],
     flags: [f32; 4],
-    cam_right: [f32; 4], // xyz = camera right; w = wind time
-    cam_up: [f32; 4],    // xyz = camera up
+    cam_right: [f32; 4],  // xyz = camera right; w = wind time
+    cam_up: [f32; 4],     // xyz = camera up
+    lag_camera: [f32; 4], // xyz = lagged camera position (drives splat recession)
 }
 
 /// Distance fog (terrain fades to the sky/clear colour). The live cruise camera
@@ -332,6 +333,8 @@ pub fn capture_view(
         // Camera basis for billboarding foliage; w = a fixed wind time for the still.
         cam_right: [cam_right.x, cam_right.y, cam_right.z, 0.6],
         cam_up: [cam_up.x, cam_up.y, cam_up.z, 0.0],
+        // For the still, the lagged camera is just the real one (no motion to trail).
+        lag_camera: [camera.position.x, camera.position.y, camera.position.z, 0.0],
     };
     let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("globals"),

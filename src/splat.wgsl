@@ -13,6 +13,7 @@ struct Globals {
     flags: vec4<f32>,
     cam_right: vec4<f32>, // xyz = camera right; w = wind time
     cam_up: vec4<f32>,    // xyz = camera up
+    lag_camera: vec4<f32>, // xyz = eased/lagged camera position (drives recession)
 };
 @group(0) @binding(0)
 var<uniform> globals: Globals;
@@ -22,7 +23,15 @@ struct VsOut {
     @location(0) color: vec3<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) fog: f32,
+    @location(3) alpha: f32,
 };
+
+// A cheap per-splat hash in [0, 1) from its world position, to stagger the recession so
+// points don't all flee at the same distance / pace.
+fn hash13(p: vec3<f32>) -> f32 {
+    let h = dot(p, vec3<f32>(127.1, 311.7, 74.7));
+    return fract(sin(h) * 43758.5453);
+}
 
 // A unit quad in [-0.5, 0.5]^2 from the vertex index (two triangles, 6 verts).
 fn corner(i: u32) -> vec2<f32> {
@@ -40,6 +49,7 @@ fn vs_main(
     @location(1) size: f32,
     @location(2) color: vec3<f32>,
     @location(3) sway: f32,
+    @location(4) alpha: f32,
 ) -> VsOut {
     let q = corner(vid);
     let right = globals.cam_right.xyz;
@@ -48,14 +58,18 @@ fn vs_main(
 
     // Ethereal recession: point-rendered things back away from the camera as you close in,
     // so foliage and the misty point-colossi drift off by a few blocks instead of letting you
-    // reach them — you can never quite touch the dots. Pushed from the *fixed* instance offset
-    // (a function of position, not the displaced result, so there's no feedback oscillation),
-    // and in the horizontal plane so they slide away across the ground rather than sinking.
-    let to_splat = offset - globals.camera_pos.xyz;
+    // reach them — you can never quite touch the dots. Driven by the *lagged* camera (xyz),
+    // which eases behind the real one, so points move out of the way with inertia / at their
+    // own pace rather than tracking the camera rigidly. Pushed from the *fixed* instance
+    // offset (a function of position, no feedback), in the horizontal plane so they slide
+    // away across the ground rather than sinking. A per-splat hash staggers the onset radius
+    // and drift so the field reacts unevenly, not in lockstep.
+    let to_splat = offset - globals.lag_camera.xyz;
     let flat = vec3<f32>(to_splat.x, 0.0, to_splat.z);
     let fd = length(flat);
-    let recede_r = 11.0;  // begins receding within ~11 blocks (horizontal)
-    let recede_max = 5.0; // up to ~5 blocks of drift when you're right on top
+    let h = hash13(offset);
+    let recede_r = 11.0 * (0.6 + 0.9 * h);   // staggered onset (~6.6–16.5 blocks)
+    let recede_max = 5.0 * (0.65 + 0.7 * h); // staggered drift (~3.3–6.8 blocks)
     let push = recede_max * smoothstep(recede_r, 0.0, fd);
     let center = offset + select(vec3<f32>(0.0), flat / fd, fd > 0.001) * push;
 
@@ -72,10 +86,25 @@ fn vs_main(
     out.clip_position = globals.view_proj * vec4<f32>(world, 1.0);
     out.color = color;
     out.uv = q;
+    out.alpha = alpha;
     // Distance fog, matching the terrain (params.z = start, .w = end; fog_color = horizon).
     let dist = length(world - globals.camera_pos.xyz);
     out.fog = clamp((dist - globals.params.z) / max(globals.params.w - globals.params.z, 0.001), 0.0, 1.0);
     return out;
+}
+
+// Screen-locked 4x4 Bayer threshold in [0, 1) at the given pixel — shared by the dithered
+// transparency and the distance melt, so both stipple on the same stable lattice.
+fn bayer4(px: vec2<f32>) -> f32 {
+    var m = array<f32, 16>(
+        0.0, 8.0, 2.0, 10.0,
+        12.0, 4.0, 14.0, 6.0,
+        3.0, 11.0, 1.0, 9.0,
+        15.0, 7.0, 13.0, 5.0,
+    );
+    let bx = u32(px.x) % 4u;
+    let by = u32(px.y) % 4u;
+    return (m[by * 4u + bx] + 0.5) / 16.0;
 }
 
 @fragment
@@ -84,18 +113,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (dot(in.uv, in.uv) > 0.25) {
         discard;
     }
+    let thr = bayer4(in.clip_position.xy);
+    // Dithered transparency: keep only ~alpha of the pixels (Bayer-stippled), so foliage
+    // reads as lacy / see-through with no blending or sorting. alpha = 1 keeps everything.
+    if (in.alpha < 0.999 && thr >= in.alpha) {
+        discard;
+    }
     // Distance dissolve (M7, opt-in via cam_up.w): stipple distant foliage away with the
-    // terrain, using a screen-locked Bayer threshold ramped by the fog distance.
+    // terrain, using the same screen-locked Bayer threshold ramped by the fog distance.
     if (globals.cam_up.w > 0.5) {
-        var bayer = array<f32, 16>(
-            0.0, 8.0, 2.0, 10.0,
-            12.0, 4.0, 14.0, 6.0,
-            3.0, 11.0, 1.0, 9.0,
-            15.0, 7.0, 13.0, 5.0,
-        );
-        let bx = u32(in.clip_position.x) % 4u;
-        let by = u32(in.clip_position.y) % 4u;
-        let thr = (bayer[by * 4u + bx] + 0.5) / 16.0;
         if (thr < in.fog * 0.85) {
             discard;
         }

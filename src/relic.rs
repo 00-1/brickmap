@@ -216,6 +216,7 @@ pub fn relic_points(
                     size: voxel * 0.24,
                     color: [color[0] * v, color[1] * v, color[2] * v],
                     sway: rng.unit() * std::f32::consts::TAU,
+                    alpha: 1.0,
                 });
             }
         }

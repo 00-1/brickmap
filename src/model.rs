@@ -124,6 +124,7 @@ pub fn fallen_splats(
                 size: scale * 0.10,
                 color: [color[0] * v, color[1] * v, color[2] * v],
                 sway: rng.unit() * std::f32::consts::TAU,
+                alpha: 1.0,
             }
         })
         .collect()

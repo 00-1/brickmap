@@ -205,6 +205,11 @@ cubes. Grounded in [`research-points-splatting.md`](research-points-splatting.md
 - **Outcome:** a lush, alive grassy field of points that sways; toggleable.
 - **De-risks:** the splat pipeline (look + cost on weak hardware) and bounding the
   on-screen splat count — both reused by everything later in the pivot.
+- **Landed (look polish):** blade sizes vary far more widely (squared roll → mostly small
+  wisps with the odd tall tuft), and every foliage splat carries a per-splat **`alpha`**
+  rendered as **dithered transparency** (a screen-locked Bayer stipple in the fragment shader,
+  so leaves read lacy/see-through with no blending or sorting). The Bayer threshold is shared
+  with the distance-melt path.
 
 ### ✨ E7 — The forest & atmosphere *(exploration)* ✅ &nbsp;→ [`milestones/E7-forest-atmosphere.md`](milestones/E7-forest-atmosphere.md)
 The *destination* look: **point-cloud trees**, layered vegetation, light shafts, glow,
@@ -381,10 +386,13 @@ sidestepping LOD seams, while extending the point-cloud look to the whole world.
   toward the horizon via the shared screen-locked Bayer threshold (default off; on-thesis).
 - **Landed (look — ethereal recession):** point-rendered things (foliage, the misty point-colossi,
   wisps) **back away from the camera as you close in** — the splat VS pushes each splat outward in
-  the horizontal plane within ~11 blocks, up to ~5 blocks of drift, so you can never quite touch the
-  dots; the misty giants part around you as you drift through. Computed from the fixed instance
-  offset (no feedback), so it's stable + free (no CPU/per-frame state). Tunable via `splat.wgsl`
-  consts (`recede_r`, `recede_max`).
+  the horizontal plane (~6–16 blocks onset, up to ~3–7 blocks of drift), so you can never quite
+  touch the dots; the misty giants part around you as you drift through. Driven by a **lagged
+  camera** (an eased-behind position uploaded each frame) so points move out of the way **with
+  inertia / at their own pace** rather than tracking you rigidly — the faster you fly, the lazier
+  they drift out in your wake. A per-splat position hash **staggers** the onset radius + drift so
+  the field reacts unevenly, not in lockstep. Computed from the fixed instance offset (no feedback);
+  cheap. Tunable via `splat.wgsl` consts + the lag time-constant in `gfx.rs`.
 - **Landed (LOD, for structures):** **solid relics dissolve mesh→dots by distance** (E18), done
   **in the shader**: a solid relic's mesh (origin.w flag) stipples out over `RELIC_LOD..+BAND`
   using the screen-stable Bayer threshold, so it crumbles gradually into sparse dots as it

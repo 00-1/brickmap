@@ -25,6 +25,10 @@ pub struct SplatInstance {
     pub color: [f32; 3],
     /// Per-splat phase so the wind sway is incoherent across the field.
     pub sway: f32,
+    /// Coverage in `[0, 1]` for **dithered transparency**: the splat keeps roughly this
+    /// fraction of its pixels (Bayer-stippled in the shader), so foliage reads as lacy /
+    /// see-through without any blending or sorting. `1.0` = fully opaque.
+    pub alpha: f32,
 }
 
 /// A small integer hash → `[0, 1)`, same shape as `worldgen::hash` but salted per call
@@ -80,7 +84,10 @@ pub fn scatter(section: &Section, cx: i32, cz: i32, seed: u32, density: u32) -> 
                 let hz = hash01(wx, wz, salt ^ 0x55aa_55aa);
                 let hs = hash01(wx, wz, salt ^ 0x1234_abcd);
                 let hc = hash01(wx, wz, salt ^ 0x7777_3333);
-                let size = 0.22 + hs * 0.42;
+                let ha = hash01(wx, wz, salt ^ 0x0bad_f00d);
+                // Widely varied blade sizes: squared roll skews toward small wisps with the
+                // occasional tall tuft, so the field isn't a uniform pile of same-size dots.
+                let size = 0.14 + hs * hs * 1.05;
                 // Lush, varied greens; brighter blades catch the bloom.
                 let g = 0.45 + hc * 0.40;
                 let r = 0.12 + hc * 0.22;
@@ -95,6 +102,8 @@ pub fn scatter(section: &Section, cx: i32, cz: i32, seed: u32, density: u32) -> 
                     size,
                     color: [r, g, b],
                     sway: hash01(wx, wz, salt ^ 0x2468_ace0) * std::f32::consts::TAU,
+                    // Lacy, varied coverage so blades read as see-through stipple.
+                    alpha: 0.5 + ha * 0.45,
                 });
             }
         }
@@ -131,6 +140,8 @@ fn plant_tree(out: &mut Vec<SplatInstance>, base: [f32; 3], seed_pt: u32) {
             size: 0.42 + frand(&mut st) * 0.12,
             color: [0.26 + frand(&mut st) * 0.12, 0.17, 0.10],
             sway: sway_base,
+            // Trunks read fairly solid (a touch of stipple).
+            alpha: 0.85 + frand(&mut st) * 0.15,
         });
     }
 
@@ -151,9 +162,11 @@ fn plant_tree(out: &mut Vec<SplatInstance>, base: [f32; 3], seed_pt: u32) {
         let glow = if bright > 0.82 { 0.25 } else { 0.0 };
         out.push(SplatInstance {
             offset: [cx + dx, cy + dy, cz + dz],
-            size: 0.5 + frand(&mut st) * 0.4,
+            size: 0.5 + frand(&mut st) * 0.7,
             color: [0.12 + glow, g + glow, 0.12 + glow * 0.5],
             sway: sway_base + frand(&mut st) * 0.6,
+            // Airy canopy: see-through stipple so light reads through the leaves.
+            alpha: 0.5 + frand(&mut st) * 0.35,
         });
     }
 }
@@ -267,7 +280,7 @@ pub fn scatter_bushes(
                 let shade = frand(&mut st);
                 out.push(SplatInstance {
                     offset: [base[0] + dx, base[1] + 0.3 + dy, base[2] + dz],
-                    size: 0.42 + frand(&mut st) * 0.3,
+                    size: 0.38 + frand(&mut st) * 0.55,
                     // Darker, bluer greens than the grass so the tiers read apart.
                     color: [
                         0.10 + shade * 0.12,
@@ -275,6 +288,8 @@ pub fn scatter_bushes(
                         0.16 + shade * 0.10,
                     ],
                     sway,
+                    // Lacy clumps, like the grass.
+                    alpha: 0.5 + frand(&mut st) * 0.4,
                 });
             }
         }

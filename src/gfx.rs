@@ -207,6 +207,10 @@ struct Globals {
     cam_right: [f32; 4],
     /// Camera up vector (xyz) for billboarding splats; w spare.
     cam_up: [f32; 4],
+    /// A *lagged* camera position (xyz) that eases behind the real one, so point-splats
+    /// recede from it with inertia (drift out of the way at their own pace) rather than
+    /// tracking the camera rigidly. w unused. Only `splat.wgsl` reads it.
+    lag_camera: [f32; 4],
 }
 
 /// Per-chunk uniform (bind group 1): the chunk's world origin (xyz; w unused).
@@ -310,6 +314,12 @@ pub struct State {
     creature_splats: wgpu::Buffer,
     creature_count: u32,
     creature_capacity: usize,
+
+    /// Eased camera position driving the splat recession (E18 polish): lags the real camera
+    /// so points drift out of the way with inertia. `lag_time` is the previous frame's clock
+    /// for the frame-rate-independent ease; a negative value means "not yet initialised".
+    lag_camera: Vec3,
+    lag_time: f32,
 
     // Particles (E2): an instanced emissive-cube pipeline + a growable instance buffer.
     particle_pipeline: wgpu::RenderPipeline,
@@ -660,6 +670,8 @@ impl State {
             creature_splats,
             creature_count: 0,
             creature_capacity,
+            lag_camera: Vec3::ZERO,
+            lag_time: -1.0,
             particle_pipeline,
             cube_vertex_buffer,
             cube_index_buffer,
@@ -844,6 +856,19 @@ impl State {
         } else {
             (1.0e9, 1.0e9 + 1.0)
         };
+        // Ease the lagged camera toward the real one (frame-rate-independent exponential
+        // smoothing). The recession field is driven by this, so the faster you move the
+        // further it trails — a slow careful approach is responsive, a fast fly-by leaves
+        // the foliage to drift out lazily in your wake. ~0.35 s time constant.
+        if self.lag_time < 0.0 {
+            self.lag_camera = camera_pos;
+        } else {
+            let dt = (time - self.lag_time).clamp(0.0, 0.25);
+            let k = 1.0 - (-dt / 0.35).exp();
+            self.lag_camera += (camera_pos - self.lag_camera) * k;
+        }
+        self.lag_time = time;
+
         let flag = |b: bool| if b { 1.0 } else { 0.0 };
         let globals = Globals {
             view_proj: view_proj.to_cols_array_2d(),
@@ -860,6 +885,7 @@ impl State {
             ],
             cam_right: [cam_right.x, cam_right.y, cam_right.z, time],
             cam_up: [cam_up.x, cam_up.y, cam_up.z, flag(toggles.melt)],
+            lag_camera: [self.lag_camera.x, self.lag_camera.y, self.lag_camera.z, 0.0],
         };
         self.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
@@ -1233,7 +1259,7 @@ pub(crate) fn build_splat_pipeline(
 const SPLAT_INSTANCE_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
     array_stride: std::mem::size_of::<SplatInstance>() as wgpu::BufferAddress,
     step_mode: wgpu::VertexStepMode::Instance,
-    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x3, 3 => Float32],
+    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x3, 3 => Float32, 4 => Float32],
 };
 
 /// Fullscreen sky-gradient pipeline: no bind groups, no vertex buffers (the vertex
