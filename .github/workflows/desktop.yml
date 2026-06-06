@@ -1,0 +1,62 @@
+name: Desktop builds
+
+# Native desktop binaries (D8): Windows .exe + Linux binary you download and run.
+# Triggered on demand (workflow_dispatch) and on version tags (which also publish a
+# GitHub Release). Kept off the every-push path because a release LTO build is slow —
+# the engine already builds in CI; this workflow is about *distribution*.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # create/attach Releases on tags
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            src: brickmap
+            asset: brickmap-linux-x86_64
+          - os: windows-latest
+            src: brickmap.exe
+            asset: brickmap-windows-x86_64.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (release)
+        run: cargo build --release --bin brickmap
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/release/${{ matrix.src }}" "dist/${{ matrix.asset }}"
+
+      - name: Upload artifact (downloadable from this run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.asset }}

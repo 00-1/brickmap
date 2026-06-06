@@ -378,18 +378,20 @@ phone with a USB-C/Bluetooth pad.
   (complements D3 auto-fly). A good quick win — could land before/alongside E6 so the
   foliage work is explorable with the controller as it develops.
 
-### D8 — Downloadable desktop builds (Windows + Linux) ⏳
+### D8 — Downloadable desktop builds (Windows + Linux) 🛠
 A native desktop binary you download and run — best perf + native controller (D7),
 sibling to the D4 Android APK. The native binary already builds; this is the
 **distribution**.
-- **Build + publish:** a CI job builds `brickmap.exe` on a **`windows-latest`** runner
-  (wgpu → DX12/Vulkan) and a Linux binary on `ubuntu-latest`, and uploads both as
-  **GitHub Release assets** on tagged builds. (macOS later if wanted.)
+- **Build + publish:** ✅ `.github/workflows/desktop.yml` — a matrix builds `brickmap.exe`
+  on `windows-latest` (wgpu → DX12/Vulkan) and a Linux binary on `ubuntu-latest`, uploads
+  both as **downloadable workflow artifacts** (every run), and attaches them to a **GitHub
+  Release** on `v*` tags. Runs on `workflow_dispatch` + tags (off the every-push path —
+  release LTO builds are slow). (macOS later if wanted.)
 - **Outcome:** download a Windows `.exe` (the human is on Windows) and fly the world
   natively with a controller — no toolchain needed on their side.
-- **Honest caveat:** I **can't run the Windows `.exe` here** (Linux container, no
-  Windows), so the Windows path is built blind and verified by the human; the Linux
-  binary I *can* at least compile/headless-check.
+- **Status:** Linux release binary build verified locally (11 MB); the Windows path is the
+  same `cargo build --release` on `windows-latest` — **built blind, the human verifies the
+  `.exe` runs**. Workflow lands; first artifacts produced via a manual dispatch.
 - **Fit:** straightforward CI packaging (much simpler than D4 — no NDK/entry shim).
 
 ## Big future directions (beyond the ladder)
