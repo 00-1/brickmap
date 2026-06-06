@@ -91,55 +91,75 @@ impl Rng {
     }
 }
 
-/// A point in the ground plane at distance `len` from `base`, heading `ang` (radians, around
-/// +Y from the body's +X axis), lifted slightly off the ground by `lift`.
-fn reach(base: Vec3, ang: f32, len: f32, lift: f32) -> Vec3 {
-    base + Vec3::new(ang.cos() * len, lift, ang.sin() * len)
+/// A step of length `len` in heading `ang` (radians, in the ground XZ plane), lifted `lift`.
+fn step(ang: f32, len: f32, lift: f32) -> Vec3 {
+    Vec3::new(ang.cos() * len, lift, ang.sin() * len)
 }
 
-/// Build a **collapsed** skeleton (model space, lying in the ground plane along ~+X) for `sex`,
-/// posed by `seed`: a sprawl of limbs at jittered angles, as if fallen. Returns the capsules +
-/// the head sphere `(centre, radius)`.
+/// In-plane perpendicular of heading `ang` (for shoulder/hip offsets).
+fn perp(ang: f32, w: f32) -> Vec3 {
+    let a = ang + std::f32::consts::FRAC_PI_2;
+    Vec3::new(a.cos() * w, 0.0, a.sin() * w)
+}
+
+/// Rotate `p` about the body's long (X) axis by `(sin, cos)` — the "roll" onto back/front/side.
+fn roll_x(p: Vec3, s: f32, c: f32) -> Vec3 {
+    Vec3::new(p.x, p.y * c - p.z * s, p.y * s + p.z * c)
+}
+
+/// Build a **collapsed** skeleton (model space, lying roughly along +X; the world yaw is added
+/// later) for `sex`, posed by `seed`. Wide, generative variation so every figure reads as its
+/// own fallen pose: a curling spine, each limb reaching in any direction with a bent joint, a
+/// body roll onto back/side/front, and slight per-figure build. Returns capsules + head sphere.
 fn collapsed(sex: Sex, seed: u32) -> (Vec<Capsule>, (Vec3, f32)) {
     let p = Proportions::of(sex);
     let mut rng = Rng::new(seed);
-    let lr = p.limb_r;
+    let lr = p.limb_r * rng.range(0.85, 1.15); // slight build variation
 
-    // Trunk lies along +X just above the ground (resting on its side/back).
+    // Trunk: a curling chain (pelvis → chest → head), so spines range from straight to foetal.
+    let d0 = rng.range(-0.4, 0.4); // initial trunk heading off +X
+    let curl = rng.range(-0.7, 1.1); // per-segment turn → arch ↔ curl
     let pelvis = Vec3::new(0.0, p.torso_r, 0.0);
-    // A slight twist/arch in the spine so it's not a ramrod line.
-    let chest = pelvis + Vec3::new(p.spine, rng.range(-2.0, 2.0), rng.range(-2.5, 2.5));
-    let head_base = chest + Vec3::new(p.neck, rng.range(-1.0, 2.0), rng.range(-2.0, 2.0));
-    let head_c = head_base + Vec3::new(p.head_r * 0.8, 0.0, rng.range(-1.5, 1.5));
+    let chest = pelvis + step(d0, p.spine, rng.range(-1.5, 1.5));
+    let d1 = d0 + curl;
+    let head_base = chest + step(d1, p.neck, rng.range(-1.0, 1.5));
+    let mut head_c = head_base + step(d1 + curl * 0.5, p.head_r * 0.9, rng.range(-1.0, 1.0));
 
     let mut caps = Vec::new();
     let cap = |a: Vec3, b: Vec3, r: f32, v: &mut Vec<Capsule>| v.push(Capsule { a, b, r });
-
-    // Trunk (fat capsule) + neck.
     cap(pelvis, chest, p.torso_r, &mut caps);
     cap(chest, head_base, lr * 1.2, &mut caps);
 
-    // Legs from the hips (offset in ±z), sprawled at jittered angles, knees bent.
+    // Legs from the hips: thighs roughly "down-body" but with a wide splay/cross, knees bent
+    // anywhere (straight → drawn-up foetal).
     for s in [-1.0f32, 1.0] {
-        let hip = pelvis + Vec3::new(-2.0, 0.0, s * p.hip_w);
-        // Thighs point "down-body" (−X) and splay outward in z.
-        let thigh_ang = std::f32::consts::PI + s * rng.range(0.15, 0.7);
-        let knee = reach(hip, thigh_ang, p.thigh, rng.range(-1.0, 2.0));
-        let shin_ang = thigh_ang + s * rng.range(-0.5, 0.6);
-        let foot = reach(knee, shin_ang, p.shin, rng.range(-1.0, 1.0));
+        let hip = pelvis + perp(d0, s * p.hip_w);
+        let thigh_dir = d0 + std::f32::consts::PI + s * rng.range(-1.3, 1.3);
+        let knee = hip + step(thigh_dir, p.thigh, rng.range(-2.0, 3.5));
+        let shin_dir = thigh_dir + rng.range(-1.7, 1.7);
+        let foot = knee + step(shin_dir, p.shin, rng.range(-2.0, 3.5));
         cap(hip, knee, lr, &mut caps);
         cap(knee, foot, lr * 0.9, &mut caps);
     }
-    // Arms from the shoulders, flung out at jittered angles, elbows bent.
+    // Arms from the shoulders: reaching in *any* direction (over head, flung out, tucked),
+    // elbows bent anywhere.
     for s in [-1.0f32, 1.0] {
-        let shoulder = chest + Vec3::new(p.shoulder_w * 0.2, 0.0, s * p.shoulder_w);
-        let up_ang = s * rng.range(0.3, 1.6);
-        let elbow = reach(shoulder, up_ang, p.upper_arm, rng.range(-1.0, 2.0));
-        let fore_ang = up_ang + s * rng.range(-0.8, 0.9);
-        let hand = reach(elbow, fore_ang, p.fore_arm, rng.range(-1.0, 1.5));
+        let shoulder = chest + perp(d1, s * p.shoulder_w);
+        let arm_dir = rng.range(0.0, std::f32::consts::TAU);
+        let elbow = shoulder + step(arm_dir, p.upper_arm, rng.range(-2.0, 3.5));
+        let fore_dir = arm_dir + rng.range(-1.9, 1.9);
+        let hand = elbow + step(fore_dir, p.fore_arm, rng.range(-2.0, 3.5));
         cap(shoulder, elbow, lr * 0.95, &mut caps);
         cap(elbow, hand, lr * 0.85, &mut caps);
     }
+
+    // Roll the whole figure onto its back / side / front (modest, so it stays lying down).
+    let (rs, rc) = rng.range(-0.6, 0.6).sin_cos();
+    for c in caps.iter_mut() {
+        c.a = roll_x(c.a, rs, rc);
+        c.b = roll_x(c.b, rs, rc);
+    }
+    head_c = roll_x(head_c, rs, rc);
     (caps, (head_c, p.head_r))
 }
 
@@ -300,8 +320,9 @@ mod tests {
         };
         let height = span(|p| p.offset[1]);
         let length = span(|p| p.offset[0]).max(span(|p| p.offset[2]));
+        // A fallen figure spans clearly wider on the ground than it is tall (even curled/rolled).
         assert!(
-            length > height * 2.0,
+            length > height * 1.3,
             "should lie flat: len {length} vs h {height}"
         );
     }
