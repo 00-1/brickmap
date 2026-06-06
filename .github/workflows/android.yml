@@ -1,0 +1,77 @@
+name: Android APK
+
+# Native Android app (D4): a sideloadable, debug-signed APK built from the crate's
+# cdylib + `android_main` via cargo-apk. Downloadable as a workflow artifact (and a
+# Release asset on v* tags). Built blind in CI — the human installs + verifies on a phone.
+#
+# Runs on src/Cargo changes to main (so the build is exercised as the code evolves),
+# on demand, and on tags. Tighten to dispatch+tags once it's reliably green.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/android.yml'
+    tags: ['v*']
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # attach the APK to Releases on tags
+
+jobs:
+  apk:
+    name: build arm64 APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable + android target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+
+      - name: Install cargo-apk
+        run: cargo install cargo-apk
+
+      - name: Build APK (release)
+        env:
+          ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: cargo apk build --release --lib
+
+      - name: Locate the APK
+        id: apk
+        shell: bash
+        run: |
+          apk="$(find target -name '*.apk' | head -n1)"
+          if [ -z "$apk" ]; then echo "no APK produced"; exit 1; fi
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
+          echo "built: $apk"
+
+      - name: Upload artifact (downloadable from this run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: brickmap-android-arm64
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.apk.outputs.path }}

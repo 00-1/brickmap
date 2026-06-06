@@ -858,14 +858,35 @@ fn window_attributes() -> winit::window::WindowAttributes {
     attrs
 }
 
-/// Shared entry point used by both the native binary and the WASM start shim.
+/// Shared entry point used by the native binary and the WASM start shim. Builds the
+/// default event loop; Android instead builds one carrying the `AndroidApp` (see
+/// `android_main`) and calls [`run_event_loop`] directly.
 pub fn run() {
     init_logging();
-
     let event_loop = EventLoop::<AppEvent>::with_user_event()
         .build()
         .expect("failed to build event loop");
+    run_event_loop(event_loop);
+}
 
+/// Android entry point. `cargo-apk` / `android-activity` calls this with the platform's
+/// `AndroidApp`, which we thread into the winit event loop. The rest of the app is the
+/// same cross-platform path. (Built blind — verified on-device by the human.)
+#[cfg(target_os = "android")]
+#[no_mangle]
+fn android_main(app: winit::platform::android::activity::AndroidApp) {
+    use winit::platform::android::EventLoopBuilderExtAndroid;
+    init_logging();
+    let event_loop = EventLoop::<AppEvent>::with_user_event()
+        .with_android_app(app)
+        .build()
+        .expect("failed to build event loop");
+    run_event_loop(event_loop);
+}
+
+/// Set up the world/view + `App` and run the (already-built) event loop. Shared by the
+/// desktop/web entry (`run`) and the Android entry (`android_main`).
+fn run_event_loop(event_loop: EventLoop<AppEvent>) {
     // The default world/view: start above the terrain at the origin, looking along +x;
     // streaming fills the world in around us on the first frames.
     let default_ground = worldgen::height(0, 0, WORLD_SEED) as f32;
@@ -1131,7 +1152,15 @@ fn init_logging() {
         console_error_panic_hook::set_once();
         let _ = console_log::init_with_level(log::Level::Info);
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    // Android: log to logcat (env_logger output is invisible there). Mutually exclusive
+    // with the desktop branch so we never double-init the global logger.
+    #[cfg(target_os = "android")]
+    {
+        android_logger::init_once(
+            android_logger::Config::default().with_max_level(log::LevelFilter::Info),
+        );
+    }
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
     {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     }

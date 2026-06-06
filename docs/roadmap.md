@@ -327,17 +327,20 @@ mechanism; particle/gravity/spawn dials can join later.
 A default **auto-fly orbit** so the build is watchable with no keyboard/mouse (mobile,
 or just hands-off). Manual input (click/WASD) takes over; `F` resumes the orbit.
 
-### D4 — Native Android app + downloadable APK ⏳ &nbsp;*(now unblocked — sideload, no store)*
+### D4 — Native Android app + downloadable APK 🛠 &nbsp;*(sideload, no store)*
 A real native Android app (not a web wrapper), packaged as an **APK you download from
 GitHub and sideload** — which sidesteps the store/auto-update blocker entirely.
-- **App:** winit `android-activity` entry point reusing the existing wgpu/winit code
-  path (wgpu runs on Android via Vulkan/GLES). The render code is already cross-platform;
-  this is mostly the entry shim + Android manifest/asset plumbing.
-- **Build + publish:** a CI job cross-compiles `aarch64-linux-android` (Android NDK +
-  `cargo-ndk`/`cargo-apk`/`xbuild`), packages a **debug/self-signed APK**, and uploads it
-  as a **GitHub Release asset** (and/or CI artifact) on tagged builds. The human enables
-  "install from unknown sources" and sideloads it. No Play account, no Firebase, no
-  signing-key ceremony.
+- **App:** ✅ winit `android-activity` entry point (`android_main` in `lib.rs`, behind
+  `cfg(target_os = "android")`) reusing the existing wgpu/winit code path via a shared
+  `run_event_loop`; logs to logcat via `android_logger`. **The Android target typechecks
+  (`cargo check --target aarch64-linux-android`)** — code de-risked; lifecycle robustness
+  (surface recreate on suspend/resume) is a v1 follow-up.
+- **Build + publish:** ✅ `.github/workflows/android.yml` — installs the NDK + cargo-apk,
+  `cargo apk build --release --lib` (metadata in `Cargo.toml` `[package.metadata.android]`,
+  arm64, debug-signed), uploads the **APK as a workflow artifact** and attaches it to a
+  **Release** on `v*` tags. The human enables "install from unknown sources" and sideloads.
+  No Play account, no Firebase, no signing-key ceremony. *(cargo-apk packaging + NDK link
+  are CI-only — I can't run them in-container; being brought to green via CI logs.)*
 - **Pairs with D7 (gamepad):** native + a USB-C controller is the intended "fly it on the
   phone" experience — better perf than the web build, and the controller works natively.
 - **Honest caveat:** I **cannot test the APK here** (no Android device/emulator in the

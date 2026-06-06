@@ -57,6 +57,27 @@ web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
 ] }
 
+# --- Android-only (D4) ---------------------------------------------------
+# winit needs the Android activity backend; `android-native-activity` pairs with the
+# NativeActivity APK that cargo-apk packages. `android_logger` pipes `log` → logcat.
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30", features = ["android-native-activity"] }
+android_logger = "0.14"
+
+# cargo-apk packaging (D4): builds a sideloadable, debug-signed APK from this crate's
+# `cdylib` + `android_main`. Locally: `cargo install cargo-apk` then
+# `cargo apk build --release --lib`. CI does the same (see .github/workflows/android.yml).
+[package.metadata.android]
+package = "dev.brickmap.app"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 24
+target_sdk_version = 34
+
+[package.metadata.android.application]
+label = "brickmap"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = "0.5"
 
