@@ -37,6 +37,10 @@ struct VsOut {
     @location(3) ao: f32,
     @location(4) @interpolate(flat) material: u32,
     @location(5) block_light: vec3<f32>,
+    /// Distance-dissolve flag from `chunk.origin.w` (E18): >0 → this is a solid colossal relic
+    /// that stipples away with distance (mesh near → dots far), so it crosses to the
+    /// point-cloud look gradually instead of snapping. 0 for terrain.
+    @location(6) @interpolate(flat) dissolve: f32,
 };
 
 @vertex
@@ -84,8 +88,15 @@ fn vs_main(@location(0) packed: u32, @location(1) packed1: u32) -> VsOut {
     out.ao = f32(ao);
     out.material = material;
     out.block_light = block_light;
+    out.dissolve = chunk.origin.w;
     return out;
 }
+
+// Solid colossal relics (E18) dissolve mesh → points by distance: fully solid within
+// RELIC_LOD, stippling away over RELIC_BAND so they crumble into sparse dots rather than
+// snapping; a fraction always survives so the far form reads as a point cloud.
+const RELIC_LOD: f32 = 95.0;
+const RELIC_BAND: f32 = 50.0;
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
@@ -198,6 +209,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (globals.cam_up.w > 0.5) {
         let melt = clamp((fog_dist - globals.params.z) / max(globals.params.w - globals.params.z, 0.001), 0.0, 1.0) * 0.85;
         if (threshold < melt) {
+            discard;
+        }
+    }
+
+    // Solid colossal relics (E18): stipple the mesh out with distance so it dissolves into
+    // sparse dots (mesh near → point-cloud far), gradually, using the screen-stable Bayer
+    // threshold. `dissolve` (chunk.origin.w) gates it; terrain is unaffected.
+    if (in.dissolve > 0.5) {
+        let t = clamp((fog_dist - (RELIC_LOD - RELIC_BAND)) / (2.0 * RELIC_BAND), 0.0, 1.0);
+        if (threshold < t * 0.9) {
             discard;
         }
     }

@@ -506,7 +506,7 @@ impl State {
 
         let mut draws: HashMap<ChunkCoord, ChunkDraw> = HashMap::new();
         for inst in instances {
-            if let Some(draw) = build_chunk_draw(&device, &chunk_bgl, inst) {
+            if let Some(draw) = build_chunk_draw(&device, &chunk_bgl, inst, false) {
                 draws.insert(inst.coord, draw);
             }
         }
@@ -686,7 +686,9 @@ impl State {
     pub fn set_structure_meshes(&mut self, instances: &[ChunkInstance]) {
         self.structure_draws = instances
             .iter()
-            .filter_map(|inst| build_chunk_draw(&self.device, &self.chunk_bind_group_layout, inst))
+            .filter_map(|inst| {
+                build_chunk_draw(&self.device, &self.chunk_bind_group_layout, inst, true)
+            })
             .collect();
     }
 
@@ -716,7 +718,7 @@ impl State {
 
     /// Add or replace a chunk's GPU buffers (streaming). Empty meshes are dropped.
     pub fn upload_chunk(&mut self, instance: &ChunkInstance) {
-        match build_chunk_draw(&self.device, &self.chunk_bind_group_layout, instance) {
+        match build_chunk_draw(&self.device, &self.chunk_bind_group_layout, instance, false) {
             Some(draw) => {
                 self.draws.insert(instance.coord, draw);
             }
@@ -1069,13 +1071,21 @@ fn build_chunk_draw(
     device: &wgpu::Device,
     chunk_bgl: &wgpu::BindGroupLayout,
     inst: &ChunkInstance,
+    dissolve: bool,
 ) -> Option<ChunkDraw> {
     if inst.mesh.is_empty() {
         return None;
     }
     let packed: Vec<[u32; 2]> = inst.mesh.vertices.iter().map(pack).collect();
+    // origin.w = 1 marks a solid colossal relic so the shader stipples it out with distance
+    // (E18 mesh→points dissolve); 0 for terrain (no dissolve).
     let origin = ChunkUniform {
-        origin: [inst.origin.x, inst.origin.y, inst.origin.z, 0.0],
+        origin: [
+            inst.origin.x,
+            inst.origin.y,
+            inst.origin.z,
+            if dissolve { 1.0 } else { 0.0 },
+        ],
     };
     let origin_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("chunk-origin"),

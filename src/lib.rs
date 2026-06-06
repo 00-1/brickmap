@@ -66,11 +66,10 @@ enum AppEvent {
     Initialized(State),
 }
 
-/// One cached colossal relic (E18): its world position plus both renderable forms. Ethereal
-/// relics leave `meshes` empty (always points); solid relics carry both and pick by distance
-/// (the mesh→points dissolve). Generated once on cell-entry, kept until the cell leaves range.
+/// One cached colossal relic (E18): its renderable form. Ethereal relics fill `points` (and
+/// leave `meshes` empty); solid relics fill `meshes` (the shader dissolves them to dots with
+/// distance). Generated once on cell-entry, kept until the cell leaves range.
 struct CachedRelic {
-    pos: Vec3,
     points: Vec<foliage::SplatInstance>,
     meshes: Vec<ChunkInstance>,
 }
@@ -133,9 +132,6 @@ struct App {
     /// ≤1/frame) instead of regenerating everything on every cell crossing (the streaming-hitch
     /// fix), and pick its LOD (mesh near ↔ points far) per frame from the cached pair.
     structures: std::collections::HashMap<(i32, i32), CachedRelic>,
-    /// Solid relics currently within the mesh LOD radius (drawn as meshes, not points). Tracked
-    /// so the combined buffers rebuild only when a relic crosses the mesh↔points distance (M7).
-    structure_near: Vec<(i32, i32)>,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
     /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
@@ -179,7 +175,6 @@ impl App {
         self.overlay.clear();
         self.sim_active.clear();
         self.structures.clear(); // force the new seed's colossi to rebuild next frame
-        self.structure_near.clear();
         self.loader.set_seed(seed);
         let ground = worldgen::height(
             self.camera.position.x.floor() as i32,
@@ -363,20 +358,20 @@ impl App {
     }
 
     /// Stream colossal structures (E18) around the camera: seed-placed tube-tech relics, some
-    /// ethereal (always points), some solid. Caches each giant's geometry per cell and generates
-    /// at most [`STRUCTURE_GEN_BUDGET`] new ones per frame (the streaming-hitch fix). Solid relics
-    /// **dissolve** by distance (M7): meshed when near, their point-cloud when far — so a giant
-    /// resolves from points to solid as you approach, and far ones cost little. Rebuilds the
-    /// combined buffers only when the cached set *or* the near/far split changes.
+    /// **ethereal** (points), some **solid** (greedy-meshed). Caches each giant's geometry per
+    /// cell and generates at most [`STRUCTURE_GEN_BUDGET`] new ones per frame (the streaming-hitch
+    /// fix). The mesh→points **dissolve** is done in the shader by distance (solid relics stipple
+    /// out as they recede), so geometry is uploaded once per cell — no per-frame LOD churn, no
+    /// hitch at the transition. Rebuilds the combined buffers only when the cached set changes.
     fn update_structures(&mut self) {
         if self.state.is_none() {
             return;
         }
         let seed = self.seed;
-        let cam = self.camera.position;
-        let placements = structures::colossi_near(seed, cam, STRUCTURE_RADIUS, |x, z| {
-            worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
-        });
+        let placements =
+            structures::colossi_near(seed, self.camera.position, STRUCTURE_RADIUS, |x, z| {
+                worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
+            });
         let wanted: std::collections::HashSet<(i32, i32)> =
             placements.iter().map(structures::cell_key).collect();
 
@@ -386,8 +381,7 @@ impl App {
         let mut changed = self.structures.len() != before;
 
         // Generate newly-entered giants, budgeted so the cost spreads over frames. Solid relics
-        // cache *both* a mesh and a point cloud (for the distance dissolve); ethereal ones only
-        // points.
+        // cache a mesh (the shader dissolves it with distance); ethereal ones a point cloud.
         let mut budget = STRUCTURE_GEN_BUDGET;
         for p in &placements {
             let key = structures::cell_key(p);
@@ -398,55 +392,30 @@ impl App {
                 break;
             }
             budget -= 1;
-            let points = relic::relic_points(p.pos, p.voxel, p.yaw, p.seed, COLOSSUS_COLOR);
-            let meshes = if p.solid {
-                relic_chunk_instances(*p, world::BlockId(5))
-            } else {
-                Vec::new()
-            };
-            self.structures.insert(
-                key,
+            let entry = if p.solid {
                 CachedRelic {
-                    pos: p.pos,
-                    points,
-                    meshes,
-                },
-            );
-            changed = true;
-        }
-
-        // Distance dissolve: which *solid* relics are within the mesh LOD radius right now.
-        let mut near: Vec<(i32, i32)> = self
-            .structures
-            .iter()
-            .filter(|(_, r)| {
-                !r.meshes.is_empty()
-                    && (r.pos - cam).length_squared() < STRUCTURE_LOD * STRUCTURE_LOD
-            })
-            .map(|(k, _)| *k)
-            .collect();
-        near.sort_unstable();
-        if near != self.structure_near {
-            self.structure_near = near;
+                    points: Vec::new(),
+                    meshes: relic_chunk_instances(*p, world::BlockId(5)),
+                }
+            } else {
+                CachedRelic {
+                    points: relic::relic_points(p.pos, p.voxel, p.yaw, p.seed, COLOSSUS_COLOR),
+                    meshes: Vec::new(),
+                }
+            };
+            self.structures.insert(key, entry);
             changed = true;
         }
         if !changed {
             return;
         }
 
-        // Rebuild combined sets: ethereal → points; solid near → mesh; solid far → its points.
-        let near: std::collections::HashSet<(i32, i32)> =
-            self.structure_near.iter().copied().collect();
+        // Rebuild the combined sets from the cache: ethereal → points, solid → meshes.
         let mut pts: Vec<foliage::SplatInstance> = Vec::new();
         let mut meshes: Vec<ChunkInstance> = Vec::new();
-        for (key, r) in &self.structures {
-            if r.meshes.is_empty() {
-                pts.extend_from_slice(&r.points); // ethereal
-            } else if near.contains(key) {
-                meshes.extend(r.meshes.iter().cloned()); // solid, near → meshed
-            } else {
-                pts.extend_from_slice(&r.points); // solid, far → dissolved to points
-            }
+        for r in self.structures.values() {
+            pts.extend_from_slice(&r.points);
+            meshes.extend(r.meshes.iter().cloned());
         }
         if let Some(state) = self.state.as_mut() {
             state.set_structure_points(&pts);
@@ -1294,7 +1263,6 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         seed: view.seed,
         undo: Vec::new(),
         structures: std::collections::HashMap::new(),
-        structure_near: Vec::new(),
         pad: gamepad::Pad::new(),
         // Start the drone on the world seed so the dirge matches the world (native; a no-op
         // None if there's no audio device). Web starts audio from the page on first tap.
@@ -1380,12 +1348,6 @@ const STREAM_REQUESTS: usize = 8;
 /// How far (world units) to stream colossal structures (E18) around the camera. A little
 /// beyond the chunk stream radius (≈160) so a giant resolves at the fog edge as you approach.
 const STRUCTURE_RADIUS: f32 = 210.0;
-/// Distance (world units) at which a *solid* relic dissolves between its mesh (nearer) and its
-/// point cloud (farther) — M7 "mesh near / points far". Kept close to the stream radius (210) so
-/// solid relics read as solid across most of their visible range and only dissolve to points in
-/// the far fog band — otherwise far-solid points look identical to the ethereal relics and you
-/// "never see a solid one".
-const STRUCTURE_LOD: f32 = 190.0;
 /// The ethereal colossi's tint (cool pale; the palette recolours it in the house look).
 const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
 /// How many newly-entered colossi to generate per frame (the rest wait for later frames), so
