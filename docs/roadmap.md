@@ -395,10 +395,11 @@ A native desktop binary you download and run — best perf + native controller (
 sibling to the D4 Android APK. The native binary already builds; this is the
 **distribution**.
 - **Build + publish:** ✅ `.github/workflows/desktop.yml` — a matrix builds `brickmap.exe`
-  on `windows-latest` (wgpu → DX12/Vulkan) and a Linux binary on `ubuntu-latest`, uploads
-  both as **downloadable workflow artifacts** (every run), and attaches them to a **GitHub
-  Release** on `v*` tags. Runs on `workflow_dispatch` + tags (off the every-push path —
-  release LTO builds are slow). (macOS later if wanted.)
+  on `windows-latest` (wgpu → DX12/Vulkan) and a Linux binary on `ubuntu-latest`, publishes
+  them as **SHA-named assets** (`brickmap-<sha>-windows-x86_64.exe` / `-linux-x86_64`) on the
+  rolling **`dev` GitHub Release** — the *same scheme as the Android APK*, so builds are
+  distinguishable (a per-platform prune keeps one current each) — plus downloadable workflow
+  artifacts. Runs on main pushes + `workflow_dispatch` + `v*` tags. (macOS later if wanted.)
 - **Outcome:** download a Windows `.exe` (the human is on Windows) and fly the world
   natively with a controller — no toolchain needed on their side.
 - **Status:** Linux release binary build verified locally (11 MB); the Windows path is the

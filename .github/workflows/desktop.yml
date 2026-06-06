@@ -1,10 +1,9 @@
 name: Desktop builds
 
 # Native desktop binaries (D8): Windows .exe + Linux binary you download and run.
-# Builds on src/Cargo changes to main (so a runnable build is always available as a
-# downloadable workflow artifact — I can't dispatch or push tags from the dev sandbox,
-# so a main push is the trigger I control), on demand, and on version tags (which also
-# publish a GitHub Release).
+# Built on src/Cargo changes to main, published as SHA-named assets on the rolling `dev`
+# GitHub Release (same scheme as the Android APK, so you can tell builds apart) + as
+# downloadable workflow artifacts. Also on demand + on version tags.
 on:
   workflow_dispatch:
   push:
@@ -25,7 +24,7 @@ permissions:
 
 jobs:
   build:
-    name: ${{ matrix.asset }}
+    name: ${{ matrix.key }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -33,10 +32,10 @@ jobs:
         include:
           - os: ubuntu-latest
             src: brickmap
-            asset: brickmap-linux-x86_64
+            key: linux-x86_64
           - os: windows-latest
             src: brickmap.exe
-            asset: brickmap-windows-x86_64.exe
+            key: windows-x86_64.exe
     steps:
       - uses: actions/checkout@v4
 
@@ -53,21 +52,49 @@ jobs:
       - name: Build (release)
         run: cargo build --release --bin brickmap
 
-      - name: Stage binary
+      - name: Stage binary (SHA-named, like the Android APK)
+        id: bin
         shell: bash
         run: |
+          sha="$(git rev-parse --short HEAD)"
+          out="brickmap-${sha}-${{ matrix.key }}"
           mkdir -p dist
-          cp "target/release/${{ matrix.src }}" "dist/${{ matrix.asset }}"
+          cp "target/release/${{ matrix.src }}" "dist/$out"
+          echo "name=$out" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "platform=${{ matrix.key }}" | sed 's/\.exe$//' >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact (downloadable from this run)
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset }}
-          path: dist/${{ matrix.asset }}
+          name: ${{ steps.bin.outputs.name }}
+          path: dist/${{ steps.bin.outputs.name }}
           if-no-files-found: error
 
-      - name: Attach to GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/')
+      # Drop this platform's previous binary from the rolling `dev` release before adding
+      # the new SHA-named one (matches each `*-<platform>` asset; leaves the APK + the
+      # other OS alone). Per-platform pattern so the two matrix jobs don't race.
+      - name: Prune old ${{ steps.bin.outputs.platform }} binaries from the dev release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          repo="${{ github.repository }}"
+          plat="${{ steps.bin.outputs.platform }}"
+          rel="$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$repo/releases/tags/dev" || true)"
+          ids="$(printf '%s' "$rel" | jq -r --arg p "$plat" \
+            '.assets[]? | select(.name | contains($p)) | .id' 2>/dev/null || true)"
+          for id in $ids; do
+            echo "deleting old asset $id"
+            curl -s -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$repo/releases/assets/$id" || true
+          done
+
+      - name: Publish to the rolling 'dev' release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ matrix.asset }}
+          tag_name: dev
+          name: brickmap dev — ${{ steps.bin.outputs.sha }}
+          prerelease: true
+          files: dist/${{ steps.bin.outputs.name }}
