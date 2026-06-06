@@ -1483,7 +1483,9 @@ pub(crate) fn relic_chunk_instances(
             coord,
             origin: Vec3::new(cx as f32 * s, cy as f32 * s, cz as f32 * s),
             mesh,
-            graph: connectivity(sec),
+            // Relics are drawn unconditionally (never cave-culled), so skip the connectivity
+            // flood-fill — it was wasted work and part of the generation cost.
+            graph: Default::default(),
             foliage: Vec::new(),
         });
     }
@@ -1802,6 +1804,49 @@ mod tests {
         }
         let cached = t.elapsed().as_secs_f64() * 1000.0 / n as f64;
         eprintln!("  build_chunk_instance_cached (shared cache, web path): {cached:.2} ms/chunk  ({:.0}% of uncached)", cached / per * 100.0);
+
+        // Colossal relic generation cost (the dip when a relic's cell enters range).
+        let mk = |solid: bool, seed: u32| relic::Placement {
+            pos: Vec3::new(0.0, 8.0, 0.0),
+            yaw: 0.6,
+            voxel: 1.4,
+            seed,
+            solid,
+        };
+        let relics = 20;
+        let t = std::time::Instant::now();
+        for c in 0..relics {
+            std::hint::black_box(relic::relic_points(
+                Vec3::ZERO,
+                1.4,
+                0.6,
+                c as u32 | 1,
+                COLOSSUS_COLOR,
+            ));
+        }
+        eprintln!(
+            "  relic_points (ethereal gen): {:.2} ms each",
+            t.elapsed().as_secs_f64() * 1000.0 / relics as f64
+        );
+        let t = std::time::Instant::now();
+        for c in 0..relics {
+            std::hint::black_box(relic::relic_voxels(Vec3::ZERO, 1.4, 0.6, c as u32 | 1));
+        }
+        eprintln!(
+            "  relic_voxels (solid voxelise): {:.2} ms each",
+            t.elapsed().as_secs_f64() * 1000.0 / relics as f64
+        );
+        let t = std::time::Instant::now();
+        for c in 0..relics {
+            std::hint::black_box(relic_chunk_instances(
+                mk(true, c as u32 | 1),
+                world::BlockId(5),
+            ));
+        }
+        eprintln!(
+            "  relic_chunk_instances (solid gen, voxelise+mesh): {:.2} ms each",
+            t.elapsed().as_secs_f64() * 1000.0 / relics as f64
+        );
     }
 
     #[test]

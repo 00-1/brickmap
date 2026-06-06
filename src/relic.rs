@@ -127,6 +127,32 @@ fn bounds(caps: &[Capsule]) -> (Vec3, Vec3) {
     (lo.floor(), hi.ceil())
 }
 
+/// Rasterise capsules into an occupancy grid (cell size `step`, origin `lo`, dims `nx*ny*nz`).
+/// **Per-capsule**: only the cells in each tube's own bounding box are visited — O(Σ capsule
+/// bboxes), not O(grid × capsules). This is the difference between a ~100 ms voxelise and ~1 ms.
+fn rasterize(caps: &[Capsule], lo: Vec3, step: f32, nx: i32, ny: i32, nz: i32) -> Vec<bool> {
+    let idx = |x: i32, y: i32, z: i32| ((y * nz + z) * nx + x) as usize;
+    let mut occ = vec![false; (nx * ny * nz) as usize];
+    for c in caps {
+        let clo = ((c.a.min(c.b) - Vec3::splat(c.r) - lo) / step).floor();
+        let chi = ((c.a.max(c.b) + Vec3::splat(c.r) - lo) / step).ceil();
+        let (x0, x1) = ((clo.x as i32).max(0), (chi.x as i32).min(nx - 1));
+        let (y0, y1) = ((clo.y as i32).max(0), (chi.y as i32).min(ny - 1));
+        let (z0, z1) = ((clo.z as i32).max(0), (chi.z as i32).min(nz - 1));
+        for z in z0..=z1 {
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    let p = lo + Vec3::new(x as f32, y as f32, z as f32) * step;
+                    if seg_dist(p, c.a, c.b) <= c.r {
+                        occ[idx(x, y, z)] = true;
+                    }
+                }
+            }
+        }
+    }
+    occ
+}
+
 /// Emit the **surface points** of a relic as world-space splats. `feet` is where it rests
 /// (lowest point sits there); `yaw` rotates it about +Y; `voxel` is world-units per model unit;
 /// tinted `color`. Deterministic in `seed`.
@@ -149,19 +175,8 @@ pub fn relic_points(
         (dim.y / STEP) as i32 + 2,
         (dim.z / STEP) as i32 + 2,
     );
-    let solid_at = |gx: i32, gy: i32, gz: i32| -> bool {
-        let p = lo + Vec3::new(gx as f32, gy as f32, gz as f32) * STEP;
-        caps.iter().any(|c| seg_dist(p, c.a, c.b) <= c.r)
-    };
     let idx = |x: i32, y: i32, z: i32| ((y * nz + z) * nx + x) as usize;
-    let mut occ = vec![false; (nx * ny * nz) as usize];
-    for y in 0..ny {
-        for z in 0..nz {
-            for x in 0..nx {
-                occ[idx(x, y, z)] = solid_at(x, y, z);
-            }
-        }
-    }
+    let occ = rasterize(&caps, lo, STEP, nx, ny, nz);
 
     let (sy, cy) = yaw.sin_cos();
     let mut rng = Rng::new(seed ^ 0x00B0_D1E5);
@@ -203,46 +218,39 @@ pub fn relic_points(
     out
 }
 
-/// Voxelise a relic into **solid world-voxel coords** (interior + surface) for greedy meshing
-/// (the solid, explorable kind). Same placement transform as [`relic_points`].
+/// Voxelise a relic into **solid world-voxel coords** for greedy meshing (the solid, explorable
+/// kind). Same placement transform as [`relic_points`]. Rasterises each tube into **world** space
+/// per-capsule (only its own bbox), so it's ~1 ms, not ~100 ms of testing every voxel × capsule.
 pub fn relic_voxels(feet: Vec3, voxel: f32, yaw: f32, seed: u32) -> Vec<glam::IVec3> {
     let caps = tangle(seed);
     let (mlo, _mhi) = bounds(&caps);
-    let solid_at = |m: Vec3| caps.iter().any(|c| seg_dist(m, c.a, c.b) <= c.r);
     let (sy, cy) = yaw.sin_cos();
+    // Transform a model point to world (matches `relic_points`, so mesh + dissolve coincide).
     let to_world = |m: Vec3| {
         let wx = m.x * cy - m.z * sy;
         let wz = m.x * sy + m.z * cy;
         feet + Vec3::new(wx * voxel, (m.y - mlo.y) * voxel, wz * voxel)
     };
-    let (mlo2, mhi2) = bounds(&caps);
-    let mut wlo = Vec3::splat(f32::MAX);
-    let mut whi = Vec3::splat(f32::MIN);
-    for &cx in &[mlo2.x, mhi2.x] {
-        for &cyy in &[mlo2.y, mhi2.y] {
-            for &cz in &[mlo2.z, mhi2.z] {
-                let w = to_world(Vec3::new(cx, cyy, cz));
-                wlo = wlo.min(w);
-                whi = whi.max(w);
-            }
-        }
-    }
-    let inv = |w: Vec3| {
-        let l = (w - feet) / voxel;
-        Vec3::new(l.x * cy + l.z * sy, l.y + mlo.y, -l.x * sy + l.z * cy)
-    };
-    let mut out = Vec::new();
-    for iy in (wlo.y.floor() as i32)..=(whi.y.ceil() as i32) {
-        for iz in (wlo.z.floor() as i32)..=(whi.z.ceil() as i32) {
-            for ix in (wlo.x.floor() as i32)..=(whi.x.ceil() as i32) {
-                let w = Vec3::new(ix as f32 + 0.5, iy as f32 + 0.5, iz as f32 + 0.5);
-                if solid_at(inv(w)) {
-                    out.push(glam::IVec3::new(ix, iy, iz));
+    let mut set = std::collections::HashSet::new();
+    for c in &caps {
+        // The capsule, transformed to world (rotation + uniform scale → still a segment + radius).
+        let a = to_world(c.a);
+        let b = to_world(c.b);
+        let r = c.r * voxel;
+        let lo = (a.min(b) - Vec3::splat(r)).floor();
+        let hi = (a.max(b) + Vec3::splat(r)).ceil();
+        for iz in (lo.z as i32)..=(hi.z as i32) {
+            for iy in (lo.y as i32)..=(hi.y as i32) {
+                for ix in (lo.x as i32)..=(hi.x as i32) {
+                    let p = Vec3::new(ix as f32 + 0.5, iy as f32 + 0.5, iz as f32 + 0.5);
+                    if seg_dist(p, a, b) <= r {
+                        set.insert(glam::IVec3::new(ix, iy, iz));
+                    }
                 }
             }
         }
     }
-    out
+    set.into_iter().collect()
 }
 
 /// One placed relic structure: where it rests, its yaw, scale, generative seed, and whether it
