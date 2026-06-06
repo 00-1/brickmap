@@ -317,13 +317,30 @@ fn face_ao(
 /// `light`). Two cells merge only when these are all equal.
 type FaceCell = (BlockId, [u8; 4], [u8; 3]);
 
-/// Per-channel light emission (`0..=15`) of an emissive block, or `None`. Crystal
-/// (material 6) glows cyan; this is the seed for the flood-fill (E3).
-fn emission(block: BlockId) -> Option<[u8; 3]> {
-    match block.0 {
-        6 => Some([5, 14, 15]), // crystal: cyan
-        _ => None,
-    }
+/// Whether a block emits light (seeds the flood-fill). Crystal (material 6) glows; its
+/// *colour* is chosen per-crystal by [`emitter_color`] so a point-lit world isn't monochrome.
+fn is_emitter(block: BlockId) -> bool {
+    block.0 == 6
+}
+
+/// The warm/cool light colours (`0..=15` per channel) the crystals cast. Picked per emitter
+/// by a hash of its section-local position so a sun-off world reads as varied pools of light
+/// — cyan here, amber there, a toxic-green glow over there — instead of one flat hue (E3).
+const EMITTER_COLORS: [[u8; 3]; 5] = [
+    [5, 14, 15], // cyan
+    [15, 9, 3],  // amber
+    [13, 4, 14], // violet
+    [6, 15, 7],  // toxic green
+    [15, 12, 4], // gold / sodium
+];
+
+/// Deterministically pick an emitter's light colour from its position.
+fn emitter_color(x: usize, y: usize, z: usize) -> [u8; 3] {
+    let mut h = (x as u32).wrapping_mul(0x9E37_79B1)
+        ^ (y as u32).wrapping_mul(0x85EB_CA77)
+        ^ (z as u32).wrapping_mul(0xC2B2_AE3D);
+    h ^= h >> 15;
+    EMITTER_COLORS[(h as usize) % EMITTER_COLORS.len()]
 }
 
 /// Flood-fill block light over a section: BFS from emitters, `−1`/step per channel,
@@ -341,8 +358,8 @@ fn compute_light(section: &Section) -> Vec<[u8; 3]> {
     for z in 0..n {
         for y in 0..n {
             for x in 0..n {
-                if let Some(e) = emission(section.get(x as u32, y as u32, z as u32)) {
-                    light[idx(x, y, z)] = e;
+                if is_emitter(section.get(x as u32, y as u32, z as u32)) {
+                    light[idx(x, y, z)] = emitter_color(x, y, z);
                     queue.push_back((x, y, z));
                 }
             }
@@ -940,10 +957,18 @@ mod tests {
             .filter(|v| v.normal[1] > 0.5 && v.light != [0, 0, 0])
             .collect();
         assert!(!top_lit.is_empty(), "crystal lit no surrounding top faces");
-        // The light is cyan-ish (green/blue dominate red), matching the emitter.
-        let max_b = top_lit.iter().map(|v| v.light[2]).max().unwrap();
-        let max_r = top_lit.iter().map(|v| v.light[0]).max().unwrap();
-        assert!(max_b > max_r, "crystal light should read cyan (blue > red)");
+        // The cast light carries the emitter's own (per-position) hue: its dominant channel
+        // should dominate the surrounding lit faces too.
+        let ec = emitter_color(16, 6, 16);
+        let dom = (0..3).max_by_key(|&c| ec[c]).unwrap();
+        let max_dom = top_lit.iter().map(|v| v.light[dom]).max().unwrap();
+        for c in 0..3 {
+            let max_c = top_lit.iter().map(|v| v.light[c]).max().unwrap();
+            assert!(
+                max_dom >= max_c,
+                "lit faces should be dominated by the emitter's hue (channel {dom})"
+            );
+        }
     }
 
     #[test]

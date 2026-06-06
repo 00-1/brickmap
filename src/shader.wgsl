@@ -149,10 +149,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     var c = in.color * detail * light * ao_factor;
     // Emissive crystal (material 6): unshaded and boosted past 1.0 so the bright-pass
-    // catches it and it glows through bloom. `flags.z` toggles emissive off (then the
-    // crystal shades like any other block).
+    // catches it and it glows through bloom. Tinted by its *own* light colour (sampled from
+    // the adjacent baked block light) so a crystal reads in the same hue it casts — cyan,
+    // amber, violet… `flags.z` toggles emissive off (then the crystal shades like any block).
     if (in.material == 6u && globals.flags.z > 0.5) {
-        c = in.color * detail * 1.3;
+        let lc = in.block_light;
+        let peak = max(lc.r, max(lc.g, lc.b));
+        let hue = select(in.color, lc / peak, peak > 0.01); // light hue, palette fallback
+        c = hue * detail * 1.35;
     }
 
     // Stylised water (E8/E9, material 7): single-pass, opaque. An animated crossed-sine
