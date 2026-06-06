@@ -32,6 +32,27 @@ E14/E16/E17/E18/M7/M8/D7/D8 are partially landed. The renderers for text (E17) a
   G-buffer-as-art (opt-in, awaiting your eye), M8b profiling (needs the reference iGPU + phone),
   E11 flowing water (wants the proper Margolus/active-set substrate, not a naive CA).
 
+**What this run actually shipped (all on `main`, green on native/wasm/android):**
+- **E15** drifting wisps **wired live**; organic ball-scattered, tumbling motes.
+- **M7** splat **ethereal recession** — lagged-camera inertia ("move out of the way at their own
+  pace") + per-splat staggered onset; **gamepad Y** now toggles `melt` (D7) so it's easy to A/B.
+- **E6** foliage: far-wider blade sizes + per-splat **dithered transparency** (Bayer stipple).
+- **E17 in-world text — now actually appears:** wired into the streamed world; seed-scattered
+  abstract inscriptions, small + ground-tethered; **five scripts** (added explicit Galactic + a
+  hand-authored runic set); plus **inscribed colossi** (a monument label at each giant).
+- **E10 "ink" blueprint-grid** voxel-edge overlay (cheap in-shader; opt-in toggle: key `I` / web /
+  share / gamepad-independent). G-buffer-as-art deferred (needs a normal target).
+- **E16** flight-reactive **drone intensity** (speed+altitude → cutoff/swell), native + web.
+- **E8** vertical-stacks **brief written** (`milestones/E8-vertical-stacks.md`) — teed up, not built.
+- Docs kept in lockstep throughout (roadmap/README/architecture/unattended-questions).
+
+**Why I stopped piling on:** the remaining milestones are now genuinely human-gated — **E8** changes
+the terrain *look* (amplitude) and wants your eye; **E16 reverb** + the exact reactive feel want
+your *ear*; **M8b** needs the reference hardware; **E11** wants a scope steer; **E10 G-buffer** is
+low-value without a normal target; **N1** needs a server. I built everything verifiable-and-safe and
+left the rest teed up with briefs/decisions rather than guessing blind on look/sound/perf. Open
+questions are in `unattended-questions.md`.
+
 ## 2026-06-05 — autonomous run begins
 
 Mandate: work through the milestones unattended, snapshot visible builds, don't
