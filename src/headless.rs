@@ -505,7 +505,7 @@ pub fn capture_view(
 
     // Relic demo (E18): seed-scattered tube-tech giants (ancient mechanical tangles) on the
     // terrain, drawn through the splat pipeline (drift-through, no collision).
-    let body_points: Vec<crate::foliage::SplatInstance> =
+    let mut body_points: Vec<crate::foliage::SplatInstance> =
         crate::relic::scatter(crate::WORLD_SEED, 70.0, 5, |x, z| {
             crate::worldgen::height(x.floor() as i32, z.floor() as i32, crate::WORLD_SEED) as f32
         })
@@ -514,6 +514,24 @@ pub fn capture_view(
             crate::relic::relic_points(pl.pos, pl.voxel, pl.yaw, pl.seed, [0.62, 0.72, 0.9])
         })
         .collect();
+
+    // Human-figure demo (E18, separate track): the CC0 base mesh sampled to points, toppled +
+    // scaled to a giant lying on the terrain. Loaded at runtime (native dev tool only).
+    let obj_path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/base-human.obj");
+    if let Ok(text) = std::fs::read_to_string(obj_path) {
+        let mesh = crate::model::load_obj(&text);
+        let pts = crate::model::surface_points(&mesh, 9000, 1);
+        let gy = crate::worldgen::height(-45, -45, crate::WORLD_SEED) as f32;
+        body_points.extend(crate::model::fallen_splats(
+            &pts,
+            glam::Vec3::new(-45.0, gy, -45.0),
+            7.0,
+            0.6,
+            [0.80, 0.78, 0.74], // pale flesh/bone; the palette recolours it
+            9,
+        ));
+        log::info!("human figure: {} mesh tris → points", mesh.tris.len());
+    }
     let body_vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("body-instances"),
         contents: bytemuck::cast_slice(&body_points),

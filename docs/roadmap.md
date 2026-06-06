@@ -337,10 +337,12 @@ content kinds (pivot 2026-06):**
   fog, dissolve; drift-through). Seed-driven scatter + the live `structures::colossi_near`
   placement. Deterministic; tested. Verified headless: relics strewn across the world, plain +
   palettised.
-- 🛠 **Human figures (CC0 model sourced):** `assets/base-human.obj` is the MakeHuman base mesh
-  (CC0; 19k verts) — fetched from GitHub, provenance in `assets/base-human.LICENSE.txt`. Next:
-  an OBJ loader + surface-sampler (point-form) and a `voxelize` (solid) so real anatomy slots
-  in behind the same placement/render. A separate track from the tube-tech relics.
+- 🛠 **Human figures (CC0 model → points):** `src/model.rs` loads the CC0 base mesh
+  (`assets/base-human.obj`, MakeHuman, 19k verts → ~37k tris), area-samples its surface to a
+  point cloud, and topples + scales it to a giant lying on the terrain — rendered through the
+  splat pipeline like the relics. Verified headless: a recognisable human point-figure. Tested
+  (OBJ parse, sample count/bounds, rests-on-ground). ⏳ Next: solid voxelisation of the mesh +
+  live placement; baking a compact asset (so it needn't ship the raw OBJ to the web).
 - ✅ **Solid / explorable kind (headless):** `relic::relic_voxels` voxelises a relic to solid
   world voxels; `relic_chunk_instances` buckets them into 32³ sections (multi-layer) and
   greedy-meshes each → a giant of meshed cubes that shades/AOs/palettises like terrain. Verified

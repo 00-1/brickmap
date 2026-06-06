@@ -28,6 +28,7 @@ mod gfx;
 pub mod headless;
 pub mod hud;
 pub mod mesh;
+pub mod model;
 pub mod palette;
 pub mod particles;
 mod post;
