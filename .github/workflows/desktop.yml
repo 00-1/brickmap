@@ -1,12 +1,19 @@
 name: Desktop builds
 
 # Native desktop binaries (D8): Windows .exe + Linux binary you download and run.
-# Triggered on demand (workflow_dispatch) and on version tags (which also publish a
-# GitHub Release). Kept off the every-push path because a release LTO build is slow —
-# the engine already builds in CI; this workflow is about *distribution*.
+# Builds on src/Cargo changes to main (so a runnable build is always available as a
+# downloadable workflow artifact — I can't dispatch or push tags from the dev sandbox,
+# so a main push is the trigger I control), on demand, and on version tags (which also
+# publish a GitHub Release).
 on:
   workflow_dispatch:
   push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/desktop.yml'
     tags: ['v*']
 
 concurrency:
