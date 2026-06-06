@@ -360,7 +360,8 @@ content kinds (pivot 2026-06):**
   giants (ethereal + solid) on a coarse cell grid; the app **caches each giant's geometry per
   cell** and generates at most one new one per frame, so crossing cells no longer regenerates
   everything at once — the fix for the framerate hitch. Points are smaller/sparser now (coarser
-  sampling), which also cuts the generation cost and overdraw. Verify feel/density/perf in-app.
+  sampling), and **per-point jittered** off the grid so they read organic/natural rather than
+  lattice-aligned, which also cuts the generation cost and overdraw. Verify feel/density/perf in-app.
 - **Outcome:** drift through ghostly fallen giants strewn across the seeded world; later, land
   on a solid one and explore.
 - **Perf:** a ~300-voxel-tall body is millions of surface voxels — only near chunks mesh, far

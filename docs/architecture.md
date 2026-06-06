@@ -115,13 +115,13 @@ Everything platform-specific is isolated in `bm-platform` (+ small `cfg` shims i
 
 ## 7. Current vs target (honesty section)
 
-| Concern | Today (E6–E8, E12, E14) | Target |
+| Concern | Today (E6–E8, E10, E12, E14–E18) | Target |
 |---|---|---|
-| Crate layout | one `brickmap` crate, modules `world` / `worldgen` / `mesh` / `scene` / `particles` / `foliage` / `edit` / `share` / `sim` / `textures` / `visibility` / `post` / `gfx` + app | the 7-crate workspace in §3 |
-| Geometry | greedy-meshed chunks, **8-byte packed** face vertices (pos/dir/material/ao + block light); **instanced billboard splats** for foliage/trees | greedy-meshed chunks + a splat layer, ≤8-byte packed face vertices |
+| Crate layout | one `brickmap` crate, modules `world` / `worldgen` / `mesh` / `scene` / `particles` / `foliage` / `edit` / `share` / `sim` / `textures` / `visibility` / `post` / `palette` / `gfx` + the content/feature modules `relic` / `model` / `creatures` / `text` / `audio` / `hud` / `gamepad` + app | the 7-crate workspace in §3 |
+| Geometry | greedy-meshed chunks, **8-byte packed** face vertices (pos/dir/material/ao + block light); **instanced billboard splats** (now with a per-splat `alpha`/dither + camera-recession) for foliage, point-cloud trees, **drifting creatures**, **colossal relics/figures**, and **in-world text** | greedy-meshed chunks + a splat layer, ≤8-byte packed face vertices |
 | World model | palette-compressed 32³ sections, **procedural + streamed** around the camera; **runtime seed**; domain-warp/ridged/biomes/rivers/3D caves; sand overlay + **voxel edits via one `edit::Edit`/`apply` command seam** | palette-compressed sections, streaming, multi-layer vertical stacks |
 | Culling | frustum (per-chunk AABB) + visibility-graph cave cull (now has 3D cave structure to flood); **front-to-back** sort | frustum + visibility-graph cave culling |
-| Pipeline | forward pass → bloom post; **splat pass** (foliage); baked AO + texture-array materials + ambient + flood-fill block light + sky/fog + stylised water + opt-in distance-dissolve; depth `storeOp:Discard` | forward(+), texture-array materials, true point-decimation LOD |
+| Pipeline | forward pass → **palette/dither post + low-res "pixel-scale" present** → bloom; **splat pass** (foliage / creatures / relics / text, with dithered transparency + ethereal recession); **structure mesh draws** (solid relics, shader mesh→points dissolve); baked AO + texture-array materials + ambient + flood-fill block light + sky/fog + stylised water + opt-in distance-dissolve; depth `storeOp:Discard` | forward(+), texture-array materials, true point-decimation LOD |
 | Threading | off-thread chunk gen + meshing (rayon) on native; web time-slices on the main thread | rayon (native) / workers (web) async meshing |
 
 The data → mesh → GPU pipeline, the `world`↔`render` seam, streaming, async meshing,

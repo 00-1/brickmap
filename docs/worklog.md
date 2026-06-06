@@ -6,6 +6,32 @@ open questions for the human to weigh in on later. Newest first.
 > Conventions: **DECISION** = a choice I made and ran with. **QUESTION** = something
 > worth the human's steer when they're back (I didn't block on it).
 
+## 2026-06-06 — milestone review + next unattended run
+
+Reviewed the whole ladder before going heads-down again. **The roadmap is the source of
+truth and is current** — recently captured: E15 point-cloud creatures (drifting wisps, live),
+the splat **ethereal recession** (lagged-camera + per-splat stagger, M7), and **varied-size +
+dither-transparent foliage** (E6). Brought the lockstep docs back in line (README "Next" line,
+architecture current-vs-target module list + pipeline row, and this run's open questions in
+`unattended-questions.md`).
+
+**Where things stand:** M0–M6, E1–E8 (bar vertical stacks), E10 core, E12, D1–D4, D6 are done;
+E14/E16/E17/E18/M7/M8/D7/D8 are partially landed. The renderers for text (E17) and colossi
+(E18) exist; what's left there is content/placement + finishing solid voxelisation.
+
+**Planned unattended order (verifiable-first; revisit if the human steers):**
+1. **E16 reactive-audio layer** — speed/biome/weather → cutoff/level tweens, voice cap, one FDN
+   reverb. Pure-logic-heavy, testable, no device needed. (Synth + I/O already shipped.)
+2. **E18 finish** — solid voxelisation of the human mesh + live placement; bake a compact asset
+   so the web build needn't ship the raw OBJ. Verify relics/figures density + perf headless.
+3. **M7 / M8a perf** — the *output-neutral* engine-perf systems (vertex pooling, load/store
+   discipline, dyn-resolution/upscale groundwork) + the general point-decimation far-LOD.
+4. **E8 vertical chunk stacks** — the one big architectural step left in E8 (single→multi-layer
+   streaming); warrants its own brief, written just before building.
+- **Gated on the human:** E17 text *content/placement* (decision logged), E10 ink-outlines /
+  G-buffer-as-art (opt-in, awaiting your eye), M8b profiling (needs the reference iGPU + phone),
+  E11 flowing water (wants the proper Margolus/active-set substrate, not a naive CA).
+
 ## 2026-06-05 — autonomous run begins
 
 Mandate: work through the milestones unattended, snapshot visible builds, don't

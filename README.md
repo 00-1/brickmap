@@ -12,9 +12,9 @@ shipping speed.
 > **Status: a dark, grimy, configurable look + per-seed doom audio, over an endless world.**
 > An **endless, streamed** procedural voxel world you fly across — greedy-meshed,
 > palette-compressed, frustum + cave-culled, off-thread (rayon) meshed — with a shared
-> **splat pipeline** for wind-swept grass, undergrowth, and **point-cloud trees**, over
-> **biomes**, **domain-warped + ridged** relief, **rivers**, stylised **water**, and
-> **3D-noise caves**.
+> **splat pipeline** for wind-swept grass, undergrowth, **point-cloud trees**, and drifting
+> point-cloud **creatures**, over **biomes**, **domain-warped + ridged** relief, **rivers**,
+> stylised **water**, and **3D-noise caves**.
 >
 > The identity that *emerged* is low-fi, **"expose the tech"**: a **configurable palette
 > post-process** (20 curated 1–2-hue palettes — a luminance gradient-map with ordered
@@ -22,12 +22,12 @@ shipping speed.
 > optional **sun-off, point-lit** mood (coloured emissive crystals the only light), and a
 > per-seed **doom-drone** (Sleep/*Dopesmoker*-flavoured, cross-platform audio). Plus
 > **shareable seeds**, in-world **voxel editing** (one command seam — multiplayer
-> groundwork), an opt-in distance-dissolve "melt", baked AO, procedural materials, sky/fog,
-> and bloom — on desktop, the web, **and a sideloadable Android APK**, one code path. See the
-> [look journal](docs/look-journal.md).
-> Next: in-world **text** + **colossal fallen bodies** (E17/E18), the **pixel-scale** halftone
-> dial, profiling on weak hardware (M8b), multiplayer (N1). See
-> [`docs/roadmap.md`](docs/roadmap.md).
+> groundwork), a **pixel-scale** halftone dial, an opt-in distance-dissolve "melt", baked AO,
+> procedural materials, sky/fog, and bloom — on desktop, the web, **and a sideloadable Android
+> APK**, one code path. See the [look journal](docs/look-journal.md).
+> Next: live placement of in-world **text** + finishing the **colossal fallen bodies** (E17/E18 —
+> the renderers are ready), a reactive **audio** layer (E16), profiling on weak hardware (M8b),
+> and multiplayer presence (N1). See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## North star
 

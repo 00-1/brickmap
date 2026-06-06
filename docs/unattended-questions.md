@@ -16,10 +16,15 @@ me the numbers so I can tighten to the design §8 budgets. Until then I'm doing 
 *output-neutral, logically-safe* perf changes and verifying them byte-identical headless.
 
 ## 2026-06-05 · Build-blind targets — D4 (Android APK), D8 (Windows .exe), D7 (gamepad)
-These can't be verified in this Linux container (no Android device/emulator, no Windows, no
-gamepad, no live browser). I'm leaving them parked rather than build blind; say the word and
-I'll do the CI-packaging work (they're mostly CI + entry-shim), but you'd verify on your
-devices. Not started yet — prioritising verifiable milestones first.
+**Partly resolved (2026-06-06).** All three are now *built* (CI + entry shims landed):
+- **D4 (Android APK)** — ✅ **device-verified**: installs, launches, release build is fast on a
+  real phone. Lifecycle robustness (surface recreate on suspend/resume) is a follow-up.
+- **D7 (gamepad)** — built for web/native/Android; **runtime still built blind** (no pad here),
+  on-device tuning expected from your reports.
+- **D8 (Windows .exe)** — CI workflow lands; the Linux release binary is verified locally, the
+  **Windows `.exe` is built blind** — you verify it runs.
+Standing caveat: I can't exercise a phone / Windows / a controller / a live browser in the
+container, so these advance by you verifying on your devices and us iterating from reports.
 
 ## 2026-06-05 · E11 flowing water / fire — wants a proper substrate, not a naive CA
 I held off on a flowing-water cellular automaton. A naive "spread into air" rule either
@@ -38,9 +43,21 @@ The pure camera-path math is easy + testable; the render-loop refactor I'd rathe
 carefully (or with you watching). Parked.
 
 ## 2026-06-05 · E10 aesthetic spine — wants your eye before I commit the look
-E10 (indexed-palette colour-cycling, depth/normal "ink" outlines, a deliberate low-res
-internal buffer, banded lighting, G-buffer-as-art) is a set of **strong, opinionated**
-aesthetic forks that could clash with the lush point-cloud-forest direction you set. These
-feel like calls you should make, not me unattended. I can implement any/all as opt-in
-toggles (like `melt`) so you can A/B them live — tell me which to try. Holding off for now.
+**Mostly resolved (2026-06-06).** The core of E10 landed and you embraced it as *the* identity:
+the **configurable palette post-process** (20 curated 1–2-hue palettes, luminance gradient-map),
+**Bayer dithering**, the deliberate **low-res "pixel-scale" buffer** (halftone), and the
+**deep-shadow / sun-off point-lit** mood. Defaults are set to the look you chose (palette on,
+`bruise`, pixel-scale 2). **Still open (opt-in, your call):** depth/normal **"ink" outlines**
+(voxel creases as a blueprint grid) and a **G-buffer-as-art** mode — I'll add these as live
+toggles like `melt` if you want to A/B them; holding until you say.
+
+## 2026-06-06 · E17 in-world text — needs your direction on *content* before live placement
+The text **renderer** is done and verified (`src/text.rs` + `text.wgsl`: multi-script —
+Latin/Greek/Hiragana/Standard Galactic — camera-facing emissive billboards, palettised + fogged
+in the scene pass). What's missing is a **content/aesthetic decision I shouldn't make alone**:
+**where** inscriptions appear in the streamed world, in **which script**, and **what they say**.
+Options I can run with unattended if you give a steer: (a) sparse glyphs/markers seeded near
+colossi + points of interest, abstract Standard-Galactic/Greek (decorative, no semantics);
+(b) short fixed phrases; (c) leave it dark until you author content. Default if you stay silent:
+**(a)** — abstract, seed-placed, decorative, low density — since it's reversible and on-aesthetic.
 
