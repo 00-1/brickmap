@@ -174,6 +174,9 @@ pub struct DrawStats {
     pub triangles: u32,
     pub particles: u32,
     pub splats: u32,
+    /// Solid colossal-relic meshes drawn this frame (E18) — for the HUD, so the mesh↔points
+    /// dissolve is visible (0 = all in-range relics are currently points).
+    pub relics: u32,
 }
 
 /// Vertex buffer layout for the **packed** face vertex: two `u32`s per vertex (8
@@ -1003,6 +1006,7 @@ impl State {
                 triangles,
                 particles: particles.len() as u32,
                 splats,
+                relics: self.structure_draws.len() as u32,
             };
             self.frame_count += 1;
             if self.frame_count.is_multiple_of(120) {

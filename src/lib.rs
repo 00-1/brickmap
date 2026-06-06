@@ -1114,7 +1114,7 @@ impl ApplicationHandler<AppEvent> for App {
                             String::new()
                         };
                         let hud = format!(
-                            "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats{pal}{meshing}{}",
+                            "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{}",
                             self.frame_ms_ema,
                             self.seed,
                             s.drawn_chunks,
@@ -1122,6 +1122,7 @@ impl ApplicationHandler<AppEvent> for App {
                             s.triangles,
                             s.particles,
                             s.splats,
+                            s.relics,
                             self.toggles.off_summary(),
                         );
                         // In-engine text overlay on every platform (no DOM HUD).
@@ -1380,9 +1381,11 @@ const STREAM_REQUESTS: usize = 8;
 /// beyond the chunk stream radius (≈160) so a giant resolves at the fog edge as you approach.
 const STRUCTURE_RADIUS: f32 = 210.0;
 /// Distance (world units) at which a *solid* relic dissolves between its mesh (nearer) and its
-/// point cloud (farther) — M7 "mesh near / points far". Set inside the stream radius, out where
-/// fog is thickening, so the swap is subdued.
-const STRUCTURE_LOD: f32 = 135.0;
+/// point cloud (farther) — M7 "mesh near / points far". Kept close to the stream radius (210) so
+/// solid relics read as solid across most of their visible range and only dissolve to points in
+/// the far fog band — otherwise far-solid points look identical to the ethereal relics and you
+/// "never see a solid one".
+const STRUCTURE_LOD: f32 = 190.0;
 /// The ethereal colossi's tint (cool pale; the palette recolours it in the house look).
 const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
 /// How many newly-entered colossi to generate per frame (the rest wait for later frames), so
