@@ -285,12 +285,13 @@ User-facing features, all rated *great fit* because they reuse machinery we alre
   via the sand dirty→re-mesh path ✅, undo log (inverse edits) ✅, native V/B/U keys ✅.
   *Deferred:* wireframe hover highlight, multi-voxel brushes, web mouse-picking, and
   **seed + sparse-delta** build sharing (ties to E12; the `Edit` log is the payload).
-- **✨ E15 — Point-cloud creatures** 🛠 — decorative life/motion. Started as abstract **drifting
-  wisps** (`src/creatures.rs`): a seeded `Swarm` of wisps, each a wandering centre + a swirling
-  cluster of member points, leashed loosely to a focus (the camera), emitted as splats through
-  the existing billboard pipeline. Pure + tested (determinism, stays near focus); verified
-  headless (a still). ⏳ Live wiring (per-frame update + draw) next, pending a look check; the
-  form can evolve to flocking boids / point-cloud critters.
+- **✨ E15 — Point-cloud creatures** ✅ — decorative life/motion. Abstract **drifting wisps**
+  (`src/creatures.rs`): a seeded `Swarm` of wisps, each a wandering centre + an **organic** cluster
+  of member points (scattered in a ball, not a ring) that tumbles + wobbles, leashed loosely to a
+  focus (the camera), emitted as splats through the existing billboard pipeline. Pure + tested
+  (determinism, stays near focus); verified headless. **Live-wired:** a small swarm tethered to
+  the camera, advanced + re-uploaded every frame (`State::set_creature_points`), so motes drift
+  and shimmer through the fly-through. The form can evolve to flocking boids / point-cloud critters.
 - **✨ E16 — Reactive audio** 🛠 — seeded generative music + a weather/biome-reactive mix;
   `fundsp`+`kira` (native) / Web Audio (web); equalpower pan + one FDN reverb.
   **Direction: dark/heavy doom-drone (Sleep — *Dopesmoker*)** — slow, downtuned, crushing

@@ -28,15 +28,16 @@ impl Rng {
     }
 }
 
-/// One drifting wisp: a wandering centre + a swirling cluster of member points.
+/// One drifting wisp: a wandering centre + a slowly-tumbling cluster of member points. The
+/// members sit at fixed **organic** offsets (scattered in a ball, not on a grid/orbit); the
+/// whole cluster spins about Y and each point wobbles, so it reads as a living mote, not a ring.
 struct Wisp {
     center: Vec3,
-    heading: f32, // current drift heading (radians, in the XZ plane)
-    speed: f32,   // drift speed (world units/s)
-    radius: f32,  // cluster radius
-    members: u32, // points in the cluster
-    swirl: f32,   // angular speed of the swirl (rad/s)
-    phase: f32,   // per-wisp phase offset so swirls don't sync
+    heading: f32,       // current drift heading (radians, in the XZ plane)
+    speed: f32,         // drift speed (world units/s)
+    swirl: f32,         // angular speed of the cluster spin (rad/s)
+    phase: f32,         // per-wisp phase offset so swirls/bobs don't sync
+    offsets: Vec<Vec3>, // organic member offsets (random points in a ball)
     tint: [f32; 3],
 }
 
@@ -68,26 +69,25 @@ impl Wisp {
         self.center.y += (t * 0.6 + self.phase).sin() * dt * 2.0;
     }
 
-    /// Emit the wisp's member points as splats at time `t` (the swirl animates with `t`).
+    /// Emit the wisp's member points as splats at time `t`: each fixed organic offset is spun
+    /// about Y (the cluster tumbles) and given a small per-point wobble, so the blob drifts and
+    /// shimmers rather than holding a rigid shape.
     fn emit(&self, t: f32, out: &mut Vec<SplatInstance>) {
-        let n = self.members.max(1);
-        for i in 0..n {
-            let f = i as f32 / n as f32;
-            // A swirling helix/orbit around the centre — two interleaved frequencies for a
-            // looser, organic cluster.
-            let a = t * self.swirl + self.phase + f * std::f32::consts::TAU;
-            let r = self.radius * (0.5 + 0.5 * (a * 1.7 + f * 6.3).sin());
-            let off = Vec3::new(
-                a.cos() * r,
-                (a * 0.6 + f * 3.0).sin() * self.radius * 0.5,
-                a.sin() * r,
-            );
-            let p = self.center + off;
-            // Dim, with a slightly brighter core — small motes that glint, not bloom-white orbs.
-            let glow = 0.45 + 0.3 * (1.0 - f);
+        let (sa, ca) = (t * self.swirl + self.phase).sin_cos();
+        let n = self.offsets.len().max(1) as f32;
+        for (i, o) in self.offsets.iter().enumerate() {
+            let fi = i as f32;
+            // Spin the offset about Y, then a small incoherent wobble per point.
+            let wob = 0.4;
+            let rx = o.x * ca - o.z * sa + (t * 1.3 + fi).sin() * wob;
+            let rz = o.x * sa + o.z * ca + (t * 1.1 + fi * 2.0).cos() * wob;
+            let ry = o.y + (t * 0.9 + fi * 0.7).sin() * wob;
+            let p = self.center + Vec3::new(rx, ry, rz);
+            // Dim, with a brighter core (points nearer the centre) — motes that glint.
+            let glow = 0.45 + 0.3 * (1.0 - fi / n);
             out.push(SplatInstance {
                 offset: [p.x, p.y, p.z],
-                size: 0.32,
+                size: 0.34,
                 color: [
                     self.tint[0] * glow,
                     self.tint[1] * glow,
@@ -121,14 +121,28 @@ impl Swarm {
                     rng.range(0.7, 0.95),
                     rng.range(0.8, 1.0),
                 ];
+                // Organic cluster: scatter members in a ball (uniform-ish via cbrt radius), so
+                // the mote is an irregular blob, not a ring.
+                let radius = rng.range(4.0, 9.0);
+                let count = rng.range(16.0, 30.0) as u32;
+                let offsets = (0..count)
+                    .map(|_| {
+                        let dir = Vec3::new(
+                            rng.range(-1.0, 1.0),
+                            rng.range(-1.0, 1.0),
+                            rng.range(-1.0, 1.0),
+                        )
+                        .normalize_or_zero();
+                        dir * (radius * rng.unit().cbrt())
+                    })
+                    .collect();
                 Wisp {
                     center: focus + Vec3::new(ang.cos() * d, rng.range(8.0, 34.0), ang.sin() * d),
                     heading: rng.range(0.0, std::f32::consts::TAU),
                     speed: rng.range(4.0, 10.0),
-                    radius: rng.range(4.0, 9.0), // looser, airier cluster (not a dense orb)
-                    members: rng.range(14.0, 26.0) as u32,
                     swirl: rng.range(0.4, 1.3) * if rng.unit() < 0.5 { -1.0 } else { 1.0 },
                     phase: rng.range(0.0, std::f32::consts::TAU),
+                    offsets,
                     tint,
                 }
             })

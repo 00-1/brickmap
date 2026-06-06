@@ -133,6 +133,10 @@ struct App {
     /// ≤1/frame) instead of regenerating everything on every cell crossing (the streaming-hitch
     /// fix), and pick its LOD (mesh near ↔ points far) per frame from the cached pair.
     structures: std::collections::HashMap<(i32, i32), CachedRelic>,
+    /// Drifting wisp creatures (E15): a small seed-driven swarm of point-cloud motes kept
+    /// loosely tethered to the camera, advanced + re-uploaded every frame so they drift and
+    /// shimmer through the fly-through. Cheap (≈ a few hundred splats).
+    creatures: creatures::Swarm,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
     /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
@@ -995,6 +999,12 @@ impl ApplicationHandler<AppEvent> for App {
                 self.stream();
                 // Stream colossal structures (E18) in/out around the camera.
                 self.update_structures();
+                // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
+                // camera) and re-upload its points each frame so they drift through the scene.
+                self.creatures.update(dt, self.camera.position);
+                if let Some(state) = self.state.as_mut() {
+                    state.set_creature_points(&self.creatures.points());
+                }
                 // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
                 self.sim(dt);
                 // Ambient debris bursts ahead of the camera so the flight sweeps
@@ -1264,6 +1274,9 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         seed: view.seed,
         undo: Vec::new(),
         structures: std::collections::HashMap::new(),
+        // A small swarm of drifting wisps tethered to the camera's start (re-tethered each
+        // frame to the live camera in the redraw loop). Seed-driven off the world seed.
+        creatures: creatures::Swarm::new(view.seed ^ 0xE15_E15, 7, pos, 80.0),
         pad: gamepad::Pad::new(),
         // Start the drone on the world seed so the dirge matches the world (native; a no-op
         // None if there's no audio device). Web starts audio from the page on first tap.

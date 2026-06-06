@@ -304,6 +304,13 @@ pub struct State {
     /// land on), drawn with the terrain pipeline but kept out of the streaming `draws` map.
     structure_draws: Vec<ChunkDraw>,
 
+    // Drifting wisp creatures (E15): a small swarm of points re-emitted and rewritten *every
+    // frame* as they move, drawn with the splat pipeline. Separate from `structure_splats`
+    // (which only changes when the in-range giant set does).
+    creature_splats: wgpu::Buffer,
+    creature_count: u32,
+    creature_capacity: usize,
+
     // Particles (E2): an instanced emissive-cube pipeline + a growable instance buffer.
     particle_pipeline: wgpu::RenderPipeline,
     cube_vertex_buffer: wgpu::Buffer,
@@ -588,6 +595,13 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let creature_capacity = 1024usize;
+        let creature_splats = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("creature-splats"),
+            size: (creature_capacity * std::mem::size_of::<SplatInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         // --- Foliage splats (E6): instanced billboards sharing the globals group ---
         let splat_pipeline = build_splat_pipeline(&device, &globals_bgl, config.format);
@@ -643,6 +657,9 @@ impl State {
             structure_count: 0,
             structure_capacity,
             structure_draws: Vec::new(),
+            creature_splats,
+            creature_count: 0,
+            creature_capacity,
             particle_pipeline,
             cube_vertex_buffer,
             cube_index_buffer,
@@ -679,6 +696,26 @@ impl State {
         }
         self.queue
             .write_buffer(&self.structure_splats, 0, bytemuck::cast_slice(points));
+    }
+
+    /// Replace the drifting wisp-creature points (E15). Unlike the giants, this is rewritten
+    /// every frame as the swarm moves, so it's a small, cheap upload. Grows on demand.
+    pub fn set_creature_points(&mut self, points: &[SplatInstance]) {
+        self.creature_count = points.len() as u32;
+        if points.is_empty() {
+            return;
+        }
+        if points.len() > self.creature_capacity {
+            self.creature_capacity = points.len().next_power_of_two();
+            self.creature_splats = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("creature-splats"),
+                size: (self.creature_capacity * std::mem::size_of::<SplatInstance>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        self.queue
+            .write_buffer(&self.creature_splats, 0, bytemuck::cast_slice(points));
     }
 
     /// Replace the solid colossal-structure meshes (E18) — greedy-meshed giant instances drawn
@@ -999,6 +1036,15 @@ impl State {
                 pass.set_vertex_buffer(0, self.structure_splats.slice(..));
                 pass.draw(0..6, 0..self.structure_count);
                 splats += self.structure_count;
+            }
+
+            // Drifting wisp creatures (E15): the swarm, re-uploaded each frame, same pipeline.
+            if self.creature_count > 0 {
+                pass.set_pipeline(&self.splat_pipeline);
+                pass.set_bind_group(0, &self.globals_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.creature_splats.slice(..));
+                pass.draw(0..6, 0..self.creature_count);
+                splats += self.creature_count;
             }
 
             // Record stats for the HUD; still log occasionally on native.
