@@ -6,7 +6,7 @@
 
 use glam::Vec3;
 
-use crate::body::{Placement, Sex};
+use crate::relic::Placement;
 
 /// World-unit spacing of the candidate grid (one possible colossus per cell).
 const CELL: f32 = 200.0;
@@ -56,8 +56,7 @@ pub fn colossi_near(
             out.push(Placement {
                 pos: Vec3::new(x, ground(x, z), z),
                 yaw: (p % 6283) as f32 / 1000.0,
-                sex: if p & 1 == 0 { Sex::Male } else { Sex::Female },
-                voxel: 1.15 + ((p >> 5) % 70) as f32 / 100.0, // ~95–155 world units long
+                voxel: 1.15 + ((p >> 5) % 70) as f32 / 100.0, // ~95–155 world units across
                 seed: p | 1,
             });
         }

@@ -330,23 +330,22 @@ content kinds (pivot 2026-06):**
    we found more interesting than a literal body). The main procedural structure.
 2. **Human figures** — from real **CC0 models** (sourced: the MakeHuman base mesh, CC0 — see
    `assets/base-human.obj`), via a sampling/`voxelize` pipeline. A separate, later track.
-- ✅ **Ethereal point-forms, posed + placed** (`src/body.rs`): a procedural **posed skeleton**
-  (male/female proportions; natural **collapsed/fallen** poses — sprawled limbs, jittered per
-  seed) → surface cells emitted as points reusing the splat pipeline (glow, palettise, fog,
-  dissolve; drift-through, no collision). `scatter_fallen(seed, …)` lays a **seed-driven field**
-  of male+female colossi on the terrain — the first **"structure"** layer (placed independent of
-  chunk terrain; more structure kinds to follow). Deterministic; tested (surface shell, lies
-  flat, sex/seed vary, scatter on-ground). Verified headless: fallen giants strewn across the
-  world, plain + palettised.
+- ✅ **Tube-tech relics, ethereal + placed** (`src/relic.rs`): the procedural generator,
+  reworked from the humanoid "skeleton" into a wild **tangle of tubes** (hub girders + near-axis
+  pipe runs with elbows + long spars, varied radii) — ancient mechanical giants, non-human, the
+  "limbs everywhere" look. Surface cells → points reusing the splat pipeline (glow, palettise,
+  fog, dissolve; drift-through). Seed-driven scatter + the live `structures::colossi_near`
+  placement. Deterministic; tested. Verified headless: relics strewn across the world, plain +
+  palettised.
 - 🛠 **Human figures (CC0 model sourced):** `assets/base-human.obj` is the MakeHuman base mesh
   (CC0; 19k verts) — fetched from GitHub, provenance in `assets/base-human.LICENSE.txt`. Next:
   an OBJ loader + surface-sampler (point-form) and a `voxelize` (solid) so real anatomy slots
   in behind the same placement/render. A separate track from the tube-tech relics.
-- ✅ **Solid / explorable kind (headless):** `body::figure_voxels` voxelises a posed figure to
-  solid world voxels; `body_chunk_instances` buckets them into 32³ sections (multi-layer) and
+- ✅ **Solid / explorable kind (headless):** `relic::relic_voxels` voxelises a relic to solid
+  world voxels; `relic_chunk_instances` buckets them into 32³ sections (multi-layer) and
   greedy-meshes each → a giant of meshed cubes that shades/AOs/palettises like terrain. Verified
-  headless (a pale reclining voxel colossus). ⏳ Live wiring next (its chunks need to draw
-  alongside terrain without colliding with the stream map — built blind, verify in-app).
+  headless. ⏳ Live wiring next (its chunks must draw alongside terrain without colliding with the
+  stream map — built blind, verify in-app).
 - 🛠 **Live placement (built blind — verify in-app):** `structures::colossi_near` seed-places
   giants on a coarse cell grid across the infinite world; the app streams them in/out around the
   camera (rebuilding the point buffer only when the in-range cell set changes) and draws them

@@ -114,19 +114,18 @@ pub fn capture_view(
     // overdraw behind nearer ones. Opaque output is order-independent, so this is a pure
     // perf change — the render is identical, which also verifies the windowed app's sort.
     let mut instances = instances;
-    // Solid colossus demo (E18): one voxelised, greedy-meshed fallen giant to explore — the
+    // Solid relic demo (E18): one voxelised, greedy-meshed tube-tech giant to explore — the
     // solid kind alongside the ethereal points, rendered like terrain (shaded/AO/palettised).
     {
         let gy = crate::worldgen::height(40, 40, crate::WORLD_SEED) as f32;
-        instances.extend(crate::body_chunk_instances(
-            crate::body::Placement {
+        instances.extend(crate::relic_chunk_instances(
+            crate::relic::Placement {
                 pos: glam::Vec3::new(40.0, gy, 40.0),
                 yaw: 0.7,
-                sex: crate::body::Sex::Male,
                 voxel: 1.0,
                 seed: 4242,
             },
-            crate::world::BlockId(5), // snow → pale "bone"
+            crate::world::BlockId(5), // snow → pale metal
         ));
     }
     instances.sort_by(|a, b| {
@@ -504,15 +503,15 @@ pub fn capture_view(
         })
     });
 
-    // Colossal body demo (E18): seed-scattered *fallen* giants (male + female, natural collapsed
-    // poses) lying on the terrain, drawn through the splat pipeline (drift-through, no collision).
+    // Relic demo (E18): seed-scattered tube-tech giants (ancient mechanical tangles) on the
+    // terrain, drawn through the splat pipeline (drift-through, no collision).
     let body_points: Vec<crate::foliage::SplatInstance> =
-        crate::body::scatter_fallen(crate::WORLD_SEED, 70.0, 5, |x, z| {
+        crate::relic::scatter(crate::WORLD_SEED, 70.0, 5, |x, z| {
             crate::worldgen::height(x.floor() as i32, z.floor() as i32, crate::WORLD_SEED) as f32
         })
         .into_iter()
         .flat_map(|pl| {
-            crate::body::figure_points(pl.pos, pl.voxel, pl.yaw, pl.sex, pl.seed, [0.62, 0.72, 0.9])
+            crate::relic::relic_points(pl.pos, pl.voxel, pl.yaw, pl.seed, [0.62, 0.72, 0.9])
         })
         .collect();
     let body_vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

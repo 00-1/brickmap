@@ -16,7 +16,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
 pub mod audio;
-pub mod body;
+pub mod relic;
 // Native (desktop) audio output via cpal; web uses Web Audio, Android is a follow-up.
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub mod audio_native;
@@ -366,7 +366,7 @@ impl App {
         self.structure_cells = keys;
         let pts: Vec<foliage::SplatInstance> = placements
             .iter()
-            .flat_map(|p| body::figure_points(p.pos, p.voxel, p.yaw, p.sex, p.seed, COLOSSUS_COLOR))
+            .flat_map(|p| relic::relic_points(p.pos, p.voxel, p.yaw, p.seed, COLOSSUS_COLOR))
             .collect();
         if let Some(state) = self.state.as_mut() {
             state.set_structure_points(&pts);
@@ -1305,23 +1305,22 @@ pub(crate) fn frame_camera(instances: &[ChunkInstance]) -> (Camera, Vec3, f32) {
 }
 
 /// Greedy-mesh each chunk with neighbour-aware seam culling. Meshes stay
-/// Voxelise a fallen colossus (E18) and greedy-mesh it into drawable chunk instances — the
-/// **solid / explorable** kind (vs the ethereal points). Buckets the figure's solid voxels into
-/// 32³ sections (multi-layer in y), meshes each with its body-internal neighbours so interior
-/// seams are culled, and returns instances positioned in the world. `material` tints the body.
+/// Voxelise a relic (E18) and greedy-mesh it into drawable chunk instances — the **solid /
+/// explorable** kind (vs the ethereal points). Buckets the solid voxels into 32³ sections
+/// (multi-layer in y), meshes each with its body-internal neighbours so interior seams are
+/// culled, and returns instances positioned in the world. `material` tints it.
 /// Native for now (used by the headless demo); the live solid path comes with E18's next stage.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn body_chunk_instances(
-    placement: body::Placement,
+pub(crate) fn relic_chunk_instances(
+    placement: relic::Placement,
     material: world::BlockId,
 ) -> Vec<ChunkInstance> {
     use std::collections::HashMap;
     let n = Section::SIZE as i32;
-    let voxels = body::figure_voxels(
+    let voxels = relic::relic_voxels(
         placement.pos,
         placement.voxel,
         placement.yaw,
-        placement.sex,
         placement.seed,
     );
     let mut sections: HashMap<ChunkCoord, Section> = HashMap::new();
