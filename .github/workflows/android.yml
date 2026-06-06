@@ -70,33 +70,56 @@ jobs:
           echo "build-tools: $BT"
           # zipalign + apksigner re-sign (v1+v2+v3) with the committed sideload key, so
           # the APK installs on modern Android and successive builds update in place.
+          # The filename carries the short SHA so you can tell builds apart (and aren't
+          # served a cached old one).
+          sha="$(git rev-parse --short HEAD)"
+          out="brickmap-${sha}-android-arm64.apk"
           mkdir -p dist
           "$BT/zipalign" -f -p 4 "$apk" aligned.apk
           "$BT/apksigner" sign \
             --ks release.keystore --ks-pass pass:brickmap \
             --ks-key-alias brickmap --key-pass pass:brickmap \
-            --out dist/brickmap-android-arm64.apk aligned.apk
-          "$BT/apksigner" verify --verbose dist/brickmap-android-arm64.apk
-          ls -la dist/brickmap-android-arm64.apk
+            --out "dist/$out" aligned.apk
+          "$BT/apksigner" verify --verbose "dist/$out"
+          ls -la "dist/$out"
+          echo "name=$out" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact (also downloadable from this run)
         uses: actions/upload-artifact@v4
         with:
-          name: brickmap-android-arm64
-          path: dist/brickmap-android-arm64.apk
+          name: ${{ steps.apk.outputs.name }}
+          path: dist/${{ steps.apk.outputs.name }}
           if-no-files-found: error
+
+      # Keep the rolling `dev` release tidy: drop the previous APK(s) before adding the
+      # new SHA-named one, so the Releases page shows exactly one current APK.
+      - name: Prune old APKs from the dev release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          repo="${{ github.repository }}"
+          rel="$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$repo/releases/tags/dev" || true)"
+          ids="$(printf '%s' "$rel" | jq -r '.assets[]? | select(.name|endswith(".apk")) | .id' 2>/dev/null || true)"
+          for id in $ids; do
+            echo "deleting old asset $id"
+            curl -s -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$repo/releases/assets/$id" || true
+          done
 
       # Publish to a rolling "dev" prerelease so there's a *direct, phone-friendly*
       # download link (release assets on a public repo need no login and aren't zipped,
-      # unlike workflow artifacts). Updated in place on every main build.
+      # unlike workflow artifacts). The SHA-named asset makes new builds obvious.
       - name: Publish to the rolling 'dev' release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: dev
-          name: Dev builds (latest main)
+          name: brickmap dev — ${{ steps.apk.outputs.sha }}
           prerelease: true
-          files: dist/brickmap-android-arm64.apk
+          files: dist/${{ steps.apk.outputs.name }}
           body: |
-            Auto-built from the latest `main`. **Android:** debug-signed APK —
-            enable "install from unknown sources" and tap to install. (A faster
-            release-signed build is coming; desktop binaries land here too.)
+            Auto-built from `main` @ `${{ steps.apk.outputs.sha }}`. **Android:** sideloadable
+            release APK — enable "install from unknown sources" and tap to install. Updates
+            in place (stable signing key). The filename + release title carry the build SHA;
+            the in-app HUD shows it too.
