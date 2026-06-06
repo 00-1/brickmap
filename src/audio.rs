@@ -140,6 +140,11 @@ pub struct Drone {
     drive_mul: f32,
     /// Murk ↔ openness `0..1`: scales the filter cutoff sweep (low = darker/muffled).
     tone: f32,
+    /// Reactive intensity `0..1` (E16): driven by the camera's flight (speed + altitude). Opens
+    /// the cutoff and lifts the swell a touch, so the dirge breathes with the world rather than
+    /// sitting static. `_s` is the per-sample-smoothed value (no zipper noise on param steps).
+    intensity: f32,
+    intensity_s: f32,
 }
 
 impl Drone {
@@ -232,6 +237,8 @@ impl Drone {
             vol: 0.9,
             drive_mul: 1.0,
             tone: 0.4,
+            intensity: 0.0,
+            intensity_s: 0.0,
         }
     }
 
@@ -246,6 +253,11 @@ impl Drone {
     /// Murk ↔ openness, `0..1` (low = darker/muffled, high = brighter).
     pub fn set_tone(&mut self, t: f32) {
         self.tone = t.clamp(0.0, 1.0);
+    }
+    /// Reactive intensity, `0..1` (E16): the world's flight state (speed + altitude). Smoothed
+    /// internally, so callers can set it per-frame without zipper noise.
+    pub fn set_intensity(&mut self, x: f32) {
+        self.intensity = x.clamp(0.0, 1.0);
     }
 
     /// Render the next stereo frame (`[left, right]`), each in roughly `[-1, 1]`.
@@ -266,15 +278,20 @@ impl Drone {
         let dl = (drive * l * pre).tanh();
         let dr = (drive * r * pre).tanh();
 
-        // Murk: scale the cutoff sweep (tone 0 → ×0.5 darker, 1 → ×2.5 brighter).
-        let tone_scale = 0.5 + self.tone * 2.0;
+        // Reactive intensity (E16): smooth toward the target (~0.4 s) so flight changes glide in.
+        self.intensity_s += (self.intensity - self.intensity_s) * 0.00006;
+        // Murk: scale the cutoff sweep (tone 0 → ×0.5 darker, 1 → ×2.5 brighter). Flight
+        // intensity nudges the effective openness up, so faster/higher flight brightens the drone.
+        let tone_eff = (self.tone + self.intensity_s * 0.35).min(1.15);
+        let tone_scale = 0.5 + tone_eff * 2.0;
         let cutoff = (self.cutoff_lfo.step(self.sr) * tone_scale).clamp(60.0, self.sr * 0.45);
         let amp = self.amp_lfo.step(self.sr);
         // Step the second LFO read for R off the same value (mono modulation, stereo audio).
         let fl = self.filt_l.lowpass(dl, cutoff, self.res, self.sr);
         let fr = self.filt_r.lowpass(dr, cutoff, self.res, self.sr);
 
-        let g = self.master * amp * self.vol;
+        // A subtle swell with intensity so motion feels like it pushes the dirge.
+        let g = self.master * amp * self.vol * (1.0 + 0.10 * self.intensity_s);
         [(fl * g).clamp(-1.0, 1.0), (fr * g).clamp(-1.0, 1.0)]
     }
 
@@ -330,5 +347,24 @@ mod tests {
         let a = Drone::render(1, 8_000, 0.25);
         let b = Drone::render(2, 8_000, 0.25);
         assert_ne!(a, b, "two seeds produced the identical drone");
+    }
+
+    #[test]
+    fn intensity_changes_output_without_clipping() {
+        // Same seed, one driven at full reactive intensity: it should audibly differ yet stay
+        // within full scale (the reactive modulation must never blow the output up).
+        let mut a = Drone::new(5, 44_100);
+        let mut b = Drone::new(5, 44_100);
+        b.set_intensity(1.0);
+        let (mut peak, mut diff) = (0.0f32, 0.0f32);
+        for _ in 0..44_100 {
+            let [la, _] = a.next_frame();
+            let [lb, rb] = b.next_frame();
+            assert!(lb.is_finite() && rb.is_finite());
+            peak = peak.max(lb.abs()).max(rb.abs());
+            diff += (la - lb).abs();
+        }
+        assert!(peak <= 1.0, "intensity pushed past full scale: {peak}");
+        assert!(diff > 0.0, "intensity had no audible effect");
     }
 }

@@ -315,7 +315,12 @@ User-facing features, all rated *great fit* because they reuse machinery we alre
     autoplay-unlocked on first tap) + cpal (native) feeding `Drone::next_frame`. In-game
     controls: volume / heaviness / murk sliders (web) + mute key M (native); the dirge
     re-seeds with the world. (Android audio still a follow-up.)
-  - ⏳ **Reactive layer**: speed/biome/weather → cutoff/level tweens; voice cap; one FDN reverb.
+  - 🛠 **Reactive layer**: ✅ **flight-reactive intensity** — the app feeds the camera's flight
+    state (speed + altitude, blended, clamped `0..1`) into `Drone::set_intensity`, which opens the
+    filter cutoff and lifts the swell a touch (smoothed per-sample, no zipper). Plumbed on native
+    (a lock-free atomic, read each audio block) and web (set each frame). Pure mapping + bound/
+    finite tested. *(Built blind — the modulation is conservative; the exact feel wants the human's
+    ear to tune.)* ⏳ Remaining: biome/weather terms, a voice cap, and one FDN reverb.
 
 ### ✨ E17 — In-world text *(exploration)* ✅
 Render text **inside the 3D world**, cheaply, by reusing the bitmap-font HUD rasteriser + the

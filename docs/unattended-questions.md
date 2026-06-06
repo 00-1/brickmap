@@ -51,6 +51,13 @@ the **configurable palette post-process** (20 curated 1–2-hue palettes, lumina
 (voxel creases as a blueprint grid) and a **G-buffer-as-art** mode — I'll add these as live
 toggles like `melt` if you want to A/B them; holding until you say.
 
+## 2026-06-06 · E16 reactive audio — flight-reactive intensity built blind (tune by ear)
+The drone now reacts to flight: camera speed + altitude → `Drone::set_intensity`, opening the
+cutoff + lifting the swell (native atomic + web per-frame; smoothed; tested bound/finite). I
+**can't hear it in the container**, so the modulation is deliberately conservative — when you're
+back, fly it and tell me if the reaction should be stronger/weaker or mapped to something else
+(biome, proximity to colossi). Remaining E16: a voice cap and one FDN reverb (also ear-tuned).
+
 ## 2026-06-06 · E17 in-world text — needs your direction on *content* before live placement
 The text **renderer** is done and verified (`src/text.rs` + `text.wgsl`: multi-script —
 Latin/Greek/Hiragana/Standard Galactic — camera-facing emissive billboards, palettised + fogged

@@ -140,6 +140,8 @@ struct App {
     /// In-world text (E17): the set of inscription cells currently in range. Lets the app
     /// rebuild the giants' label textures only when the in-range set changes (not every frame).
     text_cells: std::collections::HashSet<(i32, i32)>,
+    /// Previous-frame camera position, for the reactive-audio (E16) flight-speed estimate.
+    audio_prev_pos: Option<Vec3>,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
     /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
@@ -1038,8 +1040,28 @@ impl ApplicationHandler<AppEvent> for App {
                 self.update_structures();
                 // Stream in-world inscriptions (E17) in/out around the camera.
                 self.update_inscriptions();
-                // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
-                // camera) and re-upload its points each frame so they drift through the scene.
+
+                // Reactive audio (E16): the drone breathes with the flight. Estimate speed from
+                // the camera's motion this frame and blend in altitude, so it opens up when you
+                // fly fast / high and settles when you hang still or sink into a valley.
+                let pos = self.camera.position;
+                let speed = self
+                    .audio_prev_pos
+                    .map(|p| (pos - p).length() / dt.max(1e-3))
+                    .unwrap_or(0.0);
+                self.audio_prev_pos = Some(pos);
+                let speed_n = (speed / AUTO_FLY_SPEED).clamp(0.0, 1.0);
+                let alt_n = ((pos.y - 24.0) / 90.0).clamp(0.0, 1.0);
+                let intensity = (0.5 * speed_n + 0.5 * alt_n).clamp(0.0, 1.0);
+                #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+                if let Some(a) = &self.audio {
+                    a.set_intensity(intensity);
+                }
+                #[cfg(target_arch = "wasm32")]
+                controls::set_audio_intensity(intensity);
+                let _ = intensity; // used per-target above
+                                   // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
+                                   // camera) and re-upload its points each frame so they drift through the scene.
                 self.creatures.update(dt, self.camera.position);
                 if let Some(state) = self.state.as_mut() {
                     state.set_creature_points(&self.creatures.points());
@@ -1317,6 +1339,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         // frame to the live camera in the redraw loop). Seed-driven off the world seed.
         creatures: creatures::Swarm::new(view.seed ^ 0xE15_E15, 7, pos, 80.0),
         text_cells: std::collections::HashSet::new(),
+        audio_prev_pos: None,
         pad: gamepad::Pad::new(),
         // Start the drone on the world seed so the dirge matches the world (native; a no-op
         // None if there's no audio device). Web starts audio from the page on first tap.
@@ -1688,6 +1711,16 @@ pub mod controls {
         AUDIO.with(|a| {
             if let Some(d) = a.borrow_mut().as_mut() {
                 d.set_tone(t);
+            }
+        });
+    }
+
+    /// Reactive intensity (E16), driven each frame by the app (not a page slider): the camera's
+    /// flight state nudges the drone's openness/swell.
+    pub(crate) fn set_audio_intensity(x: f32) {
+        AUDIO.with(|a| {
+            if let Some(d) = a.borrow_mut().as_mut() {
+                d.set_intensity(x);
             }
         });
     }
