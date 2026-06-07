@@ -177,6 +177,16 @@ These are the *entire* contract surface between game and engine. Keep it this sm
    *constructors + per-frame calls*, **not** a `Game` trait the engine calls back
    into (avoid the framework inversion unless Decision 2 says otherwise).
 
+> **Known upcoming render capability (post-split, but the seam should anticipate it):**
+> *Scraped Again* needs a **post-palette, depth-aware, non-palettised emissive overlay**
+> draw — the survey-beam (see [`game-mechanics.md`](../game-mechanics.md) §6) is a vivid
+> line drawn *after* the palette post-process yet still occluded by scene geometry. So
+> `bm-render` must be able to **retain scene depth through the post chain** and offer a
+> final overlay pass the game feeds primitives into. Worth keeping the post-chain /
+> depth-store design open to it (it also interacts with the M8 "discard depth for tiler
+> bandwidth" note — keep depth when an overlay needs it). The overlay draw is game-fed;
+> the *capability* is engine.
+
 ### The four fused files — extraction plan
 
 - **`worldgen.rs`** → move the value-noise / domain-warp / ridge / hash helpers into

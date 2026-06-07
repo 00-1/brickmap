@@ -1,272 +1,441 @@
-# brickmap — Core game mechanics (planning / proposal)
+# Scraped Again — Core game mechanics (design)
 
-> **Status: proposal, not committed direction.** This doc opens a deliberate
-> question the project has so far avoided: *should brickmap become a game, and if
-> so, what is its core loop?* Nothing here changes the roadmap or the engine yet.
-> It exists to give the human something concrete to push on.
+> *Scraped Again* is the **game**; **brickmap** is the **engine** it's built on. The
+> title is the plain-English sense of *palimpsest* ("scraped again") — a dead,
+> overwritten world you read back into legibility, where the endless re-seeded world
+> is itself one more scraping. (Workspace crate `scraped-again`; see
+> [`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md).)
 >
-> **Honest tension up front.** [`design.md`](design.md) §3 lists **gameplay,
-> physics, entities, AI, persistence** as explicit *non-goals* — brickmap is a
-> *rendering engine, not a game*. Adopting any core loop means **revisiting §3 on
-> purpose**, not drifting past it. That's a call for the human, not a thing to
-> assume. This doc assumes "yes, let's explore it" because that's what was asked;
-> it does not assume "yes, let's commit."
+> **Status: living design.** The direction below is **decided** (2026-06): a
+> **melancholy-archival exploration game** built on the brickmap engine, with an
+> **autopilot-as-idle data-collection loop feeding a deep tech tree of
+> comprehension**. The engine/game *separation* that gives this a home has **landed**
+> ([`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md) ✅ — the
+> game now lives in its own `scraped-again` crate); this doc is the **game's** design
+> and will keep evolving. The tree's
+> exact node lists here are **illustrative and expandable** — the structure is the
+> commitment, the specific nodes are not.
+>
+> *(Historical note: an earlier draft weighed three directions and recommended a
+> no-fail "cartographer/decipherer" loop. That decoding idea **survives** — it is now
+> the Decipherment branch of the tree, §8 — but the spine is now the autopilot/data/
+> tech-tree loop below.)*
 
-## 1. Why this is even on the table
+## 1. The pitch
 
-The engine was never meant to be a game, but the *world* has quietly grown a cast
-of nouns that are begging for verbs. We already have, live and on-aesthetic:
+You are the last surveyor of a dead machine-world — a patient automaton drifting an
+endless, doom-quiet ruin of **fallen mechanical giants** and **ancient inscriptions**.
+You don't conquer it; you **understand** it. **Autopilot is a real way to play**: the
+cruiser drifts on its own, and the world streaming past is *read* — glowing glyphs and
+the corpses of giants logged as **data**. You spend that data on a vast, intricate
+**tech tree** — not weapons, but **faculties of comprehension and reach**: sharper
+senses, a ship that learns to seek, the slow **decipherment** of a lost language until
+the dead world's writing becomes legible and tells you what happened to it. **Manual
+flight and walking** are the high-agency mode — targeted runs to a specific giant, down
+a cave, into a pristine pocket — for the rare data and the keys autopilot can't sweep.
 
-- **Fallen colossi** (E18) — enormous seed-placed giants strewn across the world,
-  some **ethereal** (drift through the point-cloud), some **solid voxel** bodies you
-  can **land on and walk**. Ancient mechanical tube-relics + toppled human figures.
+The mood stays **melancholy**: numbers go up quietly, in service of mourning-by-
+understanding. The endpoint isn't power. It's knowing what was lost.
+
+### Three ways to play (one economy, three experiences)
+
+The same strata economy and the same tech tree underlie all three, but **what you can
+reach and which branches pay off depend on how you engage** — so each mode is a genuinely
+different game, and you can live in one, or blend them.
+
+- **Autopilot — the *management* game.** Playable **entirely through menus**: manage
+  strata, buy upgrades, set routes, and watch the ship scan / auto-collect / seek. **The
+  whole core completes hands-off** (the tree *and* the decipherment payoff). Its branches:
+  **Memory** (storage / indexing / auto-collect / auto-route) + **Sensing** (scan). The
+  *abstract, distant* register of the mourning.
+- **Manual flight — the *navigation* game.** Take the stick: choose headings, reach
+  off-corridor, make precise approaches, collect from the air. Its branch: **Locomotion
+  (flight)** — handling, ceiling, a cruiser-mounted beam. Finds the autopilot corridor
+  never sweeps.
+- **Walking — the *exploration* game** (the richest divergence). Land and go on foot:
+  interiors, cave depths, climbing solid colossi, the survey-beam as a traversal rail,
+  reading inscriptions up close. Its branch: **Locomotion (foot)** + beam-rail traversal +
+  on-foot collection. The **deepest, most resonant lore lives here**. The *intimate,
+  on-the-ground* register.
+
+The load-bearing rule: **the core spine completes on autopilot; flight and walking are
+*additional, parallel* experiences and upgrade paths — never *gates* on the core.** A pure
+idler, a pilot, a walker, or any mix is a complete way to play.
+
+## 2. What we already have to build with
+
+The world has, live and on-aesthetic (see [`roadmap.md`](roadmap.md)):
+
+- **Fallen colossi** (E18) — seed-placed giants; ethereal point-clouds you drift
+  through *and* solid voxel bodies you land on and walk. Ancient *mechanical* tube-tech
+  relics + toppled human figures. → the **machines whose tech you reassemble.**
 - **Inscriptions & monuments** (E17) — abstract writing scattered on the ground and
-  **labelling each colossus**, in **five writing systems** (Latin, Greek, Hiragana,
-  Standard Galactic, Runic). Glowing, lo-fi, recolour/crumble with the palette.
-- **Pristine pockets** — rare, special places with their own **choral pad** (relief
-  from the doom drone everywhere else) and a unique map icon. The world's "sacred sites."
-- **A per-seed doom dirge** (E16) — a Sleep/*Dopesmoker* drone unique to each world;
-  intensity already reacts to flight (speed + altitude) and **warps harder as you
-  near a giant** (structure-approach wobble — proximity to a colossus visibly distorts
-  reality).
-- **Two ways to move** (E19) — pilot a **cruiser** (fly, autopilot or manual), **land**
-  it, **step out and walk** the terrain on foot (caves, up to giants), walk back, fly on.
-- **An explored map** (E10) that fills in as you travel, with a you-are-here dot, the
-  parked cruiser, found inscriptions, and pristine icons.
-- **Shareable seeds** (E12) — the whole world is a pure function of a seed; any place
-  is a permalink.
-- **Biomes** that crossfade as you fly (palette, audio, density, lighting all shift).
-- **Dynamic voxels** (E5/E11), **voxel editing** (E14), **particles** (E2) — matter
-  that can move, break, and be changed, routed through a clean event seam.
+  labelling each colossus, in **five writing systems** (Latin, Greek, Hiragana,
+  Standard Galactic, Runic), glowing and lo-fi. → the **collectibles / data.**
+- **Pristine pockets** — rare places with a **choral pad** (relief from the drone) and
+  a map icon. → the **high-value sites + the game's quiet payoff beats.**
+- **A per-seed doom dirge** (E16) that swells as you near a giant. → a **direction
+  sense** the Resonance branch turns into a mechanic.
+- **Autopilot + manual flight + on-foot walking** (E19, D3). → the **two play modes:
+  idle survey vs. targeted expedition.**
+- **An explored map** (E10) that fills in as you travel. → the **survey display.**
+- **Shareable seeds** (E12) + **the edit/event seam** (E14) + the headless **render-to-
+  texture**. → **save/share = seed + a sparse progress log**, and **codex thumbnails**.
+- **Biomes** that crossfade; **sim/edit/particles**. → texture and future systemic depth.
 
-That is, almost verbatim, the **setting and toolkit of an atmospheric exploration
-game** — a lonely traveller crossing a dead, doom-laden world of fallen giants and
-ancient writing. What's missing is **a reason to go, a thing you do when you arrive,
-and a sense of having gotten somewhere.** That's the "core mechanic."
+Almost nothing in the loop below needs new *render* tech. The one genuinely new system
+is the **tech-tree + codex UI** (§12).
 
-## 2. The design pillars any mechanic must honour
+## 3. Design pillars
 
-These fall out of the existing identity; a mechanic that breaks one is the wrong
-mechanic.
+1. **Comprehension, not conquest.** Every upgrade is a faculty of *understanding or
+   reach*. No combat, no health, no score popups. The tree's terminus is knowing, not
+   winning.
+2. **Autopilot is a complete way to play — not a punished one.** The passive layer is
+   genuinely rewarding and time-respecting (drift, tab away, return); an autopilot-only
+   run still climbs the tree and earns the decipherment payoff. Manual flight and walking
+   are **additive, never gates** — both a *multiplier* on the shared economy *and* their
+   own distinct experiences + upgrade paths (the three modes of §1), never the only path
+   to core progress.
+3. **Stay cheap and on-brand.** Weak-hardware-first (design §4) + "expose the tech"
+   (§11). Reuse the splat path, world-text, map, audio, and event seam; add ~no render
+   cost.
+4. **No-fail, melancholy.** The world is grief, not threat. The only "sink" is the tree
+   itself. Pacing pressure, if any, is gentle (idle storage caps), never loss.
+5. **Determinism-friendly, multiplayer-shaped.** State = seed + a sparse progress log
+   (collected glyphs + tree state + decoded scripts). No world syncing; a shared
+   **archive** is the natural co-op layer (roadmap N1).
 
-1. **Stay cheap and on-brand.** Weak-hardware-first (design §4) and "expose the tech"
-   (§11) don't pause for gameplay. The best mechanics **reuse systems we already have**
-   (map, text, splat path, event seam) and add ~no render cost.
-2. **Honour the mood.** The world is **dark, grimy, lonely, doom-laden**, with rare
-   pristine relief. Mechanics should feel **archaeological and elegiac**, not arcade.
-   No score popups, no health bars fighting the palette. Closer to *Shadow of the
-   Colossus* / *NaissanceE* / *Journey* than to a shooter or a survival-crafter.
-3. **Don't drag the engine into the scope it refused.** Heavy entity AI, pathfinding,
-   combat, inventory tetris, networked authority — these are exactly the §3 non-goals.
-   A good core loop here is **goal-light and computation-light**: the *world* is the
-   content, the player's *attention* is the resource.
-4. **Determinism-friendly.** The world is seed-pure (the multiplayer "determinism
-   dividend", roadmap N1). Mechanics should keep state as **seed + a sparse event/
-   progress log**, never require syncing or storing the world itself.
-5. **Single-player first, multiplayer-shaped.** Whatever the loop is, it should survive
-   "now do it with a friend in the same seed" without a rewrite (presence + shared
-   discoveries layer cleanly onto N1).
+## 4. The core loop
 
-## 3. The core question, stated plainly
+```
+        ┌──────────────────────── AUTOPILOT (idle / broad) ───────────────────────┐
+        │  drift the endless world ▸ the ship auto-SCANS what it passes → fills    │
+        │  the map ▸ (unlocked) auto-COLLECTS the common layer into a buffer ▸     │
+        │  and learns to seek dense/rare/undiscovered sites (Locomotion tech)      │
+        └───────────────┬──────────────────────────────────────────────────────────┘
+                        │ data accrues
+                        ▼
+        ┌──────── THE TECH TREE (spend data on faculties of comprehension) ────────┐
+        │  Sensing · Decipherment · Locomotion · Resonance · Memory                │
+        │  → better sweep, legible scripts, autonomous autopilot, pristine sense,  │
+        │    bigger buffers — the passive layer improves *itself*                  │
+        └───────────────┬──────────────────────────────────────────────────────────┘
+                        │ unlocks reach + reveals where the rare things are
+                        ▼
+        ┌──────── MANUAL / FOOT (active / targeted / high-yield) ──────────────────┐
+        │  take the stick ▸ fly/walk to a *specific* giant, cave, pristine pocket  │
+        │  ▸ grab optional rares + speed up decoding + read interiors it skips     │
+        └───────────────┬──────────────────────────────────────────────────────────┘
+                        │ rare data + keys
+                        ▼
+        ┌──────── DECIPHERMENT PAYOFF (the melancholy) ────────────────────────────┐
+        │  a script becomes legible ▸ inscriptions render *translated* ▸ a fragment │
+        │  of what killed the world surfaces ▸ and that script's yield rises        │
+        └───────────────────────────────────────────────────────────────────────────┘
+                        ↺ set autopilot, drift on, deepen
+```
 
-Everything downstream forks on **two axes**:
+## 5. The resource model — five scripts, five data strata
 
-- **Goal axis — what pulls the player forward?**
-  *Pure wander* (no goals, the world is the point) ↔ *directed* (objectives, a thing
-  to find/finish) ↔ *open systemic* (emergent goals from systems like survival/sim).
-- **Pressure axis — what can go wrong?**
-  *No-fail / contemplative* ↔ *soft pressure* (resources, dread, decay) ↔ *hard fail*
-  (death, loss).
+The five E17 scripts become five **data strata**, roughly tiered by rarity. The player
+never sees "Latin/Greek" — they see distinct glyph-systems; we map script → stratum
+internally. A collected glyph yields its stratum's data (amount scaled by word length /
+source rarity). Strata are **typed currencies**, so the tree branches naturally.
 
-The mood and the engine constraints push **hard toward the low-pressure, discovery-
-directed quadrant** — but that's the decision to confirm, so §4 lays out three honest
-candidates across the space.
+| Script (engine) | In-world feel | Data stratum | Mainly feeds | Rarity |
+|---|---|---|---|---|
+| Latin | mundane labels / signage | **Records** (survey logs) | Sensing, Memory (baseline) | common |
+| Greek | technical / engineering marks | **Schematics** | Locomotion, Sensing | uncommon |
+| Hiragana | soft / ritual inscriptions | **Rites** | Resonance | uncommon |
+| Runic | ancient grave-marks on the giants | **Relics** (deep lore) | Decipherment, foundations | rare |
+| Standard Galactic | alien / non-human signal | **Signals** | Resonance (strange), late-game | rarest |
 
-## 4. Three candidate directions
+This is the roguelike "letters are items" idea unbound from single glyphs: **script =
+category/rarity, the word = the specific sample.** And it makes all five scripts
+mechanically load-bearing.
 
-### A. The Cartographer / Decipherer *(recommended)*
+## 6. Collection & the survey-beam
 
-**Fantasy.** You are the last surveyor of a dead world. You travel between **fallen
-giants**, read the **inscriptions** that name and mourn them, and slowly **decipher**
-a lost script — turning glowing nonsense into meaning. Discovery *is* the reward.
+There are **two tiers of information**, made visible as **two beams** (both drawn
+post-palette so they read as vivid against the muted world — distinguished by colour):
 
-**Core loop.**
-1. **Spot** a landmark (a giant on the horizon, a glow, a map icon, a swell in the
-   drone). 2. **Travel** there by cruiser. 3. **Land & walk** it — get close to the
-   body, find its **monument inscription** and nearby **ground inscriptions**.
-4. **Record / decode** — the find enters a **codex**; collecting glyphs fills in a
-   **cipher** so more of the world's writing becomes legible. 5. **A thread opens** —
-   a decoded inscription **points you** to the next site (a bearing, a named giant, a
-   pristine pocket). 6. Repeat; the dead world slowly **tells you what happened to it.**
+The cruiser's beams fire into a **zone just ahead of the ship (in view)** — *not* a
+radius you'd never see. So the idle layer is **on-screen**, your **heading** decides what
+gets read (and "the ship learns to seek" steers things into that forward cone), and the
+harvest is **naturally bounded** to your flight corridor — no artificial "you may not take
+this" rule needed.
 
-**Why it fits.** Almost zero new tech: it's the **map + text + colossi + audio we
-already render**, plus a **codex screen** (reuse the map overlay + text path) and a
-**glyph-progress model** (pure data, seed-keyed). The five writing systems stop being
-decoration and become the **content spine**. The doom drone is the world's grief; the
-**pristine pockets are the payoff beats** (legibility/relief). No entities, no combat,
-no physics beyond what E19 already does.
+- **Scan (auto, the cruiser, a cool colour).** As you drift, the ship **automatically
+  fires short-lived scan beams** at what's ahead — they **update the map** (a thing
+  *exists / what kind* it is), but **don't harvest** it. The idle layer made diegetic: you
+  *see* the ship reading the world, and the map fills as you go. *What the scan can detect*
+  grows with Sensing tech (terrain/biome → inscriptions → ethereal colossi → buried/cave
+  finds → rare-stratum hints). The map becomes a live **opportunity surface** (scan pins
+  *uncollected* sites; you triage).
+- **Collect (the warm beam).** Your survey-beam (below) **extracts the data/lore** into
+  the strata + codex. Scan tells you *where*; collection takes *the thing*.
+- **Auto-collect (a Memory unlock).** The cruiser begins **auto-firing the collection
+  beam** at the forward zone and harvesting as you pass — the visible idle harvest. It
+  takes the **common layer in your corridor**; off-route and deep things you still steer to
+  (manually or by routing). It removes the *chore*, not the *expedition*.
 
-**Pros.** Cheapest to build; most distinctive; deepest fit with the existing fiction;
-trivially seed-deterministic; multiplayer = shared codex. **Cons.** Needs *authored or
-generated meaning* behind the glyphs (a content pipeline — see §6); risk of feeling
-thin if decoding is just "collect N glyphs." **Fail/pressure:** none by default
-(contemplative); optional soft pressure in §5.
+**Autopilot is a complete way to play — not a punished one.** Manual is a **multiplier,
+not a gate**: it's *faster*, it reaches the corridor's edges, and it gets the **optional**
+depth (interiors, pristine pockets, specific giants, "Rosetta" finds that *accelerate* a
+script). An **autopilot-only run still climbs the tree and still earns the decipherment
+payoff** — just at a relaxed pace, missing optional lore. The only asymmetry is
+**physical, not punitive**: some content simply *lives* where autopilot doesn't go (inside
+a cave, deep in a solid colossus); skipping it costs *optional lore and a slower curve*,
+never *blocked progress*. Crucially, **decipherment is reachable on autopilot** — fed by
+the data you scan-collect of each script — with manual keys *speeding it up*, not
+unlocking it.
 
-### B. The Pilgrim *(directed, light pressure)*
+- **What manual still uniquely reaches** (optional depth, not mandatory):
+  - **interiors** — glyphs inside caves / solid-colossus bodies (foot collision + the
+    descent/hull tech, E19 follow-ups),
+  - **pristine-pocket** inscriptions (Rites/Signals + the choral beat),
+  - a **named colossus's** monument inscription up close (E17 `colossus_label`),
+  - anything **off your flight corridor** the forward beams never swept.
+- **The codex.** Every collected glyph is recorded in a growing **archive** (catalogue +
+  a headless-RTT thumbnail per find). Collection pays out twice: **quantity** (feeds the
+  tree) and **understanding** (fills the archive — the melancholy payoff).
 
-**Fantasy.** A pilgrimage across the dead world toward something — the next pristine
-pocket, the largest giant, a vanishing point. Movement and **endurance** are the game.
+### The survey-beam — the active verb (collection *and* traversal)
 
-**Core loop.** Travel → manage a thin resource (the cruiser's **drift/charge**, refilled
-only at **pristine pockets**) → reach waypoints → the world reacts (drone, warp, palette)
-as you approach significance. Stakes: run dry far from a pocket and you're stranded
-(soft-fail: walk, or a slow recovery), so **route-planning on the map** matters.
+Manual play's signature move, and the cheapest, most on-theme way to do both jobs at
+once. This is the **warm collection beam** (distinct from the cruiser's cool auto-**scan**
+beam, §6). You start with a basic one (it's never gated behind the tree); the tree only
+deepens it — and Memory's **Auto-Collect** later lets the cruiser fire it for you.
 
-**Why it fits.** Adds a **single resource + the map as a planning surface** — both cheap.
-Turns the existing biome/pristine structure into a **navigation economy**. **Pros.**
-Gives forward pull + mild stakes without entities; pristine pockets gain mechanical
-weight. **Cons.** A resource meter risks fighting the contemplative mood and the
-"no HUD clutter" aesthetic; the fun is thinner than A's decoding. Easy to **layer on top
-of A** rather than instead of it (A provides the *why*, B the *pacing pressure*).
+**What it is.** A straight, solid, vivid **light/energy beam** you cast from the player
+toward an aimed point (the E14 DDA pick gives the aim). It is **heavy and deliberate** —
+a ponderous instrument, not a snappy zap — and once cast it **persists in space for a
+while**, then **fades** until it stops working.
 
-### C. The Caretaker / Terraformer *(open systemic)*
+**It does two things with one cast:**
+- **Collects along its whole path.** On cast, every glyph the line passes through is
+  harvested at once (a one-shot sweep) — so you line shots up *through* clusters of
+  inscriptions, and *through* the **ethereal** drift-through colossi (an energy beam
+  reads what you can't stand on — this is how the untouchable giants get collected).
+- **Becomes a temporary rail.** While it's up, you **attach to it and move along its
+  single axis** (1 DoF — not walking a catwalk; a rail you clip onto), at **any angle**:
+  vertical = an ascent out of a pit, diagonal = a climb up a cliff, horizontal = a
+  crossing. This is the answer to *"you get stuck too easily"* — fire a ramp, ride it.
 
-**Fantasy.** You don't just witness the dead world — you **act on it**. Use **editing
-(E14)** and **dynamic voxels (E11)** to clear, restore, grow, or reshape sites; **grow
-moss/crystals** on a dead giant; divert **water/sand**; light the dark.
+**Lifespan is the reach budget.** Your reach is how far you get before the beam dies.
+Still attached when it expires → you **drop** from that point (walker gravity; a gentle
+consequence, not a fail — and you can **fire-and-attach mid-fall to save yourself**). You
+can also **detach on purpose** to drop precisely onto a ledge or a glyph cluster.
 
-**Core loop.** Find a degraded site → apply systemic tools (CA growth, fluids, edits) →
-the world responds and (optionally) records the change as **seed + edit deltas** → share
-it. Emergent, sandbox-leaning.
+**Multi-segment routes.** With more than one beam up at once (an upgrade — see below),
+you lay out a **path through space** and ride it segment to segment, racing each one's
+fade. Chaining beams *is* the skill expression and the tension.
 
-**Why it fits the engine** (it's the §12 "dynamic voxels are the headline" bet cashed in)
-**but fights the mood** (active fixing vs. elegiac witnessing) and is the **most scope-
-heavy** (real sim systems, balance, UI). **Pros.** Maximum use of the sim/edit tech;
-strong creative/shareable angle. **Cons.** Biggest build; least defined "win"; risks
-becoming "Minecraft creative," which the project explicitly does **not** want to look or
-feel like. Best treated as a **later mode**, not the core.
+**It's the universal interaction verb.** Beyond collect-and-traverse, the beam is *how
+you reach out and engage* — its **contact** triggers a context action depending on what
+it touches: a glyph → collect, the **cruiser → board it**, and (extensible) relic
+anchors / colossus doors / data-cores later. One verb, point the light.
 
-### Recommendation
+**Boarding the cruiser (the save).** Touch the beam to your parked cruiser and you're
+**rapidly reeled along it to the ship and board on arrival** (zip-then-board — consistent
+with the rail, not a teleport). This plugs straight into the **E19 enter/exit mode
+machine** as a *ranged* alternative to walk-up-and-press-E. Two rules make it feel right:
+- **Light lock-on** — aiming roughly at the parked ship snaps the beam to it, so a clutch
+  mid-fall recall doesn't need a pixel-perfect shot (the one moment forgiveness matters).
+- **Reach-gated** — recall only works if the cruiser is within beam reach, so wandering
+  far on foot has consequence (you drop and walk, no-fail); **Length/Lifespan** extend how
+  far you can recall from. The headline emergent beat: **falling → beam the distant ship →
+  the winch hauls you home** — relief, the light pulling you back from the dark.
 
-**Lead with A (Cartographer/Decipherer) as the core**, keep **B (Pilgrim pressure) as an
-optional layer** to tune pacing once A exists, and **defer C** to a creative mode. A is
-the cheapest, the most on-mood, and the one that turns content we've *already built but
-under-used* (five scripts, labelled giants, the map, pristine pockets, the reactive
-drone) into an actual loop.
+**Rendering (note for the engine).** The beam draws **after the palette post-process**,
+so it keeps its **raw vivid colour** — the one thing in frame *not* mapped onto the
+world's muted ramp, reading as artificial / yours / technology cutting through the murk
+(thematically: comprehension is the one vivid thing in a desaturated grave). To still
+feel *in* the world (occluded by terrain it passes behind, riding its true path), it must
+be **depth-tested against the scene** even though it draws post-palette — i.e. the engine
+keeps scene depth through the post chain and exposes a **post-palette, depth-aware,
+non-palettised emissive overlay** draw. That's a small new engine capability the
+engine/game seam should own (flagged in [M9](milestones/M9-engine-game-split.md)); it
+also won't get the scene's pre-palette bloom, so it wants its own cheap glow.
 
-## 5. The recommended loop, fleshed out
+**Cost.** Cheap: one emissive segment, a lifespan timer + fade, a line-vs-glyph
+intersection on cast (a handful of nearby inscriptions), and a 1-D parametric
+attach/slide for the walker. No rope/swing physics. Lives in the `scraped-again` crate over
+engine primitives (DDA pick, the `solid` oracle, the walker).
 
-A "no-fail, discovery-directed explorer." The verbs and feedback, mapped to systems
-that already exist.
+## 7. Pressure / failure
 
-### Player verbs
-- **Travel** — cruiser (autopilot for sightseeing, manual to choose a heading). *(E19,
-  done.)*
-- **Approach / land / walk** — the on-foot mode for getting *to* a body or inscription.
-  *(E19, done; wants voxel collision on foot to enter giants/caves properly — already a
-  listed E19 follow-up.)*
-- **Look / read** — face an inscription; proximity makes it legible / records it. *(E17
-  text path, done; needs a "you are reading this" trigger + dwell.)*
-- **Record** — the act that banks a discovery into the **codex** (a found giant, a found
-  inscription, a decoded glyph). New, but small: a data model + a screen.
-- **Orient** — open the **map/codex** to see what's found, what's decoded, and the
-  **next thread's bearing**. *(E10 map, done; extend with markers + a codex tab.)*
+**None.** No death, no threat. Data is always spent *toward comprehension*, so the tree
+is the sink. The only pacing lever is the **idle storage cap** (Memory tech) — a *gentle*
+reason to return and process, never a punishment. If playtesting wants more pull, the old
+"pilgrim" idea returns as flavour, not threat: the cruiser's drift sips a charge
+replenished at **pristine pockets**, making them rhythmic waypoints rather than fail
+states. Default: keep it pure.
 
-### What pulls you forward (the "thread")
-A decoded inscription resolves to a small payload: a **bearing + distance** to another
-seed-placed site, or a **named giant**, or "a pristine pocket lies <direction>." Because
-placement is seed-deterministic (`structures::colossi_near`, `inscriptions_near`,
-pristine field), **the thread can be computed, not authored** — pick the next site by a
-seeded function of the current one. The map draws the lead; the drone/warp swells as you
-near it. This is the engine's determinism turned into a quest chain for free.
+## 8. The tech tree — faculties of comprehension
 
-### Progression (the sense of "getting somewhere")
-- **The codex fills** — a growing illustrated list of giants/inscriptions found (reuses
-  the headless RTT to capture a thumbnail per find — we already render to texture).
-- **The cipher fills** — each script starts opaque; finding "Rosetta" inscriptions (a
-  known landmark giant whose name you're told) **unlocks glyph→meaning mappings**, so
-  later writing renders *translated*. Watching the world become legible **is** the
-  progression curve. Pure data; no new render tech (we already choose glyph strings).
-- **Pristine pockets** are the **payoff beats** — reaching one is a milestone (choral
-  relief, a map pin, maybe the clearest inscriptions).
+Five branches. Nodes are **illustrative** (the structure is the commitment); each branch
+is meant to deepen "to the extreme" over time, terminating in a long, expensive
+late-game arc. **Every node is comprehension or reach — never force.**
 
-### Stakes / failure
-**None by default** — contemplative. If playtesting finds it aimless, add **B's soft
-pressure** (cruiser charge refilled at pristine pockets) as a *toggle*, the same way the
-engine ships look-features as toggles (D6). Never a hard death; the mood is grief, not
-threat.
+The branches **lean toward the three playstyles** (§1): **Memory + Sensing** ↔ the
+autopilot/management game; **Locomotion (flight)** ↔ manual flight; **Locomotion (foot) +
+the survey-beam** ↔ walking. **Decipherment** and the strata are shared by all. The
+autopilot-completable core lives in the shared + Memory/Sensing nodes; the flight and foot
+nodes are the *other two games' own* paths.
 
-### Session shape
-A session = drift the world, chase 1–3 threads, bank a handful of discoveries, reach a
-pristine beat, stop whenever. **Save state = seed + a sparse progress log** (found-set +
-decoded-glyph-set + codex notes) — the exact same `seed + sparse deltas` artifact E12/E14
-already use, so it shares, permalinks, and slots into multiplayer (shared codex) with no
-new persistence model.
+### 8.1 Sensing — *the scan beam: what the ship can read* &nbsp;(feeds: Records, Schematics)
+The cruiser's auto-scan (§6) and what it reveals on the map.
+- **Scan Range / Rate I–V** — widen and quicken the auto-scan as you drift.
+- **Scan: Inscriptions** — pick up glyphs/monuments as sites on the map (not just
+  terrain/biome, which the map shows from the start).
+- **Deep Scan** — detect *buried / sub-surface* finds (cave inscriptions from above).
+- **Spectral Sight** — reveal **ethereal** colossi you'd otherwise drift through unseen.
+- **Stratum Hints** — the scan flags *which strata* a pinned site likely holds.
+- **Cartograph I–III** — map resolution; pin *uncollected* sites (the opportunity surface).
 
-## 6. The one real new dependency: *meaning*
+### 8.2 Decipherment — *the lore spine* &nbsp;(feeds: each script's own data + Relics)
+- **Legibility: Records → Schematics → Rites → Relics → Signals** — five unlocks bought
+  with **that script's collected data** (which autopilot gathers too, so legibility is
+  reachable hands-off); an unlocked script renders **translated** instead of glowing
+  nonsense. Manual **"Rosetta" finds** *accelerate* a script's legibility — they don't gate it.
+- **Fluency I–III** (per script) — *progressive* legibility: first fragments resolve,
+  then full phrases. Watching the world become readable **is** the progression curve.
+- **Cross-Reference** — auto-translate newly found glyphs of an already-known script.
+- **Concordance** (late) — synthesise scattered fragments into the world's actual
+  history: what the giants were, why they fell, what killed the place. The terminal
+  lore. *Effect, beyond lore:* a deciphered script's **yield rises** (you extract more
+  once you understand it) — a multiplier with a diegetic reason.
 
-The honest risk in A is that decoding is hollow if the glyphs decode to nothing. Options,
-cheapest first:
+### 8.3 Locomotion — *reach* &nbsp;(feeds: Schematics, Relics) — the *flight* and *foot* games' own paths
 
-- **Procedural-poetic.** Inscriptions compose from a **seeded grammar** over a small
-  word-bank ("here lies / the warden of / the drowned light / who slept"). Decoding
-  reveals these. Zero authoring, infinite worlds, on-mood (fragmentary, elegiac). **Risk:**
-  can read as Mad-Libs if the grammar is thin — invest in the grammar, not the tech.
-- **Authored layer over procedural.** A handful of **hand-written key inscriptions** at
-  landmark giants (the "Rosetta" stones + a loose backstory), with procedural filler
-  between. More resonant; small authoring cost; ties specific seeds to specific stories
-  (or a "canonical seed").
-- **Pure cipher, no semantics.** Decoding is just legibility (glyph→letter), content is
-  the procedural grammar above. Simplest; the "story" is whatever the grammar emits.
+*Autopilot (shared with Memory):*
+- **Autopilot Heuristics I–III** — *"the ship learns to seek"*: the drift stops being
+  blind and routes toward dense / rare / **undiscovered** sites (into the forward scan
+  zone). The idle layer literally improves itself.
 
-**Recommendation:** start **procedural-poetic with a real grammar**, leave room to drop
-**authored key inscriptions** on top. Decide the fiction's tone separately (see §8).
+*Manual flight:*
+- **Drift Efficiency / Range** — go further between stops.
+- **Handling / Banking** — responsive piloting for precise approaches and off-corridor reach.
+- **Atmospheric Ceiling** — altitude to reach high giants and overview vantage.
+- **Cruiser-mounted beam** — collect from the air without landing.
 
-## 7. How it maps to existing systems (cheap-build table)
+*Walking (the survey-beam is the foot game's core verb):*
+- **Survey-beam: Lifespan I–V** — the beam lasts longer before it fades (the reach
+  budget; see §6).
+- **Survey-beam: Capacity I–III** — how many beams you can hold up *at once* → longer
+  multi-segment routes through space.
+- **Survey-beam: Length / Reel Speed / Re-cast** — cast farther, ride faster, fire again
+  sooner (candidates; tune on play).
+- **Descent Rig** — safely enter **caves** on foot (consumes the E19 foot-collision
+  follow-up).
+- **Hull Attunement** — walk **solid-colossus interiors** (the explorable giants).
 
-| Mechanic | Built on | New work | Cost |
-|---|---|---|---|
-| Travel / land / walk | E19 movement modes | foot voxel-collision (already queued) | low |
-| Read an inscription | E17 world text + DDA pick (E14) | dwell/face trigger; legibility state | low |
-| Codex of finds | E10 map overlay + headless RTT thumbnails | a find-set data model + a screen | medium |
-| Cipher / translation | E17 glyph-string selection | glyph→meaning model; render translated | low |
-| The "thread" / next lead | seed-pure placement fns | a seeded next-site picker + map marker | low |
-| Inscription meaning | E17 strings | a **seeded grammar + word-bank** | medium |
-| Pristine payoff beats | existing pristine field + choral pad | mark as objectives; a "reached" event | low |
-| Progress save/share | E12/E14 `seed + sparse deltas` | add found-set/decoded-set to the payload | low |
-| (Optional) pilgrim pressure | biome/pristine field + map | one resource + refill-at-pristine | medium |
+### 8.4 Resonance — *the strange / audio / pristine branch* &nbsp;(feeds: Rites, Signals)
+- **Drone Attunement** — the dirge's swell-toward-significance (E16) becomes a usable
+  **direction sense**: you can *feel* where something important lies.
+- **Pristine Sense** — detect pristine pockets at range; **Pocket Resonance** — harvest
+  them for **Signals/Rites** and the choral relief beat.
+- **Echo** — locate distant *ethereal* colossi by their resonance.
 
-Nothing here needs a new render path. The heaviest items are **data models + a codex
-UI** and **the grammar** — i.e. design and content, which is appropriate for a "planning,
-not coding" phase.
+### 8.5 Memory — *the idle spine + meta* &nbsp;(feeds: Records, all)
+- **Storage I–V** — how much ambient data the buffer holds while you drift / are away
+  (the idle-accrual cap).
+- **Indexing** — offline/unattended accrual efficiency (data builds while the app drifts
+  on autopilot with no input).
+- **Auto-Collect I–III** — the cruiser begins **auto-firing *collection* beams** (the
+  warm colour) into the forward zone to harvest as you pass — the idle harvest, visible on
+  screen. It takes the **common layer in your flight corridor**; off-route and deep finds
+  you steer to (manually or by routing). Tiers widen its range / what it grabs — so even a
+  hands-off run keeps progressing.
+- **Auto-Route** — chain autopilot between known (scanned) sites so the ship runs its own
+  survey circuit.
+- **Synthesis** (late) — convert accumulated understanding into the most advanced
+  faculties: the **"to the extreme"** terminus — e.g. perceive the *whole* dead
+  network's shape, time-lapse the ruin, translate the giants' final transmissions. A
+  long, branching, deliberately expensive arc.
 
-## 8. Open questions for the human (the real forks)
+**Depth, honestly.** "A tech tree to the extreme" is the biggest design+balance
+commitment in the game — getting an idle/active economy to *feel* good is its own
+discipline. So the build plan (§13) is: **a small, tuned v1 tree that proves the loop**,
+then expand each branch outward toward the late-game arcs. We design the *shape* fully
+now; we flesh nodes as we climb, exactly like the roadmap's milestone philosophy.
 
-1. **Do we actually want brickmap to become a game at all** — i.e. amend design §3 — or
-   keep it an engine and treat this as a *separate experience built on top*? (Either is
-   fine; it changes how loudly the roadmap talks about it.)
-2. **Which quadrant** (§3): I'm recommending **discovery-directed, no-fail** (direction A).
-   Veto or steer?
-3. **Meaning** (§6): procedural-poetic grammar, authored key inscriptions, or pure cipher?
-   And **what's the fiction's tone** — wordless and abstract, or an actual lost-civilisation
-   story you can piece together?
-4. **Pressure** (§5): contemplative-only, or do you want the optional pilgrim resource
-   layer designed in from the start (even if toggle-off by default)?
-5. **Scope of "core"**: is the first playable milestone "**reach a giant, read it, bank it
-   in a codex, get pointed at the next one**" — or smaller/larger?
+## 9. Decipherment as the heart
 
-## 9. Suggested next planning steps (once a direction is picked)
+This is where melancholy and "numbers go up" reconcile. Scripts start as glowing,
+beautiful nonsense. Spending data buys **legibility**, and inscriptions begin rendering
+**translated** (the E17 path already chooses glyph strings — legibility just swaps
+glyph → meaning, progressively). What surfaces is fragmentary and elegiac: epitaphs,
+warnings, the names of giants, the shape of an ending. The reward for optimising is
+**understanding the grief** — the tree's whole point.
 
-- Turn the chosen direction into a **milestone brief** in `docs/milestones/` (the roadmap
-  template), slotted as a new **`✨ G1 — Core loop`** rung (kept out of the linear engine
-  ladder, like the D-series).
-- Spec the **codex + cipher + progress** data model against the **E12/E14 event/delta
-  seam** so save/share/multiplayer come free.
-- Draft the **inscription grammar** as its own small design note (it's the content engine).
-- Decide whether any of this lands behind a **mode/toggle** so the pure-engine "fly and
-  look" experience stays intact (it should — the engine demo is still the engine demo).
+## 10. Session shape
 
----
+Drift on autopilot; the map fills and data trickles; dip into the tree; *optionally* take
+the stick for a targeted run to a giant / cave / pristine pocket for optional rares and to
+hurry a script along; watch a script turn legible and read what the dead left; set
+autopilot; drift on. Endless, calm, deepening — and just as valid never touching the stick.
+A session can be five minutes of processing the buffer or an hour of expeditions.
 
-*This is a fork in the project's identity, deliberately surfaced rather than assumed.
-The recommendation is the lowest-risk, most on-mood path — but the call is the human's.*
+## 11. Save / share
+
+State = **seed + a sparse progress log** (collected-glyph set + tree state + decoded
+scripts + codex notes) — the *same* `seed + sparse deltas` artifact E12/E14 already use.
+So progress permalinks, shares, and slots into multiplayer as a **shared archive** with
+no new persistence model.
+
+## 12. How it maps to existing systems
+
+| Mechanic | Built on | Genuinely new |
+|---|---|---|
+| Cruiser auto-scan (cool beam → map) | D3 auto-fly + E10 map + seed placement | short-lived scan beams; scan-category gating |
+| Auto-collect (warm beam, unlocked) | the survey-beam, cruiser-fired | automated common-layer harvest + the rare-stays-manual guard |
+| Manual/foot expeditions | E19 modes (+ foot-collision follow-up) | "what's exclusive to manual" gating |
+| **Survey-beam** (collect + decaying rail + interaction verb) | E14 DDA pick + `solid` oracle + walker + E19 mode machine; emissive/bloom | lifespan/fade + 1-D attach-slide + line-sweep collect + contact-to-interact (board cruiser w/ lock-on, reach-gated) + **post-palette depth-aware vivid draw** |
+| Glyph collection | E17 world-text + E14 DDA pick | collect event; script→stratum yield |
+| Five data strata | E17's five scripts | the typed-currency economy |
+| Codex of finds | E10 map + headless RTT thumbnails | find-set model + archive screen |
+| Decipherment / translation | E17 glyph-string selection | lexicon model; translated rendering |
+| Autopilot "learns to seek" | seed-pure placement + auto-fly | site-seeking routing |
+| Resonance / pristine sense | E16 drone swell + pristine field | direction-sense + pocket harvest |
+| Idle accrual / storage | (new) | buffer + offline-efficiency model |
+| **The tech tree + codex UI** | **E17 world-text is the stated substrate for an in-engine UI** | **the big new system — a tree/codex screen** |
+| Save / share | E12/E14 seed + deltas | add progress to the payload |
+
+**The one substantial new build is the tech-tree + codex UI.** It should ride the
+**E17 in-world-text path** (the roadmap already flags E17 as "the substrate for an
+eventual in-engine UI") — keeping the no-DOM-UI promise and cross-platform parity, and
+making even the menus on-aesthetic (glowing, palettised, dithered).
+
+## 13. Build plan (slots in after M9)
+
+[M9](milestones/M9-engine-game-split.md) has given the game its own `scraped-again`
+crate, so the loop can now land in vertical slices, each a milestone brief:
+
+1. **G1 — Collect & accrue.** Survey-radius collection (passive + a manual pick), the
+   five strata as numbers on the HUD, a codex list. *Proves the core sensation.*
+   - **G1.5 — The survey-beam.** The cast → persist → fade beam: collect-along-path +
+     the 1-D attach/ride rail + drop-on-expire + the post-palette vivid draw (the engine
+     hook). *Proves the active verb + fixes "you get stuck."*
+2. **G2 — The first tree.** A small tuned tree (a few nodes per branch) + the in-engine
+   tree UI on the E17 text path; Sensing + Memory first (they make the idle layer feel
+   good); Decipherment legibility for one script. *Proves the economy + the payoff.*
+3. **G3 — Autopilot autonomy + interiors.** "Ship learns to seek" routing; Descent/Hull
+   tech + foot-collision so caves and solid colossi become collectible interiors.
+4. **G4+ — Depth.** Expand each branch toward the late-game **Concordance/Synthesis**
+   arcs; tune the idle/active balance; the Resonance/pristine layer; co-op shared
+   archive (with N1).
+
+## 14. Open items
+
+- **The game's name** — **resolved: _Scraped Again_** (crate `scraped-again`). Styling
+  (`Scraped Again` / `Scraped, Again` / lowercase) is a cosmetic call left open.
+- **v1 tree tuning** — the economy's *feel* (sweep rate, costs, buffer caps) needs live
+  iteration; design the shape now, balance on play.
+- **Tone guardrails for the UI** — keep the tree/codex *quiet and archival*, not a
+  flashing idle-game dashboard; it must sit inside the doom palette, not on top of it.
+- **How much lore is authored vs. procedural** — the Decipherment payoff wants *some*
+  resonant writing; decide per-seed procedural grammar vs. a thin authored backbone
+  (revisit when G2's legibility lands).

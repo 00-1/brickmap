@@ -529,6 +529,33 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
   moved its geometry into the game's `cruiser` module, so the engine's ShipRenderer is now fully
   generic.)*
 
+## Scraped Again — gameplay (G-series)
+
+The game built on the engine (now `crates/scraped-again`). Full design:
+[`game-mechanics.md`](game-mechanics.md) — a **melancholy-archival** game where progress is
+**comprehension, not conquest**: you read a dead world's inscriptions into **five data
+strata**, spend them on a deep **tech tree**, and **decipher** a lost language. Played as
+**three overlapping games sharing one economy** — *autopilot* (a menu/management game,
+completes the whole core hands-off), *manual flight* (navigation), and *walking*
+(exploration; the survey-beam + interiors). Briefs are fleshed just before each rung, as
+usual.
+
+### ✨ G1 — Data, strata & the codex ⏳ &nbsp;→ [`milestones/G1-data-strata-codex.md`](milestones/G1-data-strata-codex.md)
+The economy spine: glyphs collect into five typed strata + a codex; progress = seed + a
+sparse log (extends `share`). No engine changes. *Proves the core collecting sensation.*
+
+### ✨ G2 — The survey-beam ⏳ &nbsp;→ [`milestones/G2-survey-beam.md`](milestones/G2-survey-beam.md)
+The signature manual verb: a vivid cast→persist→fade beam that collects-along-path and is a
+rideable rail (+ boards the cruiser). Needs one new **engine capability** — a post-palette,
+depth-aware emissive overlay in `bm-render` (the capability flagged in M9). *De-risks that
+capability + fixes "you get stuck on foot."*
+
+### ✨ G3+ — scan/map, the tree, depth ⏳
+Sketched in [`game-mechanics.md`](game-mechanics.md) §13 (cruiser auto-scan → map
+opportunity surface; the first tech tree + in-engine menu on the E17 text path +
+auto-collect; then flight/walking branches and the late Concordance/Synthesis lore arc).
+Fleshed into briefs when we reach them.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear
