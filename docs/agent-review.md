@@ -8,7 +8,58 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `f1adfb7` (G4).
+**Reviewed through:** `24067a1` (G5).
+
+---
+
+## 2026-06-07 · G5 — console editor (pickers), match & nav (`24067a1`)
+
+**What landed.** `Block` gains `Seek`/`Circle` and a **parameterised** `Match(MatchField)`
+(v1 field: `Rare`). `cycle_param` (←/→) steps the *parameter* of the routine under the
+cursor — `drift`'s nav block (drift→seek→circle) and `survey`'s collect filter
+(none↔`match(rare)`). `collect_aimed_where(pred)` lets auto-collect apply the filter; `seek`
+steers the autopilot to the nearest known-uncollected site. Routine edits persist in a `co=`
+share segment (round-trip tested). 140 tests green, clippy clean, golden hash unchanged.
+
+**Strengths.**
+- **Honest scoping** — an explicit *"As-built vs the original plan"* section in the brief
+  states it shipped parameter-steppers, **not** free-form authoring, and a sensible in-flight
+  correction (dropped `match(uncollected)` as a no-op, used `rare`). Good autonomous discipline.
+- `match(rare)` is a genuinely useful selective-collect; `seek` is real routing; no-typing
+  ←/→ pickers are on-brand; persistence is tested.
+
+**Critiques (where it's due — this is the flagged milestone).**
+1. **The headline deliverable did not land — for the second time.** G5's brief was *"author
+   your own routines"* / a *wiring editor*. What shipped is **parameter-cycling on the two
+   fixed given routines** — you cannot create a routine, or insert/remove blocks. Free-form
+   composition is now deferred to **G6**. The milestone was marked ✅ by **redefining success
+   downward** (documented, but still scope erosion on the core pillar).
+2. **Still no real interpreter — the gate pattern was extended, exactly as warned.** `Routine`
+   is unchanged (the G4 `continuous`/`on_scan` two-bucket); execution is still hand-written
+   **accessors the app branches on** — now `nav_block()` + `filter()` on top of G4's
+   `drift_enabled()`/`survey_enabled()`. `cycle_param` is **hardcoded per routine name**
+   (`if name=="drift" … if name=="survey"`); it won't generalise. The genuine trigger→steps
+   interpreter — the thing that makes "compose your own automation" real — **still does not
+   exist** and is now G6's debt on top of G6's own scope.
+3. **Parameterisation is half-done.** `Match(field)` is parameterised (good), but `Scan` is
+   *still* a param-less enum hardcoded to "scan(shards)"; `MatchField` has a single value. The
+   `scan(item)` pattern remains unmodelled.
+4. **Stale module docs.** `console.rs`'s header still says "G4" and `Routine`'s doc still reads
+   *"no player editor in G4 … G5's editor will generalise it"* — now self-contradictory (G5
+   landed without generalising). A tell that the generalisation didn't happen.
+
+**Watch-items.** G6 now carries **both** its own large scope (control/budgets/decode/unlock
+economy/legibility) **and** the twice-deferred free-form authoring + real interpreter. If G6
+also defers the interpreter, the "genuinely interesting purely through menus" pillar is
+slipping indefinitely while surface vocabulary accretes on a non-general substrate. **Hold G6
+to: a real routine model + interpreter (create/insert/remove arbitrary blocks), or explicitly
+escalate that the pillar is at risk.** Also: parameterise `Scan`; refresh the stale docs.
+
+**Verdict.** Honest, tested, useful *increment* — but a **soft miss on the milestone's intent**
+and the second deferral of the architectural core I flagged at G4. Not broken; drifting. The
+agent is building outward (vocabulary, pickers, persistence) on a substrate whose load-bearing
+middle (the interpreter) keeps getting postponed. This is the babysitter's headline concern so
+far.
 
 ---
 
