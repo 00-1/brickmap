@@ -177,6 +177,22 @@ can also **detach on purpose** to drop precisely onto a ledge or a glyph cluster
 you lay out a **path through space** and ride it segment to segment, racing each one's
 fade. Chaining beams *is* the skill expression and the tension.
 
+**It's the universal interaction verb.** Beyond collect-and-traverse, the beam is *how
+you reach out and engage* — its **contact** triggers a context action depending on what
+it touches: a glyph → collect, the **cruiser → board it**, and (extensible) relic
+anchors / colossus doors / data-cores later. One verb, point the light.
+
+**Boarding the cruiser (the save).** Touch the beam to your parked cruiser and you're
+**rapidly reeled along it to the ship and board on arrival** (zip-then-board — consistent
+with the rail, not a teleport). This plugs straight into the **E19 enter/exit mode
+machine** as a *ranged* alternative to walk-up-and-press-E. Two rules make it feel right:
+- **Light lock-on** — aiming roughly at the parked ship snaps the beam to it, so a clutch
+  mid-fall recall doesn't need a pixel-perfect shot (the one moment forgiveness matters).
+- **Reach-gated** — recall only works if the cruiser is within beam reach, so wandering
+  far on foot has consequence (you drop and walk, no-fail); **Length/Lifespan** extend how
+  far you can recall from. The headline emergent beat: **falling → beam the distant ship →
+  the winch hauls you home** — relief, the light pulling you back from the dark.
+
 **Rendering (note for the engine).** The beam draws **after the palette post-process**,
 so it keeps its **raw vivid colour** — the one thing in frame *not* mapped onto the
 world's muted ramp, reading as artificial / yours / technology cutting through the murk
@@ -298,7 +314,7 @@ no new persistence model.
 |---|---|---|
 | Autopilot idle sweep | D3 auto-fly + E17 inscriptions + seed placement | survey-radius check + data accrual/buffer |
 | Manual/foot expeditions | E19 modes (+ foot-collision follow-up) | "what's exclusive to manual" gating |
-| **Survey-beam** (collect-along-path + decaying rail) | E14 DDA pick + `solid` oracle + walker; emissive/bloom | lifespan/fade + 1-D attach-slide + line-sweep collect + **post-palette depth-aware vivid draw** |
+| **Survey-beam** (collect + decaying rail + interaction verb) | E14 DDA pick + `solid` oracle + walker + E19 mode machine; emissive/bloom | lifespan/fade + 1-D attach-slide + line-sweep collect + contact-to-interact (board cruiser w/ lock-on, reach-gated) + **post-palette depth-aware vivid draw** |
 | Glyph collection | E17 world-text + E14 DDA pick | collect event; script→stratum yield |
 | Five data strata | E17's five scripts | the typed-currency economy |
 | Codex of finds | E10 map + headless RTT thumbnails | find-set model + archive screen |
