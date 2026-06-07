@@ -54,7 +54,7 @@ jobs:
         # signing.release). Run from the crate dir so cargo-apk reads its manifest +
         # `[package.metadata.android]` and resolves the keystore path; the build still
         # outputs to the shared workspace `target/` at the repo root.
-        working-directory: crates/brickmap
+        working-directory: crates/scraped-again
         env:
           ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
@@ -77,11 +77,11 @@ jobs:
           # The filename carries the short SHA so you can tell builds apart (and aren't
           # served a cached old one).
           sha="$(git rev-parse --short HEAD)"
-          out="brickmap-${sha}-android-arm64.apk"
+          out="scraped-again-${sha}-android-arm64.apk"
           mkdir -p dist
           "$BT/zipalign" -f -p 4 "$apk" aligned.apk
           "$BT/apksigner" sign \
-            --ks crates/brickmap/release.keystore --ks-pass pass:brickmap \
+            --ks crates/scraped-again/release.keystore --ks-pass pass:brickmap \
             --ks-key-alias brickmap --key-pass pass:brickmap \
             --out "dist/$out" aligned.apk
           "$BT/apksigner" verify --verbose "dist/$out"

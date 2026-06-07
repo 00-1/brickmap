@@ -47,7 +47,7 @@ jobs:
           tool: wasm-bindgen-cli@${{ steps.wb.outputs.version }}
 
       - name: Build (release)
-        run: cargo build -p brickmap --release --lib --target wasm32-unknown-unknown
+        run: cargo build -p scraped-again --release --lib --target wasm32-unknown-unknown
 
       - name: Assemble site
         run: |
@@ -64,7 +64,7 @@ jobs:
           printf '{"sha":"%s"}' "${GITHUB_SHA}" > dist/latest/version.json
           wasm-bindgen --target web --no-typescript \
             --out-dir dist/latest/pkg \
-            target/wasm32-unknown-unknown/release/brickmap.wasm
+            target/wasm32-unknown-unknown/release/scraped_again.wasm
           # Immutable milestone snapshots, committed under web/archive/.
           if [ -d web/archive ]; then cp -r web/archive dist/archive; fi
           touch dist/.nojekyll

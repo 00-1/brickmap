@@ -31,10 +31,10 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            src: brickmap
+            src: scraped-again
             key: linux-x86_64
           - os: windows-latest
-            src: brickmap.exe
+            src: scraped-again.exe
             key: windows-x86_64.exe
     steps:
       - uses: actions/checkout@v4
@@ -50,14 +50,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libudev-dev libasound2-dev
 
       - name: Build (release)
-        run: cargo build --release --bin brickmap
+        run: cargo build --release --bin scraped-again
 
       - name: Stage binary (SHA-named, like the Android APK)
         id: bin
         shell: bash
         run: |
           sha="$(git rev-parse --short HEAD)"
-          out="brickmap-${sha}-${{ matrix.key }}"
+          out="scraped-again-${sha}-${{ matrix.key }}"
           mkdir -p dist
           cp "target/release/${{ matrix.src }}" "dist/$out"
           echo "name=$out" >> "$GITHUB_OUTPUT"
