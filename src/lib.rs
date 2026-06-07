@@ -1279,6 +1279,9 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                     self.wobble += (target - self.wobble) * best;
+                    // Ethereal/ink pockets are pristine: pull wobble to zero last, so it wins over
+                    // both the biome base and any nearby giant — these are untouched special areas.
+                    self.wobble += (WOBBLE_PRISTINE - self.wobble) * b.ink;
                     #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
                     if let Some(a) = &self.audio {
                         a.set_volume(b.vol);
@@ -1686,11 +1689,14 @@ const TEXT_RADIUS: f32 = 150.0;
 /// pan step (chunks) for arrow-key panning.
 const MAP_ZOOM: f32 = 110.0;
 const MAP_PAN_STEP: f32 = 8.0;
-/// Structure-approach wobble (E18×E10): within this horizontal distance of a colossus the vertex
-/// wobble lerps toward the giant's own extreme (heavy = low snap, crisp = high snap).
-const WOBBLE_APPROACH: f32 = 75.0;
+/// Structure-approach wobble (E18×E10): within this (wide) horizontal distance of a colossus the
+/// vertex wobble lerps toward the giant's own extreme (heavy = low snap, stiller = higher snap).
+const WOBBLE_APPROACH: f32 = 200.0;
 const WOBBLE_HEAVY: f32 = 7.0; // strong PS1 warp right up against a "warping" giant
-const WOBBLE_CRISP: f32 = 480.0; // near-perfectly crisp at a "stilling" giant
+const WOBBLE_CRISP: f32 = 220.0; // a "stilling" giant calms the wobble — but not to pristine
+/// **Pristine** zero-wobble, reserved for the rare ethereal/ink pockets — so those read as
+/// special, untouched places (no quantization warp at all). Nothing else reaches it.
+const WOBBLE_PRISTINE: f32 = 1500.0;
 /// The ethereal colossi's tint (cool pale; the palette recolours it in the house look).
 const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
 /// How many newly-entered colossi to generate per frame (the rest wait for later frames), so
