@@ -210,12 +210,15 @@ pub fn generate_section(cx: i32, cz: i32, seed: u32) -> Section {
                 section.set(x, y, z, block);
             }
             // Carve caves (E8): a thin band of a 3D noise hollows out connected tunnels.
-            // Keep a solid floor (y < 2) and a 2-voxel surface skin so the ground +
-            // foliage stay intact (caves break out only on slopes/cliffs). This finally
-            // gives the dormant M5 cave-culling some 3D structure to work on.
+            // Keep a solid floor (y < 2) and a 2-voxel surface skin so the ground + foliage
+            // stay intact — *except* at rare "entrance" columns, where the skin is breached and
+            // the carve widened near the surface so caves open onto the hillside as cave-mouths
+            // you can actually fly into (most of the world keeps its skin).
+            let entrance = fbm3(wx as f32 * 0.022, 0.0, wz as f32 * 0.022, seed ^ 0xE17A) > 0.80;
             for y in 2..h.min(Section::SIZE) {
-                if h - y < 2 {
-                    continue; // surface skin
+                let near_surface = h - y < 2;
+                if near_surface && !entrance {
+                    continue; // surface skin (kept off the rare entrance columns)
                 }
                 let c = fbm3(
                     wx as f32 * 0.07,
@@ -223,7 +226,9 @@ pub fn generate_section(cx: i32, cz: i32, seed: u32) -> Section {
                     wz as f32 * 0.07,
                     seed ^ 0x00ca,
                 );
-                if (c - 0.5).abs() < 0.07 {
+                // Widen the cave near the surface at entrance columns → a real opening, not a slit.
+                let thr = if entrance && h - y < 5 { 0.11 } else { 0.07 };
+                if (c - 0.5).abs() < thr {
                     section.set(x, y, z, BlockId::AIR);
                 }
             }
@@ -301,9 +306,9 @@ mod tests {
         // the seed/worldgen version (E12 brief §5 caveat). The integer block-id path is
         // portable; the f32 noise feeding `height().round()` *may* drift across targets,
         // which is why a cross-target (wasm-in-CI) check is noted as a follow-up.
-        // Bump this when worldgen *intentionally* changes (last: E3 denser point-light
-        // crystals — CRYSTAL_CHANCE 0.0022 → 0.008 — so the sun-off world reads).
-        assert_eq!(voxel_hash(1337), 1_027_499_614_070_972_416);
+        // Bump this when worldgen *intentionally* changes (last: cave **entrances** — rare
+        // columns breach the surface skin so caves open onto hillsides).
+        assert_eq!(voxel_hash(1337), 4_243_141_091_443_216_542);
         // Different seeds must give different worlds.
         assert_ne!(voxel_hash(1337), voxel_hash(1338));
         assert_ne!(voxel_hash(0), voxel_hash(1));

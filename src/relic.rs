@@ -256,6 +256,28 @@ pub fn relic_voxels(feet: Vec3, voxel: f32, yaw: f32, seed: u32) -> Vec<glam::IV
             }
         }
     }
+    // Carve an entrance bore so the hollow giant can be flown into: remove the voxels inside a
+    // horizontal tunnel through the lower body, along a seed-chosen direction (drills clean
+    // through, so there's a way in *and* out and the interior opens up).
+    if !set.is_empty() {
+        let (mut lo, mut hi) = (glam::IVec3::splat(i32::MAX), glam::IVec3::splat(i32::MIN));
+        for p in &set {
+            lo = lo.min(*p);
+            hi = hi.max(*p);
+        }
+        let ty = lo.y + (hi.y - lo.y) / 4; // entrance low on the body, near the ground
+        let ext = (hi.x - lo.x).max(hi.z - lo.z) as f32;
+        let rad = (ext * 0.085).clamp(3.0, 8.0);
+        let ang = (seed % 628) as f32 / 100.0; // 0..~2π
+        let (dx, dz) = (ang.cos(), ang.sin());
+        let (cx, cz) = ((lo.x + hi.x) as f32 * 0.5, (lo.z + hi.z) as f32 * 0.5);
+        set.retain(|p| {
+            let (rx, ry, rz) = (p.x as f32 - cx, (p.y - ty) as f32, p.z as f32 - cz);
+            let vd = rx * dx + rz * dz; // distance along the tunnel axis
+            let (px, pz) = (rx - vd * dx, rz - vd * dz); // perpendicular offset
+            (px * px + ry * ry + pz * pz).sqrt() > rad // keep voxels outside the tunnel
+        });
+    }
     set.into_iter().collect()
 }
 
