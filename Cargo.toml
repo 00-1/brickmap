@@ -79,6 +79,9 @@ web-sys = { version = "0.3", features = [
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { version = "0.30", features = ["android-native-activity"] }
 android_logger = "0.14"
+# Audio on Android (E16): cpal's AAudio backend. Uses the JavaVM/context that the
+# android-native-activity sets up via `ndk-context`, so the doom-drone plays on the APK too.
+cpal = "0.17"
 
 # cargo-apk packaging (D4): builds a sideloadable, debug-signed APK from this crate's
 # `cdylib` + `android_main`. Locally: `cargo install cargo-apk` then
@@ -88,7 +91,8 @@ package = "dev.brickmap.app"
 build_targets = ["aarch64-linux-android"]
 
 [package.metadata.android.sdk]
-min_sdk_version = 24
+# 26 = the minimum for cpal's AAudio backend (E16 Android audio). Fine in 2026.
+min_sdk_version = 26
 target_sdk_version = 34
 
 [package.metadata.android.application]

@@ -1,6 +1,7 @@
-//! Native audio output (E16): drives the [`crate::audio::Drone`] through a cpal output
-//! stream, synthesising in real time in the audio callback. Desktop only — web uses Web
-//! Audio (see `controls`), Android is a follow-up.
+//! cpal audio output (E16): drives the [`crate::audio::Drone`] through a cpal output stream,
+//! synthesising in real time in the audio callback. **Desktop + Android** (cpal's AAudio backend
+//! — Android gets its JavaVM/context from the android-native-activity via `ndk-context`); web uses
+//! Web Audio (see `controls`).
 //!
 //! Params (volume / heaviness / murk / enabled) live in shared atomics so the UI thread can
 //! nudge them lock-free while the audio thread reads them each block. Starting is fallible

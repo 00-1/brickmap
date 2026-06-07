@@ -20,8 +20,8 @@ pub mod biome;
 pub mod creatures;
 pub mod map;
 pub mod relic;
-// Native (desktop) audio output via cpal; web uses Web Audio, Android is a follow-up.
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+// cpal audio output (E16): desktop + **Android** (AAudio backend); web uses Web Audio.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod audio_native;
 pub mod edit;
 pub mod foliage;
@@ -162,8 +162,8 @@ struct App {
     map_anim: f32,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
-    /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
-    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    /// cpal doom-drone output (E16). `None` if no audio device. Desktop + Android.
+    #[cfg(not(target_arch = "wasm32"))]
     audio: Option<audio_native::AudioEngine>,
 }
 
@@ -1183,7 +1183,7 @@ impl ApplicationHandler<AppEvent> for App {
                 let speed_n = (speed / AUTO_FLY_SPEED).clamp(0.0, 1.0);
                 let alt_n = ((pos.y - 24.0) / 90.0).clamp(0.0, 1.0);
                 let intensity = (0.5 * speed_n + 0.5 * alt_n).clamp(0.0, 1.0);
-                #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+                #[cfg(not(target_arch = "wasm32"))]
                 if let Some(a) = &self.audio {
                     a.set_intensity(intensity);
                 }
@@ -1282,7 +1282,7 @@ impl ApplicationHandler<AppEvent> for App {
                     // Ethereal/ink pockets are pristine: pull wobble to zero last, so it wins over
                     // both the biome base and any nearby giant — these are untouched special areas.
                     self.wobble += (WOBBLE_PRISTINE - self.wobble) * b.ink;
-                    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+                    #[cfg(not(target_arch = "wasm32"))]
                     if let Some(a) = &self.audio {
                         a.set_volume(b.vol);
                         a.set_drive(b.heavy);
@@ -1599,9 +1599,9 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         map_dims: (0, 0),
         map_anim: 0.0,
         pad: gamepad::Pad::new(),
-        // Start the drone on the world seed so the dirge matches the world (native; a no-op
-        // None if there's no audio device). Web starts audio from the page on first tap.
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        // Start the drone on the world seed so the dirge matches the world (desktop + Android;
+        // a no-op None if there's no audio device). Web starts audio from the page on first tap.
+        #[cfg(not(target_arch = "wasm32"))]
         audio: audio_native::AudioEngine::start(view.seed),
     }
 }
