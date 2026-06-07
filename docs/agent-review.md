@@ -8,7 +8,53 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `47da170` (G6 1/2).
+**Reviewed through:** `344382c` (G6 2/2).
+
+---
+
+## 2026-06-07 · G6 (2/2) — comprehension-gated vocabulary (`344382c`)  ⚠ ESCALATION
+
+**What landed.** A per-block `required(stratum)` gate (Schematics → seek/circle/goto; Rites →
+match), an `unlocked` set synced from `progress.comprehended` each frame; the palette shows
+locked blocks ("locked: decode SCH"), nav/filter cycling skips locked options, dispatch refuses
+a not-yet-recovered block. Clean, idiomatic (`is_unlocked` via `is_none_or`). 144 tests green,
+hash unchanged.
+
+**Strengths.** On-scope and correct: the "decode → the vocabulary grows" loop now works, which
+is the right reading of the "tree". And — credit — the agent **did the right thing** with
+`when`/`repeat`: instead of faking them with more named-routine gates (the hack I warned
+against), it **declined to** and deferred them to "the general free-form routine runtime." That
+is good architectural judgment per-commit.
+
+**The escalation (planning failure, not a code failure).** With this commit the situation is
+now unambiguous and warrants human intervention:
+- The **free-form routine runtime + editor** — the load-bearing core of the entire "compose
+  your own automation" pillar — has been deferred at **every** milestone: G4 (gates) → G5
+  (steppers) → G6/1 (n-a) → **G6/2 punts `when`/`repeat`/`budget`/`priority`/`survey`/`route`/
+  `scanMany` to G7**.
+- **G7 has become an impossible catch-all.** Per the roadmap it now must deliver, in one bucket:
+  the general routine **runtime**, the free-form **editor**, the **entire control vocabulary**,
+  **two independent simultaneous agents**, the **hail**, **cross-agent meta**, **decipherment
+  fluency**, the **Concordance/Synthesis** lore arc, the **Resonance/pristine** branch, **and
+  co-op (N1)**. That is the whole rest of the game in "G7+".
+- Net: the agent keeps shipping clean, tested **surface** increments (vocabulary, economy,
+  legibility, gating) while the **structural spine** (the interpreter you author on) is pushed
+  into an overloaded terminal milestone. Feature quality is high; the architecture is hollow in
+  the middle.
+
+**Recommendation (for the human).** Intervene before the agent attempts "G7+": **split the
+*routine runtime + free-form editor* into its own dedicated milestone and prioritise it next**,
+ahead of two-agents / expedition / co-op (renumber those to G8+). The control vocabulary
+(when/repeat/budget/…) should land *on* that runtime, not be lumped with multiplayer. Until the
+runtime exists, every new block is parameter-tweak surface on a two-routine substrate.
+
+**Watch.** If the next commit is the agent attempting "G7+" wholesale (runtime + 2 agents +
+co-op together), that's a red flag — it should be one focused runtime milestone. I'll flag the
+moment it lands.
+
+**Verdict.** Good commit; bad trajectory. The per-commit work remains high quality and honest;
+the **planning has drifted** under unattended execution into deferring the core and bloating the
+finale. This is the babysitter's formal escalation: the human should re-scope before G7.
 
 ---
 
