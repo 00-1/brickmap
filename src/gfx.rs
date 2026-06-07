@@ -892,6 +892,9 @@ impl State {
         // Directional-sun amount 0..1 (biome mode passes a blended level; manual mode passes
         // 0/1 from the `sun` toggle) so the point-lit↔sunlit mood crossfades.
         sun: f32,
+        // "Ink" blueprint-grid amount 0..1 (0/1 from the toggle in manual mode; a smooth biome
+        // ethereal-pocket fade in biome mode). Carried in fog_color.w.
+        ink: f32,
     ) {
         let time = self.start.elapsed().as_secs_f32();
         // Particles off → draw none (the system keeps simulating; cheap).
@@ -927,8 +930,13 @@ impl State {
                 camera_pos.z,
                 sun.clamp(0.0, 1.0),
             ],
-            // w carries the "ink" blueprint-grid flag (E10) for the chunk shader.
-            fog_color: [FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2], flag(toggles.ink)],
+            // w carries the "ink" blueprint-grid amount (E10) for the chunk shader.
+            fog_color: [
+                FOG_COLOR[0],
+                FOG_COLOR[1],
+                FOG_COLOR[2],
+                ink.clamp(0.0, 1.0),
+            ],
             flags: [
                 flag(toggles.ao),
                 flag(toggles.block_light),

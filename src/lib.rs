@@ -1146,6 +1146,11 @@ impl ApplicationHandler<AppEvent> for App {
                     Some(b) => b.sun,
                     None => f32::from(u8::from(self.toggles.sun)),
                 };
+                // Ink amount: the rare biome ethereal-pocket fade in biome mode, else the toggle.
+                let ink_amt = match bio {
+                    Some(b) => b.ink,
+                    None => f32::from(u8::from(self.toggles.ink)),
+                };
 
                 // Camera basis for billboarding foliage splats (E6).
                 let fwd = self.camera.forward();
@@ -1177,6 +1182,7 @@ impl ApplicationHandler<AppEvent> for App {
                         [self.wobble, self.color_steps],
                         self.toggles,
                         sun_amt,
+                        ink_amt,
                     );
 
                     // Perf HUD (M5): smooth the frame time, refresh a few times/sec.

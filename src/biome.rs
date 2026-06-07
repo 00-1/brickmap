@@ -171,18 +171,28 @@ pub struct Blended {
     pub vol: f32,
     pub murk: f32,
     pub heavy: f32,
+    /// Rare **ethereal variant** amount `0..1`: in these scattered pockets the blueprint **ink**
+    /// grid fades on and the drone turns less deep / more ethereal (already folded into `murk` +
+    /// `heavy`). Smooth (fades in at the pocket edges), so it's a soft transition not a switch.
+    pub ink: f32,
     pub name: &'static str,
     pub other: &'static str,
     pub frac: f32,
 }
 
 impl Blended {
-    /// A label for the HUD: the dominant biome, or "a→b" mid-transition.
+    /// A label for the HUD: the dominant biome, or "a→b" mid-transition; an ethereal pocket is
+    /// flagged with a trailing `*`.
     pub fn label(&self) -> String {
-        if self.frac > 0.18 && self.frac < 0.82 {
+        let base = if self.frac > 0.18 && self.frac < 0.82 {
             format!("{}>{}", self.name, self.other)
         } else {
             self.name.to_string()
+        };
+        if self.ink > 0.5 {
+            format!("{base}*")
+        } else {
+            base
         }
     }
 }
@@ -242,6 +252,8 @@ fn fbm(x: f32, z: f32, seed: u32) -> f32 {
 
 /// World-unit scale of the biome field (region size ≈ this many blocks across).
 const SCALE: f32 = 1.0 / 700.0;
+/// Scale of the rare ethereal-variant field (smaller → scattered pockets within biomes).
+const VARIANT_SCALE: f32 = 1.0 / 420.0;
 
 /// The two biomes and blend fraction at a world `(x, z)`. `frac` is the weight of the *second*.
 pub fn field(x: f32, z: f32, seed: u32) -> (usize, usize, f32) {
@@ -250,6 +262,16 @@ pub fn field(x: f32, z: f32, seed: u32) -> (usize, usize, f32) {
     let lo = (f.floor() as usize).min(n - 1);
     let hi = (lo + 1).min(n - 1);
     (lo, hi, f.fract())
+}
+
+/// The rare "ethereal variant" amount `0..1` at `(x, z)`: a separate low-frequency field, mostly
+/// 0 with scattered pockets ramping to 1. In those pockets the ink grid fades on and the drone
+/// turns ethereal. `smoothstep` gives soft pocket edges (a smooth transition, not a hard switch).
+pub fn variant(x: f32, z: f32, seed: u32) -> f32 {
+    let v = fbm(x * VARIANT_SCALE, z * VARIANT_SCALE, seed ^ 0xE7E7_0001);
+    // Only the top sliver of the field becomes ethereal → rare.
+    let t = ((v - 0.80) / 0.10).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Blend the two biomes at `(x, z)` into resolved [`Blended`] settings (palette ramp + scalars).
@@ -263,6 +285,11 @@ pub fn at(x: f32, z: f32, seed: u32) -> Blended {
             colors[i][k] = lerp(ra[i][k], rc[i][k], t);
         }
     }
+    // Rare ethereal variant: fade the ink grid on, and push the drone "less deep, more
+    // ethereal" — open the murk up and pull the heavy distortion down.
+    let eth = variant(x, z, seed);
+    let murk = lerp(lerp(a.murk, c.murk, t), 0.95, eth);
+    let heavy = lerp(lerp(a.heavy, c.heavy, t), 0.55, eth);
     Blended {
         colors,
         count: lerp(a.count as f32, c.count as f32, t).round() as u32,
@@ -277,8 +304,9 @@ pub fn at(x: f32, z: f32, seed: u32) -> Blended {
         steps: lerp(a.steps, c.steps, t),
         amplitude: lerp(a.amplitude, c.amplitude, t),
         vol: lerp(a.vol, c.vol, t),
-        murk: lerp(a.murk, c.murk, t),
-        heavy: lerp(a.heavy, c.heavy, t),
+        murk,
+        heavy,
+        ink: eth,
         name: if t < 0.5 { a.name } else { c.name },
         other: if t < 0.5 { c.name } else { a.name },
         frac: if t < 0.5 { t } else { 1.0 - t },
@@ -332,6 +360,23 @@ mod tests {
         assert!(blend.count >= 1);
         assert!(!blend.label().is_empty());
         assert!(blend.foliage > 0.0 && blend.wobble > 0.0);
+    }
+
+    #[test]
+    fn ethereal_variant_is_rare_and_bounded() {
+        let (mut sum, mut hot) = (0.0f32, 0);
+        let n = 4000;
+        for i in 0..n {
+            let v = variant(i as f32 * 13.0, (i * 7) as f32 * 9.0, 5);
+            assert!((0.0..=1.0).contains(&v));
+            sum += v;
+            if v > 0.5 {
+                hot += 1;
+            }
+        }
+        // Mostly off: well under a quarter of samples are strongly ethereal.
+        assert!(hot * 4 < n, "ethereal variant not rare enough: {hot}/{n}");
+        assert!(sum > 0.0, "variant never fires at all");
     }
 
     #[test]
