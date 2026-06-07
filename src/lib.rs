@@ -598,15 +598,17 @@ impl App {
             let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4;
             rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
         }
-        // Pristine/ethereal pockets: a pale-violet icon so the rare special zones stand out.
-        for &(cx, cz) in &self.map_pristine {
-            let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4;
-            rgba[i..i + 4].copy_from_slice(&[225, 180, 255, 255]);
-        }
-        // Inscription markers on top: a bright glyph-cyan pixel so found text reads as a landmark.
+        // Markers keep the biome colour in RGB but tag the **alpha** with a code, so the shader
+        // can draw a *distinct shaped icon* per type (a filled dot for text, a hollow diamond for
+        // pristine) rather than just a coloured pixel. Codes: 255 plain, 160 text, 96 pristine.
         for &(cx, cz) in &self.map_text {
-            let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4;
-            rgba[i..i + 4].copy_from_slice(&[150, 240, 255, 255]);
+            let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4 + 3;
+            rgba[i] = 160;
+        }
+        for &(cx, cz) in &self.map_pristine {
+            // Pristine overrides text if a chunk has both.
+            let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4 + 3;
+            rgba[i] = 96;
         }
         Some((w, h, minx, minz, rgba))
     }
@@ -1452,17 +1454,31 @@ impl ApplicationHandler<AppEvent> for App {
                         } else {
                             self.toggles.off_summary()
                         };
-                        let hud = format!(
-                            "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{off}",
-                            self.frame_ms_ema,
-                            self.seed,
-                            s.drawn_chunks,
-                            s.total_chunks,
-                            s.triangles,
-                            s.particles,
-                            s.splats,
-                            s.relics,
-                        );
+                        // When the map is open, the HUD becomes its key + coordinates (crosshair
+                        // centre + your position), instead of the perf line.
+                        let hud = if self.map_view {
+                            let nch = world::Section::SIZE as f32;
+                            let (px, pz) =
+                                (self.camera.position.x as i32, self.camera.position.z as i32);
+                            let (vx, vz) =
+                                ((self.map_pan.0 * nch) as i32, (self.map_pan.1 * nch) as i32);
+                            format!(
+                                "MAP  seed {}\nyou x{px} z{pz}   +crosshair x{vx} z{vz}\nkey: yellow=you  cyan dot=text  violet diamond=pristine\n[stick / arrows] pan    [X / N] close",
+                                self.seed,
+                            )
+                        } else {
+                            format!(
+                                "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{off}",
+                                self.frame_ms_ema,
+                                self.seed,
+                                s.drawn_chunks,
+                                s.total_chunks,
+                                s.triangles,
+                                s.particles,
+                                s.splats,
+                                s.relics,
+                            )
+                        };
                         // In-engine text overlay on every platform (no DOM HUD).
                         state.set_hud(&hud);
                         #[cfg(not(target_arch = "wasm32"))]

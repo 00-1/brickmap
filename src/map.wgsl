@@ -40,18 +40,29 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     );
 
     var col = vec3<f32>(0.03, 0.04, 0.06); // unexplored / outside
+    let cell = fract(chunk) - vec2<f32>(0.5); // position within this chunk cell, −0.5..0.5
     let tc = (chunk - origin) / dims;
     if (tc.x >= 0.0 && tc.x < 1.0 && tc.y >= 0.0 && tc.y < 1.0) {
         let s = textureSample(tex, samp, tc);
-        if (s.a > 0.5) {
-            col = s.rgb;
-        } else {
+        if (s.a < 0.06) {
             col = vec3<f32>(0.06, 0.07, 0.10); // inside the explored bbox but this chunk unseen
+        } else {
+            col = s.rgb; // biome colour
+            // Marker icons (alpha codes): text ≈160/255, pristine ≈96/255. Drawn as distinct
+            // *shapes* within the cell so they don't read as the same dot.
+            let dd = length(cell);
+            if (s.a > 0.55 && s.a < 0.72 && dd < 0.30) {
+                col = vec3<f32>(0.45, 0.85, 1.0); // text: filled cyan dot
+            }
+            let dia = abs(cell.x) + abs(cell.y);
+            if (s.a > 0.30 && s.a < 0.45 && dia > 0.22 && dia < 0.42) {
+                col = vec3<f32>(0.85, 0.55, 1.0); // pristine: hollow violet diamond
+            }
         }
     }
 
     // Faint chunk grid so the scale reads.
-    let g = abs(fract(chunk) - vec2<f32>(0.5));
+    let g = abs(cell);
     if (cps_y < 90.0 && (g.x > 0.47 || g.y > 0.47)) {
         col = col * 0.82;
     }
@@ -61,6 +72,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let r = max(0.6, cps_y * 0.012);
     if (d < r) {
         col = mix(col, vec3<f32>(1.0, 0.88, 0.30), u.user.z);
+    }
+
+    // Centre crosshair: marks the spot whose coords the HUD reads out (pan centre = where the
+    // map is hovering). A thin white plus.
+    let hx = abs(in.uv.x - 0.5);
+    let hy = abs(in.uv.y - 0.5);
+    if ((hx < 0.0016 && hy < 0.03) || (hy < 0.0024 && hx < 0.022)) {
+        col = vec3<f32>(0.95, 0.97, 1.0);
     }
     return vec4<f32>(col, 1.0);
 }

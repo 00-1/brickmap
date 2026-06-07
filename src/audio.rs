@@ -343,6 +343,11 @@ impl Drone {
         // Step the second LFO read for R off the same value (mono modulation, stereo audio).
         let mut fl = self.filt_l.lowpass(dl, cutoff, self.res, self.sr);
         let mut fr = self.filt_r.lowpass(dr, cutoff, self.res, self.sr);
+        // In a pristine pocket, pull the doom drone right back so the choral pad takes the
+        // forefront (it's added below); near-silent dirge at full ethereal.
+        let doom = 1.0 - eth * 0.9;
+        fl *= doom;
+        fr *= doom;
 
         // Ethereal choral pad: a detuned sine cluster on the root power-chord (root, fifth,
         // octave — two octaves up, in voice register), each tone doubled ±0.3% for a chorused,
@@ -383,7 +388,7 @@ impl Drone {
                 self.choir_swell -= 1.0;
             }
             let swell = 0.6 + 0.4 * (self.choir_swell * TAU).sin();
-            let cg = eth * 0.13 * swell;
+            let cg = eth * 0.17 * swell;
             fl += cl * cg;
             fr += cr * cg;
         }
