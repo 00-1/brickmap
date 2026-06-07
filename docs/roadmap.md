@@ -531,6 +531,18 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 
 ## Scraped Again — gameplay (G-series)
 
+> **Unattended run log (2026-06-07).** This session completed the active G-series thread on the
+> block substrate: **G4 ✅** (block runtime + console), **G5 ✅** (console editor + `match` +
+> nav `seek`/`circle`), **G6 ◑** (`decode`/comprehension economy + decipherment legibility +
+> comprehension-gated vocabulary; the `when`/`repeat`/`budget` control vocabulary is folded into
+> G7). `main` is green at every commit (fmt / clippy `-D` / 144 tests / wasm; golden voxel-hash
+> + headless render unchanged; engine↔game boundary CI-checked). **Still outstanding** (next
+> picks, roughly in order): **G7** (two simultaneous agents + hail + walking/foot-collision
+> interiors + the control-block vocabulary + the Concordance arc — large), then the engine/
+> tooling backlog **M7 🛠 · E9 ⏳ · E11 ⏳ · D5 ⏳** and the **device/hardware-gated** items I
+> can't verify here — **M8(b)** profiling (needs the reference iGPU/phone), **D7/D8** (need a
+> controller / desktop+APK device to verify runtime) — flagged blocked per the run rules.
+
 The game built on the engine (now `crates/scraped-again`). Full design:
 [`game-mechanics.md`](game-mechanics.md) — a **melancholy-archival** game where progress is
 **comprehension, not conquest**: you read a dead world's inscriptions into **five data
