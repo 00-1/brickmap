@@ -116,16 +116,15 @@ L6 "self-running machine" made vivid, spanning modes.
 
 The earliest concrete arc *is* the substrate working:
 
-- Manual: click `scan` (or it auto-scans ahead) → the map fills; click `collect` /
-  fire the beam at finds yourself.
-- `on-scan → collect` → naïve auto-collection; `on-scan → if matches(…) → collect` →
-  selective; `… → prioritise/budget` → tuned. The old "Auto-Collect upgrade" *is* this
-  composition.
+- Manual: click `scan(shards)` (or the given autopilot auto-scans shards ahead) → the map
+  fills; click `collect` / fire the beam at finds yourself.
+- `scan(shards) → on-scan → collect` → naïve auto-collection; add `match(…)` → selective;
+  add `prioritise/budget` → tuned. The old "Auto-Collect upgrade" *is* this composition.
 
 **Onboarding** by full transparency: the player is **handed a small pre-wired routine,
-shown as its blocks** (a working `on-scan → collect`). They can click to run it, toggle it,
-or **open and rewire** it — learning the whole system from a working artifact, not a blank
-console. No tutorial wall; the example *is* the teacher.
+shown as its blocks** (a working `scan(shards) → on-scan → collect`). They can run it, toggle
+it, or **open and rewire** it — learning the whole system from a working artifact, not a
+blank console. No tutorial wall; the example *is* the teacher.
 
 ## 9. Honest hard parts
 
@@ -161,13 +160,21 @@ tagged **ship / foot / shared**.
 
 ### Tier 0 — what you begin with (the starter handful)
 Enough to play the whole loop by hand + see two given automations.
-- **Actions:** `scan` (ship) · `fire-beam` (foot — survey-beam: collect-along-path + ride) ·
-  `collect` (shared) · `spend` (shared)
+- **Actions:** `scan(item)` (ship — **starts as `scan(shards)`**) · `fire-beam` (foot —
+  survey-beam: collect-along-path + ride) · `collect` (shared) · `spend` (shared)
 - **Nav:** `drift` (ship — aimless cinematic wander = **today's default autopilot**) ·
   `goto(area|site)` (ship — direct travel to a picked map target)
 - **Trigger:** `on-scan`
-- **Given, pre-wired (shown as blocks):** a `drift` nav routine **and** `on-scan → collect`
-  — the autopilot you can open and rewire. Direct flight/walk stay native controls.
+- **Given, pre-wired (shown as blocks):** a `drift` nav routine **and**
+  `scan(shards) → on-scan → collect` — so **the ship opens in autopilot auto-scanning
+  shards** (the basic upgrade currency / starter item). You can open and rewire it. Direct
+  flight/walk stay native controls.
+
+> **Parameterised blocks (a general pattern).** A block takes a *single* typed argument, and
+> the **available argument values are themselves unlockable** — so `scan(item)` starts at
+> `shards` and you swap in new items as you unlock them; `match(field)` unlocks *fields*.
+> Combinatorial growth comes from **new blocks *and* new argument options**. The "scan
+> several at once" upgrade is a distinct block, **`scanMany`** (Tier 2/3) — not a parameter.
 
 ### Tier 1 — "make it yours" (first comprehension unlocks)
 - **Actions:** `decode(stratum)` (shared — raw → comprehension, feeds unlocks) · `hail`
@@ -181,8 +188,9 @@ Enough to play the whole loop by hand + see two given automations.
 
 ### Tier 2 — "compose & control"
 - **Flow:** `sequence` · `repeat` · `wait`
+- **Actions:** `scanMany` (ship — scan several item types at once, not one) · `land` /
+  `ascend` (ship) · `disembark` (ship↔foot)
 - **Nav:** `survey(region)` (sweep a picked region) · `route(sites)` (run a circuit) · `hold`
-- **Actions:** `land` / `ascend` (ship) · `disembark` (ship↔foot)
 - **Trigger:** `when(state)` — economy/world thresholds via pickers (`shards ≥ N`,
   `buffer ≥ %`, in-range)
 - **Control:** `budget(resource, %)` · `cap` · `priority`
@@ -209,8 +217,8 @@ and the deepest automation leans on the manual expeditions that yield rare strat
   `drift` routine; "the ship learns to seek" is swapping in `seek`/`survey`/`route`.
 
 ### The feel, evolving (example routines)
-- **Start (given):** `on-scan → collect`, alongside `drift`.
-- **Tier 1:** `on-scan → match(script = Runic) → collect`; nav `seek(uncollected)`.
+- **Start (given):** `scan(shards) → on-scan → collect`, alongside `drift`.
+- **Tier 1:** swap to `scan(Runic) → on-scan → match(uncollected) → collect`; nav `seek(uncollected)`.
 - **Tier 2:** `repeat: on-scan → match(uncollected & buffer < 90%) → collect` + standing
   `when shards ≥ 50 → spend(sensing)` + `budget: 60% Records → faculties`; nav
   `route(pinned sites)`.

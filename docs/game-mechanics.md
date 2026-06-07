@@ -435,10 +435,11 @@ substrate-first** (the block system, [`game-system.md`](game-system.md), is foun
 introduced minimally in G1, then grown):
 
 1. **G1 — Console & the economy spine** ([brief](milestones/G1-console-economy.md)). A
-   *minimal* block runtime + console: blocks visible, **clickable to trigger**, running one
-   given pre-wired routine (`on-scan → collect`) + the given `drift` autopilot. Starter
-   blocks `scan`/`collect`/`spend`/`goto`; collecting → the five **strata**; finds → the
-   **codex**; progress saves (seed + log). *No composition editor yet.* *Proves the
+   *minimal* block runtime + console: blocks visible, **clickable to trigger**, running the
+   given `scan(shards) → on-scan → collect` routine (ship opens auto-scanning **shards**) +
+   the given `drift` autopilot. Starter blocks `scan(item)`/`collect`/`spend`/`goto`;
+   collecting → resources (shards now; the five **strata** as item-types unlock later); finds
+   → the **codex**; progress saves (seed + log). *No composition editor yet.* *Proves the
    substrate + the core collecting sensation together.*
 2. **G2 — The survey-beam** ([brief](milestones/G2-survey-beam.md)). The foot action-block
    `fire-beam`: cast → persist → fade, collect-along-path, rideable rail, board/hail — plus

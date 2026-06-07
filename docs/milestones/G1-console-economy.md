@@ -25,11 +25,14 @@
   to trigger** once, and (b) **run by a routine**. A *routine* = a small fixed wiring
   (trigger → action[s]). G1 ships the runtime + **given routines only** — *no player editor
   yet* (that's G3).
-- **Starter blocks** (game-system §11 Tier 0): `scan` (ship), `collect` (shared), `spend`
-  (shared), `goto(area)` (ship), nav `drift` (ship), trigger `on-scan`.
-- **Given pre-wired routines, shown as their blocks:** `on-scan → collect` (the onboarding
-  artifact) and `drift` (the default autopilot, now a nav routine — replaces the hardcoded
-  auto-fly).
+- **Starter blocks** (game-system §11 Tier 0): `scan(item)` (ship — **starts as
+  `scan(shards)`**), `collect` (shared), `spend` (shared), `goto(area)` (ship), nav `drift`
+  (ship), trigger `on-scan`. **Shards** are the basic starter item / upgrade currency.
+  Blocks take a *single* typed argument whose options are unlockable (G1 ships `shards`
+  only; more items + `scanMany` come later).
+- **Given pre-wired routines, shown as their blocks:** `scan(shards) → on-scan → collect`
+  (the onboarding artifact — the ship opens auto-scanning shards) and `drift` (the default
+  autopilot, now a nav routine — replaces the hardcoded auto-fly).
 - **Console UI** — render the blocks/routines on the **E17 world-text / HUD text path**
   (terminal-styled, low-fi, controller/click friendly; no typing). Click a block to trigger;
   toggle a routine on/off.
@@ -41,10 +44,11 @@
   (serializable; N1 groundwork).
 
 **Out:** the **composition editor** / player-authored routines (G3); conditions/filters,
-`when`, budgets, control-meta (G3–G4); the **survey-beam** (G2); `scan`→map population +
-map-as-picker (G3); auto-collect *selectivity* (G3 — G1's given routine grabs
-indiscriminately in-corridor); the tech-tree *unlock economy* (G4); decode (G4); codex RTT
-thumbnails; interiors / walking branch (G5).
+`when`, budgets, control-meta (G3–G4); the **survey-beam** (G2); **more scan item-types +
+`scanMany`** (G1 scans only `shards`); `scan`→map population + map-as-picker (G3);
+auto-collect *selectivity* (G3 — G1's given routine grabs all shards in-corridor); the
+tech-tree *unlock economy* (G4); decode (G4); codex RTT thumbnails; interiors / walking
+branch (G5).
 
 ## Design sketch
 
@@ -101,8 +105,9 @@ thumbnails; interiors / walking branch (G5).
 
 - [ ] Minimal block runtime: blocks visible + **clickable to trigger**; the given
       `on-scan → collect` and `drift` routines run and can be toggled/opened (shown as blocks).
-- [ ] Starter blocks `scan`/`collect`/`spend`/`goto`/`drift`/`on-scan` implemented; the
-      default autopilot is the `drift` routine (no separate hardcoded auto-fly).
+- [ ] Starter blocks `scan(item)` (= `shards`)/`collect`/`spend`/`goto`/`drift`/`on-scan`
+      implemented; the ship opens auto-scanning shards; the default autopilot is the `drift`
+      routine (no separate hardcoded auto-fly).
 - [ ] Five strata + script→stratum yield (tested pure fn); manual `collect` (aimed click) →
       strata++ on the HUD + a codex entry; de-dup works.
 - [ ] `collect`/`spend` routed through the serializable `Event`/`apply` seam.
