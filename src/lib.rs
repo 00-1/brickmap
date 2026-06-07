@@ -679,12 +679,19 @@ fn mesh_chunk_core(
     // foliage density: wet biomes thick, dry ones thin (deserts/snow have no grass at all).
     let n = Section::SIZE as i32;
     let lush = worldgen::lushness(cx * n + n / 2, cz * n + n / 2, seed);
-    let density = (FOLIAGE_DENSITY as f32 * lush).round() as u32;
+    // The biome at this chunk also scales spawns (E10): some biomes are thick with growth,
+    // others barren. Sampled at the chunk centre; the field is continuous so density eases
+    // across biome borders. Always applied (it's a worldgen property, independent of the
+    // biome-mode *look* toggle).
+    let (bf, bforest, _, _) =
+        biome::density((cx * n + n / 2) as f32, (cz * n + n / 2) as f32, seed);
+    let density = (FOLIAGE_DENSITY as f32 * lush * bf).round() as u32;
+    let woods = (lush * bforest).clamp(0.0, 1.0);
     // Ground grass + undergrowth bushes + point-cloud trees (E6/E7) share one per-chunk
     // splat buffer.
     let mut foliage = foliage::scatter(center, cx, cz, seed, density);
-    foliage.extend(foliage::scatter_bushes(center, cx, cz, seed, lush));
-    foliage.extend(foliage::scatter_trees(center, cx, cz, seed, lush));
+    foliage.extend(foliage::scatter_bushes(center, cx, cz, seed, woods));
+    foliage.extend(foliage::scatter_trees(center, cx, cz, seed, woods));
     ChunkInstance {
         coord,
         origin: Vec3::new(cx as f32 * s, 0.0, cz as f32 * s),
@@ -1085,8 +1092,13 @@ impl ApplicationHandler<AppEvent> for App {
                                    // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
                                    // camera) and re-upload its points each frame so they drift through the scene.
                 self.creatures.update(dt, self.camera.position);
+                // How many motes drift is scaled by the biome at the camera (E10): misty/abyssal
+                // biomes swarm with them, barren ones are sparse. ~7 wisps at the baseline.
+                let wisp_mult =
+                    biome::at(self.camera.position.x, self.camera.position.z, self.seed).wisps;
+                let wisp_n = (7.0 * wisp_mult).round() as usize;
                 if let Some(state) = self.state.as_mut() {
-                    state.set_creature_points(&self.creatures.points());
+                    state.set_creature_points(&self.creatures.points_n(wisp_n));
                 }
                 // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
                 self.sim(dt);
@@ -1408,7 +1420,8 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         structures: std::collections::HashMap::new(),
         // A small swarm of drifting wisps tethered to the camera's start (re-tethered each
         // frame to the live camera in the redraw loop). Seed-driven off the world seed.
-        creatures: creatures::Swarm::new(view.seed ^ 0xE15_E15, 7, pos, 80.0),
+        // A generous base count; how many actually drift is scaled per-biome each frame.
+        creatures: creatures::Swarm::new(view.seed ^ 0xE15_E15, 12, pos, 80.0),
         text_cells: std::collections::HashSet::new(),
         audio_prev_pos: None,
         biome_mode: true, // the new default mode

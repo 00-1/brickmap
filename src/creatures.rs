@@ -167,8 +167,14 @@ impl Swarm {
 
     /// The current member points of every wisp, as splats for the billboard pipeline.
     pub fn points(&self) -> Vec<SplatInstance> {
+        self.points_n(self.wisps.len())
+    }
+
+    /// Emit only the first `max` wisps' points — lets the app vary how many motes drift by the
+    /// biome (denser biomes show more), without rebuilding the swarm. `max` is clamped.
+    pub fn points_n(&self, max: usize) -> Vec<SplatInstance> {
         let mut out = Vec::new();
-        for w in &self.wisps {
+        for w in self.wisps.iter().take(max.min(self.wisps.len())) {
             w.emit(self.t, &mut out);
         }
         out

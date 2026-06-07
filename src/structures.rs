@@ -40,14 +40,17 @@ pub fn colossi_near(
     for cz in (ccz - reach)..=(ccz + reach) {
         for cx in (ccx - reach)..=(ccx + reach) {
             let h = hash(cx, cz, seed);
-            if (h & 0xFFFF) as f32 / 65536.0 >= PRESENCE {
-                continue;
-            }
             // Jitter the anchor within the cell so they don't sit on a visible lattice.
             let jx = ((h >> 16) & 0xFF) as f32 / 255.0;
             let jz = ((h >> 24) & 0xFF) as f32 / 255.0;
             let x = cx as f32 * CELL + jx * CELL;
             let z = cz as f32 * CELL + jz * CELL;
+            // Biome scales how many giants stand here (E10): ruined/barren biomes throng with
+            // them, lush ones are sparse. Continuous field → density eases across borders.
+            let pres = (PRESENCE * crate::biome::density(x, z, seed).2).min(0.95);
+            if (h & 0xFFFF) as f32 / 65536.0 >= pres {
+                continue;
+            }
             let dx = x - cam.x;
             let dz = z - cam.z;
             if dx * dx + dz * dz > radius * radius {
@@ -173,13 +176,15 @@ pub fn inscriptions_near(
     for cz in (ccz - reach)..=(ccz + reach) {
         for cx in (ccx - reach)..=(ccx + reach) {
             let h = hash(cx ^ 0x1111, cz ^ 0x2222, seed.wrapping_add(0x7E47_0000));
-            if (h & 0xFFFF) as f32 / 65536.0 >= IPRESENCE {
-                continue;
-            }
             let jx = ((h >> 16) & 0xFF) as f32 / 255.0;
             let jz = ((h >> 24) & 0xFF) as f32 / 255.0;
             let x = cx as f32 * ICELL + jx * ICELL;
             let z = cz as f32 * ICELL + jz * ICELL;
+            // Biome scales inscription density too (E10).
+            let pres = (IPRESENCE * crate::biome::density(x, z, seed).3).min(0.95);
+            if (h & 0xFFFF) as f32 / 65536.0 >= pres {
+                continue;
+            }
             if (x - cam.x).powi(2) + (z - cam.z).powi(2) > radius * radius {
                 continue;
             }
