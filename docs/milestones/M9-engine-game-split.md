@@ -240,9 +240,26 @@ Bottom-up, **green at every step** (`cargo fmt && clippy -D warnings && test --a
    consumer exists? *Default: **keep them in the game***; extract **only** the noise
    helpers (engine genuinely needs them) and the palette/dither apply. Promote others
    when earned.
-4. **Monorepo vs separate repo for the game.** *Default: **one workspace (monorepo)***
-   — `crates/bm-* + crates/<game>` — keeps CI, the Pages preview, and the
-   one-codepath story simple. A separate repo is premature.
+4. **Monorepo vs separate repo for the game.** **Resolved: one workspace (monorepo),
+   game as a path-dep crate** — `crates/bm-* + crates/<game>`, with `<game>`
+   depending on the `brickmap` engine facade via a `path` dependency. Rationale:
+   **crate boundaries enforce *layering*; repo boundaries enforce independent *release
+   cadence + ownership*.** We need the layering (the workspace DAG + a no-upward-dep CI
+   check enforce it as hard as separate repos would), but the engine and game co-evolve
+   tightly with a single consumer and one author — exactly where a monorepo wins and a
+   multi-repo's publish-tag-bump dance hurts on every change. The game still genuinely
+   "consumes the engine as a crate"; it just lives in the same workspace. This also
+   keeps the atomic cross-boundary refactors that Decision 3 anticipates trivial, and
+   one home for the golden-image + voxel-hash tests that span both halves.
+   - **It doesn't lock us in.** A monorepo keeps extraction cheap (`git filter-repo`
+     the `crates/bm-*` out, switch the game to a git/registry dep); a premature split
+     spends real friction now and is harder to undo.
+   - **Flip-triggers — revisit a separate engine repo only when one of these is true:**
+     (a) a genuine **second consumer** (another game, or an external user) appears;
+     (b) we want to **publish the engine on crates.io with its own semver**; or
+     (c) the engine goes **stable / low-churn while the game churns fast**, so a pinned
+     released engine + a separate game repo stops being friction and starts being
+     hygiene.
 5. **Engine crate granularity.** Full 7-crate split (architecture §3) **vs** a single
    `bm-engine` library first, subdivided later. *Default: **do the §3 split** as part
    of Phase 2* (you're moving everything anyway), but landing a single `bm-engine`
