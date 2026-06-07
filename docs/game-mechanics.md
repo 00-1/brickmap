@@ -66,9 +66,11 @@ is the **tech-tree + codex UI** (§12).
 1. **Comprehension, not conquest.** Every upgrade is a faculty of *understanding or
    reach*. No combat, no health, no score popups. The tree's terminus is knowing, not
    winning.
-2. **Autopilot is a first-class way to play.** The passive layer must be genuinely
-   rewarding and time-respecting (you can drift, tab away, return). Manual play is the
-   *bursty, targeted, higher-yield* layer — never punished-for, always *additive*.
+2. **Autopilot is a complete way to play — not a punished one.** The passive layer is
+   genuinely rewarding and time-respecting (drift, tab away, return); an autopilot-only
+   run still climbs the tree and earns the decipherment payoff. Manual play is a
+   **multiplier, not a gate** — faster, farther, and the *optional* deep stuff — always
+   *additive*, never the only path to progress.
 3. **Stay cheap and on-brand.** Weak-hardware-first (design §4) + "expose the tech"
    (§11). Reuse the splat path, world-text, map, audio, and event seam; add ~no render
    cost.
@@ -97,7 +99,7 @@ is the **tech-tree + codex UI** (§12).
                         ▼
         ┌──────── MANUAL / FOOT (active / targeted / high-yield) ──────────────────┐
         │  take the stick ▸ fly/walk to a *specific* giant, cave, pristine pocket  │
-        │  ▸ collect rare data + decoding keys + read interiors autopilot can't    │
+        │  ▸ grab optional rares + speed up decoding + read interiors it skips     │
         └───────────────┬──────────────────────────────────────────────────────────┘
                         │ rare data + keys
                         ▼
@@ -132,35 +134,46 @@ mechanically load-bearing.
 There are **two tiers of information**, made visible as **two beams** (both drawn
 post-palette so they read as vivid against the muted world — distinguished by colour):
 
-- **Scan (auto, the cruiser, a cool colour).** As you drift, the ship **automatically
-  fires short-lived scan beams** at things you pass — they **update the map** (a thing
-  *exists / what kind* it is), but **don't harvest** it. This is the idle layer made
-  diegetic: you *see* the ship reading the world, and the map fills as you go. *What the
-  scan can detect* grows with Sensing tech (terrain/biome → inscriptions → ethereal
-  colossi → buried/cave finds → rare-stratum hints). The map becomes a live **opportunity
-  surface** (scan pins *uncollected* sites; you triage).
-- **Collect (the warm beam, manual by default).** Your survey-beam (below) is what
-  actually **extracts the data/lore** into the strata + codex. Scan tells you *where*;
-  collection takes *the thing*.
-- **Auto-collect (an unlock).** A Memory/Automation upgrade lets the cruiser **auto-fire
-  *collection* beams** (in the collection colour) and harvest as you pass — the idle
-  harvest, which you can watch working. **Guard:** auto-collect only ever takes the
-  **common/ambient layer** (Records, easy in-range glyphs); **rare strata, interiors, and
-  decoding keys still require the manual beam / going there.** Automation removes the
-  *chore*, never the *expedition*.
-- **Targeted collection (manual / foot).** The **rare strata, decoding keys, and
-  interiors** are *only* reachable by hand:
-  - a **named colossus's** monument inscription (E17 `colossus_label`),
-  - glyphs **inside caves** and **solid-colossus interiors** (needs foot collision /
-    descent tech — ties to the E19 follow-ups),
-  - **pristine-pocket** inscriptions (Rites/Signals + the choral beat),
-  - **ethereal** colossi glyphs you'd otherwise drift straight through unnoticed.
-- **The codex.** Every collected glyph is recorded in a growing **archive** (catalogue +
-  a headless-RTT thumbnail per find). Collection thus pays out twice: **quantity** (feeds
-  the tree) and **understanding** (fills the archive — the melancholy payoff).
+The cruiser's beams fire into a **zone just ahead of the ship (in view)** — *not* a
+radius you'd never see. So the idle layer is **on-screen**, your **heading** decides what
+gets read (and "the ship learns to seek" steers things into that forward cone), and the
+harvest is **naturally bounded** to your flight corridor — no artificial "you may not take
+this" rule needed.
 
-The rule that keeps manual play essential: **autopilot sweeps the common ambient layer;
-everything rare, deep, interior, or decoding-critical must be gone to.**
+- **Scan (auto, the cruiser, a cool colour).** As you drift, the ship **automatically
+  fires short-lived scan beams** at what's ahead — they **update the map** (a thing
+  *exists / what kind* it is), but **don't harvest** it. The idle layer made diegetic: you
+  *see* the ship reading the world, and the map fills as you go. *What the scan can detect*
+  grows with Sensing tech (terrain/biome → inscriptions → ethereal colossi → buried/cave
+  finds → rare-stratum hints). The map becomes a live **opportunity surface** (scan pins
+  *uncollected* sites; you triage).
+- **Collect (the warm beam).** Your survey-beam (below) **extracts the data/lore** into
+  the strata + codex. Scan tells you *where*; collection takes *the thing*.
+- **Auto-collect (a Memory unlock).** The cruiser begins **auto-firing the collection
+  beam** at the forward zone and harvesting as you pass — the visible idle harvest. It
+  takes the **common layer in your corridor**; off-route and deep things you still steer to
+  (manually or by routing). It removes the *chore*, not the *expedition*.
+
+**Autopilot is a complete way to play — not a punished one.** Manual is a **multiplier,
+not a gate**: it's *faster*, it reaches the corridor's edges, and it gets the **optional**
+depth (interiors, pristine pockets, specific giants, "Rosetta" finds that *accelerate* a
+script). An **autopilot-only run still climbs the tree and still earns the decipherment
+payoff** — just at a relaxed pace, missing optional lore. The only asymmetry is
+**physical, not punitive**: some content simply *lives* where autopilot doesn't go (inside
+a cave, deep in a solid colossus); skipping it costs *optional lore and a slower curve*,
+never *blocked progress*. Crucially, **decipherment is reachable on autopilot** — fed by
+the data you scan-collect of each script — with manual keys *speeding it up*, not
+unlocking it.
+
+- **What manual still uniquely reaches** (optional depth, not mandatory):
+  - **interiors** — glyphs inside caves / solid-colossus bodies (foot collision + the
+    descent/hull tech, E19 follow-ups),
+  - **pristine-pocket** inscriptions (Rites/Signals + the choral beat),
+  - a **named colossus's** monument inscription up close (E17 `colossus_label`),
+  - anything **off your flight corridor** the forward beams never swept.
+- **The codex.** Every collected glyph is recorded in a growing **archive** (catalogue +
+  a headless-RTT thumbnail per find). Collection pays out twice: **quantity** (feeds the
+  tree) and **understanding** (fills the archive — the melancholy payoff).
 
 ### The survey-beam — the active verb (collection *and* traversal)
 
@@ -251,8 +264,10 @@ The cruiser's auto-scan (§6) and what it reveals on the map.
 - **Cartograph I–III** — map resolution; pin *uncollected* sites (the opportunity surface).
 
 ### 8.2 Decipherment — *the lore spine* &nbsp;(feeds: each script's own data + Relics)
-- **Legibility: Records → Schematics → Rites → Relics → Signals** — five gated unlocks;
-  an unlocked script renders **translated** instead of glowing nonsense.
+- **Legibility: Records → Schematics → Rites → Relics → Signals** — five unlocks bought
+  with **that script's collected data** (which autopilot gathers too, so legibility is
+  reachable hands-off); an unlocked script renders **translated** instead of glowing
+  nonsense. Manual **"Rosetta" finds** *accelerate* a script's legibility — they don't gate it.
 - **Fluency I–III** (per script) — *progressive* legibility: first fragments resolve,
   then full phrases. Watching the world become readable **is** the progression curve.
 - **Cross-Reference** — auto-translate newly found glyphs of an already-known script.
@@ -290,10 +305,10 @@ The cruiser's auto-scan (§6) and what it reveals on the map.
 - **Indexing** — offline/unattended accrual efficiency (data builds while the app drifts
   on autopilot with no input).
 - **Auto-Collect I–III** — the cruiser begins **auto-firing *collection* beams** (the
-  warm colour) to harvest as you pass — the idle harvest, visible on screen. Bounded by
-  the guard in §6: it only ever takes the **common/ambient** layer; rare strata,
-  interiors, and decoding keys stay manual. Tiers widen its range / what common strata it
-  grabs.
+  warm colour) into the forward zone to harvest as you pass — the idle harvest, visible on
+  screen. It takes the **common layer in your flight corridor**; off-route and deep finds
+  you steer to (manually or by routing). Tiers widen its range / what it grabs — so even a
+  hands-off run keeps progressing.
 - **Auto-Route** — chain autopilot between known (scanned) sites so the ship runs its own
   survey circuit.
 - **Synthesis** (late) — convert accumulated understanding into the most advanced
@@ -318,9 +333,10 @@ warnings, the names of giants, the shape of an ending. The reward for optimising
 
 ## 10. Session shape
 
-Drift on autopilot; data trickles; dip into the tree; take the stick for a targeted run
-to a giant / cave / pristine pocket for rare data and a decoding key; watch a script turn
-legible and read what the dead left; set autopilot; drift on. Endless, calm, deepening.
+Drift on autopilot; the map fills and data trickles; dip into the tree; *optionally* take
+the stick for a targeted run to a giant / cave / pristine pocket for optional rares and to
+hurry a script along; watch a script turn legible and read what the dead left; set
+autopilot; drift on. Endless, calm, deepening — and just as valid never touching the stick.
 A session can be five minutes of processing the buffer or an hour of expeditions.
 
 ## 11. Save / share
