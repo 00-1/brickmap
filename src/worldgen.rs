@@ -192,6 +192,44 @@ fn surface_block(height: u32, temp: f32, humidity: f32) -> BlockId {
 
 /// Fill one section at chunk `(cx, cz)` with seeded terrain (single vertical layer
 /// of chunks for now; `cy` is assumed 0).
+/// Whether the cave pass carves voxel `(wx, y, wz)` to air, given the column height `h`. Shared
+/// by `generate_section` (meshing) and `solid_at` (collision) so they never disagree. Keeps a
+/// 2-voxel surface skin except at rare breached "entrance" columns (widened there into a mouth).
+fn cave_carved(wx: i32, y: u32, wz: i32, h: u32, seed: u32) -> bool {
+    if y < 2 || y >= h {
+        return false;
+    }
+    let entrance = fbm3(wx as f32 * 0.022, 0.0, wz as f32 * 0.022, seed ^ 0xE17A) > 0.80;
+    if h - y < 2 && !entrance {
+        return false; // surface skin (kept off the rare entrance columns)
+    }
+    let c = fbm3(
+        wx as f32 * 0.07,
+        y as f32 * 0.11,
+        wz as f32 * 0.07,
+        seed ^ 0x00ca,
+    );
+    let thr = if entrance && h - y < 5 { 0.11 } else { 0.07 };
+    (c - 0.5).abs() < thr
+}
+
+/// Is the terrain voxel at world `(wx, wy, wz)` solid? For on-foot collision (E19). Mirrors
+/// `generate_section`'s terrain solidity: a bedrock floor below y=2, solid stone/dirt/grass up to
+/// the surface height, minus the carved caves. Water + the rare crystal are *not* counted solid.
+pub fn solid_at(wx: i32, wy: i32, wz: i32, seed: u32) -> bool {
+    if wy < 0 {
+        return false;
+    }
+    let h = height(wx, wz, seed) as i32;
+    if wy >= h {
+        return false; // air / water above the surface
+    }
+    if wy < 2 {
+        return true; // bedrock floor
+    }
+    !cave_carved(wx, wy as u32, wz, h as u32, seed)
+}
+
 pub fn generate_section(cx: i32, cz: i32, seed: u32) -> Section {
     let s = Section::SIZE as i32;
     let mut section = Section::new();
@@ -209,26 +247,11 @@ pub fn generate_section(cx: i32, cz: i32, seed: u32) -> Section {
                 };
                 section.set(x, y, z, block);
             }
-            // Carve caves (E8): a thin band of a 3D noise hollows out connected tunnels.
-            // Keep a solid floor (y < 2) and a 2-voxel surface skin so the ground + foliage
-            // stay intact — *except* at rare "entrance" columns, where the skin is breached and
-            // the carve widened near the surface so caves open onto the hillside as cave-mouths
-            // you can actually fly into (most of the world keeps its skin).
-            let entrance = fbm3(wx as f32 * 0.022, 0.0, wz as f32 * 0.022, seed ^ 0xE17A) > 0.80;
+            // Carve caves (E8): a thin band of a 3D noise hollows out connected tunnels (with
+            // rare surface-breaching entrances). The per-voxel decision is shared with
+            // `solid_at` (collision), so meshing + physics agree.
             for y in 2..h.min(Section::SIZE) {
-                let near_surface = h - y < 2;
-                if near_surface && !entrance {
-                    continue; // surface skin (kept off the rare entrance columns)
-                }
-                let c = fbm3(
-                    wx as f32 * 0.07,
-                    y as f32 * 0.11,
-                    wz as f32 * 0.07,
-                    seed ^ 0x00ca,
-                );
-                // Widen the cave near the surface at entrance columns → a real opening, not a slit.
-                let thr = if entrance && h - y < 5 { 0.11 } else { 0.07 };
-                if (c - 0.5).abs() < thr {
+                if cave_carved(wx, y, wz, h, seed) {
                     section.set(x, y, z, BlockId::AIR);
                 }
             }

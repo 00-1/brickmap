@@ -110,6 +110,8 @@ struct App {
     /// it's ignored (you're on foot).
     auto_fly: bool,
     auto_fly_angle: f32,
+    /// Wander clock for the autopilot heading (so it meanders to new terrain, not in a circle).
+    auto_fly_t: f32,
     /// Movement mode (E19): piloting the cruiser (fly — autopilot or manual) vs walking on foot.
     mode: Mode,
     /// The cruiser's world position: tracks the camera while piloting; where it's parked once you
@@ -1291,9 +1293,13 @@ impl ApplicationHandler<AppEvent> for App {
 
                 match self.mode {
                     Mode::Pilot if self.auto_fly => {
-                        // Autopilot — cinematic travel: cruise forward, banking gently, hugging
-                        // the terrain — an endless flight that streams the world in around us.
-                        self.auto_fly_angle += dt * AUTO_FLY_TURN;
+                        // Autopilot — cinematic travel that **wanders to new places** (not a
+                        // circle): a low-frequency, mean-zero turn rate meanders the heading in
+                        // long S-curves while always cruising onward over fresh terrain.
+                        self.auto_fly_t += dt;
+                        let turn = (self.auto_fly_t * 0.06).sin() * 0.28
+                            + (self.auto_fly_t * 0.017 + 1.3).sin() * 0.14;
+                        self.auto_fly_angle += turn * dt;
                         let yaw = self.auto_fly_angle;
                         let dir = Vec3::new(yaw.cos(), 0.0, yaw.sin());
                         let mut pos = self.camera.position + dir * (AUTO_FLY_SPEED * dt);
@@ -1310,14 +1316,16 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     Mode::Walk => {
                         // The controller still drives the look (and *wants* to free-fly); the
-                        // walker constrains that to a walk on the surface (gravity + auto-step).
+                        // walker constrains that to a voxel-collided walk (gravity + animated
+                        // auto-step), so you can descend into cave-mouths and along cave floors.
                         let prev = self.camera.position;
                         self.controller.update(&mut self.camera, dt);
                         let wanted = self.camera.position;
                         let seed = self.seed;
-                        self.camera.position = self.walker.constrain(prev, wanted, dt, |x, z| {
-                            worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
-                        });
+                        self.camera.position =
+                            self.walker.constrain(prev, wanted, dt, |x, y, z| {
+                                worldgen::solid_at(x, y, z, seed)
+                            });
                     }
                 }
                 // While piloting, the cruiser is wherever you are (you're in it).
@@ -1772,6 +1780,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         sand_timer: 0.0,
         auto_fly: true,
         auto_fly_angle: 0.0,
+        auto_fly_t: 0.0,
         mode: Mode::Pilot, // start in the cruiser, on autopilot (the watchable default)
         cruiser_pos: pos,
         walker: player::Walker::default(),
@@ -1937,9 +1946,8 @@ const CRUISE_HEIGHT: f32 = 22.0;
 /// (so you have to land first); you re-enter when on foot within this horizontal distance.
 const CRUISER_EXIT_ALT: f32 = 9.0;
 const CRUISER_ENTER_DIST: f32 = 11.0;
-/// Auto-fly cruise speed (world units/second) and turn rate (radians/second).
+/// Auto-fly cruise speed (world units/second).
 const AUTO_FLY_SPEED: f32 = 26.0;
-const AUTO_FLY_TURN: f32 = 0.05;
 /// Downward tilt of the auto-fly camera (radians).
 const AUTO_FLY_PITCH: f32 = -0.22;
 
