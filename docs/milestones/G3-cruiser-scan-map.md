@@ -1,6 +1,9 @@
 # G3 — Cruiser auto-scan & the map opportunity surface
 
-> **Status: ready to build, after [G1](G1-data-strata-codex.md) + [G2](G2-survey-beam.md).**
+> **Status: ✅ landed (2026-06-07).** The cruiser auto-scans a forward cone while piloting
+> (cool flicks via G2's overlay), marking nearby sites *known* without collecting; the explored
+> map shows scanned-but-uncollected sites as amber rings (the opportunity surface), and the HUD
+> shows "known / found". Scanned state rides the `pg=` save (v2). See the acceptance checklist.
 > The **autopilot/idle** half of *Scraped Again* ([`../game-mechanics.md`](../game-mechanics.md)
 > §6, §8.1): the cruiser **reads the world as it drifts** and the **map fills with the
 > opportunity surface** you then triage. All in `scraped-again` over engine primitives —
@@ -101,16 +104,26 @@
 
 ## Acceptance checklist
 
-- [ ] Cruiser **auto-scans** the forward zone on autopilot/flight (cool beam via the G2
-      overlay), rate-limited so it reads as a sweep.
-- [ ] Discovered inscriptions/colossi become **scanned/known** (stable `find_id`) without
-      collecting; pure forward-zone predicate tested.
-- [ ] The **map** shows scanned-**uncollected** sites with a distinct marker; collecting flips
-      it to done; legend/HUD updated ("known N · collected M").
-- [ ] Scanned set **saves/restores** in the `progress` payload (round-trip + determinism tested).
-- [ ] CI green (fmt / clippy -D / tests / wasm); `bm-render` overlay still game-agnostic
-      (boundary check); golden voxel-hash unchanged.
-- [ ] `game-mechanics.md` §13 ticked for G3; this checklist complete.
+- [x] Cruiser **auto-scans** the forward cone while piloting (cool flicks via the G2 overlay),
+      rate-limited (`scan::INTERVAL`) so it reads as a sweep.
+- [x] Discovered inscriptions/colossi become **scanned/known** (stable `find_id`) without
+      collecting; the forward-cone predicate (`scan::in_cone`) is pure + tested.
+- [x] The **map** shows scanned-**uncollected** sites as a distinct **amber ring** (alpha-code
+      200 + a `map.wgsl` icon); collecting flips it off (`forget_scanned_chunk`); legend + the
+      HUD "known N · found M" updated.
+- [x] Scanned set **saves/restores** in the `progress` payload (v2, append-only over v1;
+      round-trip + determinism unit-tested).
+- [x] CI green (fmt / clippy -D / tests / wasm); the `bm-render` overlay stays game-agnostic
+      (the scan reuses G2's generic feed — boundary check green); golden voxel-hash unchanged.
+- [x] `game-mechanics.md` §13 ticked for G3; this checklist complete.
+
+> **Decisions:** defaults taken — v1 scan detects **inscriptions + colossi** (no deep/spectral
+> tiers; those are G4 Sensing); a **brief cool flick** toward each freshly-scanned site (≤3 per
+> pulse); a forward **cone** (`COS_HALF_ANGLE` ~53°, `RANGE` 150); a distinct **hollow amber
+> ring** map marker; payload bumped to **v2** (append-only, tolerates v1). The map's
+> opportunity/collected distinction is **per-chunk** (a v1 approximation — refine if chunks
+> routinely hold several sites). The scan beam reuses G2's overlay (cool vs warm) — no new
+> render path; the G2 A/B already verified the overlay reads vivid + occluded over the palette.
 
 ## Out of scope / follow-ups
 

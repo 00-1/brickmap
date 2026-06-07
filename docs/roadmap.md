@@ -559,11 +559,15 @@ capability + fixes "you get stuck on foot."*
   reach-gated lock-on cruiser board). Headless A/B (opt-in `SCRAPED_BEAM`) proves vivid-over-
   palette + terrain-occluded. Crate boundary intact; 129 tests green; golden voxel-hash unchanged.
 
-### ✨ G3 — Cruiser auto-scan & the map opportunity surface ⏳ &nbsp;→ [`milestones/G3-cruiser-scan-map.md`](milestones/G3-cruiser-scan-map.md)
+### ✨ G3 — Cruiser auto-scan & the map opportunity surface ✅ &nbsp;→ [`milestones/G3-cruiser-scan-map.md`](milestones/G3-cruiser-scan-map.md)
 The autopilot/idle half: the cruiser auto-scans what it drifts past (a cool scan beam) and the
 explored map fills with **scanned-but-uncollected** pins you triage. Reuses G2's overlay (cool
 vs warm) + the G1 find model + the E10 map; fixed basic scan (tech gating is G4). *Proves the
 idle scan→map→triage loop before the tree sits on it.*
+- **Landed:** `scan` module (forward-cone predicate + cool `Flick`, unit-tested); `autoscan`
+  pulses while piloting → marks sites known + spawns flicks; the map gains an **amber-ring**
+  opportunity marker (alpha-code 200) cleared on collect; HUD "known/found"; the scanned set
+  saves/restores in the `pg=` payload (v2). 133 tests green; golden voxel-hash unchanged.
 
 ### ✨ G4+ — the tech tree, autonomy, depth ⏳
 Sketched in [`game-mechanics.md`](game-mechanics.md) §13: the first tech tree + in-engine menu

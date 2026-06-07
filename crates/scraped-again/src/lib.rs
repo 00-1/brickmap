@@ -36,6 +36,8 @@ pub mod cruiser;
 pub mod progress;
 // The survey-beam (G2): cast → collect-along-path → persist/fade, drawn post-palette.
 pub mod beam;
+// Cruiser auto-scan (G3): forward-cone sensing → the map opportunity surface.
+pub mod scan;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
 pub mod palettes;
 pub mod player;
@@ -178,6 +180,11 @@ struct App {
     beam: Option<beam::Beam>,
     /// When attached to the beam as a rail (Walk mode): the parametric ride position `t∈[0,1]`.
     ride_t: Option<f32>,
+    /// Cruiser auto-scan (G3): seconds since the last scan pulse, and the active cool flicks.
+    scan_timer: f32,
+    flicks: Vec<scan::Flick>,
+    /// Chunks holding a **scanned-but-uncollected** site — the map opportunity surface (G3).
+    map_scanned: std::collections::HashSet<(i32, i32)>,
     /// Monotonic seconds, accumulated each frame — the beam's clock (birth + fade).
     time: f32,
     /// Biome-driven auto mode (the new default): when on, the biome at the camera drives the
@@ -247,6 +254,7 @@ impl App {
         self.map.clear(); // the explored map is per-world
         self.map_text.clear();
         self.map_pristine.clear();
+        self.map_scanned.clear(); // G3 opportunity surface is per-world
         self.map_dirty = true;
         self.loader.set_seed(seed);
         let ground = worldgen::height(
@@ -489,6 +497,7 @@ impl App {
                 progress::yield_amount(c.script, progress::glyph_count(&c.text)),
                 progress::stratum_of(c.script).label(),
             );
+            self.forget_scanned_chunk(c.pos); // it's no longer an opportunity (G3)
         }
     }
 
@@ -513,6 +522,7 @@ impl App {
         }
         let mut swept = 0u32;
         let mut done: Vec<u64> = Vec::new();
+        let mut done_pos: Vec<[f32; 3]> = Vec::new();
         for c in &self.collectible {
             if beam::on_path(Vec3::from(c.pos), b.a, b.b) {
                 let ev = progress::Event::Collect {
@@ -524,10 +534,14 @@ impl App {
                 if self.progress.apply(&ev) {
                     swept += 1;
                     done.push(c.find_id);
+                    done_pos.push(c.pos);
                 }
             }
         }
         self.collectible.retain(|c| !done.contains(&c.find_id));
+        for p in done_pos {
+            self.forget_scanned_chunk(p); // collected → no longer opportunities (G3)
+        }
         self.beam = Some(b);
         // On foot, attach to the fresh beam as a rail (ride it to escape pits/cliffs — and
         // casting mid-fall re-attaches, saving you).
@@ -537,12 +551,78 @@ impl App {
         log::info!("beam: cast — swept {swept} glyph(s)");
     }
 
-    /// The G1 strata readout line for the HUD.
+    /// G3: while piloting, the cruiser auto-scans the forward cone — marking nearby
+    /// uncollected sites **known** (the map opportunity surface) and firing brief cool flicks.
+    /// Does not collect. Rate-limited so it reads as a sweep.
+    fn autoscan(&mut self, dt: f32) {
+        let now = self.time;
+        self.flicks.retain(|f| !f.dead(now)); // prune spent flicks every frame
+        if self.mode != Mode::Pilot {
+            return; // scanning is the cruiser's job (idle / flight)
+        }
+        self.scan_timer += dt;
+        if self.scan_timer < scan::INTERVAL {
+            return;
+        }
+        self.scan_timer = 0.0;
+        let cam = self.camera.position;
+        let fwd = self.camera.forward();
+        // Gather candidates ahead (immutable borrow), then mark them known (mutable) — keeping
+        // only the newly-known ones for flicks/map.
+        let candidates: Vec<(u64, [f32; 3])> = self
+            .collectible
+            .iter()
+            .filter(|c| {
+                !self.progress.is_scanned(c.find_id)
+                    && scan::in_cone(Vec3::from(c.pos), cam, fwd, scan::RANGE)
+            })
+            .map(|c| (c.find_id, c.pos))
+            .collect();
+        let fresh: Vec<[f32; 3]> = candidates
+            .into_iter()
+            .filter(|(id, _)| self.progress.scan(*id))
+            .map(|(_, p)| p)
+            .collect();
+        let nch = world::Section::SIZE as f32;
+        let nose = cam + fwd * 1.5;
+        for (i, p) in fresh.into_iter().enumerate() {
+            let pv = Vec3::from(p);
+            let k = ((pv.x / nch).floor() as i32, (pv.z / nch).floor() as i32);
+            if self.map_scanned.insert(k) {
+                self.map_dirty = true;
+            }
+            if i < scan::FLICKS_PER_PULSE {
+                self.flicks.push(scan::Flick {
+                    from: nose,
+                    to: pv,
+                    born: now,
+                });
+            }
+        }
+    }
+
+    /// A site at `pos` was collected — drop its chunk from the opportunity surface (G3). A v1
+    /// approximation (one opportunity per chunk); refine if chunks routinely hold several.
+    fn forget_scanned_chunk(&mut self, pos: [f32; 3]) {
+        let nch = world::Section::SIZE as f32;
+        let k = ((pos[0] / nch).floor() as i32, (pos[2] / nch).floor() as i32);
+        if self.map_scanned.remove(&k) {
+            self.map_dirty = true;
+        }
+    }
+
+    /// The G1 strata readout + the G3 known/found counts, for the HUD.
     fn strata_hud(&self) -> String {
         let s = &self.progress.strata;
         format!(
-            "REC {} · SCH {} · RIT {} · REL {} · SIG {}   [T collect · J codex]",
-            s.records, s.schematics, s.rites, s.relics, s.signals
+            "REC {} · SCH {} · RIT {} · REL {} · SIG {}   known {} · found {}   [T collect · J codex]",
+            s.records,
+            s.schematics,
+            s.rites,
+            s.relics,
+            s.signals,
+            self.progress.known_count(),
+            self.progress.collected_count(),
         )
     }
 
@@ -802,6 +882,7 @@ impl App {
             .keys()
             .chain(self.map_text.iter())
             .chain(self.map_pristine.iter())
+            .chain(self.map_scanned.iter())
         {
             minx = minx.min(cx);
             maxx = maxx.max(cx);
@@ -815,11 +896,16 @@ impl App {
             rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
         }
         // Markers keep the biome colour in RGB but tag the **alpha** with a code, so the shader
-        // can draw a *distinct shaped icon* per type (a filled dot for text, a hollow diamond for
-        // pristine) rather than just a coloured pixel. Codes: 255 plain, 160 text, 96 pristine.
+        // can draw a *distinct shaped icon* per type rather than just a coloured pixel.
+        // Codes: 255 plain, 200 scanned-uncollected (G3 opportunity), 160 text, 96 pristine.
         for &(cx, cz) in &self.map_text {
             let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4 + 3;
             rgba[i] = 160;
+        }
+        // G3 opportunity surface: a scanned-but-uncollected site (overrides the plain text dot).
+        for &(cx, cz) in &self.map_scanned {
+            let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4 + 3;
+            rgba[i] = 200;
         }
         for &(cx, cz) in &self.map_pristine {
             // Pristine overrides text if a chunk has both.
@@ -1559,16 +1645,20 @@ impl ApplicationHandler<AppEvent> for App {
                 // `build_map_image` borrows `&self`, so it must run before the mutable `state`
                 // borrow below; the upload + uniform are pushed inside the state block.
                 self.map_anim += dt;
-                // G2 beam clock + expiry, then build this frame's overlay ribbon (before the
-                // mutable `state` borrow below).
+                // G2 beam clock + expiry, G3 auto-scan, then build this frame's overlay verts
+                // (warm beam ribbon + cool scan flicks) before the mutable `state` borrow below.
                 self.time += dt;
                 if self.beam.is_some_and(|b| b.dead(self.time)) {
                     self.beam = None;
                 }
-                let overlay_verts = self
+                self.autoscan(dt);
+                let mut overlay_verts = self
                     .beam
                     .map(|b| b.ribbon(self.camera.position, self.time))
                     .unwrap_or_default();
+                for f in &self.flicks {
+                    overlay_verts.extend(f.ribbon(self.camera.position, self.time));
+                }
                 let map_upload = (self.map_view && self.map_dirty)
                     .then(|| self.build_map_image())
                     .flatten();
@@ -1781,7 +1871,7 @@ impl ApplicationHandler<AppEvent> for App {
                             let (vx, vz) =
                                 ((self.map_pan.0 * nch) as i32, (self.map_pan.1 * nch) as i32);
                             format!(
-                                "MAP  seed {}\nyou x{px} z{pz}   +crosshair x{vx} z{vz}\nkey: yellow=you  cyan dot=text  violet diamond=pristine  orange=cruiser\n[stick / arrows] pan    [X / N] close",
+                                "MAP  seed {}\nyou x{px} z{pz}   +crosshair x{vx} z{vz}\nkey: yellow=you  amber ring=scanned (go collect)  cyan dot=text  violet=pristine  orange=cruiser\n[stick / arrows] pan    [X / N] close",
                                 self.seed,
                             )
                         } else {
@@ -1983,6 +2073,9 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         codex_open: false,
         beam: None,
         ride_t: None,
+        scan_timer: 0.0,
+        flicks: Vec::new(),
+        map_scanned: std::collections::HashSet::new(),
         time: 0.0,
         biome_mode: true, // the new default mode
         biome_label: String::new(),

@@ -422,10 +422,10 @@ crate, so the loop can now land in vertical slices, each a milestone brief:
    attach/ride rail + drop-on-expire + cruiser-board + the **post-palette vivid draw** (the one
    new engine capability, now realised in `bm-render`). *Proved the active verb + fixes "you get
    stuck."* **(Landed — see [`milestones/G2-survey-beam.md`](milestones/G2-survey-beam.md).)**
-3. **G3 — Cruiser auto-scan + the map opportunity surface.** The cruiser reads what it drifts
-   past (a cool scan beam → the map fills with scanned-but-uncollected pins you triage). Makes
-   autopilot a real way to play. *Proves the idle scan→map→triage loop.* (Brief:
-   [`milestones/G3-cruiser-scan-map.md`](milestones/G3-cruiser-scan-map.md).)
+3. **✅ G3 — Cruiser auto-scan + the map opportunity surface.** The cruiser reads what it
+   drifts past (a cool scan flick → the map fills with scanned-but-uncollected amber pins you
+   triage). Makes autopilot a real way to play. *Proved the idle scan→map→triage loop.*
+   **(Landed — [`milestones/G3-cruiser-scan-map.md`](milestones/G3-cruiser-scan-map.md).)**
 4. **G4 — The first tree.** A small tuned tree (a few nodes per branch) + the in-engine tree
    UI on the E17 text path; Sensing + Memory first; Decipherment legibility for one script;
    auto-collect + auto-route. *Proves the economy + the payoff.*

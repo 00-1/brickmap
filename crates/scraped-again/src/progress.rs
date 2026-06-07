@@ -157,17 +157,38 @@ pub enum Event {
     },
 }
 
-/// All run progress: the banked strata + the codex of finds (with a de-dup set).
+/// All run progress: the banked strata + the codex of finds (with a de-dup set) + the set of
+/// **scanned** (known-but-maybe-uncollected) sites — the G3 opportunity surface.
 #[derive(Clone, Debug, Default)]
 pub struct Progress {
     pub strata: Strata,
     pub codex: Vec<CodexEntry>,
     seen: std::collections::HashSet<u64>,
+    scanned: std::collections::HashSet<u64>,
 }
 
 impl Progress {
     pub fn has(&self, find_id: u64) -> bool {
         self.seen.contains(&find_id)
+    }
+
+    /// Mark a site **scanned/known** (G3) without collecting it. Returns `true` if newly known.
+    pub fn scan(&mut self, find_id: u64) -> bool {
+        self.scanned.insert(find_id)
+    }
+
+    pub fn is_scanned(&self, find_id: u64) -> bool {
+        self.scanned.contains(&find_id)
+    }
+
+    /// How many sites are **known** (scanned or already collected) — the HUD readout.
+    pub fn known_count(&self) -> usize {
+        self.seen.union(&self.scanned).count()
+    }
+
+    /// How many sites are **collected** (the codex size).
+    pub fn collected_count(&self) -> usize {
+        self.codex.len()
     }
 
     /// Apply an event. Returns `true` if it changed state (a new find), `false` on a
@@ -199,7 +220,7 @@ impl Progress {
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(1u8); // version
+        b.push(2u8); // version (2 = + the scanned set, G3)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -219,6 +240,13 @@ impl Progress {
             let bytes = e.text.as_bytes();
             b.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
             b.extend_from_slice(bytes);
+        }
+        // v2: the scanned (known-but-uncollected) site ids, sorted for a stable encoding.
+        let mut scanned: Vec<u64> = self.scanned.iter().copied().collect();
+        scanned.sort_unstable();
+        b.extend_from_slice(&(scanned.len() as u32).to_le_bytes());
+        for id in scanned {
+            b.extend_from_slice(&id.to_le_bytes());
         }
         format!("pg={}", to_hex(&b))
     }
@@ -269,7 +297,8 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     };
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
-    if *take(&mut p, 1)?.first()? != 1 {
+    let version = *take(&mut p, 1)?.first()?;
+    if version != 1 && version != 2 {
         return None; // unknown version
     }
     let strata = Strata {
@@ -299,10 +328,19 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             pos,
         });
     }
+    // v2: the scanned set (absent in v1 → stays empty).
+    let mut scanned = std::collections::HashSet::new();
+    if version >= 2 {
+        let sc = u32::from_le_bytes(take(&mut p, 4)?.try_into().ok()?);
+        for _ in 0..sc {
+            scanned.insert(u64at(&mut p)?);
+        }
+    }
     Some(Progress {
         strata,
         codex,
         seen,
+        scanned,
     })
 }
 
@@ -329,10 +367,10 @@ fn from_hex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// Two progressions are equal when their strata + codex match (the `seen` set is derived).
+/// Two progressions are equal when their strata + codex + scanned set match (`seen` is derived).
 impl PartialEq for Progress {
     fn eq(&self, other: &Self) -> bool {
-        self.strata == other.strata && self.codex == other.codex
+        self.strata == other.strata && self.codex == other.codex && self.scanned == other.scanned
     }
 }
 
@@ -420,6 +458,44 @@ mod tests {
         assert!(back.has(1) && back.has(2) && back.has(3));
         // Unicode survives the trip.
         assert_eq!(back.codex[1].text, "あい うえ");
+    }
+
+    #[test]
+    fn scan_marks_known_not_collected() {
+        let mut p = Progress::default();
+        assert!(p.scan(10)); // newly known
+        assert!(!p.scan(10)); // already known
+        assert!(p.is_scanned(10));
+        assert!(!p.has(10)); // scanned ≠ collected
+        assert_eq!(p.known_count(), 1);
+        assert_eq!(p.collected_count(), 0);
+        // Collecting it adds to collected; still one known site, now one collected.
+        p.apply(&ev(10, Script::Latin, "AB"));
+        assert!(p.has(10));
+        assert_eq!(p.known_count(), 1); // union of scanned + seen
+        assert_eq!(p.collected_count(), 1);
+    }
+
+    #[test]
+    fn scanned_set_round_trips_v2_and_tolerates_v1() {
+        let mut p = Progress::default();
+        p.apply(&ev(1, Script::Latin, "AB"));
+        p.scan(5);
+        p.scan(9);
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p);
+        assert!(back.is_scanned(5) && back.is_scanned(9));
+        assert!(back.has(1));
+        // A v1 blob (no scanned set) still decodes — scanned just comes back empty.
+        let v1_hex = {
+            // strata=0, codex count=0, version 1.
+            let mut b = vec![1u8];
+            b.extend_from_slice(&[0u8; 40]); // 5 × u64 strata
+            b.extend_from_slice(&0u32.to_le_bytes()); // codex count
+            super::to_hex(&b)
+        };
+        let v1 = Progress::decode(&format!("pg={v1_hex}"));
+        assert_eq!(v1, Progress::default());
     }
 
     #[test]

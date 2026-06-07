@@ -59,45 +59,47 @@ impl Beam {
         self.a.lerp(self.b, t.clamp(0.0, 1.0))
     }
 
-    /// Build a camera-facing ribbon (a feathered glow quad-strip) for the overlay. Four
-    /// longitudinal edges at offsets ±HALO/±CORE with alpha 0 / full / full / 0 give a soft
-    /// glow with no per-fragment work. `cam` is the camera position (to face the ribbon).
+    /// Build a camera-facing ribbon for the survey-beam (warm, faded by lifespan).
     pub fn ribbon(&self, cam: Vec3, now: f32) -> Vec<OverlayVertex> {
-        let a = self.alpha(now);
-        if a <= 0.0 {
-            return Vec::new();
-        }
-        let dir = (self.b - self.a).normalize_or_zero();
-        let mid = (self.a + self.b) * 0.5;
-        // Widen perpendicular to the beam, in the plane facing the camera. When the camera is
-        // (nearly) on the beam axis the cross degenerates, so fall back to a stable perpendicular.
-        let mut w = dir.cross(cam - mid);
-        if w.length_squared() < 1e-4 {
-            w = dir.cross(Vec3::Y);
-        }
-        if w.length_squared() < 1e-4 {
-            w = dir.cross(Vec3::X); // beam is vertical
-        }
-        let w = w.normalize_or_zero();
-        let offsets = [-HALO_HW, -CORE_HW, CORE_HW, HALO_HW];
-        let edge_a = [0.0, a, a, 0.0]; // feathered: transparent halo edges, bright core
-        let v = |p: Vec3, al: f32| OverlayVertex {
-            pos: p.to_array(),
-            color: WARM,
-            alpha: al,
-        };
-        let mut out = Vec::with_capacity(18);
-        for i in 0..3 {
-            // Quad between longitudinal edges i and i+1, along the whole segment.
-            let (oa, ob) = (offsets[i], offsets[i + 1]);
-            let (aa, ab) = (edge_a[i], edge_a[i + 1]);
-            let (p0, p1) = (self.a + w * oa, self.a + w * ob);
-            let (p2, p3) = (self.b + w * ob, self.b + w * oa);
-            out.extend_from_slice(&[v(p0, aa), v(p1, ab), v(p2, ab)]);
-            out.extend_from_slice(&[v(p0, aa), v(p2, ab), v(p3, aa)]);
-        }
-        out
+        ribbon_seg(self.a, self.b, cam, self.alpha(now), WARM)
     }
+}
+
+/// A camera-facing ribbon (a feathered glow quad-strip) along the segment `a..b`, at overall
+/// `alpha` and `color`. Four longitudinal edges at offsets ±HALO/±CORE with alpha
+/// 0/full/full/0 give a soft glow with no per-fragment work. Shared by the survey-beam and the
+/// cool scan flick (G3). Robust when the camera is on the beam axis.
+pub fn ribbon_seg(a: Vec3, b: Vec3, cam: Vec3, alpha: f32, color: [f32; 3]) -> Vec<OverlayVertex> {
+    if alpha <= 0.0 {
+        return Vec::new();
+    }
+    let dir = (b - a).normalize_or_zero();
+    let mid = (a + b) * 0.5;
+    let mut w = dir.cross(cam - mid);
+    if w.length_squared() < 1e-4 {
+        w = dir.cross(Vec3::Y);
+    }
+    if w.length_squared() < 1e-4 {
+        w = dir.cross(Vec3::X); // segment is vertical
+    }
+    let w = w.normalize_or_zero();
+    let offsets = [-HALO_HW, -CORE_HW, CORE_HW, HALO_HW];
+    let edge_a = [0.0, alpha, alpha, 0.0]; // feathered: transparent halo edges, bright core
+    let v = |p: Vec3, al: f32| OverlayVertex {
+        pos: p.to_array(),
+        color,
+        alpha: al,
+    };
+    let mut out = Vec::with_capacity(18);
+    for i in 0..3 {
+        let (oa, ob) = (offsets[i], offsets[i + 1]);
+        let (aa, ab) = (edge_a[i], edge_a[i + 1]);
+        let (p0, p1) = (a + w * oa, a + w * ob);
+        let (p2, p3) = (b + w * ob, b + w * oa);
+        out.extend_from_slice(&[v(p0, aa), v(p1, ab), v(p2, ab)]);
+        out.extend_from_slice(&[v(p0, aa), v(p2, ab), v(p3, aa)]);
+    }
+    out
 }
 
 /// Perpendicular distance from point `p` to the segment `a..b` (clamped to the segment).

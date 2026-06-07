@@ -55,6 +55,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             if (s.a > 0.55 && s.a < 0.72 && dd < 0.30) {
                 col = vec3<f32>(0.45, 0.85, 1.0); // text: filled cyan dot
             }
+            // G3 opportunity: scanned-but-uncollected — a hollow amber ring (go collect it).
+            if (s.a > 0.72 && s.a < 0.88 && dd > 0.18 && dd < 0.34) {
+                col = vec3<f32>(1.0, 0.78, 0.25);
+            }
             let dia = abs(cell.x) + abs(cell.y);
             if (s.a > 0.30 && s.a < 0.45 && dia > 0.22 && dia < 0.42) {
                 col = vec3<f32>(0.85, 0.55, 1.0); // pristine: hollow violet diamond
