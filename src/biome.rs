@@ -250,15 +250,28 @@ fn fbm(x: f32, z: f32, seed: u32) -> f32 {
     ((v - 0.5) * 1.35 + 0.5).clamp(0.0, 0.9999)
 }
 
-/// World-unit scale of the biome field (region size ≈ this many blocks across).
-const SCALE: f32 = 1.0 / 700.0;
+// The biome field mixes two scales whose balance is itself a (very low frequency) field, so
+// **biome size varies across the world**: a slow "continent" field gives huge expansive biomes,
+// and a fine field adds the tight narrow banding — and how much fine detail shows is driven by
+// `BAND_SCALE`, so some regions stay vast while others band tightly (like before).
+/// Huge "continent" scale — region size ≈ this many blocks (≈20×+ the fine banding).
+const BIG_SCALE: f32 = 1.0 / 12000.0;
+/// Fine banding scale — the narrow bands we had before.
+const FINE_SCALE: f32 = 1.0 / 650.0;
+/// Scale over which the *amount* of fine banding varies (narrow-here, vast-there).
+const BAND_SCALE: f32 = 1.0 / 5000.0;
 /// Scale of the rare ethereal-variant field (smaller → scattered pockets within biomes).
 const VARIANT_SCALE: f32 = 1.0 / 420.0;
 
 /// The two biomes and blend fraction at a world `(x, z)`. `frac` is the weight of the *second*.
 pub fn field(x: f32, z: f32, seed: u32) -> (usize, usize, f32) {
     let n = BIOMES.len();
-    let f = fbm(x * SCALE, z * SCALE, seed ^ 0xB10E_0001) * n as f32;
+    // Slow continent gradient (huge biomes) + a fine banding term whose strength is itself a
+    // low-frequency field — so size ranges from vast (banding≈0) to tight (banding≈1).
+    let big = fbm(x * BIG_SCALE, z * BIG_SCALE, seed ^ 0xB10E_0001);
+    let fine = fbm(x * FINE_SCALE, z * FINE_SCALE, seed ^ 0xB10E_5EED) - 0.5;
+    let banding = fbm(x * BAND_SCALE, z * BAND_SCALE, seed ^ 0xB10E_A3D5);
+    let f = (big + fine * banding * 1.6).clamp(0.0, 0.9999) * n as f32;
     let lo = (f.floor() as usize).min(n - 1);
     let hi = (lo + 1).min(n - 1);
     (lo, hi, f.fract())
@@ -285,11 +298,11 @@ pub fn at(x: f32, z: f32, seed: u32) -> Blended {
             colors[i][k] = lerp(ra[i][k], rc[i][k], t);
         }
     }
-    // Rare ethereal variant: fade the ink grid on, and push the drone "less deep, more
-    // ethereal" — open the murk up and pull the heavy distortion down.
+    // Rare ethereal variant amount (drives the ink grid + pristine wobble + the dedicated
+    // ethereal drone voice in `audio`, which is far more distinct than nudging murk/heavy).
     let eth = variant(x, z, seed);
-    let murk = lerp(lerp(a.murk, c.murk, t), 0.95, eth);
-    let heavy = lerp(lerp(a.heavy, c.heavy, t), 0.55, eth);
+    let murk = lerp(a.murk, c.murk, t);
+    let heavy = lerp(a.heavy, c.heavy, t);
     Blended {
         colors,
         count: lerp(a.count as f32, c.count as f32, t).round() as u32,

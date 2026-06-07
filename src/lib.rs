@@ -154,6 +154,8 @@ struct App {
     map: std::collections::HashMap<(i32, i32), [u8; 3]>,
     /// Chunks where an inscription has been encountered — shown as bright markers on the map.
     map_text: std::collections::HashSet<(i32, i32)>,
+    /// Chunks inside a rare pristine/ethereal pocket — marked with their own icon on the map.
+    map_pristine: std::collections::HashSet<(i32, i32)>,
     /// Whether the fullscreen map view is open; the pan centre (chunk coords); whether the
     /// explored set grew since the GPU image was last built; and the cached image origin/dims.
     map_view: bool,
@@ -208,6 +210,7 @@ impl App {
         self.text_cells.clear(); // and the new seed's inscriptions
         self.map.clear(); // the explored map is per-world
         self.map_text.clear();
+        self.map_pristine.clear();
         self.map_dirty = true;
         self.loader.set_seed(seed);
         let ground = worldgen::height(
@@ -564,6 +567,10 @@ impl App {
                 (c[2] * 255.0) as u8,
             ],
         );
+        // Mark the chunk if it sits in a rare pristine/ethereal pocket (its own map icon).
+        if biome::variant(wx, wz, self.seed) > 0.5 {
+            self.map_pristine.insert(key);
+        }
         self.map_dirty = true;
     }
 
@@ -574,7 +581,12 @@ impl App {
             return None;
         }
         let (mut minx, mut maxx, mut minz, mut maxz) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
-        for &(cx, cz) in self.map.keys().chain(self.map_text.iter()) {
+        for &(cx, cz) in self
+            .map
+            .keys()
+            .chain(self.map_text.iter())
+            .chain(self.map_pristine.iter())
+        {
             minx = minx.min(cx);
             maxx = maxx.max(cx);
             minz = minz.min(cz);
@@ -585,6 +597,11 @@ impl App {
         for (&(cx, cz), &c) in &self.map {
             let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4;
             rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
+        }
+        // Pristine/ethereal pockets: a pale-violet icon so the rare special zones stand out.
+        for &(cx, cz) in &self.map_pristine {
+            let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4;
+            rgba[i..i + 4].copy_from_slice(&[225, 180, 255, 255]);
         }
         // Inscription markers on top: a bright glyph-cyan pixel so found text reads as a landmark.
         for &(cx, cz) in &self.map_text {
@@ -1289,15 +1306,18 @@ impl ApplicationHandler<AppEvent> for App {
                     });
                     let (mut best, mut target) = (0.0f32, self.wobble);
                     for p in &colossi {
+                        // Most giants are wobble-neutral; only rare ones warp (heavy, ~1 in 6) or
+                        // still (crisp, ~1 in 6) the space around them.
+                        let t = match (p.seed >> 9) % 6 {
+                            0 => WOBBLE_HEAVY,
+                            1 => WOBBLE_CRISP,
+                            _ => continue,
+                        };
                         let d = ((p.pos.x - cam.x).powi(2) + (p.pos.z - cam.z).powi(2)).sqrt();
                         let prox = (1.0 - d / WOBBLE_APPROACH).clamp(0.0, 1.0);
                         if prox > best {
                             best = prox;
-                            target = if (p.seed >> 9) & 1 == 0 {
-                                WOBBLE_HEAVY
-                            } else {
-                                WOBBLE_CRISP
-                            };
+                            target = t;
                         }
                     }
                     self.wobble += (target - self.wobble) * best;
@@ -1313,6 +1333,7 @@ impl ApplicationHandler<AppEvent> for App {
                         a.set_drive(b.heavy);
                         a.set_tone(b.murk);
                         a.set_warp(warp_amt);
+                        a.set_ethereal(b.ink);
                     }
                     #[cfg(target_arch = "wasm32")]
                     {
@@ -1320,6 +1341,7 @@ impl ApplicationHandler<AppEvent> for App {
                         controls::set_audio_drive(b.heavy);
                         controls::set_audio_tone(b.murk);
                         controls::set_audio_warp(warp_amt);
+                        controls::set_audio_ethereal(b.ink);
                     }
                 }
                 let sun_amt = match bio {
@@ -1620,6 +1642,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         biome_label: String::new(),
         map: std::collections::HashMap::new(),
         map_text: std::collections::HashSet::new(),
+        map_pristine: std::collections::HashSet::new(),
         map_view: false,
         map_pan: (0.0, 0.0),
         map_dirty: false,
@@ -2031,6 +2054,15 @@ pub mod controls {
         AUDIO.with(|a| {
             if let Some(d) = a.borrow_mut().as_mut() {
                 d.set_warp(x);
+            }
+        });
+    }
+
+    /// Ethereal (E10), driven each frame: pristine-pocket amount → airy, clean, shimmering drone.
+    pub(crate) fn set_audio_ethereal(x: f32) {
+        AUDIO.with(|a| {
+            if let Some(d) = a.borrow_mut().as_mut() {
+                d.set_ethereal(x);
             }
         });
     }

@@ -151,6 +151,12 @@ pub struct Drone {
     warp: f32,
     warp_s: f32,
     trem_phase: f32,
+    /// Ethereal `0..1` (E10): set high in the rare pristine pockets. A distinct, *unmistakable*
+    /// shift — guts the distortion, throws the filter wide open, lightens the sub + dread voices,
+    /// and adds a glassy shimmer — so a pristine pocket sounds airy/holy, not like the doom drone.
+    ethereal: f32,
+    ethereal_s: f32,
+    shimmer_phase: f32,
 }
 
 impl Drone {
@@ -248,6 +254,9 @@ impl Drone {
             warp: 0.0,
             warp_s: 0.0,
             trem_phase: 0.0,
+            ethereal: 0.0,
+            ethereal_s: 0.0,
+            shimmer_phase: 0.0,
         }
     }
 
@@ -273,13 +282,27 @@ impl Drone {
     pub fn set_warp(&mut self, x: f32) {
         self.warp = x.clamp(0.0, 1.0);
     }
+    /// Ethereal amount, `0..1` (E10): the rare pristine pockets. Transforms the drone to an airy,
+    /// clean, shimmering voice. Smoothed internally.
+    pub fn set_ethereal(&mut self, x: f32) {
+        self.ethereal = x.clamp(0.0, 1.0);
+    }
 
     /// Render the next stereo frame (`[left, right]`), each in roughly `[-1, 1]`.
     pub fn next_frame(&mut self) -> [f32; 2] {
+        // Ethereal (E10): smooth toward target (~0.2 s). In a pristine pocket it lightens the deep
+        // voices (sub = voice 0, the dread ♭2 = voice 7) so the drone loses its weight.
+        self.ethereal_s += (self.ethereal - self.ethereal_s) * 0.00012;
+        let eth = self.ethereal_s;
         let mut l = 0.0f32;
         let mut r = 0.0f32;
-        for v in &mut self.voices {
-            let s = v.sample(self.sr);
+        for (i, v) in self.voices.iter_mut().enumerate() {
+            let s = v.sample(self.sr)
+                * if i == 0 || i == 7 {
+                    1.0 - eth * 0.85
+                } else {
+                    1.0
+                };
             // Equal-power pan.
             let p = (v.pan * 0.5 + 0.5) * (std::f32::consts::PI * 0.5);
             l += s * p.cos();
@@ -293,23 +316,41 @@ impl Drone {
             self.trem_phase -= 1.0;
         }
         // Tame the summed level before distortion, then waveshape hard for the doom grit.
-        // Heaviness scales the drive; warp pushes it heavier still (more grit in warp zones).
+        // Heaviness scales the drive; warp pushes it heavier still (more grit in warp zones);
+        // ethereal guts it (a pristine pocket is almost clean — no doom grind).
         let pre = 0.42;
-        let drive = self.base_drive * self.drive_mul * (1.0 + self.warp_s * 0.9);
+        let drive =
+            self.base_drive * self.drive_mul * (1.0 + self.warp_s * 0.9) * (1.0 - eth * 0.8);
         let dl = (drive * l * pre).tanh();
         let dr = (drive * r * pre).tanh();
 
         // Reactive intensity (E16): smooth toward the target (~0.4 s) so flight changes glide in.
         self.intensity_s += (self.intensity - self.intensity_s) * 0.00006;
         // Murk: scale the cutoff sweep (tone 0 → ×0.5 darker, 1 → ×2.5 brighter). Flight
-        // intensity nudges the effective openness up, so faster/higher flight brightens the drone.
-        let tone_eff = (self.tone + self.intensity_s * 0.35).min(1.15);
+        // intensity nudges the effective openness up, so faster/higher flight brightens the drone;
+        // ethereal throws it wide open (airy/bright, the murk lifts entirely).
+        let tone_eff = (self.tone + self.intensity_s * 0.35 + eth * 1.2).min(2.0);
         let tone_scale = 0.5 + tone_eff * 2.0;
         let cutoff = (self.cutoff_lfo.step(self.sr) * tone_scale).clamp(60.0, self.sr * 0.45);
         let amp = self.amp_lfo.step(self.sr);
         // Step the second LFO read for R off the same value (mono modulation, stereo audio).
-        let fl = self.filt_l.lowpass(dl, cutoff, self.res, self.sr);
-        let fr = self.filt_r.lowpass(dr, cutoff, self.res, self.sr);
+        let mut fl = self.filt_l.lowpass(dl, cutoff, self.res, self.sr);
+        let mut fr = self.filt_r.lowpass(dr, cutoff, self.res, self.sr);
+
+        // Ethereal shimmer: a glassy high chord (added *after* the filter so it stays bright),
+        // panned gently, only present in pristine pockets — the "holy" sparkle over the cleaned drone.
+        if eth > 0.001 {
+            self.shimmer_phase += 1.0 / self.sr;
+            if self.shimmer_phase >= 1.0 {
+                self.shimmer_phase -= 1.0;
+            }
+            let t = self.shimmer_phase * TAU;
+            let sh = ((t * 330.0).sin() + 0.6 * (t * 495.0).sin() + 0.4 * (t * 660.0).sin())
+                * eth
+                * 0.12;
+            fl += sh;
+            fr += sh * 0.85;
+        }
 
         // A subtle swell with intensity so motion feels like it pushes the dirge; warp adds a
         // throbbing tremolo so warp zones pulse, unstable.
@@ -406,5 +447,26 @@ mod tests {
         }
         assert!(peak <= 1.0, "warp pushed past full scale: {peak}");
         assert!(diff > 0.0, "warp had no audible effect");
+    }
+
+    #[test]
+    fn ethereal_transforms_strongly_without_clipping() {
+        let mut a = Drone::new(11, 44_100);
+        let mut b = Drone::new(11, 44_100);
+        b.set_ethereal(1.0);
+        let (mut peak, mut diff, mut e_a, mut e_b) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for _ in 0..44_100 {
+            let [la, _] = a.next_frame();
+            let [lb, rb] = b.next_frame();
+            assert!(lb.is_finite() && rb.is_finite());
+            peak = peak.max(lb.abs()).max(rb.abs());
+            diff += (la - lb).abs();
+            e_a += la * la;
+            e_b += lb * lb;
+        }
+        assert!(peak <= 1.0, "ethereal pushed past full scale: {peak}");
+        // It should be a *strong* change, not a subtle nudge.
+        assert!(diff > 1000.0, "ethereal barely changed the drone: {diff}");
+        assert!(e_a > 0.0 && e_b > 0.0);
     }
 }
