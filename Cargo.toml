@@ -1,120 +1,13 @@
-[package]
-name = "brickmap"
-version = "0.0.1"
-edition = "2021"
-rust-version = "1.94"
-description = "A high-performance, cross-platform voxel rendering engine."
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/00-1/brickmap"
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+# Bare `cargo build`/`cargo run` resolve to the engine crate for now; once the game
+# crate lands (M9 Phase 3) this points at the thing you actually run.
+default-members = ["crates/brickmap"]
 
-# The crate is both a library (so it can be compiled to a `cdylib` for the web /
-# WASM target and reused by tests) and a binary (the native desktop entry point).
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[[bin]]
-name = "brickmap"
-path = "src/main.rs"
-
-[dependencies]
-# --- Core, all targets ---------------------------------------------------
-wgpu = "29"
-winit = "0.30"
-glam = "0.33"
-bytemuck = { version = "1", features = ["derive"] }
-log = "0.4"
-cfg-if = "1"
-# Tiny public-domain 8x8 bitmap font for the in-engine text overlay (HUD now, more UI
-# text later). Used on every platform so text rendering is identical. Pure data.
-font8x8 = "0.3"
-# Cross-platform monotonic clock (std::time on native, performance.now on web) for
-# frame-rate-independent camera movement.
-web-time = "1"
-
-# --- Native-only ---------------------------------------------------------
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-pollster = "0.4"
-env_logger = "0.11"
-# Headless render-to-PNG (D1): software-Vulkan offscreen capture for golden-image
-# tests and self-checked renders. Native only.
-png = "0.17"
-# Off-thread chunk generation + meshing (M6). Web has no threads on Pages
-# (no SharedArrayBuffer), so the web build meshes on the main thread instead.
-rayon = "1"
-
-# --- Desktop-only (native, not Android) ----------------------------------
-# Gamepad/controller input (D7) via gilrs. Excluded on Android to keep the APK build
-# free of NDK input plumbing (web's Gamepad API covers phone + USB-C pad for now).
-[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
-gilrs = "0.11"
-# Cross-platform audio output (E16) for the doom-drone. Desktop only for now — the web
-# uses Web Audio (no crate), and Android audio is a follow-up (keeps the APK NDK-light).
-# On Linux this needs the ALSA dev headers (libasound2-dev) at build time; see CI.
-cpal = "0.17"
-
-# --- Web / WASM-only -----------------------------------------------------
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-# Enable the GLES/WebGL backend so the spike still renders on browsers that
-# lack WebGPU. Web is a low-priority target, but the fallback is nearly free
-# here and widens reach without touching the native path.
-wgpu = { version = "29", features = ["webgl"] }
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-console_error_panic_hook = "0.1"
-console_log = "1"
-web-sys = { version = "0.3", features = [
-    "Document",
-    "Window",
-    "Location",
-    "Element",
-    "HtmlCanvasElement",
-    "Navigator",
-    "Gamepad",
-    "GamepadButton",
-] }
-
-# --- Android-only (D4) ---------------------------------------------------
-# winit needs the Android activity backend; `android-native-activity` pairs with the
-# NativeActivity APK that cargo-apk packages. `android_logger` pipes `log` → logcat.
-[target.'cfg(target_os = "android")'.dependencies]
-winit = { version = "0.30", features = ["android-native-activity"] }
-android_logger = "0.14"
-# Audio on Android (E16): cpal's AAudio backend. Uses the JavaVM/context that the
-# android-native-activity sets up via `ndk-context`, so the doom-drone plays on the APK too.
-cpal = "0.17"
-
-# cargo-apk packaging (D4): builds a sideloadable, debug-signed APK from this crate's
-# `cdylib` + `android_main`. Locally: `cargo install cargo-apk` then
-# `cargo apk build --release --lib`. CI does the same (see .github/workflows/android.yml).
-[package.metadata.android]
-package = "dev.brickmap.app"
-build_targets = ["aarch64-linux-android"]
-
-[package.metadata.android.sdk]
-# 26 = the minimum for cpal's AAudio backend (E16 Android audio). Fine in 2026.
-min_sdk_version = 26
-target_sdk_version = 34
-
-[package.metadata.android.application]
-label = "brickmap"
-
-# Self-signed sideload key (committed `release.keystore`) so `cargo apk build --release`
-# can produce a release APK and successive sideloaded builds update in place. This is NOT
-# a Play upload key — it only governs sideload continuity, so a public password is fine.
-[package.metadata.android.signing.release]
-path = "release.keystore"
-keystore_password = "brickmap"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-criterion = "0.5"
-
-[[bench]]
-name = "meshing"
-harness = false
-
-# wgpu shader compilation and validation are heavy; build deps optimised even in
-# debug so iteration on the spike stays fast on weak dev machines.
 [profile.dev.package."*"]
+# wgpu shader compilation and validation are heavy; build deps optimised even in
+# debug so iteration stays fast on weak dev machines.
 opt-level = 3
 
 [profile.release]

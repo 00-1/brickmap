@@ -21,8 +21,10 @@ trap 'git -C "$repo" worktree remove --force "$work" 2>/dev/null || true; rm -rf
 echo "Building snapshot '$id' from $ref ..."
 git -C "$repo" worktree add --detach "$work" "$ref" >/dev/null
 
-# Share the main target dir so dependency artifacts are reused.
-CARGO_TARGET_DIR="$repo/target" cargo build --release --lib \
+# Share the main target dir so dependency artifacts are reused. `-p brickmap`
+# resolves whether the ref predates the workspace (crate at root) or not (crate under
+# crates/brickmap); the manifest-path points at the worktree's top Cargo.toml either way.
+CARGO_TARGET_DIR="$repo/target" cargo build --release -p brickmap --lib \
   --target wasm32-unknown-unknown --manifest-path "$work/Cargo.toml"
 
 rm -rf "$out"

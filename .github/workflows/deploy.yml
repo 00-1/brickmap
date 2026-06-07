@@ -47,7 +47,7 @@ jobs:
           tool: wasm-bindgen-cli@${{ steps.wb.outputs.version }}
 
       - name: Build (release)
-        run: cargo build --release --lib --target wasm32-unknown-unknown
+        run: cargo build -p brickmap --release --lib --target wasm32-unknown-unknown
 
       - name: Assemble site
         run: |
