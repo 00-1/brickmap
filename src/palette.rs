@@ -372,6 +372,27 @@ impl PalettePass {
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&params));
     }
 
+    /// Set the palette from an explicit list of `colors` (e.g. a biome-blended ramp) rather than
+    /// a [`PALETTES`] index — used by biome mode to crossfade ramps smoothly. `count` is clamped
+    /// to the colours supplied and `MAX_COLORS`.
+    pub fn set_colors(&self, queue: &wgpu::Queue, src: &[[f32; 3]], count: u32, dither: f32) {
+        let avail = src.len().max(1);
+        let n = (count as usize).clamp(1, avail).min(MAX_COLORS);
+        let mut colors = [[0.0f32; 4]; MAX_COLORS];
+        for (i, slot) in colors.iter_mut().enumerate().take(n) {
+            let c = src[i % avail];
+            *slot = [c[0], c[1], c[2], 1.0];
+        }
+        let params = Params {
+            colors,
+            count: n as u32,
+            enabled: 1,
+            dither,
+            _pad: 0.0,
+        };
+        queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&params));
+    }
+
     /// Build the bind group for a given input texture (rebuild when the target resizes).
     pub fn make_bind_group(
         &self,

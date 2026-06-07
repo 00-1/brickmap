@@ -10,38 +10,90 @@ pub const GLYPH: usize = 8;
 
 /// Rasterise `text` to a tightly-packed RGBA buffer: white text on a translucent dark
 /// strip (so it stays legible over bright sky/foliage). One 8×8 cell per character;
-/// non-printable / non-ASCII chars render as `.`. Returns `(width, height, pixels)`.
+/// non-printable / non-ASCII chars render as `.`. Honours embedded newlines (`\n`) as line
+/// breaks — sized to the widest line × the line count. Returns `(width, height, pixels)`.
 pub fn rasterize(text: &str) -> (u32, u32, Vec<u8>) {
-    let n = text.chars().count().max(1);
-    let w = (n * GLYPH) as u32;
-    let h = GLYPH as u32;
+    let lines: Vec<&str> = text.split('\n').collect();
+    let cols = lines
+        .iter()
+        .map(|l| l.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(1);
+    let rows = lines.len().max(1);
+    let w = (cols * GLYPH) as u32;
+    let h = (rows * GLYPH) as u32;
     let mut px = vec![0u8; (w * h * 4) as usize];
     // Translucent dark background strip for contrast.
     for p in px.chunks_exact_mut(4) {
         p[3] = 150;
     }
-    for (gi, c) in text.chars().enumerate() {
-        let code = c as u32;
-        let glyph = if (0x20..0x7f).contains(&code) {
-            BASIC_LEGACY[code as usize]
-        } else {
-            BASIC_LEGACY[b'.' as usize]
-        };
-        for (row, bits) in glyph.iter().enumerate() {
-            for col in 0..GLYPH {
-                // font8x8 packs each row LSB-first (bit 0 = leftmost column).
-                if bits & (1 << col) != 0 {
-                    let x = gi * GLYPH + col;
-                    let idx = (row * w as usize + x) * 4;
-                    px[idx] = 255;
-                    px[idx + 1] = 255;
-                    px[idx + 2] = 255;
-                    px[idx + 3] = 255;
+    for (li, line) in lines.iter().enumerate() {
+        let y0 = li * GLYPH;
+        for (gi, c) in line.chars().enumerate() {
+            let code = c as u32;
+            let glyph = if (0x20..0x7f).contains(&code) {
+                BASIC_LEGACY[code as usize]
+            } else {
+                BASIC_LEGACY[b'.' as usize]
+            };
+            for (row, bits) in glyph.iter().enumerate() {
+                for col in 0..GLYPH {
+                    // font8x8 packs each row LSB-first (bit 0 = leftmost column).
+                    if bits & (1 << col) != 0 {
+                        let x = gi * GLYPH + col;
+                        let idx = ((y0 + row) * w as usize + x) * 4;
+                        px[idx] = 255;
+                        px[idx + 1] = 255;
+                        px[idx + 2] = 255;
+                        px[idx + 3] = 255;
+                    }
                 }
             }
         }
     }
     (w, h, px)
+}
+
+/// Word-wrap `text` to at most `max_cols` characters per line, inserting `\n` (and keeping any
+/// explicit `\n`). Words longer than `max_cols` are hard-broken. Lets the HUD wrap at the screen
+/// edge instead of running off it.
+pub fn wrap(text: &str, max_cols: usize) -> String {
+    if max_cols == 0 {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    for (pi, para) in text.split('\n').enumerate() {
+        if pi > 0 {
+            out.push('\n');
+        }
+        let mut col = 0usize;
+        for word in para.split(' ') {
+            let wl = word.chars().count();
+            if col > 0 && col + 1 + wl > max_cols {
+                out.push('\n');
+                col = 0;
+            }
+            if col > 0 {
+                out.push(' ');
+                col += 1;
+            }
+            if wl > max_cols {
+                for c in word.chars() {
+                    if col >= max_cols {
+                        out.push('\n');
+                        col = 0;
+                    }
+                    out.push(c);
+                    col += 1;
+                }
+            } else {
+                out.push_str(word);
+                col += wl;
+            }
+        }
+    }
+    out
 }
 
 /// GPU overlay: rasterises the HUD line to a texture and draws it as a top-left
@@ -272,6 +324,18 @@ mod tests {
         assert_eq!(px.len() as u32, w * h * 4);
         // Some text pixels must be fully white (a glyph was drawn).
         assert!(px.chunks_exact(4).any(|p| p == [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn wrap_breaks_at_width_and_keeps_newlines() {
+        let w = wrap("alpha beta gamma delta", 11);
+        for line in w.split('\n') {
+            assert!(line.chars().count() <= 11, "line too long: {line:?}");
+        }
+        assert!(w.contains('\n'), "should have wrapped");
+        assert_eq!(wrap("a\nb", 80), "a\nb");
+        let (_, h, _) = rasterize("a\nb\nc");
+        assert_eq!(h, 24);
     }
 
     /// Dump a sample HUD strip to a PNG so the font/layout can be eyeballed.

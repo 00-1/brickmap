@@ -143,6 +143,12 @@ struct App {
     text_cells: std::collections::HashSet<(i32, i32, u8)>,
     /// Previous-frame camera position, for the reactive-audio (E16) flight-speed estimate.
     audio_prev_pos: Option<Vec3>,
+    /// Biome-driven auto mode (the new default): when on, the biome at the camera drives the
+    /// palette, spawn densities, lighting/wobble, ground, and drone mix — blended smoothly as you
+    /// move, no manual toggles. Off → the manual settings ("as we currently have it"). Key `G`.
+    biome_mode: bool,
+    /// The current biome label, refreshed each frame in biome mode (shown on the HUD).
+    biome_label: String,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
     /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
@@ -274,6 +280,12 @@ impl App {
             KeyCode::KeyK => {
                 self.pixel_scale = self.pixel_scale % 4 + 1;
                 log::info!("pixel scale → {}", self.pixel_scale);
+                return true;
+            }
+            // Biome auto mode (E10): G toggles biome-driven settings vs the manual look.
+            KeyCode::KeyG => {
+                self.biome_mode = !self.biome_mode;
+                log::info!("biome mode → {}", self.biome_mode);
                 return true;
             }
             // Audio (E16): M mutes/unmutes the drone (desktop only).
@@ -1107,6 +1119,34 @@ impl ApplicationHandler<AppEvent> for App {
                 #[cfg(target_arch = "wasm32")]
                 let share_str = self.current_share().encode();
 
+                // Biome-driven auto mode (E10): blend the biome at the camera and drive the
+                // look + drone mix (palette below; wobble/steps/sun + audio here). Blended fields
+                // vary continuously with position, so all of it transitions smoothly.
+                let bio = self
+                    .biome_mode
+                    .then(|| biome::at(self.camera.position.x, self.camera.position.z, self.seed));
+                if let Some(b) = bio {
+                    self.wobble = b.wobble;
+                    self.color_steps = b.steps;
+                    self.biome_label = b.label();
+                    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+                    if let Some(a) = &self.audio {
+                        a.set_volume(b.vol);
+                        a.set_drive(b.heavy);
+                        a.set_tone(b.murk);
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        controls::set_audio_volume(b.vol);
+                        controls::set_audio_drive(b.heavy);
+                        controls::set_audio_tone(b.murk);
+                    }
+                }
+                let sun_amt = match bio {
+                    Some(b) => b.sun,
+                    None => f32::from(u8::from(self.toggles.sun)),
+                };
+
                 // Camera basis for billboarding foliage splats (E6).
                 let fwd = self.camera.forward();
                 let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
@@ -1114,13 +1154,18 @@ impl ApplicationHandler<AppEvent> for App {
 
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
-                    // Push the current palette selection + pixel scale (E10) before drawing.
-                    state.set_palette(
-                        self.palette_index,
-                        self.palette_count,
-                        self.palette_dither,
-                        self.palette_on,
-                    );
+                    // Push the palette (biome-blended ramp in biome mode, else the manual
+                    // selection) + pixel scale (E10) before drawing.
+                    if let Some(b) = bio {
+                        state.set_palette_colors(&b.colors, b.count, b.dither);
+                    } else {
+                        state.set_palette(
+                            self.palette_index,
+                            self.palette_count,
+                            self.palette_dither,
+                            self.palette_on,
+                        );
+                    }
                     state.set_pixel_scale(self.pixel_scale);
                     // `render` handles lost/outdated/transient surfaces internally.
                     state.render(
@@ -1131,6 +1176,7 @@ impl ApplicationHandler<AppEvent> for App {
                         &particles,
                         [self.wobble, self.color_steps],
                         self.toggles,
+                        sun_amt,
                     );
 
                     // Perf HUD (M5): smooth the frame time, refresh a few times/sec.
@@ -1155,7 +1201,10 @@ impl ApplicationHandler<AppEvent> for App {
                         } else {
                             String::new()
                         };
-                        let pal = if self.palette_on {
+                        // In biome mode, show the (blended) biome name; else the manual palette.
+                        let pal = if self.biome_mode {
+                            format!(" · biome {}", self.biome_label)
+                        } else if self.palette_on {
                             format!(
                                 " · {} {}c",
                                 palette::PALETTES[self.palette_index].name,
@@ -1164,8 +1213,14 @@ impl ApplicationHandler<AppEvent> for App {
                         } else {
                             String::new()
                         };
+                        // In biome mode the toggles are auto-driven, so don't clutter with them.
+                        let off = if self.biome_mode {
+                            String::new()
+                        } else {
+                            self.toggles.off_summary()
+                        };
                         let hud = format!(
-                            "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{}",
+                            "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{off}",
                             self.frame_ms_ema,
                             self.seed,
                             s.drawn_chunks,
@@ -1174,7 +1229,6 @@ impl ApplicationHandler<AppEvent> for App {
                             s.particles,
                             s.splats,
                             s.relics,
-                            self.toggles.off_summary(),
                         );
                         // In-engine text overlay on every platform (no DOM HUD).
                         state.set_hud(&hud);
@@ -1350,6 +1404,8 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         creatures: creatures::Swarm::new(view.seed ^ 0xE15_E15, 7, pos, 80.0),
         text_cells: std::collections::HashSet::new(),
         audio_prev_pos: None,
+        biome_mode: true, // the new default mode
+        biome_label: String::new(),
         pad: gamepad::Pad::new(),
         // Start the drone on the world seed so the dirge matches the world (native; a no-op
         // None if there's no audio device). Web starts audio from the page on first tap.

@@ -697,8 +697,13 @@ impl State {
     }
 
     /// Update the in-engine text overlay (HUD), drawn each frame over the finished image.
+    /// Word-wraps to the current surface width (at the HUD's font scale) so long status + biome
+    /// lines break at the screen edge instead of running off it.
     pub fn set_hud(&mut self, text: &str) {
-        self.hud.set_text(&self.device, &self.queue, text);
+        let scale = (self.config.height / 360).max(2);
+        let max_cols = ((self.config.width.saturating_sub(16)) / (8 * scale)).max(12) as usize;
+        let wrapped = crate::hud::wrap(text, max_cols);
+        self.hud.set_text(&self.device, &self.queue, &wrapped);
     }
 
     /// Replace the in-world inscriptions (E17): clears the current labels and rebuilds them
@@ -785,6 +790,12 @@ impl State {
             dither,
             on,
         );
+    }
+
+    /// Set the palette from an explicit (biome-blended) colour ramp; turns the pass on.
+    pub fn set_palette_colors(&mut self, colors: &[[f32; 3]], count: u32, dither: f32) {
+        self.palette_on = true;
+        self.palette.set_colors(&self.queue, colors, count, dither);
     }
 
     /// Last frame's draw counts, for the perf HUD.
@@ -878,6 +889,9 @@ impl State {
         particles: &[ParticleInstance],
         aesthetic: [f32; 2],
         toggles: Toggles,
+        // Directional-sun amount 0..1 (biome mode passes a blended level; manual mode passes
+        // 0/1 from the `sun` toggle) so the point-lit↔sunlit mood crossfades.
+        sun: f32,
     ) {
         let time = self.start.elapsed().as_secs_f32();
         // Particles off → draw none (the system keeps simulating; cheap).
@@ -907,7 +921,12 @@ impl State {
             palette: PALETTE,
             params: [aesthetic[0], aesthetic[1], fog_start, fog_end],
             // w = directional-sun flag (0 = off → point-lit only).
-            camera_pos: [camera_pos.x, camera_pos.y, camera_pos.z, flag(toggles.sun)],
+            camera_pos: [
+                camera_pos.x,
+                camera_pos.y,
+                camera_pos.z,
+                sun.clamp(0.0, 1.0),
+            ],
             // w carries the "ink" blueprint-grid flag (E10) for the chunk shader.
             fog_color: [FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2], flag(toggles.ink)],
             flags: [
