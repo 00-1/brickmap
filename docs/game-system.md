@@ -151,3 +151,68 @@ console. No tutorial wall; the example *is* the teacher.
   §8 (the tree → the block vocabulary), and the **G-series** build order (a minimal block
   runtime comes in with the first gameplay slices; scan/collect/beam are *blocks*). Those
   will be reconciled to point here; the detailed re-slice of the G-series is a follow-up.
+
+## 11. Starter set & unlock tiers (first cut)
+
+A concrete first cut — ~6 blocks to start, ~two dozen across the first three tiers, then
+combinatorial growth. Illustrative + expandable; the *shape* is the commitment. Blocks are
+tagged **ship / foot / shared**.
+
+### Tier 0 — what you begin with (the starter handful)
+Enough to play the whole loop by hand + see two given automations.
+- **Actions:** `scan` (ship) · `fire-beam` (foot — survey-beam: collect-along-path + ride) ·
+  `collect` (shared) · `spend` (shared)
+- **Nav:** `drift` (ship — aimless cinematic wander = **today's default autopilot**) ·
+  `goto(area|site)` (ship — direct travel to a picked map target)
+- **Trigger:** `on-scan`
+- **Given, pre-wired (shown as blocks):** a `drift` nav routine **and** `on-scan → collect`
+  — the autopilot you can open and rewire. Direct flight/walk stay native controls.
+
+### Tier 1 — "make it yours" (first comprehension unlocks)
+- **Actions:** `decode(stratum)` (shared — raw → comprehension, feeds unlocks) · `hail`
+  (foot — recall the ship)
+- **Nav:** `seek(criteria)` (ship — head to nearest dense/rare/uncollected = the old "learns
+  to seek") · `circle(area)` / `orbit(target)` (ship — loiter & work an area)
+- **Trigger:** `on-arrive`
+- **Condition:** `match(field)` — one generic filter; you unlock *fields* as you comprehend
+  them (script → stratum → rarity → uncollected → range). *(Chosen default: one generic
+  `match` with pickable fields, not many separate filter blocks.)*
+
+### Tier 2 — "compose & control"
+- **Flow:** `sequence` · `repeat` · `wait`
+- **Nav:** `survey(region)` (sweep a picked region) · `route(sites)` (run a circuit) · `hold`
+- **Actions:** `land` / `ascend` (ship) · `disembark` (ship↔foot)
+- **Trigger:** `when(state)` — economy/world thresholds via pickers (`shards ≥ N`,
+  `buffer ≥ %`, in-range)
+- **Control:** `budget(resource, %)` · `cap` · `priority`
+
+### Tier 3 — "meta & the expedition" (deep, rare-stratum-gated)
+- **Meta:** `enable/disable routine` · `switch routine-set` · `run(routine)` — incl.
+  **cross-agent** (a ship routine that runs the walker's routine)
+- **Triggers:** `on-buffer-full` · `on-complete` · `on-region-illuminated`
+
+### How acquisition is gated
+Blocks unlock through **comprehension** (decoded strata), and **rarity of stratum ≈
+depth/power of block**: Records → Tier 0–1 basics; Schematics → routing/flight + budget;
+Rites → the perception/condition vocabulary; Relics → control/meta; Signals (rarest) → the
+deepest meta + cross-agent. So *what you can automate* tracks *how much you've understood*,
+and the deepest automation leans on the manual expeditions that yield rare strata.
+(Autopilot still completes the core; deepest meta is the optional frontier.)
+
+### Two wiring notes
+- **Scan populates the map.** Terrain/biome fills for free (E10); `scan` adds **items/sites**
+  on top (the opportunity surface). The **map is also the spatial picker** for nav targets
+  (`goto`/`survey`/`route` point at map areas/sites) → the loop `scan → map → nav → scan`.
+- **Nav stays high-level.** Maneuvers over areas/targets/criteria, never up/down/left/right;
+  the engine's existing auto-fly *executes* them. The default autopilot is just the given
+  `drift` routine; "the ship learns to seek" is swapping in `seek`/`survey`/`route`.
+
+### The feel, evolving (example routines)
+- **Start (given):** `on-scan → collect`, alongside `drift`.
+- **Tier 1:** `on-scan → match(script = Runic) → collect`; nav `seek(uncollected)`.
+- **Tier 2:** `repeat: on-scan → match(uncollected & buffer < 90%) → collect` + standing
+  `when shards ≥ 50 → spend(sensing)` + `budget: 60% Records → faculties`; nav
+  `route(pinned sites)`.
+- **Tier 3 (automated expedition):** ship `goto(nearest uncollected) → land → run(foot:
+  "sweep") → on-complete → ascend → repeat`; foot "sweep" `repeat: fire-beam(nearest
+  uncollected) until buffer full → hail`.

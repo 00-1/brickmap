@@ -328,9 +328,10 @@ The cruiser's auto-scan (§6) and what it reveals on the map.
 ### 8.3 Locomotion — *reach* &nbsp;(feeds: Schematics, Relics) — the *flight* and *foot* games' own paths
 
 *Autopilot (shared with Memory):*
-- **Autopilot Heuristics I–III** — *"the ship learns to seek"*: the drift stops being
-  blind and routes toward dense / rare / **undiscovered** sites (into the forward scan
-  zone). The idle layer literally improves itself.
+- **Ship nav blocks** — autopilot *is* a composed nav routine ([`game-system.md`](game-system.md)):
+  the default is `drift`; unlocking `seek(criteria)` / `survey(region)` / `route(sites)` is
+  how *"the ship learns to seek"* (route toward dense / rare / undiscovered sites). High-level
+  maneuvers over map areas/targets, not raw direction.
 
 *Manual flight:*
 - **Drift Efficiency / Range** — go further between stops.
