@@ -641,8 +641,18 @@ impl App {
         }
     }
 
+    /// G6: refresh which blocks the console offers from what's been comprehended (the growing
+    /// vocabulary). Cheap (five checks); called before the console is used or rendered.
+    fn sync_console_unlock(&mut self) {
+        self.console.unlocked = progress::Stratum::ALL
+            .into_iter()
+            .filter(|&s| self.progress.is_comprehended(s))
+            .collect();
+    }
+
     /// G4: keyboard/pad control of the open console (no typing) — cursor + confirm.
     fn console_key(&mut self, code: KeyCode) {
+        self.sync_console_unlock();
         match code {
             KeyCode::KeyO | KeyCode::Escape => self.console.open = false,
             KeyCode::ArrowUp | KeyCode::KeyW => self.console.move_cursor(-1),
@@ -670,6 +680,13 @@ impl App {
 
     /// G4: run a console block once — parity with its keybind shortcut; routines call this too.
     fn dispatch_block(&mut self, b: console::Block) {
+        if !self.console.is_unlocked(b) {
+            log::info!(
+                "block {}: not yet recovered — decode its stratum",
+                b.label()
+            );
+            return;
+        }
         match b {
             console::Block::Scan => self.scan_pulse(),
             console::Block::Collect => self.collect_aimed(),
@@ -1905,6 +1922,9 @@ impl ApplicationHandler<AppEvent> for App {
                 // G1/G4 HUD overlays, computed before the mutable `state` borrow below.
                 let strata_line = self.strata_hud();
                 let codex_view = self.codex_open.then(|| self.codex_text());
+                if self.console.open {
+                    self.sync_console_unlock(); // refresh the vocabulary for the render (G6)
+                }
                 let console_view = self.console.open.then(|| self.console.render());
 
                 if let Some(state) = self.state.as_mut() {

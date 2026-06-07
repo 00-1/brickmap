@@ -602,11 +602,15 @@ blocks** + nav `seek`/`circle`. *The management game: selective auto-collect + r
   tests; golden voxel-hash + headless render unchanged. *(v1 editor = parameter steppers on the
   given routines; free-form insert/remove grows with G6.)*
 
-### ✨ G6 — Control, budgets & the block vocabulary (the "tree") ⏳
-`when`/`repeat`/`budget`/`priority`/`survey`/`route`/`scanMany` + `decode` + the comprehension-
-gated **unlock economy** (strata → blocks) + **Decipherment legibility** (a script renders
-translated). The "tech tree" *as the growing block vocabulary* — the deep idle/management depth;
-carries the superseded G4's auto-collect + legibility goals.
+### ✨ G6 — Control, budgets & the block vocabulary (the "tree") ◑ &nbsp;→ [`milestones/G6-vocabulary-decode.md`](milestones/G6-vocabulary-decode.md)
+`decode` + the comprehension-gated **unlock economy** (strata → blocks) + **Decipherment
+legibility** (a script renders translated). The "tech tree" *as the growing block vocabulary*.
+- **Landed:** `decode` block → `progress::comprehend` (spends a stratum's data, persisted `pg=`
+  v3); a per-block `required(stratum)` gate grows the console vocabulary (palette shows locks;
+  nav/filter cycling + dispatch gated); a comprehended script's inscriptions render **translated**
+  via a seeded `lexicon` grammar. 144 tests; golden voxel-hash unchanged.
+- **Deferred to G7:** the `when`/`repeat`/`budget`/`priority`/`survey`/`route`/`scanMany` control
+  vocabulary (needs the general free-form routine runtime/editor that lands with G7).
 
 ### ✨ G7+ — Two agents, the expedition & the arc ⏳
 The walking branch (Descent/Hull foot-collision interiors) + **independent simultaneous agents**

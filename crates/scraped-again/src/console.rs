@@ -64,6 +64,17 @@ impl Block {
             Block::OnScan => "on-scan",
         }
     }
+    /// The stratum whose **comprehension** (G6 `decode`) recovers this block — `None` = a
+    /// starter (Tier 0). This is the "tree": decoding grows the vocabulary (game-system §4).
+    pub fn required(self) -> Option<crate::progress::Stratum> {
+        use crate::progress::Stratum;
+        match self {
+            Block::Seek | Block::Circle | Block::Goto => Some(Stratum::Schematics),
+            Block::Match(_) => Some(Stratum::Rites),
+            _ => None, // scan/collect/fire-beam/decode/drift/spend/on-scan are starters
+        }
+    }
+
     /// Wired to real behaviour? (`spend`/`goto` are vocabulary stubs for now.)
     pub fn wired(self) -> bool {
         matches!(
@@ -104,6 +115,8 @@ pub struct Console {
     pub cursor: usize,
     pub routines: Vec<Routine>,
     pub palette: Vec<Block>,
+    /// Comprehended strata (synced from `progress` each frame) — gates the block vocabulary (G6).
+    pub unlocked: std::collections::HashSet<crate::progress::Stratum>,
 }
 
 impl Default for Console {
@@ -134,6 +147,7 @@ impl Default for Console {
                 Block::Goto,
                 Block::Drift,
             ],
+            unlocked: std::collections::HashSet::new(),
         }
     }
 }
@@ -189,6 +203,11 @@ impl Console {
         self.routines.iter_mut().find(|r| r.name == name)
     }
 
+    /// Has this block been recovered? (Starters always; gated blocks need their stratum decoded.)
+    pub fn is_unlocked(&self, b: Block) -> bool {
+        b.required().is_none_or(|s| self.unlocked.contains(&s))
+    }
+
     /// The current nav block of the `drift` routine (Drift / Seek / Circle).
     pub fn nav_block(&self) -> Block {
         self.routine("drift")
@@ -211,15 +230,23 @@ impl Console {
     pub fn cycle_param(&mut self, i: i32) {
         match self.selected() {
             Sel::Routine(r) if self.routines[r].name == "drift" => {
-                const NAV: [Block; 3] = [Block::Drift, Block::Seek, Block::Circle];
-                let cur = NAV.iter().position(|b| *b == self.nav_block()).unwrap_or(0) as i32;
-                let next = NAV[(((cur + i) % 3 + 3) % 3) as usize];
+                // Only cycle to nav blocks that have been recovered (Seek/Circle need Schematics).
+                let nav: Vec<Block> = [Block::Drift, Block::Seek, Block::Circle]
+                    .into_iter()
+                    .filter(|b| self.is_unlocked(*b))
+                    .collect();
+                let cur = nav.iter().position(|b| *b == self.nav_block()).unwrap_or(0) as i32;
+                let n = nav.len() as i32;
+                let next = nav[(((cur + i) % n + n) % n) as usize];
                 if let Some(d) = self.routine_mut("drift") {
                     d.continuous = vec![next];
                 }
             }
             Sel::Routine(r) if self.routines[r].name == "survey" => {
-                // Cycle the filter: none ↔ match(rare).
+                // Cycle the filter: none ↔ match(rare) — only once `match` is recovered (Rites).
+                if !self.is_unlocked(Block::Match(MatchField::Rare)) {
+                    return;
+                }
                 let on = self.filter().is_some();
                 if let Some(s) = self.routine_mut("survey") {
                     s.on_scan = if on {
@@ -294,7 +321,14 @@ impl Console {
         s.push_str("blocks (Enter runs):\n");
         for b in &self.palette {
             let cur = if row == self.cursor { ">" } else { " " };
-            let tag = if b.wired() { "" } else { "  (—)" };
+            // Locked blocks read as a recovered-but-un-comprehended man-page entry (decode to gain).
+            let tag = match b.required() {
+                Some(s2) if !self.unlocked.contains(&s2) => {
+                    format!("  (locked: decode {})", s2.label())
+                }
+                _ if !b.wired() => "  (—)".to_string(),
+                _ => String::new(),
+            };
             s.push_str(&format!("{cur} {}{}\n", b.label(), tag));
             row += 1;
         }
@@ -352,6 +386,7 @@ mod tests {
     #[test]
     fn cycle_nav_steps_drift_seek_circle() {
         let mut c = Console::default();
+        c.unlocked.insert(crate::progress::Stratum::Schematics); // recover seek/circle
         assert_eq!(c.nav_block(), Block::Drift); // cursor on drift (row 0)
         c.cycle_param(1);
         assert_eq!(c.nav_block(), Block::Seek);
@@ -366,6 +401,7 @@ mod tests {
     #[test]
     fn cycle_filter_toggles_match_rare() {
         let mut c = Console::default();
+        c.unlocked.insert(crate::progress::Stratum::Rites); // recover match()
         c.move_cursor(1); // survey row
         assert_eq!(c.filter(), None);
         c.cycle_param(1);
@@ -376,8 +412,35 @@ mod tests {
     }
 
     #[test]
-    fn routine_state_round_trips_through_co_segment() {
+    fn vocabulary_is_gated_by_comprehension() {
+        use crate::progress::Stratum;
         let mut c = Console::default();
+        // Starters are always available; seek/match are locked until their stratum is decoded.
+        assert!(c.is_unlocked(Block::Scan) && c.is_unlocked(Block::Decode));
+        assert!(!c.is_unlocked(Block::Seek) && !c.is_unlocked(Block::Match(MatchField::Rare)));
+        // Cycling nav can't reach Seek while locked.
+        c.cycle_param(1);
+        assert_eq!(c.nav_block(), Block::Drift);
+        // Comprehend Schematics → seek unlocks + becomes reachable.
+        c.unlocked.insert(Stratum::Schematics);
+        assert!(c.is_unlocked(Block::Seek));
+        c.cycle_param(1);
+        assert_eq!(c.nav_block(), Block::Seek);
+        // The filter stays locked until Rites.
+        c.move_cursor(1); // survey
+        c.cycle_param(1);
+        assert_eq!(c.filter(), None);
+        c.unlocked.insert(Stratum::Rites);
+        c.cycle_param(1);
+        assert_eq!(c.filter(), Some(MatchField::Rare));
+    }
+
+    #[test]
+    fn routine_state_round_trips_through_co_segment() {
+        use crate::progress::Stratum;
+        let mut c = Console::default();
+        c.unlocked.insert(Stratum::Schematics);
+        c.unlocked.insert(Stratum::Rites);
         c.cycle_param(1); // drift → seek
         c.move_cursor(1);
         c.cycle_param(1); // survey filter → rare

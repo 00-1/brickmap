@@ -57,6 +57,11 @@ players climb it (the management game), hands-on players live near the bottom. S
   (`when shards ≥ N → spend-shard(sensing)`). Normal upgrade *menus* are simply the
   collection of spend-targets, shown as blocks.
 
+> **◑ Realised in G6:** `decode` spends a stratum's data to comprehend it, which gates the
+> console's block vocabulary (a per-block `required(stratum)` table — Schematics → seek/circle/
+> goto; Rites → match) and makes that script legible (translated rendering). The deeper control/
+> meta vocabulary lands with G7. See [`milestones/G6-vocabulary-decode.md`](milestones/G6-vocabulary-decode.md).
+
 ## 4. Progression = the growing block vocabulary (the "tech tree", reframed)
 
 **The blocks themselves are the upgrades.** You **do not start with the vocabulary** — you

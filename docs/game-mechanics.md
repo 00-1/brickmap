@@ -459,7 +459,7 @@ survive, reframed as the console + composed routines + comprehension unlocks (G4
 5. **✅ G5 — Composition editor & parameterised blocks.** The **wiring editor** (author routines)
    + the generic `match` filter + parameterised blocks (swap `scan`'s item; unlock fields) + nav
    `seek`/`circle`. *The management game — selective auto-collect + routing you build.*
-6. **⏳ G6 — Control, budgets & the block vocabulary (the "tree").** `when`/`repeat`/`budget`/
+6. **◑ G6 — Control, budgets & the block vocabulary (the "tree").** `when`/`repeat`/`budget`/
    `priority`/`survey`/`route`/`scanMany` + `decode` + the comprehension-gated **unlock economy**
    (strata → blocks) + **Decipherment legibility**. The tree *as the growing block vocabulary*.
 7. **⏳ G7+ — Two agents, the expedition & the arc.** Walking branch (Descent/Hull interiors) +
