@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use glam::Vec3;
 
 use crate::world::{BlockId, ChunkCoord, Section};
+use crate::WorldGen;
 
 /// One world-mutating edit. The whole editing/sharing/broadcast story funnels through
 /// this enum and [`apply`] — nothing else pokes the overlay directly.
@@ -35,19 +36,18 @@ pub fn world_to_chunk_local(pos: [i32; 3]) -> Option<(ChunkCoord, u32, u32, u32)
     Some((coord, lx, pos[1] as u32, lz))
 }
 
-/// Apply an edit to the `overlay`, materialising the affected section from the seed if it
-/// isn't already overlaid. Returns the dirtied `ChunkCoord` and the **previous** block
-/// (so callers can record an inverse edit for undo), or `None` if out of range / no-op.
+/// Apply an edit to the `overlay`, materialising the affected section from `gen` (the
+/// game's [`WorldGen`] recipe) if it isn't already overlaid. Returns the dirtied
+/// `ChunkCoord` and the **previous** block (so callers can record an inverse edit for
+/// undo), or `None` if out of range / no-op.
 pub fn apply(
     overlay: &mut HashMap<ChunkCoord, Section>,
-    seed: u32,
+    gen: &dyn WorldGen,
     edit: &Edit,
 ) -> Option<(ChunkCoord, Edit)> {
     let Edit::Set { pos, block } = *edit;
     let (coord, lx, ly, lz) = world_to_chunk_local(pos)?;
-    let sec = overlay
-        .entry(coord)
-        .or_insert_with(|| crate::worldgen::generate_section(coord.0, coord.2, seed));
+    let sec = overlay.entry(coord).or_insert_with(|| gen.generate(coord));
     let prev = sec.get(lx, ly, lz);
     if prev == block {
         return None; // no-op: don't dirty or log
@@ -145,6 +145,18 @@ mod tests {
 
     const STONE: BlockId = BlockId(1);
 
+    /// A trivial recipe for testing `apply` without the game: an empty (all-air) world.
+    /// `apply` only needs *a* base section to overlay onto.
+    struct EmptyGen;
+    impl WorldGen for EmptyGen {
+        fn generate(&self, _coord: ChunkCoord) -> Section {
+            Section::new()
+        }
+        fn solid(&self, _x: i32, _y: i32, _z: i32) -> bool {
+            false
+        }
+    }
+
     #[test]
     fn world_to_chunk_local_wraps_negatives() {
         // x = -1 → chunk -1, local SIZE-1.
@@ -163,12 +175,12 @@ mod tests {
             pos: [3, 10, 3],
             block: STONE,
         };
-        let (coord, inverse) = apply(&mut overlay, 1337, &set).unwrap();
+        let (coord, inverse) = apply(&mut overlay, &EmptyGen, &set).unwrap();
         assert_eq!(coord, (0, 0, 0));
         // The voxel is now stone.
         assert_eq!(overlay[&coord].get(3, 10, 3), STONE);
         // Applying the inverse restores the original block (and dirties the same chunk).
-        let (coord2, _) = apply(&mut overlay, 1337, &inverse).unwrap();
+        let (coord2, _) = apply(&mut overlay, &EmptyGen, &inverse).unwrap();
         assert_eq!(coord2, coord);
         assert_ne!(overlay[&coord].get(3, 10, 3), STONE);
     }
@@ -182,7 +194,7 @@ mod tests {
             block: BlockId::AIR,
         };
         // A high cell in the demo seed is air; setting it to air should be a no-op.
-        assert!(apply(&mut overlay, 1337, &set_air).is_none());
+        assert!(apply(&mut overlay, &EmptyGen, &set_air).is_none());
     }
 
     #[test]

@@ -3,13 +3,15 @@
 //! mutation seam, and the cellular-automata substrate (`sim`). Knows nothing about wgpu
 //! or how the world is drawn (architecture §3–4).
 //!
-//! `worldgen` currently still carries the *terrain recipe* (block ids, sea level, cave
-//! thresholds) alongside the reusable noise; M9 Phase 3 lifts that recipe out into the
-//! game behind a `WorldGen` trait, leaving the pure noise here.
+//! The reusable procedural **noise** primitives live in [`noise`]; the terrain *recipe*
+//! that composes them into a specific world is the game's, supplied through the
+//! [`WorldGen`] seam (M9).
 
 pub use bm_core;
+pub use gen::WorldGen;
 
 pub mod edit;
+pub mod gen;
+pub mod noise;
 pub mod sim;
 pub mod world;
-pub mod worldgen;

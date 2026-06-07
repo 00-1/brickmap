@@ -23,8 +23,8 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 // app + content modules keep resolving `crate::world::…`, `crate::gfx::…`, etc. (the game
 // consumes the engine purely through the `brickmap` facade — never the bm-* crates).
 pub use brickmap::{
-    edit, foliage, gamepad, gfx, hud, map, mesh, palette, particles, post, scene, ship, sim, text,
-    textures, visibility, world, worldgen,
+    edit, foliage, gamepad, gfx, hud, map, mesh, noise, palette, particles, post, scene, ship, sim,
+    text, textures, visibility, world, WorldGen,
 };
 
 pub mod audio;
@@ -34,6 +34,8 @@ pub mod creatures;
 pub mod palettes;
 pub mod player;
 pub mod relic;
+// The terrain recipe — this game's specific world, composed from the engine's noise.
+pub mod worldgen;
 // cpal audio output (E16): desktop + **Android** (AAudio backend); web uses Web Audio.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod audio_native;
@@ -394,7 +396,9 @@ impl App {
             world::BlockId::AIR
         };
         let cmd = edit::Edit::Set { pos: target, block };
-        if let Some((coord, inverse)) = edit::apply(&mut self.overlay, seed, &cmd) {
+        if let Some((coord, inverse)) =
+            edit::apply(&mut self.overlay, &worldgen::TerrainGen { seed }, &cmd)
+        {
             self.undo.push(inverse);
             self.remesh(coord);
         }
@@ -406,7 +410,9 @@ impl App {
             return;
         };
         let seed = self.seed;
-        if let Some((coord, _)) = edit::apply(&mut self.overlay, seed, &inverse) {
+        if let Some((coord, _)) =
+            edit::apply(&mut self.overlay, &worldgen::TerrainGen { seed }, &inverse)
+        {
             self.remesh(coord);
         }
     }

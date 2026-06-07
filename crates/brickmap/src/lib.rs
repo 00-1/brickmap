@@ -18,4 +18,4 @@ pub use bm_mesh::{mesh, visibility};
 pub use bm_platform::gamepad;
 pub use bm_render::{foliage, gfx, hud, map, palette, particles, post, ship, text, textures};
 pub use bm_scene::scene;
-pub use bm_world::{edit, sim, world, worldgen};
+pub use bm_world::{edit, noise, sim, world, WorldGen};
