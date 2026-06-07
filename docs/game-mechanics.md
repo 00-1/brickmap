@@ -82,9 +82,9 @@ is the **tech-tree + codex UI** (§12).
 
 ```
         ┌──────────────────────── AUTOPILOT (idle / broad) ───────────────────────┐
-        │  drift the endless world ▸ ambient sweep logs common glyphs into a       │
-        │  buffer (capped by Memory tech) ▸ the ship learns to seek dense/rare/    │
-        │  undiscovered sites (Locomotion tech)                                    │
+        │  drift the endless world ▸ the ship auto-SCANS what it passes → fills    │
+        │  the map ▸ (unlocked) auto-COLLECTS the common layer into a buffer ▸     │
+        │  and learns to seek dense/rare/undiscovered sites (Locomotion tech)      │
         └───────────────┬──────────────────────────────────────────────────────────┘
                         │ data accrues
                         ▼
@@ -129,10 +129,25 @@ mechanically load-bearing.
 
 ## 6. Collection & the survey-beam
 
-- **Ambient sweep (autopilot / passive).** Inscriptions within a *survey radius* of the
-  drifting cruiser are auto-logged, trickling mostly **Records** (+ some **Schematics**)
-  into a buffer. Rate and radius scale with Sensing/Memory tech. This is the idle layer:
-  the cinematic auto-fly (D3) becomes a slow, self-improving harvester.
+There are **two tiers of information**, made visible as **two beams** (both drawn
+post-palette so they read as vivid against the muted world — distinguished by colour):
+
+- **Scan (auto, the cruiser, a cool colour).** As you drift, the ship **automatically
+  fires short-lived scan beams** at things you pass — they **update the map** (a thing
+  *exists / what kind* it is), but **don't harvest** it. This is the idle layer made
+  diegetic: you *see* the ship reading the world, and the map fills as you go. *What the
+  scan can detect* grows with Sensing tech (terrain/biome → inscriptions → ethereal
+  colossi → buried/cave finds → rare-stratum hints). The map becomes a live **opportunity
+  surface** (scan pins *uncollected* sites; you triage).
+- **Collect (the warm beam, manual by default).** Your survey-beam (below) is what
+  actually **extracts the data/lore** into the strata + codex. Scan tells you *where*;
+  collection takes *the thing*.
+- **Auto-collect (an unlock).** A Memory/Automation upgrade lets the cruiser **auto-fire
+  *collection* beams** (in the collection colour) and harvest as you pass — the idle
+  harvest, which you can watch working. **Guard:** auto-collect only ever takes the
+  **common/ambient layer** (Records, easy in-range glyphs); **rare strata, interiors, and
+  decoding keys still require the manual beam / going there.** Automation removes the
+  *chore*, never the *expedition*.
 - **Targeted collection (manual / foot).** The **rare strata, decoding keys, and
   interiors** are *only* reachable by hand:
   - a **named colossus's** monument inscription (E17 `colossus_label`),
@@ -150,8 +165,9 @@ everything rare, deep, interior, or decoding-critical must be gone to.**
 ### The survey-beam — the active verb (collection *and* traversal)
 
 Manual play's signature move, and the cheapest, most on-theme way to do both jobs at
-once. You start with a basic one (it's never gated behind the tree); the tree only
-deepens it.
+once. This is the **warm collection beam** (distinct from the cruiser's cool auto-**scan**
+beam, §6). You start with a basic one (it's never gated behind the tree); the tree only
+deepens it — and Memory's **Auto-Collect** later lets the cruiser fire it for you.
 
 **What it is.** A straight, solid, vivid **light/energy beam** you cast from the player
 toward an aimed point (the E14 DDA pick gives the aim). It is **heavy and deliberate** —
@@ -224,14 +240,15 @@ Five branches. Nodes are **illustrative** (the structure is the commitment); eac
 is meant to deepen "to the extreme" over time, terminating in a long, expensive
 late-game arc. **Every node is comprehension or reach — never force.**
 
-### 8.1 Sensing — *perceive & sweep* &nbsp;(feeds: Records, Schematics)
-- **Survey Radius I–V** — widen the ambient-sweep range.
-- **Sweep Rate I–V** — log faster as the world drifts past.
-- **Deep Scan** — detect *buried / sub-surface* glyphs (read cave inscriptions from
-  above; mark them on the map).
-- **Spectral Sight** — reveal **ethereal** colossi and faint inscriptions you'd
-  otherwise drift through without noticing.
-- **Cartograph I–III** — map resolution; pin *uncollected* sites; show stratum hints.
+### 8.1 Sensing — *the scan beam: what the ship can read* &nbsp;(feeds: Records, Schematics)
+The cruiser's auto-scan (§6) and what it reveals on the map.
+- **Scan Range / Rate I–V** — widen and quicken the auto-scan as you drift.
+- **Scan: Inscriptions** — pick up glyphs/monuments as sites on the map (not just
+  terrain/biome, which the map shows from the start).
+- **Deep Scan** — detect *buried / sub-surface* finds (cave inscriptions from above).
+- **Spectral Sight** — reveal **ethereal** colossi you'd otherwise drift through unseen.
+- **Stratum Hints** — the scan flags *which strata* a pinned site likely holds.
+- **Cartograph I–III** — map resolution; pin *uncollected* sites (the opportunity surface).
 
 ### 8.2 Decipherment — *the lore spine* &nbsp;(feeds: each script's own data + Relics)
 - **Legibility: Records → Schematics → Rites → Relics → Signals** — five gated unlocks;
@@ -272,8 +289,13 @@ late-game arc. **Every node is comprehension or reach — never force.**
   (the idle-accrual cap).
 - **Indexing** — offline/unattended accrual efficiency (data builds while the app drifts
   on autopilot with no input).
-- **Automation: Auto-Log** (collect without confirming) → **Auto-Route** (chain
-  autopilot between known sites).
+- **Auto-Collect I–III** — the cruiser begins **auto-firing *collection* beams** (the
+  warm colour) to harvest as you pass — the idle harvest, visible on screen. Bounded by
+  the guard in §6: it only ever takes the **common/ambient** layer; rare strata,
+  interiors, and decoding keys stay manual. Tiers widen its range / what common strata it
+  grabs.
+- **Auto-Route** — chain autopilot between known (scanned) sites so the ship runs its own
+  survey circuit.
 - **Synthesis** (late) — convert accumulated understanding into the most advanced
   faculties: the **"to the extreme"** terminus — e.g. perceive the *whole* dead
   network's shape, time-lapse the ruin, translate the giants' final transmissions. A
@@ -312,7 +334,8 @@ no new persistence model.
 
 | Mechanic | Built on | Genuinely new |
 |---|---|---|
-| Autopilot idle sweep | D3 auto-fly + E17 inscriptions + seed placement | survey-radius check + data accrual/buffer |
+| Cruiser auto-scan (cool beam → map) | D3 auto-fly + E10 map + seed placement | short-lived scan beams; scan-category gating |
+| Auto-collect (warm beam, unlocked) | the survey-beam, cruiser-fired | automated common-layer harvest + the rare-stays-manual guard |
 | Manual/foot expeditions | E19 modes (+ foot-collision follow-up) | "what's exclusive to manual" gating |
 | **Survey-beam** (collect + decaying rail + interaction verb) | E14 DDA pick + `solid` oracle + walker + E19 mode machine; emissive/bloom | lifespan/fade + 1-D attach-slide + line-sweep collect + contact-to-interact (board cruiser w/ lock-on, reach-gated) + **post-palette depth-aware vivid draw** |
 | Glyph collection | E17 world-text + E14 DDA pick | collect event; script→stratum yield |
