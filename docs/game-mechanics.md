@@ -126,7 +126,7 @@ This is the roguelike "letters are items" idea unbound from single glyphs: **scr
 category/rarity, the word = the specific sample.** And it makes all five scripts
 mechanically load-bearing.
 
-## 6. Collection — passive vs active
+## 6. Collection & the survey-beam
 
 - **Ambient sweep (autopilot / passive).** Inscriptions within a *survey radius* of the
   drifting cruiser are auto-logged, trickling mostly **Records** (+ some **Schematics**)
@@ -145,6 +145,52 @@ mechanically load-bearing.
 
 The rule that keeps manual play essential: **autopilot sweeps the common ambient layer;
 everything rare, deep, interior, or decoding-critical must be gone to.**
+
+### The survey-beam — the active verb (collection *and* traversal)
+
+Manual play's signature move, and the cheapest, most on-theme way to do both jobs at
+once. You start with a basic one (it's never gated behind the tree); the tree only
+deepens it.
+
+**What it is.** A straight, solid, vivid **light/energy beam** you cast from the player
+toward an aimed point (the E14 DDA pick gives the aim). It is **heavy and deliberate** —
+a ponderous instrument, not a snappy zap — and once cast it **persists in space for a
+while**, then **fades** until it stops working.
+
+**It does two things with one cast:**
+- **Collects along its whole path.** On cast, every glyph the line passes through is
+  harvested at once (a one-shot sweep) — so you line shots up *through* clusters of
+  inscriptions, and *through* the **ethereal** drift-through colossi (an energy beam
+  reads what you can't stand on — this is how the untouchable giants get collected).
+- **Becomes a temporary rail.** While it's up, you **attach to it and move along its
+  single axis** (1 DoF — not walking a catwalk; a rail you clip onto), at **any angle**:
+  vertical = an ascent out of a pit, diagonal = a climb up a cliff, horizontal = a
+  crossing. This is the answer to *"you get stuck too easily"* — fire a ramp, ride it.
+
+**Lifespan is the reach budget.** Your reach is how far you get before the beam dies.
+Still attached when it expires → you **drop** from that point (walker gravity; a gentle
+consequence, not a fail — and you can **fire-and-attach mid-fall to save yourself**). You
+can also **detach on purpose** to drop precisely onto a ledge or a glyph cluster.
+
+**Multi-segment routes.** With more than one beam up at once (an upgrade — see below),
+you lay out a **path through space** and ride it segment to segment, racing each one's
+fade. Chaining beams *is* the skill expression and the tension.
+
+**Rendering (note for the engine).** The beam draws **after the palette post-process**,
+so it keeps its **raw vivid colour** — the one thing in frame *not* mapped onto the
+world's muted ramp, reading as artificial / yours / technology cutting through the murk
+(thematically: comprehension is the one vivid thing in a desaturated grave). To still
+feel *in* the world (occluded by terrain it passes behind, riding its true path), it must
+be **depth-tested against the scene** even though it draws post-palette — i.e. the engine
+keeps scene depth through the post chain and exposes a **post-palette, depth-aware,
+non-palettised emissive overlay** draw. That's a small new engine capability the
+engine/game seam should own (flagged in [M9](milestones/M9-engine-game-split.md)); it
+also won't get the scene's pre-palette bloom, so it wants its own cheap glow.
+
+**Cost.** Cheap: one emissive segment, a lifespan timer + fade, a line-vs-glyph
+intersection on cast (a handful of nearby inscriptions), and a 1-D parametric
+attach/slide for the walker. No rope/swing physics. Lives in the `scraped` crate over
+engine primitives (DDA pick, the `solid` oracle, the walker).
 
 ## 7. Pressure / failure
 
@@ -186,6 +232,12 @@ late-game arc. **Every node is comprehension or reach — never force.**
 - **Autopilot Heuristics I–III** — *"the ship learns to seek"*: the drift stops being
   blind and routes toward dense / rare / **undiscovered** sites. The idle layer
   literally improves itself.
+- **Survey-beam: Lifespan I–V** — the beam lasts longer before it fades (the reach
+  budget; see §6).
+- **Survey-beam: Capacity I–III** — how many beams you can hold up *at once* → longer
+  multi-segment routes through space.
+- **Survey-beam: Length / Reel Speed / Re-cast** — cast farther, ride faster, fire again
+  sooner (candidates; tune on play).
 - **Atmospheric Ceiling** — altitude to reach high giants and overview vantage.
 - **Descent Rig** — safely enter **caves** on foot (consumes the E19 foot-collision
   follow-up).
@@ -245,6 +297,7 @@ no new persistence model.
 |---|---|---|
 | Autopilot idle sweep | D3 auto-fly + E17 inscriptions + seed placement | survey-radius check + data accrual/buffer |
 | Manual/foot expeditions | E19 modes (+ foot-collision follow-up) | "what's exclusive to manual" gating |
+| **Survey-beam** (collect-along-path + decaying rail) | E14 DDA pick + `solid` oracle + walker; emissive/bloom | lifespan/fade + 1-D attach-slide + line-sweep collect + **post-palette depth-aware vivid draw** |
 | Glyph collection | E17 world-text + E14 DDA pick | collect event; script→stratum yield |
 | Five data strata | E17's five scripts | the typed-currency economy |
 | Codex of finds | E10 map + headless RTT thumbnails | find-set model + archive screen |
@@ -267,6 +320,9 @@ lands in vertical slices, each a milestone brief:
 
 1. **G1 — Collect & accrue.** Survey-radius collection (passive + a manual pick), the
    five strata as numbers on the HUD, a codex list. *Proves the core sensation.*
+   - **G1.5 — The survey-beam.** The cast → persist → fade beam: collect-along-path +
+     the 1-D attach/ride rail + drop-on-expire + the post-palette vivid draw (the engine
+     hook). *Proves the active verb + fixes "you get stuck."*
 2. **G2 — The first tree.** A small tuned tree (a few nodes per branch) + the in-engine
    tree UI on the E17 text path; Sensing + Memory first (they make the idle layer feel
    good); Decipherment legibility for one script. *Proves the economy + the payoff.*
