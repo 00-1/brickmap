@@ -602,7 +602,7 @@ pub fn capture_view(
     ship.set_transform(
         &queue,
         ship_vp,
-        glam::Vec3::new(12.0, ship_gy + 8.0, 10.0),
+        glam::Vec3::new(12.0, ship_gy + 20.0, 10.0),
         0.6,
     );
     let ship_depth = device

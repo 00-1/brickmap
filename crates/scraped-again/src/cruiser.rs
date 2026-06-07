@@ -64,7 +64,6 @@ fn octa(out: &mut Vec<Vertex>, c: Vec3, r: f32, color: [f32; 3]) {
 const HULL: [f32; 3] = [0.50, 0.55, 0.63];
 const BELLY: [f32; 3] = [0.38, 0.41, 0.49];
 const ENGINE: [f32; 3] = [0.16, 0.18, 0.26];
-const CANOPY: [f32; 3] = [0.10, 0.14, 0.22];
 
 /// The lit hull (flat-faceted dart).
 pub fn hull() -> Vec<Vertex> {
@@ -78,11 +77,12 @@ pub fn hull() -> Vec<Vertex> {
         Vec3::new(0.0, -0.5, 0.2),
         Vec3::new(-0.85, 0.02, 0.2),
     );
+    // Tail ring is broad (a fat engine block at the back), barely tapering from the mid ring.
     let (tt, tr, tb, tl) = (
-        Vec3::new(0.0, 0.52, -3.4),
-        Vec3::new(0.5, 0.0, -3.4),
-        Vec3::new(0.0, -0.34, -3.4),
-        Vec3::new(-0.5, 0.0, -3.4),
+        Vec3::new(0.0, 0.72, -3.4),
+        Vec3::new(0.92, 0.06, -3.4),
+        Vec3::new(0.0, -0.52, -3.4),
+        Vec3::new(-0.92, 0.06, -3.4),
     );
 
     // Nose cone (4 angular facets).
@@ -123,16 +123,6 @@ pub fn hull() -> Vec<Vertex> {
         Vec3::new(0.0, 0.5, -3.2),
         Vec3::new(0.0, 1.5, -2.9),
         HULL,
-    );
-
-    // Canopy (a dark windscreen facet on the top-front).
-    quad(
-        &mut h,
-        Vec3::new(-0.26, 0.72, 1.95),
-        Vec3::new(0.26, 0.72, 1.95),
-        Vec3::new(0.2, 0.55, 0.5),
-        Vec3::new(-0.2, 0.55, 0.5),
-        CANOPY,
     );
 
     h
