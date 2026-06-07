@@ -329,15 +329,17 @@
           };
           // Autoplay policy: a Web AudioContext can't start without a user gesture. The drone
           // box defaults checked, so kick it off on the first interaction anywhere on the page.
-          if (audOn.checked) {
-            const kick = () => {
-              if (audOn.checked && !audioNode) startAudio();
-              window.removeEventListener("pointerdown", kick);
-              window.removeEventListener("keydown", kick);
-            };
-            window.addEventListener("pointerdown", kick);
-            window.addEventListener("keydown", kick);
-          }
+          // Listen in the **capture** phase (so the winit canvas can't swallow the event first)
+          // across pointer/touch/key/click, and only detach once the node is actually running —
+          // so if the first attempt is blocked it retries on the next gesture.
+          const KICKS = ["pointerdown", "touchstart", "mousedown", "keydown", "click"];
+          const kick = () => {
+            if (audOn.checked && !audioNode) {
+              try { startAudio(); } catch (e) { console.warn("audio start failed", e); }
+            }
+            if (audioNode) KICKS.forEach((t) => window.removeEventListener(t, kick, true));
+          };
+          KICKS.forEach((t) => window.addEventListener(t, kick, true));
 
           // Build the feature-toggle checkboxes, reflecting any restored toggle mask.
           // Default mask 0xbff: bits 0–11 on except sand (10); melt (12) + sun (13) off — the

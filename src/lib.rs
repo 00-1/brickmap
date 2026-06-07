@@ -1142,6 +1142,29 @@ impl ApplicationHandler<AppEvent> for App {
                     self.wobble = b.wobble;
                     self.color_steps = b.steps;
                     self.biome_label = b.label();
+                    // Structure-approach wobble (E18×E10): as you near a colossus the quantization
+                    // wobble pulls toward its own extreme — some giants warp space heavily (snap →
+                    // min), others snap crisp (snap → max). Deterministic per giant from its seed;
+                    // the nearest in-range one wins, ramped by horizontal proximity.
+                    let cam = self.camera.position;
+                    let seed = self.seed;
+                    let colossi = structures::colossi_near(seed, cam, STRUCTURE_RADIUS, |x, z| {
+                        worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
+                    });
+                    let (mut best, mut target) = (0.0f32, self.wobble);
+                    for p in &colossi {
+                        let d = ((p.pos.x - cam.x).powi(2) + (p.pos.z - cam.z).powi(2)).sqrt();
+                        let prox = (1.0 - d / WOBBLE_APPROACH).clamp(0.0, 1.0);
+                        if prox > best {
+                            best = prox;
+                            target = if (p.seed >> 9) & 1 == 0 {
+                                WOBBLE_HEAVY
+                            } else {
+                                WOBBLE_CRISP
+                            };
+                        }
+                    }
+                    self.wobble += (target - self.wobble) * best;
                     #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
                     if let Some(a) = &self.audio {
                         a.set_volume(b.vol);
@@ -1513,6 +1536,11 @@ const STREAM_REQUESTS: usize = 8;
 const STRUCTURE_RADIUS: f32 = 210.0;
 /// Radius (world units) within which in-world inscriptions (E17) are streamed in around the camera.
 const TEXT_RADIUS: f32 = 150.0;
+/// Structure-approach wobble (E18×E10): within this horizontal distance of a colossus the vertex
+/// wobble lerps toward the giant's own extreme (heavy = low snap, crisp = high snap).
+const WOBBLE_APPROACH: f32 = 75.0;
+const WOBBLE_HEAVY: f32 = 7.0; // strong PS1 warp right up against a "warping" giant
+const WOBBLE_CRISP: f32 = 480.0; // near-perfectly crisp at a "stilling" giant
 /// The ethereal colossi's tint (cool pale; the palette recolours it in the house look).
 const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
 /// How many newly-entered colossi to generate per frame (the rest wait for later frames), so
