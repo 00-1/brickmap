@@ -152,6 +152,8 @@ struct App {
     biome_label: String,
     /// Explored-world map (E10): biome colour per visited chunk `(cx, cz)`, built as you fly.
     map: std::collections::HashMap<(i32, i32), [u8; 3]>,
+    /// Chunks where an inscription has been encountered — shown as bright markers on the map.
+    map_text: std::collections::HashSet<(i32, i32)>,
     /// Whether the fullscreen map view is open; the pan centre (chunk coords); whether the
     /// explored set grew since the GPU image was last built; and the cached image origin/dims.
     map_view: bool,
@@ -204,6 +206,9 @@ impl App {
         self.sim_active.clear();
         self.structures.clear(); // force the new seed's colossi to rebuild next frame
         self.text_cells.clear(); // and the new seed's inscriptions
+        self.map.clear(); // the explored map is per-world
+        self.map_text.clear();
+        self.map_dirty = true;
         self.loader.set_seed(seed);
         let ground = worldgen::height(
             self.camera.position.x.floor() as i32,
@@ -505,6 +510,18 @@ impl App {
             return;
         }
         self.text_cells = wanted;
+        // Remember which chunks hold inscriptions, so they show as markers on the explored map.
+        let nch = world::Section::SIZE as f32;
+        for pos in marks
+            .iter()
+            .map(|m| m.pos)
+            .chain(colossi.iter().map(|p| p.pos))
+        {
+            let k = ((pos.x / nch).floor() as i32, (pos.z / nch).floor() as i32);
+            if self.map_text.insert(k) {
+                self.map_dirty = true;
+            }
+        }
         let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = marks
             .into_iter()
             .chain(colossi.iter().map(structures::colossus_label))
@@ -557,7 +574,7 @@ impl App {
             return None;
         }
         let (mut minx, mut maxx, mut minz, mut maxz) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
-        for &(cx, cz) in self.map.keys() {
+        for &(cx, cz) in self.map.keys().chain(self.map_text.iter()) {
             minx = minx.min(cx);
             maxx = maxx.max(cx);
             minz = minz.min(cz);
@@ -568,6 +585,11 @@ impl App {
         for (&(cx, cz), &c) in &self.map {
             let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4;
             rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
+        }
+        // Inscription markers on top: a bright glyph-cyan pixel so found text reads as a landmark.
+        for &(cx, cz) in &self.map_text {
+            let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4;
+            rgba[i..i + 4].copy_from_slice(&[150, 240, 255, 255]);
         }
         Some((w, h, minx, minz, rgba))
     }
@@ -1597,6 +1619,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         biome_mode: true, // the new default mode
         biome_label: String::new(),
         map: std::collections::HashMap::new(),
+        map_text: std::collections::HashSet::new(),
         map_view: false,
         map_pan: (0.0, 0.0),
         map_dirty: false,
