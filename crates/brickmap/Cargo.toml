@@ -22,6 +22,8 @@ bm-core = { path = "../bm-core" }
 bm-world = { path = "../bm-world" }
 bm-mesh = { path = "../bm-mesh" }
 bm-scene = { path = "../bm-scene" }
+bm-render = { path = "../bm-render" }
+bm-platform = { path = "../bm-platform" }
 
 # --- Core, all targets ---------------------------------------------------
 wgpu = "29"

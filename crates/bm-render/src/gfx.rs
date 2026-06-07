@@ -1331,7 +1331,7 @@ fn build_chunk_draw(
 /// index, instanced per `SplatInstance`, billboarded with the camera basis. Alpha-test
 /// (round mask via `discard`), depth-write on, no blend → no sorting. Shares the globals
 /// group. `format` is the colour target. Shared with the headless renderer.
-pub(crate) fn build_splat_pipeline(
+pub fn build_splat_pipeline(
     device: &wgpu::Device,
     globals_bgl: &wgpu::BindGroupLayout,
     format: wgpu::TextureFormat,
@@ -1390,7 +1390,7 @@ const SPLAT_INSTANCE_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBuf
 /// Fullscreen sky-gradient pipeline: no bind groups, no vertex buffers (the vertex
 /// shader builds a fullscreen triangle), no depth write (drawn behind the terrain).
 /// Shared with the headless renderer. `format` is the colour target format.
-pub(crate) fn build_sky_pipeline(
+pub fn build_sky_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
@@ -1439,7 +1439,7 @@ pub(crate) fn build_sky_pipeline(
 
 /// Bind-group layout for the material texture array (group 2): a `2d_array` texture
 /// plus a sampler, both fragment-only. Shared with the headless renderer.
-pub(crate) fn material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+pub fn material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("material-bgl"),
         entries: &[
@@ -1467,7 +1467,7 @@ pub(crate) fn material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGro
 /// Unorm (not sRGB): the tiles are a brightness multiplier the shader applies to the
 /// already-sRGB palette colour. Nearest + repeat so each voxel shows one crisp tile.
 /// Shared with the headless renderer.
-pub(crate) fn build_material_bind_group(
+pub fn build_material_bind_group(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,

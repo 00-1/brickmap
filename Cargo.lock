@@ -282,6 +282,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "bm-platform"
+version = "0.0.1"
+dependencies = [
+ "bm-core",
+ "gilrs",
+ "wasm-bindgen",
+ "web-sys",
+ "winit",
+]
+
+[[package]]
+name = "bm-render"
+version = "0.0.1"
+dependencies = [
+ "bm-core",
+ "bm-mesh",
+ "bm-scene",
+ "bm-world",
+ "bytemuck",
+ "font8x8",
+ "glam",
+ "log",
+ "png",
+ "web-time",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "bm-scene"
 version = "0.0.1"
 dependencies = [
@@ -304,6 +333,8 @@ dependencies = [
  "android_logger",
  "bm-core",
  "bm-mesh",
+ "bm-platform",
+ "bm-render",
  "bm-scene",
  "bm-world",
  "bytemuck",
