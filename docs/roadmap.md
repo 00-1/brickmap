@@ -409,6 +409,22 @@ content kinds (pivot 2026-06):**
 - **Open decisions:** model source/licence (recommend MakeHuman CC0); content framing
   (environmental art / monument, not gore).
 
+### ✨ E19 — Movement: walk + cruiser *(exploration)* ✅
+A movement-mode system so the world is explored on foot *and* by ship, not just a fly-cam.
+- ✅ **Walking** (`src/player.rs`): on-foot movement with **gravity**, ground-following, and an
+  **auto-step** up ~1-block ledges (taller = a wall). Pure physics over the surface height field
+  (no voxel world needed), unit-tested; the camera controller drives the look, the `Walker`
+  constrains the position. *(Caves/overhangs aren't collidable on foot yet — you walk the surface.)*
+- ✅ **Space cruiser** (`cruiser_points_at`): a point-cloud ship drawn via the splat pipeline at
+  its parked spot while you're on foot. **Mode machine:** start piloting on **autopilot** (the
+  existing cinematic auto-fly, unchanged default); toggle autopilot↔manual (F / pad A); land
+  (within ~9 blocks of the ground) and press **E / pad B** to step out and **walk**; walk back to
+  the parked ship and press E / pad B to re-enter. Gamepad gains a B/circle "enter/exit" button
+  (native/web/android). HUD shows the mode; the map shows the parked cruiser (orange marker).
+- **Outcome:** land the ship, get out, walk the terrain (into cave-mouths / up to colossi), fly on.
+- **Next ideas:** voxel collision on foot (enter caves/structures properly), a jump button,
+  third-person cruiser cam, cruiser banking/:physics.
+
 ### M7 — Distance dissolve (LOD that's also the look) 🛠
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
 value on a surface world), dissolve distant **terrain into points** via E6's splat
