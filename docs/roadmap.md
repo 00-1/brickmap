@@ -285,6 +285,12 @@ The aesthetic pass that **became the identity** (backlog §I; see the aesthetic 
 - ⏳ **G-buffer-as-art** mode (normals/depth presented as the look) — deferred: the forward
   renderer keeps no normal buffer, so this needs a normal/world-pos target (a bigger change) and
   is lower value than the ink grid; parked as the remaining E10 idea.
+- ✅ **Explored biome map (2026-06, `src/map.rs` + `map.wgsl`)** — a progressively-built world
+  map: each streamed-in chunk is recorded with its biome colour, so the explored area fills in as
+  you fly. A fullscreen overlay (gamepad **X** / key **N**) draws the chunk-image panned/zoomed in
+  chunk space (biome colours with the field's natural transitions) + a **blinking you-are-here
+  dot**; pan with the left stick / arrows while the world flies on underneath. GPU image rebuilt
+  only when the explored set grows. `map.wgsl` validated via the headless render.
 - **De-risks:** done — funnelling the frame through a tiny palette + dither *is* the look.
 
 ### ✨ E11 — More dynamic voxels *(exploration)* ⏳
