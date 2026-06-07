@@ -232,6 +232,19 @@ taller than one section + caves/overhangs spanning layers) — the bigger archit
 its own brief.
 - **Outcome:** varied biomed terrain with cliffs, rivers, woods, and caves to fly through.
 - **De-risks:** 3D-noise cost (gate to surface bands); unlocks the dormant cave-culling.
+- ✅ **Biome auto-mode (2026-06, `src/biome.rs`)** — the **new default mode**: **every palette is a
+  biome**, each a full preset (palette, spawn densities, lighting/wobble, ground amplitude, drone
+  mix). A low-frequency field maps world position → biome and `biome::at` **blends the two nearest**
+  so palette ramp + all scalars transition smoothly as you fly. Drives the palette (crossfaded
+  ramp), wobble, a *float* sun amount, and the **drone vol/murk/heavy**; **spawn densities**
+  (grass/trees/colossi/wisps/inscriptions) scale per-biome (always, worldgen-level); **structure-
+  approach wobble** pulls the wobble to each colossus's own extreme as you near it; and a rare
+  **ethereal variant** of any biome fades the ink grid on + turns the drone less deep. Toggle with
+  key `G` / a web checkbox (which disables the manual controls it overrides). Pure parts tested;
+  the look is live-verified. **Deferred:** biome-driven *ground amplitude* — it changes terrain for
+  every seed (breaks share-link reproducibility + the E12 golden hash) and is capped within one
+  section, so it's best paired with E8 vertical stacks + the human's eye (field + `amplitude` are
+  already in the model, just not applied to `worldgen::height`).
 - *All within-layer wins landed (warp/ridged/water/biomes/rivers/caves); only multi-layer
   vertical chunk stacks remain — the bigger architectural step (single→multi-layer
   streaming). Brief written: [`milestones/E8-vertical-stacks.md`](milestones/E8-vertical-stacks.md)
