@@ -559,11 +559,17 @@ capability + fixes "you get stuck on foot."*
   reach-gated lock-on cruiser board). Headless A/B (opt-in `SCRAPED_BEAM`) proves vivid-over-
   palette + terrain-occluded. Crate boundary intact; 129 tests green; golden voxel-hash unchanged.
 
-### ✨ G3+ — scan/map, the tree, depth ⏳
-Sketched in [`game-mechanics.md`](game-mechanics.md) §13 (cruiser auto-scan → map
-opportunity surface; the first tech tree + in-engine menu on the E17 text path +
-auto-collect; then flight/walking branches and the late Concordance/Synthesis lore arc).
-Fleshed into briefs when we reach them.
+### ✨ G3 — Cruiser auto-scan & the map opportunity surface ⏳ &nbsp;→ [`milestones/G3-cruiser-scan-map.md`](milestones/G3-cruiser-scan-map.md)
+The autopilot/idle half: the cruiser auto-scans what it drifts past (a cool scan beam) and the
+explored map fills with **scanned-but-uncollected** pins you triage. Reuses G2's overlay (cool
+vs warm) + the G1 find model + the E10 map; fixed basic scan (tech gating is G4). *Proves the
+idle scan→map→triage loop before the tree sits on it.*
+
+### ✨ G4+ — the tech tree, autonomy, depth ⏳
+Sketched in [`game-mechanics.md`](game-mechanics.md) §13: the first tech tree + in-engine menu
+on the E17 text path + auto-collect/auto-route (G4); "ship learns to seek" routing + Descent/Hull
+foot-collision interiors (G5); then the flight/walking branches and the late Concordance/Synthesis
+lore arc. Fleshed into briefs when we reach them.
 
 ## Dev tooling & process (D-series)
 
