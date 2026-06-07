@@ -1,5 +1,11 @@
-# brickmap — Core game mechanics (design)
+# Scraped Again — Core game mechanics (design)
 
+> *Scraped Again* is the **game**; **brickmap** is the **engine** it's built on. The
+> title is the plain-English sense of *palimpsest* ("scraped again") — a dead,
+> overwritten world you read back into legibility, where the endless re-seeded world
+> is itself one more scraping. (Workspace crate `scraped`; see
+> [`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md).)
+>
 > **Status: living design.** The direction below is **decided** (2026-06): a
 > **melancholy-archival exploration game** built on the brickmap engine, with an
 > **autopilot-as-idle data-collection loop feeding a deep tech tree of
@@ -272,8 +278,8 @@ lands in vertical slices, each a milestone brief:
 
 ## 14. Open items
 
-- **The game's name** (M9 Decision 1) — still open; not blocking (placeholder crate
-  `game` until chosen).
+- **The game's name** — **resolved: _Scraped Again_** (crate `scraped`). Styling
+  (`Scraped Again` / `Scraped, Again` / lowercase) is a cosmetic call left open.
 - **v1 tree tuning** — the economy's *feel* (sweep rate, costs, buffer caps) needs live
   iteration; design the shape now, balance on play.
 - **Tone guardrails for the UI** — keep the tree/codex *quiet and archival*, not a

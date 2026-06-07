@@ -226,10 +226,12 @@ Bottom-up, **green at every step** (`cargo fmt && clippy -D warnings && test --a
 
 ## Decisions to resolve (with recommended defaults)
 
-1. **Game name.** brickmap stays the engine; the game needs its own name. *Default:*
-   pick one before Phase 3 (placeholder crate `game` until then). The product name is
-   a taste call — worth a short brainstorm; the fiction is "a lonely surveyor of a
-   dead world of fallen giants."
+1. **Game name.** **Resolved: the game is _Scraped Again_** (workspace crate
+   `scraped`; referred to as `<game>` elsewhere in this brief). `brickmap` stays the
+   **engine**; _Scraped Again_ is the game built on it. The name is the plain-English
+   sense of *palimpsest* ("scraped again") — fitting a melancholy game about reading a
+   dead, overwritten world, where the endless re-seeded world reads as one more
+   scraping. So Phase 3 creates `crates/scraped` (no longer blocked on a naming call).
 2. **Library-style vs framework-style.** Game-owns-`main` and calls the engine
    (library) **vs** engine-owns-`main` and calls a `Game` trait (framework).
    *Default: **library-style*** — simpler, matches "a game that uses the engine," and
