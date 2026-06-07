@@ -26,7 +26,7 @@ fn main() {
             1,
             false,
         );
-        for (i, pal) in scraped_again::palette::PALETTES.iter().enumerate() {
+        for (i, pal) in scraped_again::palettes::PALETTES.iter().enumerate() {
             let spec = scraped_again::headless::PaletteSpec {
                 index: i,
                 count: pal.colors.len() as u32,
@@ -106,7 +106,7 @@ fn main() {
         let index = tok("pal=").unwrap_or(0.0) as usize;
         let count = tok("count=")
             .map(|c| c as u32)
-            .unwrap_or_else(|| scraped_again::palette::PALETTES[index].colors.len() as u32);
+            .unwrap_or_else(|| scraped_again::palettes::PALETTES[index].colors.len() as u32);
         scraped_again::headless::PaletteSpec {
             index,
             count,

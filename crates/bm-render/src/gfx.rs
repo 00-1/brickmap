@@ -649,17 +649,15 @@ impl State {
         let ship_depth = create_depth_view(&device, config.width.max(1), config.height.max(1));
 
         // Palette post-process (E10), off by default so the live preview is unchanged until
-        // a palette is chosen. Defaults to the full `mono` ramp with ordered dithering.
+        // a palette is chosen. Seeded with the engine's neutral default ramp; the game pushes
+        // its own curated/biome ramp via `set_palette_colors`.
         let palette = crate::palette::PalettePass::new(&device, config.format);
-        let palette_index = 0usize;
-        let palette_count = crate::palette::PALETTES[palette_index].colors.len() as u32;
-        let palette_dither = 1.0f32;
         let palette_on = false;
-        palette.set(
+        palette.set_colors(
             &queue,
-            palette_index,
-            palette_count,
-            palette_dither,
+            crate::palette::DEFAULT_RAMP,
+            crate::palette::DEFAULT_RAMP.len() as u32,
+            1.0,
             palette_on,
         );
         let palette_view = create_scene_view(&device, config.format, iw, ih);
@@ -799,20 +797,6 @@ impl State {
             .collect();
     }
 
-    /// Reconfigure the palette post-process (E10) and re-upload its uniform. `on == false`
-    /// makes the pass a no-op (the bloom output reaches the surface unchanged). `count` is
-    /// clamped to the chosen palette's length inside [`crate::palette::PalettePass::set`].
-    pub fn set_palette(&mut self, index: usize, count: u32, dither: f32, on: bool) {
-        self.palette_on = on;
-        self.palette.set(
-            &self.queue,
-            index.min(crate::palette::PALETTES.len() - 1),
-            count.max(1),
-            dither,
-            on,
-        );
-    }
-
     /// Explored-world map (E10): whether the fullscreen map overlay is shown this frame.
     pub fn set_map_active(&mut self, active: bool) {
         self.map_active = active;
@@ -832,10 +816,13 @@ impl State {
         self.map.set_uniform(&self.queue, u);
     }
 
-    /// Set the palette from an explicit (biome-blended) colour ramp; turns the pass on.
-    pub fn set_palette_colors(&mut self, colors: &[[f32; 3]], count: u32, dither: f32) {
-        self.palette_on = true;
-        self.palette.set_colors(&self.queue, colors, count, dither);
+    /// Set the palette from an explicit colour ramp (a curated entry the game resolved, a
+    /// biome-blended ramp, or the engine default). `on == false` makes the pass a passthrough.
+    /// This is the engine's whole palette seam — it knows no curated set (M9).
+    pub fn set_palette_colors(&mut self, colors: &[[f32; 3]], count: u32, dither: f32, on: bool) {
+        self.palette_on = on;
+        self.palette
+            .set_colors(&self.queue, colors, count, dither, on);
     }
 
     /// Last frame's draw counts, for the perf HUD.

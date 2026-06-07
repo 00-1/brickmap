@@ -30,6 +30,8 @@ pub use brickmap::{
 pub mod audio;
 pub mod biome;
 pub mod creatures;
+// The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
+pub mod palettes;
 pub mod player;
 pub mod relic;
 // cpal audio output (E16): desktop + **Android** (AAudio backend); web uses Web Audio.
@@ -119,7 +121,7 @@ struct App {
     wobble: f32,
     color_steps: f32,
     /// Palette post-process (E10): selection pushed to the renderer each frame. `on` gates
-    /// the whole pass; `index` picks a `palette::PALETTES` entry; `count` is how many of its
+    /// the whole pass; `index` picks a `palettes::PALETTES` entry; `count` is how many of its
     /// colours to use; `dither` is the ordered-dither spread. Driven by native keys or, on
     /// the web, the page controls.
     palette_on: bool,
@@ -239,7 +241,7 @@ impl App {
     /// palette on, reset the colour count to that palette's full length.
     #[cfg(not(target_arch = "wasm32"))]
     fn cycle_palette(&mut self) {
-        let n = palette::PALETTES.len();
+        let n = palettes::PALETTES.len();
         if !self.palette_on {
             self.palette_on = true;
             self.palette_index = 0;
@@ -249,8 +251,8 @@ impl App {
             self.palette_on = false;
             self.palette_index = 0;
         }
-        self.palette_count = palette::PALETTES[self.palette_index].colors.len() as u32;
-        let name = palette::PALETTES[self.palette_index].name;
+        self.palette_count = palettes::PALETTES[self.palette_index].colors.len() as u32;
+        let name = palettes::PALETTES[self.palette_index].name;
         if self.palette_on {
             log::info!("palette → {name} ({} colours)", self.palette_count);
         } else {
@@ -296,7 +298,7 @@ impl App {
                 return true;
             }
             KeyCode::Equal => {
-                let max = palette::PALETTES[self.palette_index].colors.len() as u32;
+                let max = palettes::PALETTES[self.palette_index].colors.len() as u32;
                 self.palette_count = (self.palette_count + 1).min(max);
                 return true;
             }
@@ -1450,11 +1452,15 @@ impl ApplicationHandler<AppEvent> for App {
                     // Push the palette (biome-blended ramp in biome mode, else the manual
                     // selection) + pixel scale (E10) before drawing.
                     if let Some(b) = bio {
-                        state.set_palette_colors(&b.colors, b.count, b.dither);
+                        state.set_palette_colors(&b.colors, b.count, b.dither, true);
                     } else {
-                        state.set_palette(
-                            self.palette_index,
-                            self.palette_count,
+                        // The game owns the curated set; resolve the chosen index to its ramp
+                        // and feed the engine's colour seam (it carries no palette table).
+                        let pal = &palettes::PALETTES
+                            [self.palette_index.min(palettes::PALETTES.len() - 1)];
+                        state.set_palette_colors(
+                            pal.colors,
+                            self.palette_count.max(1),
                             self.palette_dither,
                             self.palette_on,
                         );
@@ -1533,7 +1539,7 @@ impl ApplicationHandler<AppEvent> for App {
                         } else if self.palette_on {
                             format!(
                                 " · {} {}c",
-                                palette::PALETTES[self.palette_index].name,
+                                palettes::PALETTES[self.palette_index].name,
                                 self.palette_count
                             )
                         } else {
