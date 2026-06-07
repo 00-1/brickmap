@@ -59,8 +59,12 @@ players climb it (the management game), hands-on players live near the bottom. S
 
 ## 4. Progression = the growing block vocabulary (the "tech tree", reframed)
 
-The "tech tree" is the **library of blocks you've recovered**. Unlocking a block = having
-**comprehended a function** of the dead machine. So:
+**The blocks themselves are the upgrades.** You **do not start with the vocabulary** — you
+begin with a minimal handful and **acquiring new blocks is the core unit of progression.**
+The "tech tree" *is* the library of blocks you've recovered; unlocking a block = having
+**comprehended a function** of the dead machine. (The passive numeric boosts in §3 are the
+*lesser* layer; the headline progression is the vocabulary itself growing — every new block,
+especially a control/meta one, expands what you can *compose*.) So:
 
 - **Data unlocks vocabulary.** Collected/decoded **strata** (game-mechanics §5) unlock new
   action and control blocks — the recovered operations of the dead civilization's console.
