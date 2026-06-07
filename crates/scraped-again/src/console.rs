@@ -12,16 +12,37 @@
 //! testing on the text path is deferred to G5. (3) `spend`/`goto` are in the Tier-0 vocabulary
 //! but inert in G4 (no spend targets / no map picker yet → G5/G6).
 
-/// A Tier-0 block — one recovered console operation (game-system §11).
+/// A generic filter field for `match(field)` (game-system §11 Tier 1). v1 fields, both
+/// comprehensible from G1's `script→stratum→rarity` (the collectible set is already
+/// uncollected, so the useful filter is by *rarity*); more fields arrive in G6.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum MatchField {
+    /// Only rare strata (Relics + Signals) — "save the buffer for the good stuff".
+    Rare,
+}
+
+impl MatchField {
+    pub fn label(self) -> &'static str {
+        match self {
+            MatchField::Rare => "rare",
+        }
+    }
+}
+
+/// A block — one recovered console operation (game-system §11). G4 = Tier 0; G5 adds the nav
+/// vocabulary (`seek`/`circle`) and the generic `match` filter.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Block {
-    Scan,     // scan(shards): sense sites in the forward cone (G3)
-    Collect,  // collect the aimed/nearest in-reach site (G1)
-    FireBeam, // cast the survey-beam (G2)
-    Spend,    // spend a shard on a faculty (inert until G6 gives targets)
-    Goto,     // direct travel to a picked map target (inert until G5's picker)
-    Drift,    // aimless cinematic wander — today's default autopilot
-    OnScan,   // trigger: fires when a scan finds something (not a clickable action)
+    Scan,              // scan(shards): sense sites in the forward cone (G3)
+    Collect,           // collect the aimed/nearest in-reach site (G1)
+    FireBeam,          // cast the survey-beam (G2)
+    Spend,             // spend a shard on a faculty (inert until G6 gives targets)
+    Goto,              // direct travel to a picked map target (inert until a map picker)
+    Drift,             // aimless cinematic wander — today's default autopilot
+    Seek,              // head to the nearest known-uncollected site (G5)
+    Circle,            // loiter / orbit the current area (G5)
+    Match(MatchField), // generic filter in an on-scan pipeline (G5)
+    OnScan,            // trigger: fires when a scan finds something (not a clickable action)
 }
 
 impl Block {
@@ -33,14 +54,25 @@ impl Block {
             Block::Spend => "spend",
             Block::Goto => "goto(area)",
             Block::Drift => "drift",
+            Block::Seek => "seek(uncollected)",
+            Block::Circle => "circle",
+            Block::Match(f) => match f {
+                MatchField::Rare => "match(rare)",
+            },
             Block::OnScan => "on-scan",
         }
     }
-    /// Wired to real behaviour in G4? (`spend`/`goto` are vocabulary stubs for now.)
+    /// Wired to real behaviour? (`spend`/`goto` are vocabulary stubs for now.)
     pub fn wired(self) -> bool {
         matches!(
             self,
-            Block::Scan | Block::Collect | Block::FireBeam | Block::Drift
+            Block::Scan
+                | Block::Collect
+                | Block::FireBeam
+                | Block::Drift
+                | Block::Seek
+                | Block::Circle
+                | Block::Match(_)
         )
     }
 }
@@ -150,6 +182,92 @@ impl Console {
             .is_some_and(|r| r.enabled && r.on_scan.contains(&Block::Collect))
     }
 
+    fn routine_mut(&mut self, name: &str) -> Option<&mut Routine> {
+        self.routines.iter_mut().find(|r| r.name == name)
+    }
+
+    /// The current nav block of the `drift` routine (Drift / Seek / Circle).
+    pub fn nav_block(&self) -> Block {
+        self.routine("drift")
+            .and_then(|r| r.continuous.first().copied())
+            .unwrap_or(Block::Drift)
+    }
+
+    /// The `survey` routine's collect filter, if any (the `match` step before `collect`).
+    pub fn filter(&self) -> Option<MatchField> {
+        self.routine("survey").and_then(|r| {
+            r.on_scan.iter().find_map(|b| match b {
+                Block::Match(f) => Some(*f),
+                _ => None,
+            })
+        })
+    }
+
+    /// G5 picker: step the routine under the cursor's parameter — the nav block for `drift`,
+    /// the collect filter for `survey` (no typing; ←/→ cycle).
+    pub fn cycle_param(&mut self, i: i32) {
+        match self.selected() {
+            Sel::Routine(r) if self.routines[r].name == "drift" => {
+                const NAV: [Block; 3] = [Block::Drift, Block::Seek, Block::Circle];
+                let cur = NAV.iter().position(|b| *b == self.nav_block()).unwrap_or(0) as i32;
+                let next = NAV[(((cur + i) % 3 + 3) % 3) as usize];
+                if let Some(d) = self.routine_mut("drift") {
+                    d.continuous = vec![next];
+                }
+            }
+            Sel::Routine(r) if self.routines[r].name == "survey" => {
+                // Cycle the filter: none ↔ match(rare).
+                let on = self.filter().is_some();
+                if let Some(s) = self.routine_mut("survey") {
+                    s.on_scan = if on {
+                        vec![Block::Collect]
+                    } else {
+                        vec![Block::Match(MatchField::Rare), Block::Collect]
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Encode the editable routine state (nav + filter) as a `co=` share segment.
+    pub fn encode(&self) -> String {
+        let nav = match self.nav_block() {
+            Block::Seek => 1,
+            Block::Circle => 2,
+            _ => 0,
+        };
+        let filter = u8::from(self.filter().is_some());
+        format!("co={nav}.{filter}")
+    }
+
+    /// Restore the nav + filter from a `co=` segment (lenient; absent → the given defaults).
+    pub fn restore(&mut self, s: &str) {
+        let s = s.strip_prefix('#').unwrap_or(s);
+        let Some(v) = s.split('&').find_map(|p| p.strip_prefix("co=")) else {
+            return;
+        };
+        let mut it = v.split('.');
+        if let Some(nav) = it.next().and_then(|n| n.parse::<u8>().ok()) {
+            if let Some(d) = self.routine_mut("drift") {
+                d.continuous = vec![match nav {
+                    1 => Block::Seek,
+                    2 => Block::Circle,
+                    _ => Block::Drift,
+                }];
+            }
+        }
+        if let Some(filter) = it.next().and_then(|n| n.parse::<u8>().ok()) {
+            if let Some(s) = self.routine_mut("survey") {
+                s.on_scan = if filter == 1 {
+                    vec![Block::Match(MatchField::Rare), Block::Collect]
+                } else {
+                    vec![Block::Collect]
+                };
+            }
+        }
+    }
+
     /// The terminal-styled console text for the HUD/text overlay.
     pub fn render(&self) -> String {
         let mut s = String::from("OPERATIONS CONSOLE   [O close]\nroutines (Enter toggles):\n");
@@ -177,7 +295,7 @@ impl Console {
             s.push_str(&format!("{cur} {}{}\n", b.label(), tag));
             row += 1;
         }
-        s.push_str("[↑↓ select · Enter run/toggle]");
+        s.push_str("[↑↓ select · ←→ change · Enter run/toggle]");
         s
     }
 }
@@ -223,5 +341,52 @@ mod tests {
     fn vocabulary_marks_wired_vs_stub() {
         assert!(Block::Collect.wired() && Block::Scan.wired() && Block::FireBeam.wired());
         assert!(!Block::Spend.wired() && !Block::Goto.wired());
+        assert!(
+            Block::Seek.wired() && Block::Circle.wired() && Block::Match(MatchField::Rare).wired()
+        );
+    }
+
+    #[test]
+    fn cycle_nav_steps_drift_seek_circle() {
+        let mut c = Console::default();
+        assert_eq!(c.nav_block(), Block::Drift); // cursor on drift (row 0)
+        c.cycle_param(1);
+        assert_eq!(c.nav_block(), Block::Seek);
+        c.cycle_param(1);
+        assert_eq!(c.nav_block(), Block::Circle);
+        c.cycle_param(1);
+        assert_eq!(c.nav_block(), Block::Drift); // wraps
+        c.cycle_param(-1);
+        assert_eq!(c.nav_block(), Block::Circle);
+    }
+
+    #[test]
+    fn cycle_filter_toggles_match_rare() {
+        let mut c = Console::default();
+        c.move_cursor(1); // survey row
+        assert_eq!(c.filter(), None);
+        c.cycle_param(1);
+        assert_eq!(c.filter(), Some(MatchField::Rare));
+        assert!(c.survey_autocollects()); // still collects, now filtered
+        c.cycle_param(1);
+        assert_eq!(c.filter(), None);
+    }
+
+    #[test]
+    fn routine_state_round_trips_through_co_segment() {
+        let mut c = Console::default();
+        c.cycle_param(1); // drift → seek
+        c.move_cursor(1);
+        c.cycle_param(1); // survey filter → rare
+        let s = format!("s=1&{}&x=2", c.encode());
+        let mut back = Console::default();
+        back.restore(&s);
+        assert_eq!(back.nav_block(), Block::Seek);
+        assert_eq!(back.filter(), Some(MatchField::Rare));
+        // Lenient: no co= leaves the givens.
+        let mut d = Console::default();
+        d.restore("s=1&x=2");
+        assert_eq!(d.nav_block(), Block::Drift);
+        assert_eq!(d.filter(), None);
     }
 }

@@ -592,10 +592,15 @@ conventional "first tech tree."**
   `drift`/`survey` gates the autopilot/auto-scan; `scan_pulse` shared by the routine + a manual
   `scan` click. 137 tests green; golden voxel-hash + headless render unchanged.
 
-### ✨ G5 — Composition editor & parameterised blocks ⏳
+### ✨ G5 — Composition editor & parameterised blocks ✅ &nbsp;→ [`milestones/G5-composition-editor.md`](milestones/G5-composition-editor.md)
 The **wiring editor** (author your own routines) + the generic `match` filter + **parameterised
-blocks** (swap `scan`'s item; unlock fields) + nav `seek`/`circle`. *The management game:
-selective auto-collect + routing you build* (scan→map already shipped in G3).
+blocks** + nav `seek`/`circle`. *The management game: selective auto-collect + routing you build*
+(scan→map already shipped in G3).
+- **Landed:** picker/stepper console editing (↑↓ select · ←→ change · Enter toggle, no typing):
+  cycle the nav block `drift→seek→circle` (seek steers to the nearest known-uncollected site) and
+  the survey `match(rare)` filter (selective auto-collect); edits persist (`co=` segment). 140
+  tests; golden voxel-hash + headless render unchanged. *(v1 editor = parameter steppers on the
+  given routines; free-form insert/remove grows with G6.)*
 
 ### ✨ G6 — Control, budgets & the block vocabulary (the "tree") ⏳
 `when`/`repeat`/`budget`/`priority`/`survey`/`route`/`scanMany` + `decode` + the comprehension-

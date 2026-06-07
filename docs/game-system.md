@@ -180,7 +180,9 @@ Enough to play the whole loop by hand + see two given automations. **(Landed in
 > Combinatorial growth comes from **new blocks *and* new argument options**. The "scan
 > several at once" upgrade is a distinct block, **`scanMany`** (Tier 2/3) — not a parameter.
 
-### Tier 1 — "make it yours" (first comprehension unlocks)
+### Tier 1 — "make it yours" (first comprehension unlocks) — ◑ partly realised in G5
+**(G5 landed the editor + nav `seek`/`circle` + a generic `match` (v1 field `rare`) via
+picker/steppers; `decode`/`hail`/`on-arrive` + more match-fields land in G6/G7.)**
 - **Actions:** `decode(stratum)` (shared — raw → comprehension, feeds unlocks) · `hail`
   (foot — recall the ship)
 - **Nav:** `seek(criteria)` (ship — head to nearest dense/rare/uncollected = the old "learns

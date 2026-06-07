@@ -466,6 +466,12 @@ impl App {
     /// glyph within reach and close to the view ray (the E14-style aim). Routed through the
     /// serializable `progress::Event`/`apply` seam; banks its stratum + records it in the codex.
     fn collect_aimed(&mut self) {
+        self.collect_aimed_where(|_| true);
+    }
+
+    /// As [`collect_aimed`], but only considering sites that pass `keep` (the G5 `match` filter
+    /// for the auto-collect path; manual `T` passes everything).
+    fn collect_aimed_where(&mut self, keep: impl Fn(&progress::Collectible) -> bool) {
         const REACH: f32 = 60.0; // how far a collect pick carries
         const AIM_RADIUS: f32 = 3.0; // forgiving perpendicular tolerance (glyphs are ~1u tall)
         let origin = self.camera.position;
@@ -473,6 +479,9 @@ impl App {
         let mut best_t = f32::INFINITY;
         let mut best_i: Option<usize> = None;
         for (i, c) in self.collectible.iter().enumerate() {
+            if !keep(c) {
+                continue;
+            }
             let v = Vec3::from(c.pos) - origin;
             let t = v.dot(dir);
             if t <= 0.0 || t > REACH {
@@ -617,7 +626,16 @@ impl App {
         // same G1 collect as a manual `T`, so at altitude it harvests ~nothing (sites sit below
         // the aim ray's reach) — net behaviour ≈ today's; it bites when you scan/fly low.
         if found && self.console.survey_autocollects() {
-            self.collect_aimed();
+            // Apply the survey routine's optional `match` filter (G5) to the auto-collect.
+            match self.console.filter() {
+                Some(console::MatchField::Rare) => self.collect_aimed_where(|c| {
+                    matches!(
+                        progress::stratum_of(c.script),
+                        progress::Stratum::Relics | progress::Stratum::Signals
+                    )
+                }),
+                None => self.collect_aimed(),
+            }
         }
     }
 
@@ -627,6 +645,9 @@ impl App {
             KeyCode::KeyO | KeyCode::Escape => self.console.open = false,
             KeyCode::ArrowUp | KeyCode::KeyW => self.console.move_cursor(-1),
             KeyCode::ArrowDown | KeyCode::KeyS => self.console.move_cursor(1),
+            // G5 pickers/steppers: ←/→ change the selected routine's parameter (nav / filter).
+            KeyCode::ArrowLeft | KeyCode::KeyA => self.console.cycle_param(-1),
+            KeyCode::ArrowRight | KeyCode::KeyD => self.console.cycle_param(1),
             KeyCode::Enter | KeyCode::Space => self.console_confirm(),
             _ => {}
         }
@@ -654,6 +675,20 @@ impl App {
             console::Block::Drift => self.auto_fly = true, // (re)engage the wander
             other => log::info!("block {}: not available yet", other.label()),
         }
+    }
+
+    /// G5 `seek`: the nearest known-uncollected site to steer toward (nearest nearby
+    /// collectible by horizontal distance), if any.
+    fn seek_target(&self) -> Option<Vec3> {
+        let p = self.camera.position;
+        self.collectible
+            .iter()
+            .min_by(|a, b| {
+                (Vec3::from(a.pos) - p)
+                    .length_squared()
+                    .total_cmp(&(Vec3::from(b.pos) - p).length_squared())
+            })
+            .map(|c| Vec3::from(c.pos))
     }
 
     /// A site at `pos` was collected — drop its chunk from the opportunity surface (G3). A v1
@@ -715,9 +750,10 @@ impl App {
     /// decoders are lenient and ignore each other's keys, so they ride one string.
     fn share_string(&self) -> String {
         format!(
-            "{}&{}",
+            "{}&{}&{}",
             self.current_share().encode(),
-            self.progress.encode()
+            self.progress.encode(),
+            self.console.encode(), // G5: the editable routine state (nav + filter)
         )
     }
 
@@ -1582,8 +1618,29 @@ impl ApplicationHandler<AppEvent> for App {
                         // circle): a low-frequency, mean-zero turn rate meanders the heading in
                         // long S-curves while always cruising onward over fresh terrain.
                         self.auto_fly_t += dt;
-                        let turn = (self.auto_fly_t * 0.06).sin() * 0.28
+                        // G5: the nav block steers the heading — `seek` toward the nearest
+                        // known-uncollected site, `circle` loiters, `drift` wanders (default).
+                        let wander = (self.auto_fly_t * 0.06).sin() * 0.28
                             + (self.auto_fly_t * 0.017 + 1.3).sin() * 0.14;
+                        let turn = match self.console.nav_block() {
+                            console::Block::Seek => match self.seek_target() {
+                                Some(t) => {
+                                    let want = (t.z - self.camera.position.z)
+                                        .atan2(t.x - self.camera.position.x);
+                                    let mut d = want - self.auto_fly_angle;
+                                    while d > std::f32::consts::PI {
+                                        d -= std::f32::consts::TAU;
+                                    }
+                                    while d < -std::f32::consts::PI {
+                                        d += std::f32::consts::TAU;
+                                    }
+                                    (d * 2.0).clamp(-1.5, 1.5)
+                                }
+                                None => wander, // nothing known yet → wander until the scan finds one
+                            },
+                            console::Block::Circle => 0.5, // steady turn = loiter/orbit
+                            _ => wander,
+                        };
                         self.auto_fly_angle += turn * dt;
                         let yaw = self.auto_fly_angle;
                         let dir = Vec3::new(yaw.cos(), 0.0, yaw.sin());
@@ -2098,7 +2155,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
     #[cfg(target_arch = "wasm32")]
     controls::init_from(&view);
 
-    App {
+    let mut app = App {
         state: None,
         proxy: Some(event_loop.create_proxy()),
         camera,
@@ -2165,7 +2222,10 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         // a no-op None if there's no audio device). Web starts audio from the page on first tap.
         #[cfg(not(target_arch = "wasm32"))]
         audio: audio_native::AudioEngine::start(view.seed),
-    }
+    };
+    // G5: restore any saved routine edits (nav + filter) from the same share source.
+    app.console.restore(&initial_share_source());
+    app
 }
 
 /// Resolve the initial world/view, overriding `default` from a shared link or CLI seed.
@@ -2216,20 +2276,31 @@ fn initial_view(default: share::ShareState) -> share::ShareState {
 /// the native `--share <blob>` arg, or the web URL hash. Absent/garbled → empty progress.
 #[cfg(not(target_arch = "wasm32"))]
 fn initial_progress() -> progress::Progress {
+    progress::Progress::decode(&initial_share_source())
+}
+
+/// The raw share source (the `--share <blob>` arg), for restoring progress + console state (G5).
+#[cfg(not(target_arch = "wasm32"))]
+fn initial_share_source() -> String {
     let args: Vec<String> = std::env::args().collect();
     args.iter()
         .position(|a| a == "--share")
         .and_then(|i| args.get(i + 1))
-        .map(|blob| progress::Progress::decode(blob))
+        .cloned()
         .unwrap_or_default()
 }
 
 /// Web: restore progress from the URL hash fragment (its own `pg=` key).
 #[cfg(target_arch = "wasm32")]
 fn initial_progress() -> progress::Progress {
+    progress::Progress::decode(&initial_share_source())
+}
+
+/// The raw share source (the URL hash), for restoring progress + console state (G5).
+#[cfg(target_arch = "wasm32")]
+fn initial_share_source() -> String {
     web_sys::window()
         .and_then(|w| w.location().hash().ok())
-        .map(|h| progress::Progress::decode(&h))
         .unwrap_or_default()
 }
 

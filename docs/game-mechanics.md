@@ -456,7 +456,7 @@ survive, reframed as the console + composed routines + comprehension unlocks (G4
    (`scan(shards) → on-scan → collect`, `drift`); the **console UI** (E17 text path, no typing).
    Same behaviour, now as the block interface. *Everything later composes on this. Supersedes
    the conventional "first tree."*
-5. **⏳ G5 — Composition editor & parameterised blocks.** The **wiring editor** (author routines)
+5. **✅ G5 — Composition editor & parameterised blocks.** The **wiring editor** (author routines)
    + the generic `match` filter + parameterised blocks (swap `scan`'s item; unlock fields) + nav
    `seek`/`circle`. *The management game — selective auto-collect + routing you build.*
 6. **⏳ G6 — Control, budgets & the block vocabulary (the "tree").** `when`/`repeat`/`budget`/
