@@ -9,7 +9,7 @@
 use brickmap::text::Script;
 
 /// The five data strata — typed currencies the tech tree will branch on (game-mechanics §5).
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Stratum {
     Records,    // Latin — mundane labels (common)
     Schematics, // Greek — engineering marks
@@ -17,6 +17,32 @@ pub enum Stratum {
     Relics,     // Runic — grave-marks (rare, deep lore)
     Signals,    // Galactic — alien signal (rarest)
 }
+
+impl Stratum {
+    /// All five strata, in rarity order.
+    pub const ALL: [Stratum; 5] = [
+        Stratum::Records,
+        Stratum::Schematics,
+        Stratum::Rites,
+        Stratum::Relics,
+        Stratum::Signals,
+    ];
+    fn byte(self) -> u8 {
+        match self {
+            Stratum::Records => 0,
+            Stratum::Schematics => 1,
+            Stratum::Rites => 2,
+            Stratum::Relics => 3,
+            Stratum::Signals => 4,
+        }
+    }
+    fn from_byte(b: u8) -> Stratum {
+        Stratum::ALL[(b as usize).min(4)]
+    }
+}
+
+/// Cost (in a stratum's own data) to `decode` / comprehend it (G6). Small + tunable.
+pub const DECODE_COST: u64 = 12;
 
 impl Stratum {
     /// Short label for the HUD readout.
@@ -165,6 +191,9 @@ pub struct Progress {
     pub codex: Vec<CodexEntry>,
     seen: std::collections::HashSet<u64>,
     scanned: std::collections::HashSet<u64>,
+    /// Comprehended strata (G6): spending `decode` makes a stratum's script legible + grows the
+    /// console's block vocabulary.
+    comprehended: std::collections::HashSet<Stratum>,
 }
 
 impl Progress {
@@ -189,6 +218,36 @@ impl Progress {
     /// How many sites are **collected** (the codex size).
     pub fn collected_count(&self) -> usize {
         self.codex.len()
+    }
+
+    /// G6: `decode` (spend) a stratum — if you can afford [`DECODE_COST`] of it and haven't
+    /// already comprehended it, spend that data and mark it comprehended. Returns `true` on
+    /// success (idempotent + affordability-gated).
+    pub fn comprehend(&mut self, s: Stratum) -> bool {
+        if self.comprehended.contains(&s) || self.strata.get(s) < DECODE_COST {
+            return false;
+        }
+        *self.strata.slot(s) -= DECODE_COST;
+        self.comprehended.insert(s);
+        true
+    }
+
+    pub fn is_comprehended(&self, s: Stratum) -> bool {
+        self.comprehended.contains(&s)
+    }
+
+    /// Is `script` legible? (Its stratum has been decoded — its inscriptions render translated.)
+    pub fn is_legible(&self, script: Script) -> bool {
+        self.comprehended.contains(&stratum_of(script))
+    }
+
+    /// The richest not-yet-comprehended stratum you can currently afford to `decode`, if any —
+    /// the target for a one-click `decode` block (G6).
+    pub fn decodable(&self) -> Option<Stratum> {
+        Stratum::ALL
+            .into_iter()
+            .filter(|&s| !self.comprehended.contains(&s) && self.strata.get(s) >= DECODE_COST)
+            .max_by_key(|&s| self.strata.get(s))
     }
 
     /// Apply an event. Returns `true` if it changed state (a new find), `false` on a
@@ -220,7 +279,7 @@ impl Progress {
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(2u8); // version (2 = + the scanned set, G3)
+        b.push(3u8); // version (2 = + scanned set, G3; 3 = + comprehended strata, G6)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -248,6 +307,11 @@ impl Progress {
         for id in scanned {
             b.extend_from_slice(&id.to_le_bytes());
         }
+        // v3: comprehended strata (sorted bytes for a stable encoding).
+        let mut comp: Vec<u8> = self.comprehended.iter().map(|s| s.byte()).collect();
+        comp.sort_unstable();
+        b.push(comp.len() as u8);
+        b.extend_from_slice(&comp);
         format!("pg={}", to_hex(&b))
     }
 
@@ -298,7 +362,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if version != 1 && version != 2 {
+    if !(1..=3).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -336,11 +400,20 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             scanned.insert(u64at(&mut p)?);
         }
     }
+    // v3: comprehended strata (absent in v1/v2 → empty).
+    let mut comprehended = std::collections::HashSet::new();
+    if version >= 3 {
+        let cc = *take(&mut p, 1)?.first()?;
+        for _ in 0..cc {
+            comprehended.insert(Stratum::from_byte(*take(&mut p, 1)?.first()?));
+        }
+    }
     Some(Progress {
         strata,
         codex,
         seen,
         scanned,
+        comprehended,
     })
 }
 
@@ -370,7 +443,10 @@ fn from_hex(s: &str) -> Option<Vec<u8>> {
 /// Two progressions are equal when their strata + codex + scanned set match (`seen` is derived).
 impl PartialEq for Progress {
     fn eq(&self, other: &Self) -> bool {
-        self.strata == other.strata && self.codex == other.codex && self.scanned == other.scanned
+        self.strata == other.strata
+            && self.codex == other.codex
+            && self.scanned == other.scanned
+            && self.comprehended == other.comprehended
     }
 }
 
@@ -496,6 +572,34 @@ mod tests {
         };
         let v1 = Progress::decode(&format!("pg={v1_hex}"));
         assert_eq!(v1, Progress::default());
+    }
+
+    #[test]
+    fn decode_spends_and_comprehends() {
+        let mut p = Progress::default();
+        // Not enough data → can't decode.
+        assert!(!p.comprehend(Stratum::Records));
+        // Bank some Records, then decode.
+        for _ in 0..6 {
+            p.apply(&ev(0, Script::Latin, "ABCD")); // 4 glyphs each; dedup → only first counts
+        }
+        p.strata.records = DECODE_COST + 3; // ensure affordable for the test
+        assert!(p.comprehend(Stratum::Records));
+        assert!(p.is_comprehended(Stratum::Records));
+        assert!(p.is_legible(Script::Latin)); // Latin → Records
+        assert!(!p.is_legible(Script::Greek)); // others stay glyphs
+        assert_eq!(p.strata.records, 3); // spent exactly DECODE_COST
+        assert!(!p.comprehend(Stratum::Records)); // idempotent
+    }
+
+    #[test]
+    fn comprehension_round_trips_v3() {
+        let mut p = Progress::default();
+        p.strata.relics = DECODE_COST;
+        assert!(p.comprehend(Stratum::Relics));
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p);
+        assert!(back.is_comprehended(Stratum::Relics));
     }
 
     #[test]

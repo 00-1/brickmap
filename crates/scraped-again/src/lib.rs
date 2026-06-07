@@ -40,6 +40,8 @@ pub mod beam;
 pub mod scan;
 // The operations console (G4): the game's actions as clickable blocks + given routines.
 pub mod console;
+// Decipherment lexicon (G6): a seeded grammar that renders a comprehended script as words.
+pub mod lexicon;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
 pub mod palettes;
 pub mod player;
@@ -673,7 +675,24 @@ impl App {
             console::Block::Collect => self.collect_aimed(),
             console::Block::FireBeam => self.cast_beam(),
             console::Block::Drift => self.auto_fly = true, // (re)engage the wander
+            console::Block::Decode => self.decode_action(),
             other => log::info!("block {}: not available yet", other.label()),
+        }
+    }
+
+    /// G6: `decode` — comprehend the richest stratum you can currently afford (spends its data),
+    /// making that script legible + (later) growing the vocabulary. The map text re-renders next
+    /// time inscriptions stream in.
+    fn decode_action(&mut self) {
+        match self.progress.decodable() {
+            Some(s) if self.progress.comprehend(s) => {
+                self.text_cells.clear(); // force inscriptions to rebuild as translated
+                log::info!("decoded {} — its script is now legible", s.label());
+            }
+            _ => log::info!(
+                "decode: need {} of a stratum's data to comprehend it",
+                progress::DECODE_COST
+            ),
         }
     }
 
@@ -878,9 +897,25 @@ impl App {
                 })
             })
             .collect();
+        // G6 decipherment: a comprehended script renders **translated** (a seeded lexicon
+        // phrase in the Latin font) instead of glowing glyphs. The find id still hashes the
+        // original glyphs (collecting stays stable), so only the *display* changes.
         let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
             .into_iter()
-            .map(|m| (m.text, m.script, m.pos, m.height, m.color))
+            .map(|m| {
+                if self.progress.is_legible(m.script) {
+                    let words = progress::glyph_count(&m.text);
+                    (
+                        lexicon::phrase(seed, m.cell, words),
+                        text::Script::Latin,
+                        m.pos,
+                        m.height,
+                        m.color,
+                    )
+                } else {
+                    (m.text, m.script, m.pos, m.height, m.color)
+                }
+            })
             .collect();
         if let Some(state) = self.state.as_mut() {
             state.set_text_labels(&labels);

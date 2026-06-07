@@ -36,6 +36,7 @@ pub enum Block {
     Scan,              // scan(shards): sense sites in the forward cone (G3)
     Collect,           // collect the aimed/nearest in-reach site (G1)
     FireBeam,          // cast the survey-beam (G2)
+    Decode,            // decode/comprehend the richest affordable stratum (G6)
     Spend,             // spend a shard on a faculty (inert until G6 gives targets)
     Goto,              // direct travel to a picked map target (inert until a map picker)
     Drift,             // aimless cinematic wander — today's default autopilot
@@ -51,6 +52,7 @@ impl Block {
             Block::Scan => "scan(shards)",
             Block::Collect => "collect",
             Block::FireBeam => "fire-beam",
+            Block::Decode => "decode",
             Block::Spend => "spend",
             Block::Goto => "goto(area)",
             Block::Drift => "drift",
@@ -69,6 +71,7 @@ impl Block {
             Block::Scan
                 | Block::Collect
                 | Block::FireBeam
+                | Block::Decode
                 | Block::Drift
                 | Block::Seek
                 | Block::Circle
@@ -127,7 +130,7 @@ impl Default for Console {
                 Block::Scan,
                 Block::Collect,
                 Block::FireBeam,
-                Block::Spend,
+                Block::Decode,
                 Block::Goto,
                 Block::Drift,
             ],
