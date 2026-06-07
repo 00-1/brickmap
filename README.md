@@ -78,6 +78,14 @@ milestones live under `/archive/`. See `docs/development.md`.
 - [`docs/development.md`](docs/development.md) — workflow, code-quality gates, and
   testing strategy.
 
+## Workspace layout
+
+The repo is a Cargo **workspace** (M9). The engine lives in `crates/` — currently the
+single `brickmap` crate, being carved into the `bm-*` engine libraries + a `game` crate
+per [`docs/milestones/M9-engine-game-split.md`](docs/milestones/M9-engine-game-split.md).
+Build/run commands use `-p <crate>` to pick a member; bare `cargo run`/`cargo test --all`
+work workspace-wide.
+
 ## Running
 
 Requires a recent stable Rust toolchain (developed against 1.94).
@@ -105,7 +113,7 @@ cargo install wasm-bindgen-cli   # version should match the `wasm-bindgen` crate
 Build the bundle:
 
 ```sh
-cargo build --lib --target wasm32-unknown-unknown
+cargo build -p brickmap --lib --target wasm32-unknown-unknown
 wasm-bindgen --target web --no-typescript \
   --out-dir web/pkg \
   target/wasm32-unknown-unknown/debug/brickmap.wasm

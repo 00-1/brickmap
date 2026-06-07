@@ -3,15 +3,16 @@
 > *Scraped Again* is the **game**; **brickmap** is the **engine** it's built on. The
 > title is the plain-English sense of *palimpsest* ("scraped again") — a dead,
 > overwritten world you read back into legibility, where the endless re-seeded world
-> is itself one more scraping. (Workspace crate `scraped`; see
+> is itself one more scraping. (Workspace crate `scraped-again`; see
 > [`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md).)
 >
 > **Status: living design.** The direction below is **decided** (2026-06): a
 > **melancholy-archival exploration game** built on the brickmap engine, with an
 > **autopilot-as-idle data-collection loop feeding a deep tech tree of
-> comprehension**. The engine/game *separation* that gives this a home is planned in
-> [`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md) (in
-> progress); this doc is the **game's** design and will keep evolving. The tree's
+> comprehension**. The engine/game *separation* that gives this a home has **landed**
+> ([`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md) ✅ — the
+> game now lives in its own `scraped-again` crate); this doc is the **game's** design
+> and will keep evolving. The tree's
 > exact node lists here are **illustrative and expandable** — the structure is the
 > commitment, the specific nodes are not.
 >
@@ -189,7 +190,7 @@ also won't get the scene's pre-palette bloom, so it wants its own cheap glow.
 
 **Cost.** Cheap: one emissive segment, a lifespan timer + fade, a line-vs-glyph
 intersection on cast (a handful of nearby inscriptions), and a 1-D parametric
-attach/slide for the walker. No rope/swing physics. Lives in the `scraped` crate over
+attach/slide for the walker. No rope/swing physics. Lives in the `scraped-again` crate over
 engine primitives (DDA pick, the `solid` oracle, the walker).
 
 ## 7. Pressure / failure
@@ -315,8 +316,8 @@ making even the menus on-aesthetic (glowing, palettised, dithered).
 
 ## 13. Build plan (slots in after M9)
 
-Once [M9](milestones/M9-engine-game-split.md) gives the game its own crate, the loop
-lands in vertical slices, each a milestone brief:
+[M9](milestones/M9-engine-game-split.md) has given the game its own `scraped-again`
+crate, so the loop can now land in vertical slices, each a milestone brief:
 
 1. **G1 — Collect & accrue.** Survey-radius collection (passive + a manual pick), the
    five strata as numbers on the HUD, a codex list. *Proves the core sensation.*
@@ -334,7 +335,7 @@ lands in vertical slices, each a milestone brief:
 
 ## 14. Open items
 
-- **The game's name** — **resolved: _Scraped Again_** (crate `scraped`). Styling
+- **The game's name** — **resolved: _Scraped Again_** (crate `scraped-again`). Styling
   (`Scraped Again` / `Scraped, Again` / lowercase) is a cosmetic call left open.
 - **v1 tree tuning** — the economy's *feel* (sweep rate, costs, buffer caps) needs live
   iteration; design the shape now, balance on play.

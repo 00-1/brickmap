@@ -411,19 +411,24 @@ content kinds (pivot 2026-06):**
 
 ### ✨ E19 — Movement: walk + cruiser *(exploration)* ✅
 A movement-mode system so the world is explored on foot *and* by ship, not just a fly-cam.
-- ✅ **Walking** (`src/player.rs`): on-foot movement with **gravity**, ground-following, and an
-  **auto-step** up ~1-block ledges (taller = a wall). Pure physics over the surface height field
-  (no voxel world needed), unit-tested; the camera controller drives the look, the `Walker`
-  constrains the position. *(Caves/overhangs aren't collidable on foot yet — you walk the surface.)*
-- ✅ **Space cruiser** (`cruiser_points_at`): a point-cloud ship drawn via the splat pipeline at
-  its parked spot while you're on foot. **Mode machine:** start piloting on **autopilot** (the
-  existing cinematic auto-fly, unchanged default); toggle autopilot↔manual (F / pad A); land
-  (within ~9 blocks of the ground) and press **E / pad B** to step out and **walk**; walk back to
-  the parked ship and press E / pad B to re-enter. Gamepad gains a B/circle "enter/exit" button
-  (native/web/android). HUD shows the mode; the map shows the parked cruiser (orange marker).
-- **Outcome:** land the ship, get out, walk the terrain (into cave-mouths / up to colossi), fly on.
-- **Next ideas:** voxel collision on foot (enter caves/structures properly), a jump button,
-  third-person cruiser cam, cruiser banking/:physics.
+- ✅ **Walking** (`src/player.rs`): on-foot movement with **gravity**, falling, and an **animated
+  auto-step** up ~1-block ledges (taller = a wall), collided against the **actual voxels** via
+  `worldgen::solid_at` (shares the cave logic with `generate_section`; golden hash unchanged) — so
+  you can walk *down into cave-mouths* and along cave floors, not just over the surface. Per-axis
+  wall-slide; the camera controller drives the look, the `Walker` constrains the position.
+  Unit-tested. *(Colossi aren't in `solid_at` yet → not collidable on foot.)*
+- ✅ **Space cruiser** (`src/ship.rs` + `ship.wgsl`): a **polygonal** ship (hull/wings/fin/cockpit/
+  engines) with glowing **nav-lights** (white-blue nose, amber tail, port-red/starboard-green
+  wingtips), drawn in its **own pass after the palette** so its true colours + lights survive (not
+  palettised), with its own depth buffer (self-occludes), shown parked while on foot. **Mode
+  machine:** start piloting on **autopilot** (cinematic — now **wanders** to new terrain in
+  S-curves, no longer a circle); toggle autopilot↔manual (F / pad A); land (within ~9 blocks of
+  the ground) and press **E / pad B** to step out and **walk**; walk back to the ship to re-enter.
+  Gamepad B/circle = enter/exit (native/web/android). HUD shows the mode; the map shows the parked
+  cruiser (orange marker).
+- **Outcome:** land the ship, get out, walk the terrain (down into cave-mouths), fly on.
+- **Next ideas:** colossi collision on foot (walk inside the structures), a jump button,
+  third-person cruiser cam, cruiser banking/physics.
 
 ### M7 — Distance dissolve (LOD that's also the look) 🛠
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
@@ -488,6 +493,32 @@ wire the lighting data path, record real numbers. *(Skip: depth pre-pass, Hi-Z �
   meshes off-thread already.)
 - **Blocked (b):** profiling needs the reference iGPU + phone to measure — logged in
   `docs/unattended-questions.md` for when the hardware's available.
+
+### M9 — Engine / game split (Cargo workspace) ✅ &nbsp;→ [`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md)
+Make design §3's "a rendering engine, not a game" **true in the code**: split the single
+`brickmap` crate into a Cargo **workspace** with a graph-enforced boundary — content-agnostic
+**engine** library crates (`bm-core`/`bm-world`/`bm-mesh`/`bm-scene`/`bm-render`/`bm-platform`,
+re-exported by the `brickmap` facade) and a **`game`** binary crate that owns all content
+(terrain recipe, biomes, colossi, inscriptions, the doom drone, player, the app/mode-machine,
+wasm/Android entry) and plugs in through seven small extension seams (`WorldGen`, splat feed,
+structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructors).
+- **Outcome:** the engine renders a content-free demo (streamed raw terrain) on its own, and the
+  game builds on it **pixel-identical to today** on every target.
+- **De-risks:** the "engine, not a game" identity claim; reusability; stops content leaking back
+  into the engine (the crate DAG mechanically forbids any `bm-*`→`game` dep, CI-checked).
+- **Behaviour-preserving:** the D1 golden image + E12 golden voxel-hash stay identical across the
+  worldgen/biome/palette extractions.
+- **Acceptance:** see the brief's checklist (workspace up; seven seams + four fused files split;
+  crate graph proves the boundary; engine-alone demo renders; golden image + voxel-hash unchanged;
+  all four targets + live preview/APK/desktop green).
+- **Landed:** the workspace is `crates/{bm-core,bm-world,bm-mesh,bm-scene,bm-render,bm-platform,
+  brickmap}` (engine) + `crates/scraped-again` — the game is **Scraped Again** (a lonely surveyor
+  of a dead world of fallen giants). `worldgen`/`biome`/`palette` extracted behind the noise +
+  `WorldGen` + palette-colour seams; recipe/biomes/drone/player/app all in the game; an
+  `engine_demo` example renders flat terrain with zero game content; a CI step asserts no
+  engine→game dep. Golden voxel-hash + headless render byte-identical throughout. *Residue:* the
+  cruiser ship mesh still lives in `bm-render`, and the `AudioSource` seam is left unformalised
+  (audio is wholly in the game per Decision 3) — both flagged as follow-ups.
 
 ## Dev tooling & process (D-series)
 

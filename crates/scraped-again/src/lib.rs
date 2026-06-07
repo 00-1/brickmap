@@ -15,36 +15,35 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
+// Scraped Again — the game: a lonely surveyor crossing a dead world of fallen giants.
+// It owns the app/event-loop + mode machine, the world content (terrain recipe, biomes,
+// colossi, inscriptions), the doom drone, and the player; it consumes the brickmap engine.
+//
+// The brickmap engine surface, re-exported under the original short module paths so the
+// app + content modules keep resolving `crate::world::…`, `crate::gfx::…`, etc. (the game
+// consumes the engine purely through the `brickmap` facade — never the bm-* crates).
+pub use brickmap::{
+    edit, foliage, gamepad, gfx, hud, map, mesh, noise, palette, particles, post, scene, ship, sim,
+    text, textures, visibility, world, WorldGen,
+};
+
 pub mod audio;
 pub mod biome;
 pub mod creatures;
-pub mod map;
+// The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
+pub mod palettes;
 pub mod player;
 pub mod relic;
+// The terrain recipe — this game's specific world, composed from the engine's noise.
+pub mod worldgen;
 // cpal audio output (E16): desktop + **Android** (AAudio backend); web uses Web Audio.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod audio_native;
-pub mod edit;
-pub mod foliage;
-pub mod gamepad;
-mod gfx;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
-pub mod hud;
-pub mod mesh;
 pub mod model;
-pub mod palette;
-pub mod particles;
-mod post;
-pub mod scene;
 pub mod share;
-pub mod sim;
 pub mod structures;
-pub mod text;
-pub mod textures;
-pub mod visibility;
-pub mod world;
-pub mod worldgen;
 use gfx::{ChunkInstance, State, Toggles};
 use mesh::{greedy_mesh_section_with, Neighbors};
 use particles::ParticleSystem;
@@ -124,7 +123,7 @@ struct App {
     wobble: f32,
     color_steps: f32,
     /// Palette post-process (E10): selection pushed to the renderer each frame. `on` gates
-    /// the whole pass; `index` picks a `palette::PALETTES` entry; `count` is how many of its
+    /// the whole pass; `index` picks a `palettes::PALETTES` entry; `count` is how many of its
     /// colours to use; `dither` is the ordered-dither spread. Driven by native keys or, on
     /// the web, the page controls.
     palette_on: bool,
@@ -244,7 +243,7 @@ impl App {
     /// palette on, reset the colour count to that palette's full length.
     #[cfg(not(target_arch = "wasm32"))]
     fn cycle_palette(&mut self) {
-        let n = palette::PALETTES.len();
+        let n = palettes::PALETTES.len();
         if !self.palette_on {
             self.palette_on = true;
             self.palette_index = 0;
@@ -254,8 +253,8 @@ impl App {
             self.palette_on = false;
             self.palette_index = 0;
         }
-        self.palette_count = palette::PALETTES[self.palette_index].colors.len() as u32;
-        let name = palette::PALETTES[self.palette_index].name;
+        self.palette_count = palettes::PALETTES[self.palette_index].colors.len() as u32;
+        let name = palettes::PALETTES[self.palette_index].name;
         if self.palette_on {
             log::info!("palette → {name} ({} colours)", self.palette_count);
         } else {
@@ -301,7 +300,7 @@ impl App {
                 return true;
             }
             KeyCode::Equal => {
-                let max = palette::PALETTES[self.palette_index].colors.len() as u32;
+                let max = palettes::PALETTES[self.palette_index].colors.len() as u32;
                 self.palette_count = (self.palette_count + 1).min(max);
                 return true;
             }
@@ -397,7 +396,9 @@ impl App {
             world::BlockId::AIR
         };
         let cmd = edit::Edit::Set { pos: target, block };
-        if let Some((coord, inverse)) = edit::apply(&mut self.overlay, seed, &cmd) {
+        if let Some((coord, inverse)) =
+            edit::apply(&mut self.overlay, &worldgen::TerrainGen { seed }, &cmd)
+        {
             self.undo.push(inverse);
             self.remesh(coord);
         }
@@ -409,7 +410,9 @@ impl App {
             return;
         };
         let seed = self.seed;
-        if let Some((coord, _)) = edit::apply(&mut self.overlay, seed, &inverse) {
+        if let Some((coord, _)) =
+            edit::apply(&mut self.overlay, &worldgen::TerrainGen { seed }, &inverse)
+        {
             self.remesh(coord);
         }
     }
@@ -1058,49 +1061,6 @@ impl ChunkLoader {
 /// Debris emitters scattered on the terrain *ahead of* the camera along its
 /// heading, so the flight sweeps over rising embers. Emitting at the camera itself
 /// just leaves the debris behind at cruise speed (it spawns and the camera is gone).
-/// The cruiser's point-cloud model (E19) positioned at `pos`: a small ship — tapered fuselage
-/// rings, swept wings, a tail fin, and glowing engines — drawn through the splat pipeline.
-fn cruiser_points_at(pos: Vec3) -> Vec<foliage::SplatInstance> {
-    use std::f32::consts::TAU;
-    let mut v = Vec::new();
-    let mut push = |x: f32, y: f32, z: f32, c: [f32; 3], s: f32| {
-        v.push(foliage::SplatInstance {
-            offset: [pos.x + x, pos.y + y, pos.z + z],
-            size: s,
-            color: c,
-            sway: 0.0,
-            alpha: 1.0,
-        });
-    };
-    let hull = [0.60, 0.65, 0.72];
-    // Fuselage: tapered rings along z (−4..4).
-    for i in -8..=8 {
-        let z = i as f32 * 0.5;
-        let r = 0.75 * (1.0 - (z / 5.5).abs());
-        for k in 0..6 {
-            let a = k as f32 / 6.0 * TAU;
-            push(a.cos() * r, a.sin() * r * 0.7, z, hull, 0.42);
-        }
-    }
-    // Swept wings either side around mid-body.
-    for i in 1..=7 {
-        let x = i as f32 * 0.5;
-        let z = -0.2 - i as f32 * 0.18; // sweep back
-        push(x, -0.1, z, hull, 0.42);
-        push(-x, -0.1, z, hull, 0.42);
-    }
-    // Tail fin.
-    for i in 0..5 {
-        push(0.0, 0.4 + i as f32 * 0.35, -3.0, hull, 0.4);
-    }
-    // Engine glow at the back (emissive → blooms).
-    for k in 0..8 {
-        let a = k as f32 / 8.0 * TAU;
-        push(a.cos() * 0.45, a.sin() * 0.35, -4.3, [0.45, 0.9, 1.0], 0.5);
-    }
-    v
-}
-
 fn lead_emitters(camera: &Camera, seed: u32) -> Vec<Vec3> {
     // Horizontal heading + right vector (the camera looks slightly down).
     let mut fwd = camera.forward();
@@ -1366,16 +1326,13 @@ impl ApplicationHandler<AppEvent> for App {
                 let wisp_mult =
                     biome::at(self.camera.position.x, self.camera.position.z, self.seed).wisps;
                 let wisp_n = (7.0 * wisp_mult).round() as usize;
-                // The cruiser's point cloud shows only when you're on foot (parked); while
-                // piloting you're inside it, so it's hidden.
-                let cruiser_pts = if self.mode == Mode::Walk {
-                    cruiser_points_at(self.cruiser_pos)
-                } else {
-                    Vec::new()
-                };
+                // The polygonal cruiser shows parked while you're on foot; while piloting you're
+                // inside it (hidden). Drawn over the palette in true colour (gfx).
+                let ship_shown = self.mode == Mode::Walk;
+                let ship_pos = self.cruiser_pos;
                 if let Some(state) = self.state.as_mut() {
                     state.set_creature_points(&self.creatures.points_n(wisp_n));
-                    state.set_cruiser_points(&cruiser_pts);
+                    state.set_ship(ship_shown, ship_pos, 0.0);
                 }
                 // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
                 self.sim(dt);
@@ -1501,11 +1458,15 @@ impl ApplicationHandler<AppEvent> for App {
                     // Push the palette (biome-blended ramp in biome mode, else the manual
                     // selection) + pixel scale (E10) before drawing.
                     if let Some(b) = bio {
-                        state.set_palette_colors(&b.colors, b.count, b.dither);
+                        state.set_palette_colors(&b.colors, b.count, b.dither, true);
                     } else {
-                        state.set_palette(
-                            self.palette_index,
-                            self.palette_count,
+                        // The game owns the curated set; resolve the chosen index to its ramp
+                        // and feed the engine's colour seam (it carries no palette table).
+                        let pal = &palettes::PALETTES
+                            [self.palette_index.min(palettes::PALETTES.len() - 1)];
+                        state.set_palette_colors(
+                            pal.colors,
+                            self.palette_count.max(1),
                             self.palette_dither,
                             self.palette_on,
                         );
@@ -1584,7 +1545,7 @@ impl ApplicationHandler<AppEvent> for App {
                         } else if self.palette_on {
                             format!(
                                 " · {} {}c",
-                                palette::PALETTES[self.palette_index].name,
+                                palettes::PALETTES[self.palette_index].name,
                                 self.palette_count
                             )
                         } else {

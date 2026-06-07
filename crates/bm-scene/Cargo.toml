@@ -1,0 +1,12 @@
+[package]
+name = "bm-scene"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.94"
+description = "brickmap engine: camera, view/projection, frustum extraction, culling policy."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/00-1/brickmap"
+
+[dependencies]
+bm-core = { path = "../bm-core" }
+glam = "0.33"

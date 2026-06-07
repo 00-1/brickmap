@@ -1,10 +1,12 @@
 # M9 — Engine / Game split (Cargo workspace)
 
-> **Status: planned brief, not started.** This is the executable plan for separating
-> brickmap-the-**engine** (a reusable, content-agnostic voxel rendering engine) from
-> the **game** that has grown on top of it (the fallen-colossi exploration world). It
-> is written to be picked up by a fresh agent **after** the currently-active branch
-> lands, so it is self-contained and assumes nothing about in-flight work.
+> **Status: ✅ landed (2026-06-07).** The single `brickmap` crate is now a Cargo
+> workspace: the engine is the `bm-*` library crates behind the `brickmap` facade, and
+> the game **Scraped Again** (`scraped-again`) owns the binary + all content. The cut is
+> behaviour-preserving (golden voxel-hash + headless render unchanged) and the crate
+> graph forbids any engine→game dep (CI-checked). See the acceptance checklist below for
+> the two flagged residues (the cruiser ship mesh still in `bm-render`; the `AudioSource`
+> seam left unformalised since audio lives wholly in the game per Decision 3).
 >
 > Pairs with [`game-mechanics.md`](../game-mechanics.md) (the game's design) and the
 > crate plan in [`architecture.md`](architecture.md) §3 (which this milestone finally
@@ -173,16 +175,15 @@ These are the *entire* contract surface between game and engine. Keep it this sm
    *constructors + per-frame calls*, **not** a `Game` trait the engine calls back
    into (avoid the framework inversion unless Decision 2 says otherwise).
 
-> **Known upcoming render capability (not part of this split, but the seam should
-> anticipate it):** *Scraped Again* needs a **post-palette, depth-aware,
-> non-palettised emissive overlay** draw — the survey-beam (see
-> [`game-mechanics.md`](../game-mechanics.md) §6) is a vivid line drawn *after* the
-> palette post-process yet still occluded by scene geometry. So `bm-render` must be
-> able to **retain scene depth through the post chain** and offer a final overlay pass
-> the game feeds primitives into. Worth keeping the post-chain / depth-store design
-> open to it (it also interacts with the M8 "discard depth for tiler bandwidth" note —
-> keep depth when an overlay needs it). The overlay draw itself is game-fed; the
-> *capability* is engine.
+> **Known upcoming render capability (post-split, but the seam should anticipate it):**
+> *Scraped Again* needs a **post-palette, depth-aware, non-palettised emissive overlay**
+> draw — the survey-beam (see [`game-mechanics.md`](../game-mechanics.md) §6) is a vivid
+> line drawn *after* the palette post-process yet still occluded by scene geometry. So
+> `bm-render` must be able to **retain scene depth through the post chain** and offer a
+> final overlay pass the game feeds primitives into. Worth keeping the post-chain /
+> depth-store design open to it (it also interacts with the M8 "discard depth for tiler
+> bandwidth" note — keep depth when an overlay needs it). The overlay draw is game-fed;
+> the *capability* is engine.
 
 ### The four fused files — extraction plan
 
@@ -237,12 +238,18 @@ Bottom-up, **green at every step** (`cargo fmt && clippy -D warnings && test --a
 
 ## Decisions to resolve (with recommended defaults)
 
-1. **Game name.** **Resolved: the game is _Scraped Again_** (workspace crate
-   `scraped`; referred to as `<game>` elsewhere in this brief). `brickmap` stays the
-   **engine**; _Scraped Again_ is the game built on it. The name is the plain-English
-   sense of *palimpsest* ("scraped again") — fitting a melancholy game about reading a
-   dead, overwritten world, where the endless re-seeded world reads as one more
-   scraping. So Phase 3 creates `crates/scraped` (no longer blocked on a naming call).
+> **Resolution (Phase 0, 2026-06-07).** Decisions **2–6 take their recommended
+> defaults** (library-style; keep `bm-audio`/`bm-geom` generators in the game for
+> now — extract only noise + palette apply; **monorepo** path-dep crate, Decision 4
+> already firmed; do the full §3 7-crate split in Phase 2; engine keeps the runnable
+> Phase 4 demo). **Decision 1 (the game's name) — RESOLVED 2026-06-07: the game is
+> *Scraped Again*** (crate `scraped-again`, lib `scraped_again`). The engine stays
+> `brickmap`. Phase 3 creates `crates/scraped-again` as the binary/cdylib.
+
+1. **Game name. → Resolved: *Scraped Again*.** brickmap stays the engine; the game is
+   the Cargo package `scraped-again` (lib `scraped_again`) — the binary you run, the
+   APK, the Pages app. The fiction is "a lonely surveyor of a dead world of fallen
+   giants."
 2. **Library-style vs framework-style.** Game-owns-`main` and calls the engine
    (library) **vs** engine-owns-`main` and calls a `Game` trait (framework).
    *Default: **library-style*** — simpler, matches "a game that uses the engine," and
@@ -326,21 +333,35 @@ plus **"prove the boundary exists"**:
 
 ## Acceptance checklist
 
-- [ ] Decisions 1–6 resolved and recorded; design §3 + architecture §3 + a roadmap
-      rung updated to describe the engine/game split (Phase 0).
-- [ ] Cargo **workspace** in place; engine is library crates with **no `main`**; the
-      game crate owns the binary + wasm/android entry.
-- [ ] The **seven extension seams** implemented; the four fused files split per plan
-      (`worldgen`/`biome`/`palette` extracted; `audio`/`relic`/`model` placed per
-      Decision 3).
-- [ ] **Crate graph proves the boundary**: no engine crate depends on the game
-      (CI-checked).
-- [ ] **Engine-alone demo** renders streamed terrain with zero game content (Phase 4).
-- [ ] Game is **behaviour-identical to today**: golden image + voxel-hash unchanged.
-- [ ] **All four targets** build + run; CI (fmt/clippy `-D warnings`/test/wasm/apk/
-      desktop) green; the **live Pages preview, APK, and desktop binary** verified.
-- [ ] `architecture.md` §7 "current vs target" updated to reflect the realised
-      workspace.
+- [x] Decisions 1–6 resolved and recorded; design §3 + architecture §3 + a roadmap
+      rung updated to describe the engine/game split (Phase 0). *(Decision 1 — game
+      name — deferred to the human before Phase 3, per the resolution note.)*
+- [x] Cargo **workspace** in place; engine is library crates with **no `main`** (the six
+      `bm-*` + the `brickmap` facade are all `rlib`); the game crate `scraped-again` owns
+      the binary + the wasm/Android `cdylib` entry.
+- [x] The **seven extension seams** implemented; the four fused files split per plan —
+      `worldgen` (recipe → game behind the `WorldGen` trait; pure noise → `bm-world`),
+      `palette` (curated set → game; engine keeps `set_colors` + `DEFAULT_RAMP`), `biome`
+      (whole → game, on engine noise), and `audio`/`relic`/`model` placed in the game per
+      Decision 3. Seams: `WorldGen` ✅, splat feed ✅, structure draws ✅, `Edit`/`apply`
+      ✅, `LookParams` (palette colours) ✅, runtime/`ApplicationHandler` ✅; audio stays
+      wholly in the game (Decision 3), so the `AudioSource` trait seam (#6) is **not yet
+      formalised**. *Residue:* the cruiser **ship mesh** still sits in `bm-render` (the
+      ShipRenderer is generic; ship is post-brief E19 content, not a designated fused file)
+      — flagged as a follow-up.
+- [x] **Crate graph proves the boundary**: a CI step asserts (via `cargo tree`) that no
+      `bm-*`/`brickmap` crate depends on `scraped-again`.
+- [x] **Engine-alone demo** (`brickmap` `examples/engine_demo.rs`) renders streamed flat
+      terrain via a trivial `WorldGen` with **zero game content**, against the `bm-*` crates
+      only (CI builds it).
+- [x] Game is **behaviour-identical to today**: golden voxel-hash unchanged
+      (`4_243_141_091_443_216_542`) + headless golden render byte-identical (default +
+      palette) at every phase.
+- [x] **All four targets** build: native (clippy `-D`/test), web/WASM (game cdylib),
+      Android (`cargo check`), headless. CI retargeted at the game (fmt/clippy/test/wasm +
+      the boundary/demo checks). *The **live Pages preview, APK, and desktop binary** are
+      verified by their CI workflows on merge — can't run a display/NDK in the dev sandbox.*
+- [x] `architecture.md` §7 "current vs target" updated to reflect the realised workspace.
 
 ## Out of scope / follow-ups
 

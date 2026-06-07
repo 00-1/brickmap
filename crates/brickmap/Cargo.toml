@@ -1,0 +1,41 @@
+[package]
+name = "brickmap"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.94"
+description = "A high-performance, cross-platform voxel rendering engine (facade over the bm-* crates)."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/00-1/brickmap"
+
+# The engine facade is a library only — the game crate owns the binary/cdylib.
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+# The engine library crates this facade re-exports (the whole bm-* DAG).
+bm-core = { path = "../bm-core" }
+bm-world = { path = "../bm-world" }
+bm-mesh = { path = "../bm-mesh" }
+bm-scene = { path = "../bm-scene" }
+bm-render = { path = "../bm-render" }
+bm-platform = { path = "../bm-platform" }
+
+# Dev-only: the meshing bench (M2) + the engine-alone demo (examples/engine_demo.rs),
+# which proves the engine renders streamed terrain with zero game content. These pull in
+# windowing/timing only for the example/bench — the facade itself depends on nothing but
+# the bm-* crates.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = "0.5"
+winit = "0.30"
+glam = "0.33"
+pollster = "0.4"
+env_logger = "0.11"
+log = "0.4"
+
+[[bench]]
+name = "meshing"
+harness = false
+
+# The engine-alone demo (M9 Phase 4): builds + renders against the bm-* crates only.
+[[example]]
+name = "engine_demo"

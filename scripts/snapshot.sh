@@ -21,8 +21,10 @@ trap 'git -C "$repo" worktree remove --force "$work" 2>/dev/null || true; rm -rf
 echo "Building snapshot '$id' from $ref ..."
 git -C "$repo" worktree add --detach "$work" "$ref" >/dev/null
 
-# Share the main target dir so dependency artifacts are reused.
-CARGO_TARGET_DIR="$repo/target" cargo build --release --lib \
+# Share the main target dir so dependency artifacts are reused. The web app is the game
+# crate `scraped-again` since M9 (was `brickmap` before the engine/game split — snapshot
+# refs predating M9 should pass that older package/wasm name instead).
+CARGO_TARGET_DIR="$repo/target" cargo build --release -p scraped-again --lib \
   --target wasm32-unknown-unknown --manifest-path "$work/Cargo.toml"
 
 rm -rf "$out"
@@ -33,7 +35,7 @@ cp "$work/web/index.html" "$out/index.html"
 sed -i "s/__CACHE_BUST__/$id/g; s/__BUILD_SHA__/$id/g; s/__BUILD_TIME__/$(date -u +%s)/g" "$out/index.html"
 wasm-bindgen --target web --no-typescript \
   --out-dir "$out/pkg" \
-  "$repo/target/wasm32-unknown-unknown/release/brickmap.wasm"
+  "$repo/target/wasm32-unknown-unknown/release/scraped_again.wasm"
 
 # Tag the source commit so the snapshot's provenance is recorded.
 git -C "$repo" tag -f "snapshot/$id" "$ref" >/dev/null
