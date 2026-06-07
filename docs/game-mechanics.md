@@ -6,6 +6,11 @@
 > is itself one more scraping. (Workspace crate `scraped-again`; see
 > [`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md).)
 >
+> **Core architecture:** the progression / management / automation system is a single
+> **block substrate** (the "tech tree" reframed) — see [`game-system.md`](game-system.md).
+> Where this doc says "Auto-Collect upgrade", "the tech tree", or "scan tiers", read those
+> as **blocks you compose**; `game-system.md` is authoritative on how they work.
+>
 > **Status: living design.** The direction below is **decided** (2026-06): a
 > **melancholy-archival exploration game** built on the brickmap engine, with an
 > **autopilot-as-idle data-collection loop feeding a deep tech tree of
@@ -175,10 +180,11 @@ this" rule needed.
   *uncollected* sites; you triage).
 - **Collect (the warm beam).** Your survey-beam (below) **extracts the data/lore** into
   the strata + codex. Scan tells you *where*; collection takes *the thing*.
-- **Auto-collect (a Memory unlock).** The cruiser begins **auto-firing the collection
-  beam** at the forward zone and harvesting as you pass — the visible idle harvest. It
-  takes the **common layer in your corridor**; off-route and deep things you still steer to
-  (manually or by routing). It removes the *chore*, not the *expedition*.
+- **Auto-collect (a *composed routine*, not a toggle).** Auto-collection isn't a hardcoded
+  upgrade — it's the block routine `on-scan → if matches(…) → collect` you assemble in the
+  console ([`game-system.md`](game-system.md)). The cruiser then auto-fires the collection
+  beam at the forward zone; you choose what it grabs via the filter, and budget/priority
+  blocks tune it. It removes the *chore*, not the *expedition*.
 
 **Autopilot is a complete way to play — not a punished one.** Manual is a **multiplier,
 not a gate**: it's *faster*, it reaches the corridor's edges, and it gets the **optional**
@@ -248,6 +254,12 @@ machine** as a *ranged* alternative to walk-up-and-press-E. Two rules make it fe
   far you can recall from. The headline emergent beat: **falling → beam the distant ship →
   the winch hauls you home** — relief, the light pulling you back from the dark.
 
+**Hailing the ship.** Because the cruiser can be **off flying its own routine** while you
+walk (two agents run independently — [`game-system.md`](game-system.md) §7), it may not be
+parked within beam reach. So you can **hail** it — recall the autonomous ship to your
+position, where the beam-board then takes over. (Hail is itself a block: clickable by hand,
+or wired — e.g. `when on-foot buffer full → hail`.)
+
 **Rendering (note for the engine).** The beam draws **after the palette post-process**,
 so it keeps its **raw vivid colour** — the one thing in frame *not* mapped onto the
 world's muted ramp, reading as artificial / yours / technology cutting through the murk
@@ -274,6 +286,11 @@ replenished at **pristine pockets**, making them rhythmic waypoints rather than 
 states. Default: keep it pure.
 
 ## 8. The tech tree — faculties of comprehension
+
+> **Reframed (see [`game-system.md`](game-system.md)):** the "tech tree" is really the
+> **library of blocks** you recover — action-blocks, control/meta-blocks, and spend-targets
+> (upgrades). The branches below are the *domains* that vocabulary spans; read each "node"
+> as a block or upgrade you unlock and then **compose**. `game-system.md` owns the how.
 
 Five branches. Nodes are **illustrative** (the structure is the commitment); each branch
 is meant to deepen "to the extreme" over time, terminating in a long, expensive

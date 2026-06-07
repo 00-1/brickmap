@@ -534,11 +534,19 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 The game built on the engine (now `crates/scraped-again`). Full design:
 [`game-mechanics.md`](game-mechanics.md) — a **melancholy-archival** game where progress is
 **comprehension, not conquest**: you read a dead world's inscriptions into **five data
-strata**, spend them on a deep **tech tree**, and **decipher** a lost language. Played as
-**three overlapping games sharing one economy** — *autopilot* (a menu/management game,
-completes the whole core hands-off), *manual flight* (navigation), and *walking*
-(exploration; the survey-beam + interiors). Briefs are fleshed just before each rung, as
-usual.
+strata** and **decipher** a lost language. Played as **three overlapping games sharing one
+economy** — *autopilot* (a menu/management game, completes the whole core hands-off),
+*manual flight* (navigation), and *walking* (exploration; the survey-beam + interiors).
+Briefs are fleshed just before each rung, as usual.
+
+> **Core architecture — [`game-system.md`](game-system.md):** progression, management, and
+> automation are **one block substrate** (the "tech tree" reframed). Blocks *are* the
+> interface — visible, clickable to trigger, wireable to automate — fully transparent, no
+> typing (controller/phone-first). It's the **manual→automatable ladder** that *is* the
+> three modes; it spans **two independently-running agents** (ship + walker, with a *hail*);
+> and it's **foundational infra introduced early & minimally, then grown** — not a late
+> feature. This reframes the G-series ordering below (a minimal block runtime lands with the
+> first slices; scan/collect/beam are *blocks*); a detailed re-slice is a follow-up.
 
 ### ✨ G1 — Data, strata & the codex ⏳ &nbsp;→ [`milestones/G1-data-strata-codex.md`](milestones/G1-data-strata-codex.md)
 The economy spine: glyphs collect into five typed strata + a codex; progress = seed + a
