@@ -87,11 +87,20 @@ rendering; codex RTT thumbnails; pristine/interior gating.
 
 ## Acceptance checklist
 
-- [ ] Five strata + script→stratum mapping implemented; yield is a tested pure fn.
-- [ ] Manual collect (DDA pick + button) → strata++ on the HUD + a codex entry; de-dup works.
-- [ ] Collect routed through the serializable `Event`/`apply` seam.
-- [ ] Progress (strata + collected-set) saves into the `share` payload and restores on load
-      (round-trip tested; determinism tested).
-- [ ] Codex list screen shows finds (text only).
-- [ ] CI green (fmt / clippy -D / tests / wasm); behaviour of existing systems unchanged.
-- [ ] `game-mechanics.md` §13 build plan ticked for G1; this checklist complete.
+- [x] Five strata + script→stratum mapping implemented; yield is a tested pure fn
+      (`progress::{Stratum, Strata, stratum_of, yield_amount}`).
+- [x] Manual collect (aim ray + **`T`**) → strata++ on the HUD + a codex entry; de-dup works
+      (`App::collect_aimed` — nearest in-reach collectible to the view ray).
+- [x] Collect routed through the serializable `progress::Event::Collect` / `Progress::apply` seam.
+- [x] Progress (strata + codex) saves into the share payload (its own `pg=` key, ignored by
+      `ShareState`) and restores on load (`initial_progress`); round-trip + determinism unit-tested.
+- [x] Codex list screen shows finds (text only) — toggle **`J`** (`App::codex_text`).
+- [x] CI green (fmt / clippy -D / tests / wasm); existing behaviour unchanged (golden voxel-hash
+      + headless render untouched — G1 is pure game logic + HUD text).
+- [x] `game-mechanics.md` §13 build plan ticked for G1; this checklist complete.
+
+> **Decisions:** all four took their recommended defaults (manual DDA pick + key; yield
+> `base[script]·(1+glyphs)`, glyph count clamped at 32; thumbnails deferred; append-only
+> payload — a versioned binary `pg=` blob that also carries the full codex entries, so a reload
+> restores the *list*, not just the id-set). Collect/codex are keyboard **`T`/`J`** (work on web
+> via the shared key path; no engine or gamepad change, per scope).

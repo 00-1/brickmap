@@ -32,6 +32,8 @@ pub mod biome;
 pub mod creatures;
 // The cruiser's geometry (the engine renderer is generic — the ship is the game's).
 pub mod cruiser;
+// Gameplay (Scraped Again): data strata, the codex, collect events (G1).
+pub mod progress;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
 pub mod palettes;
 pub mod player;
@@ -163,6 +165,13 @@ struct App {
     text_cells: std::collections::HashSet<(i32, i32, u8)>,
     /// Previous-frame camera position, for the reactive-audio (E16) flight-speed estimate.
     audio_prev_pos: Option<Vec3>,
+    /// Scraped Again gameplay (G1): banked data strata + the codex of collected inscriptions.
+    progress: progress::Progress,
+    /// Nearby still-collectible inscriptions (rebuilt as text streams in) — the targets the
+    /// collect pick (`T`) aims at.
+    collectible: Vec<progress::Collectible>,
+    /// Whether the codex list overlay is open (key `J`).
+    codex_open: bool,
     /// Biome-driven auto mode (the new default): when on, the biome at the camera drives the
     /// palette, spawn densities, lighting/wobble, ground, and drone mix — blended smoothly as you
     /// move, no manual toggles. Off → the manual settings ("as we currently have it"). Key `G`.
@@ -275,7 +284,7 @@ impl App {
                 return true;
             }
             KeyCode::KeyP => {
-                log::info!("share: #{}", self.current_share().encode());
+                log::info!("share: #{}", self.share_string());
                 return true;
             }
             // Voxel editing (E14): V place, B break, U undo.
@@ -433,6 +442,75 @@ impl App {
     }
 
     /// The current world + view as a `ShareState` (E12) — for "copy link" / `--share`.
+    /// G1: collect the inscription the player is aiming at — the nearest still-collectible
+    /// glyph within reach and close to the view ray (the E14-style aim). Routed through the
+    /// serializable `progress::Event`/`apply` seam; banks its stratum + records it in the codex.
+    fn collect_aimed(&mut self) {
+        const REACH: f32 = 60.0; // how far a collect pick carries
+        const AIM_RADIUS: f32 = 3.0; // forgiving perpendicular tolerance (glyphs are ~1u tall)
+        let origin = self.camera.position;
+        let dir = self.camera.forward();
+        let mut best_t = f32::INFINITY;
+        let mut best_i: Option<usize> = None;
+        for (i, c) in self.collectible.iter().enumerate() {
+            let v = Vec3::from(c.pos) - origin;
+            let t = v.dot(dir);
+            if t <= 0.0 || t > REACH {
+                continue; // behind us / out of reach
+            }
+            if (v - dir * t).length() <= AIM_RADIUS && t < best_t {
+                best_t = t;
+                best_i = Some(i);
+            }
+        }
+        let Some(idx) = best_i else {
+            log::info!("collect: nothing in your sights");
+            return;
+        };
+        let c = self.collectible.remove(idx);
+        let ev = progress::Event::Collect {
+            find_id: c.find_id,
+            script: c.script,
+            text: c.text.clone(),
+            pos: c.pos,
+        };
+        if self.progress.apply(&ev) {
+            log::info!(
+                "collected \"{}\" → +{} {}",
+                c.text,
+                progress::yield_amount(c.script, progress::glyph_count(&c.text)),
+                progress::stratum_of(c.script).label(),
+            );
+        }
+    }
+
+    /// The G1 strata readout line for the HUD.
+    fn strata_hud(&self) -> String {
+        let s = &self.progress.strata;
+        format!(
+            "REC {} · SCH {} · RIT {} · REL {} · SIG {}   [T collect · J codex]",
+            s.records, s.schematics, s.rites, s.relics, s.signals
+        )
+    }
+
+    /// The codex list overlay (text only, most-recent first) — the G1 archive screen.
+    fn codex_text(&self) -> String {
+        let c = &self.progress.codex;
+        let mut out = format!("CODEX — {} finds   [J close]\n", c.len());
+        if c.is_empty() {
+            out.push_str("(nothing yet — aim at a glowing inscription and press T)");
+        } else {
+            for e in c.iter().rev().take(20) {
+                out.push_str(&format!(
+                    "{}  {}\n",
+                    progress::stratum_of(e.script).label(),
+                    e.text
+                ));
+            }
+        }
+        out
+    }
+
     fn current_share(&self) -> share::ShareState {
         share::ShareState {
             seed: self.seed,
@@ -443,6 +521,16 @@ impl App {
             color_steps: self.color_steps,
             toggles: self.toggles.to_mask(),
         }
+    }
+
+    /// The full persisted/shared string: the view + the G1 progress segment (`pg=`). Both
+    /// decoders are lenient and ignore each other's keys, so they ride one string.
+    fn share_string(&self) -> String {
+        format!(
+            "{}&{}",
+            self.current_share().encode(),
+            self.progress.encode()
+        )
     }
 
     /// Stream colossal structures (E18) around the camera: seed-placed tube-tech relics, some
@@ -548,9 +636,26 @@ impl App {
                 self.map_dirty = true;
             }
         }
-        let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = marks
+        let inscriptions: Vec<structures::Inscription> = marks
             .into_iter()
             .chain(colossi.iter().map(structures::colossus_label))
+            .collect();
+        // G1: the still-collectible inscriptions in range (already-collected ones filtered
+        // out), used as the collect pick's targets.
+        self.collectible = inscriptions
+            .iter()
+            .filter_map(|m| {
+                let id = progress::find_id(m.cell, m.script, &m.text);
+                (!self.progress.has(id)).then(|| progress::Collectible {
+                    find_id: id,
+                    script: m.script,
+                    text: m.text.clone(),
+                    pos: m.pos.to_array(),
+                })
+            })
+            .collect();
+        let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
+            .into_iter()
             .map(|m| (m.text, m.script, m.pos, m.height, m.color))
             .collect();
         if let Some(state) = self.state.as_mut() {
@@ -1173,6 +1278,10 @@ impl ApplicationHandler<AppEvent> for App {
                         self.auto_fly = !self.auto_fly; // toggle autopilot (cinematic)
                     } else if code == KeyCode::KeyE && pressed {
                         self.toggle_cruiser(); // enter/exit the cruiser
+                    } else if code == KeyCode::KeyT && pressed {
+                        self.collect_aimed(); // G1: collect the aimed inscription
+                    } else if code == KeyCode::KeyJ && pressed {
+                        self.codex_open = !self.codex_open; // G1: codex list overlay
                     } else if pressed && self.handle_seed_key(code) {
                         // handled: R reseed / P print share (native)
                     } else if let Some(i) = toggle_index(code) {
@@ -1369,7 +1478,7 @@ impl ApplicationHandler<AppEvent> for App {
                 // The current share string for "copy link" (computed before the mutable
                 // `state` borrow below; cheap, refreshed every frame).
                 #[cfg(target_arch = "wasm32")]
-                let share_str = self.current_share().encode();
+                let share_str = self.share_string();
 
                 // Explored-map prep (E10): rebuild the GPU image only when the explored set grew.
                 // `build_map_image` borrows `&self`, so it must run before the mutable `state`
@@ -1457,6 +1566,10 @@ impl ApplicationHandler<AppEvent> for App {
                 let fwd = self.camera.forward();
                 let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
                 let cam_up = cam_right.cross(fwd).normalize_or_zero();
+
+                // G1 HUD bits, computed before the mutable `state` borrow below.
+                let strata_line = self.strata_hud();
+                let codex_view = self.codex_open.then(|| self.codex_text());
 
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
@@ -1570,7 +1683,9 @@ impl ApplicationHandler<AppEvent> for App {
                         };
                         // When the map is open, the HUD becomes its key + coordinates (crosshair
                         // centre + your position), instead of the perf line.
-                        let hud = if self.map_view {
+                        let hud = if let Some(codex) = &codex_view {
+                            codex.clone()
+                        } else if self.map_view {
                             let nch = world::Section::SIZE as f32;
                             let (px, pz) =
                                 (self.camera.position.x as i32, self.camera.position.z as i32);
@@ -1582,7 +1697,7 @@ impl ApplicationHandler<AppEvent> for App {
                             )
                         } else {
                             format!(
-                                "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{mode}{off}",
+                                "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{mode}{off}\n{}",
                                 self.frame_ms_ema,
                                 self.seed,
                                 s.drawn_chunks,
@@ -1591,6 +1706,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 s.particles,
                                 s.splats,
                                 s.relics,
+                                strata_line,
                             )
                         };
                         // In-engine text overlay on every platform (no DOM HUD).
@@ -1772,6 +1888,10 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         creatures: creatures::Swarm::new(view.seed ^ 0xE15_E15, 12, pos, 80.0),
         text_cells: std::collections::HashSet::new(),
         audio_prev_pos: None,
+        // Restore collected strata + codex from the same share source as the view (G1).
+        progress: initial_progress(),
+        collectible: Vec::new(),
+        codex_open: false,
         biome_mode: true, // the new default mode
         biome_label: String::new(),
         map: std::collections::HashMap::new(),
@@ -1833,6 +1953,27 @@ fn initial_view(default: share::ShareState) -> share::ShareState {
         .and_then(|w| w.location().hash().ok())
         .and_then(|h| share::ShareState::decode(&h, default))
         .unwrap_or(default)
+}
+
+/// Restore collected progress (strata + codex) from the same share source as the view (G1):
+/// the native `--share <blob>` arg, or the web URL hash. Absent/garbled → empty progress.
+#[cfg(not(target_arch = "wasm32"))]
+fn initial_progress() -> progress::Progress {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter()
+        .position(|a| a == "--share")
+        .and_then(|i| args.get(i + 1))
+        .map(|blob| progress::Progress::decode(blob))
+        .unwrap_or_default()
+}
+
+/// Web: restore progress from the URL hash fragment (its own `pg=` key).
+#[cfg(target_arch = "wasm32")]
+fn initial_progress() -> progress::Progress {
+    web_sys::window()
+        .and_then(|w| w.location().hash().ok())
+        .map(|h| progress::Progress::decode(&h))
+        .unwrap_or_default()
 }
 
 /// Seed for the world (the default + the headless demo).

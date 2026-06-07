@@ -540,9 +540,13 @@ completes the whole core hands-off), *manual flight* (navigation), and *walking*
 (exploration; the survey-beam + interiors). Briefs are fleshed just before each rung, as
 usual.
 
-### ✨ G1 — Data, strata & the codex ⏳ &nbsp;→ [`milestones/G1-data-strata-codex.md`](milestones/G1-data-strata-codex.md)
+### ✨ G1 — Data, strata & the codex ✅ &nbsp;→ [`milestones/G1-data-strata-codex.md`](milestones/G1-data-strata-codex.md)
 The economy spine: glyphs collect into five typed strata + a codex; progress = seed + a
 sparse log (extends `share`). No engine changes. *Proves the core collecting sensation.*
+- **Landed:** `progress` module (strata/codex/`Event`+`apply`, all unit-tested); aim-and-**`T`**
+  collect picks the nearest in-reach inscription to the view ray; strata readout on the HUD +
+  a **`J`** codex list; progress round-trips through a versioned `pg=` share segment (restored
+  on load). Golden voxel-hash + headless render untouched (pure game logic). 124 tests green.
 
 ### ✨ G2 — The survey-beam ⏳ &nbsp;→ [`milestones/G2-survey-beam.md`](milestones/G2-survey-beam.md)
 The signature manual verb: a vivid cast→persist→fade beam that collects-along-path and is a

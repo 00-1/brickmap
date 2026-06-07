@@ -414,17 +414,20 @@ making even the menus on-aesthetic (glowing, palettised, dithered).
 [M9](milestones/M9-engine-game-split.md) has given the game its own `scraped-again`
 crate, so the loop can now land in vertical slices, each a milestone brief:
 
-1. **G1 — Collect & accrue.** Survey-radius collection (passive + a manual pick), the
-   five strata as numbers on the HUD, a codex list. *Proves the core sensation.*
-   - **G1.5 — The survey-beam.** The cast → persist → fade beam: collect-along-path +
-     the 1-D attach/ride rail + drop-on-expire + the post-palette vivid draw (the engine
-     hook). *Proves the active verb + fixes "you get stuck."*
-2. **G2 — The first tree.** A small tuned tree (a few nodes per branch) + the in-engine
-   tree UI on the E17 text path; Sensing + Memory first (they make the idle layer feel
-   good); Decipherment legibility for one script. *Proves the economy + the payoff.*
-3. **G3 — Autopilot autonomy + interiors.** "Ship learns to seek" routing; Descent/Hull
+1. **✅ G1 — Data, strata & the codex.** Collection (a manual aim+key pick) into the five
+   typed strata, the strata as numbers on the HUD, and a codex list; progress = seed + a
+   sparse log (its own `pg=` share segment). *Proved the core sensation.* **(Landed — see
+   [`milestones/G1-data-strata-codex.md`](milestones/G1-data-strata-codex.md).)**
+2. **G2 — The survey-beam.** The cast → persist → fade beam: collect-along-path + the 1-D
+   attach/ride rail + drop-on-expire + the **post-palette vivid draw** (the one new engine
+   capability). *Proves the active verb + fixes "you get stuck."*
+3. **G3 — Autopilot scan + map, then the first tree.** Cruiser auto-scan → the map
+   opportunity surface; then a small tuned tree (a few nodes per branch) + the in-engine tree
+   UI on the E17 text path; Sensing + Memory first; Decipherment legibility for one script.
+   *Proves the economy + the payoff.*
+4. **G4 — Autopilot autonomy + interiors.** "Ship learns to seek" routing; Descent/Hull
    tech + foot-collision so caves and solid colossi become collectible interiors.
-4. **G4+ — Depth.** Expand each branch toward the late-game **Concordance/Synthesis**
+5. **G5+ — Depth.** Expand each branch toward the late-game **Concordance/Synthesis**
    arcs; tune the idle/active balance; the Resonance/pristine layer; co-op shared
    archive (with N1).
 
