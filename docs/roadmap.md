@@ -548,11 +548,16 @@ sparse log (extends `share`). No engine changes. *Proves the core collecting sen
   a **`J`** codex list; progress round-trips through a versioned `pg=` share segment (restored
   on load). Golden voxel-hash + headless render untouched (pure game logic). 124 tests green.
 
-### ✨ G2 — The survey-beam ⏳ &nbsp;→ [`milestones/G2-survey-beam.md`](milestones/G2-survey-beam.md)
+### ✨ G2 — The survey-beam ✅ &nbsp;→ [`milestones/G2-survey-beam.md`](milestones/G2-survey-beam.md)
 The signature manual verb: a vivid cast→persist→fade beam that collects-along-path and is a
 rideable rail (+ boards the cruiser). Needs one new **engine capability** — a post-palette,
 depth-aware emissive overlay in `bm-render` (the capability flagged in M9). *De-risks that
 capability + fixes "you get stuck on foot."*
+- **Landed:** `bm-render::overlay` (generic post-palette, depth-aware, non-palettised overlay
+  with its own glow — depth retained only when active) + `scraped-again::beam` (left-click cast,
+  eased fade, collect-along-path into G1, 1-DoF ride rail with drop-on-expire + mid-fall re-cast,
+  reach-gated lock-on cruiser board). Headless A/B (opt-in `SCRAPED_BEAM`) proves vivid-over-
+  palette + terrain-occluded. Crate boundary intact; 129 tests green; golden voxel-hash unchanged.
 
 ### ✨ G3+ — scan/map, the tree, depth ⏳
 Sketched in [`game-mechanics.md`](game-mechanics.md) §13 (cruiser auto-scan → map

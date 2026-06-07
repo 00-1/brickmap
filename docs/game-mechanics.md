@@ -418,9 +418,10 @@ crate, so the loop can now land in vertical slices, each a milestone brief:
    typed strata, the strata as numbers on the HUD, and a codex list; progress = seed + a
    sparse log (its own `pg=` share segment). *Proved the core sensation.* **(Landed — see
    [`milestones/G1-data-strata-codex.md`](milestones/G1-data-strata-codex.md).)**
-2. **G2 — The survey-beam.** The cast → persist → fade beam: collect-along-path + the 1-D
-   attach/ride rail + drop-on-expire + the **post-palette vivid draw** (the one new engine
-   capability). *Proves the active verb + fixes "you get stuck."*
+2. **✅ G2 — The survey-beam.** The cast → persist → fade beam: collect-along-path + the 1-D
+   attach/ride rail + drop-on-expire + cruiser-board + the **post-palette vivid draw** (the one
+   new engine capability, now realised in `bm-render`). *Proved the active verb + fixes "you get
+   stuck."* **(Landed — see [`milestones/G2-survey-beam.md`](milestones/G2-survey-beam.md).)**
 3. **G3 — Autopilot scan + map, then the first tree.** Cruiser auto-scan → the map
    opportunity surface; then a small tuned tree (a few nodes per branch) + the in-engine tree
    UI on the E17 text path; Sensing + Memory first; Decipherment legibility for one script.

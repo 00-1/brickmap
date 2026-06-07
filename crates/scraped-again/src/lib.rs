@@ -176,6 +176,8 @@ struct App {
     codex_open: bool,
     /// The active survey-beam (G2), if one is cast — persists then fades.
     beam: Option<beam::Beam>,
+    /// When attached to the beam as a rail (Walk mode): the parametric ride position `t∈[0,1]`.
+    ride_t: Option<f32>,
     /// Monotonic seconds, accumulated each frame — the beam's clock (birth + fade).
     time: f32,
     /// Biome-driven auto mode (the new default): when on, the biome at the camera drives the
@@ -490,10 +492,25 @@ impl App {
         }
     }
 
-    /// G2: cast the survey-beam from the camera along the aim direction. Sweeps up every
-    /// collectible glyph along its path on cast (one-shot, feeding G1), then persists + fades.
+    /// G2: cast the survey-beam from the camera along the aim direction. In Walk mode it can
+    /// **board the cruiser** (lock-on, reach-gated) or **attach as a rail**; either way it
+    /// sweeps up every collectible glyph along its path on cast (one-shot, feeding G1).
     fn cast_beam(&mut self) {
         let b = beam::Beam::cast(self.camera.position, self.camera.forward(), self.time);
+        // Board: on foot, a beam that locks onto the parked cruiser within reach reels you in
+        // and boards (the E19 "enter" as a *ranged* alternative to walk-up-and-press-E).
+        if self.mode == Mode::Walk
+            && beam::within_reach(self.camera.position, self.cruiser_pos)
+            && beam::dist_point_segment(self.cruiser_pos, b.a, b.b) <= 6.0
+        {
+            self.beam = Some(b);
+            self.camera.position = self.cruiser_pos + Vec3::new(0.0, 1.5, 0.0);
+            self.mode = Mode::Pilot;
+            self.auto_fly = false;
+            self.ride_t = None;
+            log::info!("beam: locked on — reeled in and boarded the cruiser");
+            return;
+        }
         let mut swept = 0u32;
         let mut done: Vec<u64> = Vec::new();
         for c in &self.collectible {
@@ -512,6 +529,11 @@ impl App {
         }
         self.collectible.retain(|c| !done.contains(&c.find_id));
         self.beam = Some(b);
+        // On foot, attach to the fresh beam as a rail (ride it to escape pits/cliffs — and
+        // casting mid-fall re-attaches, saving you).
+        if self.mode == Mode::Walk {
+            self.ride_t = Some(0.0);
+        }
         log::info!("beam: cast — swept {swept} glyph(s)");
     }
 
@@ -1424,17 +1446,35 @@ impl ApplicationHandler<AppEvent> for App {
                         self.controller.update(&mut self.camera, dt);
                     }
                     Mode::Walk => {
-                        // The controller still drives the look (and *wants* to free-fly); the
-                        // walker constrains that to a voxel-collided walk (gravity + animated
-                        // auto-step), so you can descend into cave-mouths and along cave floors.
+                        // The controller drives the look + the *wanted* free-fly delta.
                         let prev = self.camera.position;
                         self.controller.update(&mut self.camera, dt);
                         let wanted = self.camera.position;
-                        let seed = self.seed;
-                        self.camera.position =
-                            self.walker.constrain(prev, wanted, dt, |x, y, z| {
-                                worldgen::solid_at(x, y, z, seed)
-                            });
+                        // Riding the survey-beam (G2): if attached to a live beam, the wanted
+                        // movement projected onto the beam axis slides you along the rail (1-DoF,
+                        // any angle). Reaching the far end detaches; expiry drops you (gravity).
+                        let riding = self
+                            .ride_t
+                            .zip(self.beam)
+                            .filter(|(_, b)| !b.dead(self.time));
+                        if let Some((t, b)) = riding {
+                            let seg = b.b - b.a;
+                            let len = seg.length().max(1e-3);
+                            let along = (wanted - prev).dot(seg / len) / len;
+                            let nt = (t + along).clamp(0.0, 1.0);
+                            self.camera.position = b.a.lerp(b.b, nt);
+                            self.ride_t = (nt < 1.0).then_some(nt); // arrive → detach
+                        } else {
+                            // Not riding (no beam / expired): a voxel-collided walk (gravity +
+                            // animated auto-step) — so you can descend into cave-mouths, and you
+                            // *drop* when the rail fades out from under you.
+                            self.ride_t = None;
+                            let seed = self.seed;
+                            self.camera.position =
+                                self.walker.constrain(prev, wanted, dt, |x, y, z| {
+                                    worldgen::solid_at(x, y, z, seed)
+                                });
+                        }
                     }
                 }
                 // While piloting, the cruiser is wherever you are (you're in it).
@@ -1727,7 +1767,8 @@ impl ApplicationHandler<AppEvent> for App {
                         let mode = match self.mode {
                             Mode::Pilot if self.auto_fly => " · cruiser:auto [E exit when low]",
                             Mode::Pilot => " · cruiser:manual [E exit when low]",
-                            Mode::Walk => " · walking [E enter near ship]",
+                            Mode::Walk if self.ride_t.is_some() => " · riding the beam",
+                            Mode::Walk => " · walking [E enter · click: survey-beam]",
                         };
                         // When the map is open, the HUD becomes its key + coordinates (crosshair
                         // centre + your position), instead of the perf line.
@@ -1941,6 +1982,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         collectible: Vec::new(),
         codex_open: false,
         beam: None,
+        ride_t: None,
         time: 0.0,
         biome_mode: true, // the new default mode
         biome_label: String::new(),

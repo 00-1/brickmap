@@ -97,14 +97,24 @@ values); the cruiser-mounted (aerial) beam (flight branch, later).
 
 ## Acceptance checklist
 
-- [ ] `bm-render`: scene depth retained through the post chain; a **post-palette,
-      depth-aware, non-palettised** overlay-line pass with own-glow; generic (no game dep).
-- [ ] Cast → persist → **fade**; **collect-on-cast** along the path (feeds G1 strata/codex,
-      incl. ethereal); **attach + ride** any angle; **drop on expire**; **mid-fall re-cast**.
-- [ ] Beam-contact **boards the cruiser** via the E19 mode machine (zip-then-board, lock-on,
-      reach-gated).
-- [ ] Headless A/B confirms the beam is **vivid over the palette** *and* **occluded by
-      terrain**.
-- [ ] CI green (fmt / clippy -D / tests / wasm); crate-graph boundary intact.
-- [ ] `game-mechanics.md` §13 ticked for G2 (and the M9 "upcoming render capability" note
-      marked realised); this checklist complete.
+- [x] `bm-render`: scene depth retained through the post chain (only when an overlay is
+      active — keeps the M8 discard otherwise); a **post-palette, depth-aware, non-palettised**
+      overlay pass with its own additive glow, composited over the frame; generic (an
+      `OverlayVertex` feed + `set_overlay`, no game dep — CI boundary check still green).
+- [x] Cast → persist → **fade** (eased); **collect-on-cast** along the path (feeds G1's
+      strata/codex via the shared collect seam); **attach + ride** any angle (1-DoF slide along
+      the segment); **drop on expire** (walker gravity resumes); **mid-fall re-cast** re-attaches.
+- [x] Beam-contact **boards the cruiser** (lock-on: cruiser near the beam line; **reach-gated**
+      to the beam length) → the E19 "enter" as a ranged alternative to walk-up-and-press-E.
+- [x] Headless A/B (opt-in `SCRAPED_BEAM`) confirms the beam is **vivid over the palette**
+      *and* **occluded by terrain** it rises through.
+- [x] CI green (fmt / clippy -D / tests / wasm); crate-graph boundary intact.
+- [x] `game-mechanics.md` §13 ticked for G2; the M9 "upcoming render capability" note marked
+      realised; this checklist complete.
+
+> **Decisions:** defaults taken — fixed max **Length** cast in the aim direction; free aim
+> (any angle); a **generic per-frame overlay-vertex feed** on `bm-render` (the game expands its
+> beam into camera-facing ribbons — the engine stays beam-agnostic); depth retained **only when
+> an overlay is active**. Cast is **left-click** (once the pointer is captured), so it works on
+> web too. The zip-then-board reel is instantaneous for now (the lock-on + reach-gate are the
+> load-bearing parts); a visible winch animation is a polish follow-up.
