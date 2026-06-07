@@ -1,8 +1,7 @@
-// Space cruiser (E19) — a small polygonal ship drawn in its own pass *after* the palette
-// post-process, so its true colours (and glowing nav-lights) survive instead of being mapped
-// onto the biome palette. Lit by a fixed key + its vertex colour; its own depth buffer makes it
-// self-occlude. (It draws over the world — no scene-depth test — so it reads as an always-visible
-// landmark when parked.)
+// Space cruiser — one pipeline used for both stages of the ship (see ship.rs). The lit
+// **hull** (emissive=0) is drawn *inside* the scene pass, so the post chain palettises it
+// like the terrain; the **nav-lights** (emissive=1) are drawn *after* the palette so their
+// true colour survives as bright points. Lit by a fixed key + the vertex colour.
 
 struct U {
     mvp: mat4x4<f32>,   // view_proj * model (translate to the cruiser, scale, yaw)

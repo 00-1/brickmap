@@ -801,6 +801,13 @@ impl State {
     pub fn set_map_active(&mut self, active: bool) {
         self.map_active = active;
     }
+    /// Upload the cruiser geometry the game authored: the lit `hull` (drawn into the scene,
+    /// palettised) and the emissive `lights` (drawn after the palette, true colour). The
+    /// engine carries no ship geometry of its own (M9).
+    pub fn set_ship_mesh(&mut self, hull: &[crate::ship::Vertex], lights: &[crate::ship::Vertex]) {
+        self.ship.set_meshes(&self.device, hull, lights);
+    }
+
     /// Space cruiser (E19): whether to draw the parked ship this frame, and where/at what yaw.
     pub fn set_ship(&mut self, active: bool, pos: Vec3, yaw: f32) {
         self.ship_active = active;
@@ -1024,6 +1031,13 @@ impl State {
                 label: Some("frame-encoder"),
             });
 
+        // Upload the cruiser transform before the scene pass, so the hull (drawn inside it)
+        // and the nav-lights (after the palette) share it.
+        if self.ship_active && !self.map_active {
+            self.ship
+                .set_transform(&self.queue, view_proj, self.ship_pos, self.ship_yaw);
+        }
+
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("scene-pass"),
@@ -1198,6 +1212,13 @@ impl State {
                 pass.set_index_buffer(self.cube_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..particles.len() as u32);
             }
+
+            // Space cruiser hull (E19): drawn into the scene (its transform was uploaded
+            // before this pass), so bloom + palette map it like terrain and it depth-tests
+            // against the world. The nav-lights draw later, after the palette. Off under the map.
+            if self.ship_active && !self.map_active {
+                self.ship.draw_hull(&mut pass);
+            }
         }
 
         // Post chain (all at the internal resolution): bloom composites scene + glow into the
@@ -1222,12 +1243,11 @@ impl State {
         self.palette
             .render(&mut encoder, &self.palette_bind_group, &view);
 
-        // Space cruiser (E19): drawn over the palettised frame so its true colours + glowing
-        // nav-lights survive (its own depth buffer self-occludes). Skipped under the map.
+        // Space cruiser (E19): the lit hull was drawn *into* the scene (palettised + depth-
+        // tested against terrain); now draw just the nav-lights over the finished frame so
+        // their true colour survives as bright points. Skipped under the map.
         if self.ship_active && !self.map_active {
-            self.ship
-                .set_transform(&self.queue, view_proj, self.ship_pos, self.ship_yaw);
-            self.ship.draw(&mut encoder, &view, &self.ship_depth);
+            self.ship.draw_lights(&mut encoder, &view, &self.ship_depth);
         }
 
         // Explored-world map (E10): when open, drawn fullscreen over the finished scene (the HUD

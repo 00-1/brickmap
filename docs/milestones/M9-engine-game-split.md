@@ -4,9 +4,11 @@
 > workspace: the engine is the `bm-*` library crates behind the `brickmap` facade, and
 > the game **Scraped Again** (`scraped-again`) owns the binary + all content. The cut is
 > behaviour-preserving (golden voxel-hash + headless render unchanged) and the crate
-> graph forbids any engine→game dep (CI-checked). See the acceptance checklist below for
-> the two flagged residues (the cruiser ship mesh still in `bm-render`; the `AudioSource`
-> seam left unformalised since audio lives wholly in the game per Decision 3).
+> graph forbids any engine→game dep (CI-checked). One residue remains (see the acceptance
+> checklist): the `AudioSource` seam is left unformalised since audio lives wholly in the
+> game per Decision 3. *(The cruiser ship-mesh residue was resolved in the follow-up
+> redesign — the engine's `ShipRenderer` is now generic and the cruiser geometry lives in
+> the game's `cruiser` module.)*
 >
 > Pairs with [`game-mechanics.md`](../game-mechanics.md) (the game's design) and the
 > crate plan in [`architecture.md`](architecture.md) §3 (which this milestone finally
@@ -346,9 +348,10 @@ plus **"prove the boundary exists"**:
       Decision 3. Seams: `WorldGen` ✅, splat feed ✅, structure draws ✅, `Edit`/`apply`
       ✅, `LookParams` (palette colours) ✅, runtime/`ApplicationHandler` ✅; audio stays
       wholly in the game (Decision 3), so the `AudioSource` trait seam (#6) is **not yet
-      formalised**. *Residue:* the cruiser **ship mesh** still sits in `bm-render` (the
-      ShipRenderer is generic; ship is post-brief E19 content, not a designated fused file)
-      — flagged as a follow-up.
+      formalised** — the one remaining residue. *(The cruiser **ship mesh** has since been
+      moved out too: the engine's `ShipRenderer` is a generic polygonal-mesh renderer and
+      the cruiser geometry lives in the game's `cruiser` module — done in the redesign that
+      drew the lit hull through the palette + the nav-lights as after-palette points.)*
 - [x] **Crate graph proves the boundary**: a CI step asserts (via `cargo tree`) that no
       `bm-*`/`brickmap` crate depends on `scraped-again`.
 - [x] **Engine-alone demo** (`brickmap` `examples/engine_demo.rs`) renders streamed flat

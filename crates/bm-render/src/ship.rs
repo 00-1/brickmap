@@ -1,22 +1,33 @@
-//! Space cruiser model + renderer (E19). A small **polygonal** ship (boxes — fuselage, wings,
-//! fin, cockpit, engines) with glowing **nav-lights** (front/back + port/starboard wingtips),
-//! drawn in its own pass *after* the palette post-process so its true colours survive (see
-//! `ship.wgsl`). Has its own depth buffer so it self-occludes; draws over the world as an
-//! always-visible landmark when parked.
+//! Generic **polygonal mesh renderer** for a tracked object (the game's space cruiser).
+//! Content-free (M9): it draws whatever vertex mesh the game hands it — the cruiser's
+//! geometry lives in the game crate. Two draw entry points let the caller place each part
+//! in the right post-process stage:
+//!
+//! - [`ShipRenderer::draw_hull`] draws the **hull** *inside the scene pass*, so it is lit
+//!   and then **palettised** by the post chain exactly like the terrain (and depth-tests
+//!   against it — it can be occluded by hills).
+//! - [`ShipRenderer::draw_lights`] draws the **nav-lights** in a small pass *after* the
+//!   palette, so their true colour survives as bright points.
+//!
+//! Both use one pipeline + the shared `ship.wgsl` (the per-vertex `emissive` flag selects
+//! lit hull vs. full-bright light). Scene target and surface share the colour format, so
+//! one pipeline serves both passes.
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 
-/// World-units per model unit (the authored ship is ~9 model units long).
+/// World-units per model unit (the cruiser is authored at ~9 model units long).
 pub const SHIP_SCALE: f32 = 0.7;
 
+/// A mesh vertex the game builds the cruiser from. `emissive` 0 = lit hull, 1 = full-bright
+/// nav-light. Public so the game crate can author the geometry.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-struct Vertex {
-    pos: [f32; 3],
-    color: [f32; 3],
-    normal: [f32; 3],
-    emissive: f32,
+pub struct Vertex {
+    pub pos: [f32; 3],
+    pub color: [f32; 3],
+    pub normal: [f32; 3],
+    pub emissive: f32,
 }
 
 #[repr(C)]
@@ -26,132 +37,13 @@ struct ShipU {
     model: [[f32; 4]; 4],
 }
 
-/// Append a box (centre `c`, half-extents `h`) of colour `col` (24/36-vert, per-face normals).
-fn add_box(v: &mut Vec<Vertex>, c: [f32; 3], h: [f32; 3], col: [f32; 3], emissive: f32) {
-    // (face normal, 4 corner sign-triples in CCW-ish order — winding is irrelevant since the
-    // pass doesn't cull and uses a depth buffer; normals are explicit for lighting).
-    let faces: [([f32; 3], [[f32; 3]; 4]); 6] = [
-        (
-            [1.0, 0.0, 0.0],
-            [
-                [1.0, -1.0, -1.0],
-                [1.0, 1.0, -1.0],
-                [1.0, 1.0, 1.0],
-                [1.0, -1.0, 1.0],
-            ],
-        ),
-        (
-            [-1.0, 0.0, 0.0],
-            [
-                [-1.0, -1.0, -1.0],
-                [-1.0, -1.0, 1.0],
-                [-1.0, 1.0, 1.0],
-                [-1.0, 1.0, -1.0],
-            ],
-        ),
-        (
-            [0.0, 1.0, 0.0],
-            [
-                [-1.0, 1.0, -1.0],
-                [-1.0, 1.0, 1.0],
-                [1.0, 1.0, 1.0],
-                [1.0, 1.0, -1.0],
-            ],
-        ),
-        (
-            [0.0, -1.0, 0.0],
-            [
-                [-1.0, -1.0, -1.0],
-                [1.0, -1.0, -1.0],
-                [1.0, -1.0, 1.0],
-                [-1.0, -1.0, 1.0],
-            ],
-        ),
-        (
-            [0.0, 0.0, 1.0],
-            [
-                [-1.0, -1.0, 1.0],
-                [1.0, -1.0, 1.0],
-                [1.0, 1.0, 1.0],
-                [-1.0, 1.0, 1.0],
-            ],
-        ),
-        (
-            [0.0, 0.0, -1.0],
-            [
-                [-1.0, -1.0, -1.0],
-                [-1.0, 1.0, -1.0],
-                [1.0, 1.0, -1.0],
-                [1.0, -1.0, -1.0],
-            ],
-        ),
-    ];
-    for (normal, quad) in faces {
-        let corner = |q: [f32; 3]| [c[0] + q[0] * h[0], c[1] + q[1] * h[1], c[2] + q[2] * h[2]];
-        for &i in &[0usize, 1, 2, 0, 2, 3] {
-            v.push(Vertex {
-                pos: corner(quad[i]),
-                color: col,
-                normal,
-                emissive,
-            });
-        }
-    }
-}
-
-/// Build the ship mesh (model space; +z = forward, +y = up).
-fn ship_mesh() -> Vec<Vertex> {
-    let hull = [0.55, 0.60, 0.68];
-    let dark = [0.14, 0.18, 0.26];
-    let mut v = Vec::new();
-    add_box(&mut v, [0.0, 0.0, 0.0], [0.8, 0.7, 3.5], hull, 0.0); // fuselage
-    add_box(&mut v, [0.0, 0.0, 3.7], [0.45, 0.45, 0.8], hull, 0.0); // nose
-    add_box(&mut v, [0.0, 0.55, 1.0], [0.5, 0.4, 1.1], dark, 0.0); // cockpit
-    add_box(&mut v, [2.2, -0.1, -0.4], [1.6, 0.15, 1.2], hull, 0.0); // right wing
-    add_box(&mut v, [-2.2, -0.1, -0.4], [1.6, 0.15, 1.2], hull, 0.0); // left wing
-    add_box(&mut v, [0.0, 0.95, -3.0], [0.12, 0.9, 0.7], hull, 0.0); // tail fin
-    add_box(&mut v, [0.6, 0.0, -3.9], [0.4, 0.4, 0.5], dark, 0.0); // engines
-    add_box(&mut v, [-0.6, 0.0, -3.9], [0.4, 0.4, 0.5], dark, 0.0);
-    // Nav-lights (emissive, true colour over the palette): white-blue nose, amber tail, and
-    // port-red / starboard-green wingtips.
-    add_box(
-        &mut v,
-        [0.0, 0.1, 4.6],
-        [0.22, 0.22, 0.22],
-        [0.7, 0.9, 1.0],
-        1.0,
-    );
-    add_box(
-        &mut v,
-        [0.0, 0.45, -3.9],
-        [0.22, 0.22, 0.22],
-        [1.0, 0.7, 0.2],
-        1.0,
-    );
-    add_box(
-        &mut v,
-        [-3.7, -0.1, -0.4],
-        [0.25, 0.2, 0.25],
-        [1.0, 0.2, 0.2],
-        1.0,
-    );
-    add_box(
-        &mut v,
-        [3.7, -0.1, -0.4],
-        [0.25, 0.2, 0.25],
-        [0.2, 1.0, 0.3],
-        1.0,
-    );
-    v
-}
-
-/// Renders the cruiser over the finished (palettised) frame, in true colour, with self-occlusion.
+/// Draws a game-supplied mesh for a tracked object, in two stages (hull / nav-lights).
 pub struct ShipRenderer {
     pipeline: wgpu::RenderPipeline,
     ubuf: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
-    vbuf: wgpu::Buffer,
-    vcount: u32,
+    hull: Option<(wgpu::Buffer, u32)>,
+    lights: Option<(wgpu::Buffer, u32)>,
 }
 
 impl ShipRenderer {
@@ -160,7 +52,6 @@ impl ShipRenderer {
         color_format: wgpu::TextureFormat,
         depth_format: wgpu::TextureFormat,
     ) -> ShipRenderer {
-        use wgpu::util::DeviceExt;
         let shader = device.create_shader_module(wgpu::include_wgsl!("ship.wgsl"));
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ship-bgl"),
@@ -219,12 +110,6 @@ impl ShipRenderer {
             multiview_mask: None,
             cache: None,
         });
-        let mesh = ship_mesh();
-        let vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("ship-verts"),
-            contents: bytemuck::cast_slice(&mesh),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
         let ubuf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ship-uniform"),
             size: std::mem::size_of::<ShipU>() as u64,
@@ -243,12 +128,30 @@ impl ShipRenderer {
             pipeline,
             ubuf,
             bind_group,
-            vbuf,
-            vcount: mesh.len() as u32,
+            hull: None,
+            lights: None,
         }
     }
 
-    /// Set the transform: `view_proj` from the frame, `pos` (world) + `yaw` (radians) of the ship.
+    /// Upload the game's cruiser geometry: the lit `hull` (drawn into the scene, palettised)
+    /// and the emissive `lights` (drawn after the palette, true colour). Either may be empty.
+    pub fn set_meshes(&mut self, device: &wgpu::Device, hull: &[Vertex], lights: &[Vertex]) {
+        use wgpu::util::DeviceExt;
+        let make = |verts: &[Vertex], label: &str| {
+            (!verts.is_empty()).then(|| {
+                let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents: bytemuck::cast_slice(verts),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+                (buf, verts.len() as u32)
+            })
+        };
+        self.hull = make(hull, "ship-hull-verts");
+        self.lights = make(lights, "ship-light-verts");
+    }
+
+    /// Set the transform: `view_proj` from the frame, `pos` (world) + `yaw` (radians).
     pub fn set_transform(&self, queue: &wgpu::Queue, view_proj: Mat4, pos: Vec3, yaw: f32) {
         let model = Mat4::from_translation(pos)
             * Mat4::from_rotation_y(yaw)
@@ -260,15 +163,31 @@ impl ShipRenderer {
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
     }
 
-    /// Draw the ship over `view` (its own `depth` buffer, cleared here, gives self-occlusion).
-    pub fn draw(
+    /// Draw the lit hull **inside** the caller's scene render pass, so the post chain
+    /// (bloom + palette) maps it like the rest of the world and it depth-tests against terrain.
+    pub fn draw_hull<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
+        let Some((vbuf, count)) = &self.hull else {
+            return;
+        };
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.bind_group, &[]);
+        pass.set_vertex_buffer(0, vbuf.slice(..));
+        pass.draw(0..*count, 0..1);
+    }
+
+    /// Draw the emissive nav-lights over `view` (its own `depth`, cleared here), *after* the
+    /// palette pass — so their true colour survives as bright points.
+    pub fn draw_lights(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
         depth: &wgpu::TextureView,
     ) {
+        let Some((vbuf, count)) = &self.lights else {
+            return;
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("ship-pass"),
+            label: Some("ship-lights-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
                 resolve_target: None,
@@ -292,7 +211,7 @@ impl ShipRenderer {
         });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
-        pass.set_vertex_buffer(0, self.vbuf.slice(..));
-        pass.draw(0..self.vcount, 0..1);
+        pass.set_vertex_buffer(0, vbuf.slice(..));
+        pass.draw(0..*count, 0..1);
     }
 }

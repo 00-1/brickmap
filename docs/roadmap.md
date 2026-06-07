@@ -417,16 +417,22 @@ A movement-mode system so the world is explored on foot *and* by ship, not just 
   you can walk *down into cave-mouths* and along cave floors, not just over the surface. Per-axis
   wall-slide; the camera controller drives the look, the `Walker` constrains the position.
   Unit-tested. *(Colossi aren't in `solid_at` yet → not collidable on foot.)*
-- ✅ **Space cruiser** (`src/ship.rs` + `ship.wgsl`): a **polygonal** ship (hull/wings/fin/cockpit/
-  engines) with glowing **nav-lights** (white-blue nose, amber tail, port-red/starboard-green
-  wingtips), drawn in its **own pass after the palette** so its true colours + lights survive (not
-  palettised), with its own depth buffer (self-occludes), shown parked while on foot. **Mode
-  machine:** start piloting on **autopilot** (cinematic — now **wanders** to new terrain in
-  S-curves, no longer a circle); toggle autopilot↔manual (F / pad A); land (within ~9 blocks of
-  the ground) and press **E / pad B** to step out and **walk**; walk back to the ship to re-enter.
-  Gamepad B/circle = enter/exit (native/web/android). HUD shows the mode; the map shows the parked
-  cruiser (orange marker).
+- ✅ **Space cruiser** — a **faceted low-poly dart** whose geometry lives in the game
+  (`crates/scraped-again/src/cruiser.rs`), drawn by the engine's generic `ShipRenderer`
+  (`bm-render`, M9). The lit **hull** draws *into the scene* so it's **palettised** like the
+  world and depth-tests against terrain; the **nav-lights** (white-blue nose, amber tail,
+  port-red/starboard-green wingtips) draw *after the palette* as small true-colour points.
+  Shown parked while on foot. **Mode machine:** start piloting on **autopilot** (cinematic —
+  **wanders** to new terrain in S-curves); toggle autopilot↔manual (F / pad A); land (within
+  ~9 blocks of the ground) and press **E / pad B** to step out and **walk**; walk back to the
+  ship to re-enter. Gamepad B/circle = enter/exit (native/web/android). HUD shows the mode; the
+  map shows the parked cruiser (orange marker).
 - **Outcome:** land the ship, get out, walk the terrain (down into cave-mouths), fly on.
+- 📌 **Deferred — cruiser visual redesign (revisit):** the current faceted dart works and sits
+  in the right post-process stages, but the **look isn't there yet**. Come back for another pass
+  on silhouette/proportions, surface detailing (greebles/panel facets), and material/colour — it's
+  isolated game content in `cruiser.rs` (`hull()` + `lights()` build `bm-render` `ship::Vertex`),
+  so iterating is cheap and touches nothing else.
 - **Next ideas:** colossi collision on foot (walk inside the structures), a jump button,
   third-person cruiser cam, cruiser banking/physics.
 
@@ -517,8 +523,11 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
   `WorldGen` + palette-colour seams; recipe/biomes/drone/player/app all in the game; an
   `engine_demo` example renders flat terrain with zero game content; a CI step asserts no
   engine→game dep. Golden voxel-hash + headless render byte-identical throughout. *Residue:* the
-  cruiser ship mesh still lives in `bm-render`, and the `AudioSource` seam is left unformalised
-  (audio is wholly in the game per Decision 3) — both flagged as follow-ups.
+  `AudioSource` seam is left unformalised (audio is wholly in the game per Decision 3) — flagged
+  as a follow-up. *(The cruiser was then redesigned — a faceted low-poly dart whose lit hull is
+  drawn through the palette and whose nav-lights are after-palette true-colour points — which also
+  moved its geometry into the game's `cruiser` module, so the engine's ShipRenderer is now fully
+  generic.)*
 
 ## Scraped Again — gameplay (G-series)
 
