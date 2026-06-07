@@ -8,7 +8,50 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `24067a1` (G5).
+**Reviewed through:** `47da170` (G6 1/2).
+
+---
+
+## 2026-06-07 · G6 (1/2) — decode economy + decipherment legibility (`47da170`)
+
+**What landed.** `progress.comprehend(stratum)` (spends `DECODE_COST` of that stratum's data,
+idempotent + affordability-gated) + `is_legible(script)` + `decodable()` (richest affordable);
+a `decode` console block (one-click, auto-targets the richest); and `lexicon.rs` — a tiny
+seeded elegiac grammar (opener/subject/coda) that renders a *comprehended* script's
+inscriptions as **translated words** (length-tiered, deterministic in seed+cell, ASCII). v3
+payload (append-only). 142 tests green, clippy clean, golden hash unchanged.
+
+**Strengths — the best commit in the run so far.**
+- **Faithful to the agreed design.** Decipherment-as-payoff (game-mechanics §9) via a
+  **procedural-poetic seeded grammar with no authored lore** (§6) — exactly the decision taken.
+  The register is genuinely on-mood and melancholy; the word-bank is tasteful, not Mad-Libs-y.
+- **Clean + correct.** `comprehend` is properly idempotent and affordability-gated; legibility
+  changes only *display* while the find id still hashes the original glyphs (so collecting stays
+  stable across decode) — a careful, correct call. Determinism + variation are tested.
+- Sensible scoping: this is explicitly the *decode/legibility* half; no overreach.
+
+**Critiques / structural watch (unchanged, now sharper — forward-looking).**
+- No interpreter work here, correctly (it's the 1/2 half). The real test is **G6 (2/2)**, whose
+  planned `when`/`repeat` control blocks **cannot** be faked with named-routine accessors — so
+  2/2 should *force* a genuine runtime, or reveal another special-case. That's the commit to
+  scrutinise.
+- **The bigger risk: "author your own routines" has quietly gone unscoped.** G5 deferred
+  free-form insert/remove of blocks to "G6's richer vocabulary," **but the G6 brief does not
+  scope it** (G6 = decode + when/repeat + gated palette). So the headline pillar — *composing
+  your own automation* — has now slipped G4→G5→G6 and currently has **no home in any brief**. It
+  is at risk of being silently dropped while the vocabulary and economy grow around a substrate
+  you still can't freely author on.
+- Minor: the `Routine` model + `console.rs` header docs are still the stale G4 text.
+
+**Watch-items for G6 (2/2) / G7.** (1) Does `when`/`repeat` land as a **real runtime
+interpreter** or another hardcoded gate? (2) **Where does free-form routine authoring actually
+get built?** If it's not in 2/2, that's worth escalating to the human — the "genuinely
+interesting purely through menus" pillar is otherwise unbuilt.
+
+**Verdict.** Excellent on its own terms — the melancholy comprehension heart, done correctly
+and tastefully. The run's quality is high *feature-by-feature*; the standing concern is purely
+structural: the composability core keeps being deferred and has now lost its scope. Strong
+commit; unchanged architectural worry.
 
 ---
 
