@@ -19,6 +19,7 @@ struct Shared {
     drive: AtomicU32,
     tone: AtomicU32,
     intensity: AtomicU32,
+    warp: AtomicU32,
 }
 
 impl Shared {
@@ -55,6 +56,7 @@ impl AudioEngine {
             drive: AtomicU32::new(1.9f32.to_bits()),
             tone: AtomicU32::new(0.7f32.to_bits()),
             intensity: AtomicU32::new(0.0f32.to_bits()),
+            warp: AtomicU32::new(0.0f32.to_bits()),
         });
 
         let mut drone = crate::audio::Drone::new(seed, sample_rate);
@@ -68,6 +70,7 @@ impl AudioEngine {
             drone.set_drive(Shared::load(&s2.drive));
             drone.set_tone(Shared::load(&s2.tone));
             drone.set_intensity(Shared::load(&s2.intensity));
+            drone.set_warp(Shared::load(&s2.warp));
             let on = s2.enabled.load(Ordering::Relaxed);
             for frame in data.chunks_mut(channels) {
                 let [l, r] = if on { drone.next_frame() } else { [0.0, 0.0] };
@@ -147,6 +150,10 @@ impl AudioEngine {
     /// Reactive intensity `0..1` (E16): the camera's flight state, read each audio block.
     pub fn set_intensity(&self, x: f32) {
         Shared::store(&self.shared.intensity, x);
+    }
+    /// Warp `0..1` (E18): proximity to a max-wobble colossus, read each audio block.
+    pub fn set_warp(&self, x: f32) {
+        Shared::store(&self.shared.warp, x);
     }
     /// Flip mute on/off; returns the new "enabled" state.
     pub fn toggle(&self) -> bool {

@@ -1282,17 +1282,22 @@ impl ApplicationHandler<AppEvent> for App {
                     // Ethereal/ink pockets are pristine: pull wobble to zero last, so it wins over
                     // both the biome base and any nearby giant — these are untouched special areas.
                     self.wobble += (WOBBLE_PRISTINE - self.wobble) * b.ink;
+                    // Warp audio (E18×E16): only fires once the wobble has been pulled well below
+                    // baseline (i.e. right up against a "warping" giant) — heavier, throbbing drone.
+                    let warp_amt = ((60.0 - self.wobble) / (60.0 - WOBBLE_HEAVY)).clamp(0.0, 1.0);
                     #[cfg(not(target_arch = "wasm32"))]
                     if let Some(a) = &self.audio {
                         a.set_volume(b.vol);
                         a.set_drive(b.heavy);
                         a.set_tone(b.murk);
+                        a.set_warp(warp_amt);
                     }
                     #[cfg(target_arch = "wasm32")]
                     {
                         controls::set_audio_volume(b.vol);
                         controls::set_audio_drive(b.heavy);
                         controls::set_audio_tone(b.murk);
+                        controls::set_audio_warp(warp_amt);
                     }
                 }
                 let sun_amt = match bio {
@@ -1994,6 +1999,15 @@ pub mod controls {
         AUDIO.with(|a| {
             if let Some(d) = a.borrow_mut().as_mut() {
                 d.set_intensity(x);
+            }
+        });
+    }
+
+    /// Warp (E18), driven each frame: proximity to a max-wobble colossus → heavier, throbbing.
+    pub(crate) fn set_audio_warp(x: f32) {
+        AUDIO.with(|a| {
+            if let Some(d) = a.borrow_mut().as_mut() {
+                d.set_warp(x);
             }
         });
     }

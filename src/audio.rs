@@ -145,6 +145,12 @@ pub struct Drone {
     /// sitting static. `_s` is the per-sample-smoothed value (no zipper noise on param steps).
     intensity: f32,
     intensity_s: f32,
+    /// Warp `0..1` (E18×E16): set high near a max-wobble ("warping") colossus. Drives a new
+    /// aggressive modulation — heavier drive + a throbbing tremolo — so those zones sound as
+    /// intense/unstable as they look. `_s` smoothed; `trem_phase` is the tremolo LFO.
+    warp: f32,
+    warp_s: f32,
+    trem_phase: f32,
 }
 
 impl Drone {
@@ -239,6 +245,9 @@ impl Drone {
             tone: 0.4,
             intensity: 0.0,
             intensity_s: 0.0,
+            warp: 0.0,
+            warp_s: 0.0,
+            trem_phase: 0.0,
         }
     }
 
@@ -259,6 +268,11 @@ impl Drone {
     pub fn set_intensity(&mut self, x: f32) {
         self.intensity = x.clamp(0.0, 1.0);
     }
+    /// Warp amount, `0..1` (E18): proximity to a max-wobble "warping" colossus. Adds heavier
+    /// drive + a throbbing tremolo. Smoothed internally.
+    pub fn set_warp(&mut self, x: f32) {
+        self.warp = x.clamp(0.0, 1.0);
+    }
 
     /// Render the next stereo frame (`[left, right]`), each in roughly `[-1, 1]`.
     pub fn next_frame(&mut self) -> [f32; 2] {
@@ -271,10 +285,17 @@ impl Drone {
             l += s * p.cos();
             r += s * p.sin();
         }
+        // Warp (E18): smooth toward target (~0.1 s — proximity-driven, wants to respond) and run
+        // the tremolo LFO (~6 Hz). High warp = a max-wobble colossus nearby.
+        self.warp_s += (self.warp - self.warp_s) * 0.0003;
+        self.trem_phase += 6.0 / self.sr;
+        if self.trem_phase >= 1.0 {
+            self.trem_phase -= 1.0;
+        }
         // Tame the summed level before distortion, then waveshape hard for the doom grit.
-        // Heaviness scales the drive.
+        // Heaviness scales the drive; warp pushes it heavier still (more grit in warp zones).
         let pre = 0.42;
-        let drive = self.base_drive * self.drive_mul;
+        let drive = self.base_drive * self.drive_mul * (1.0 + self.warp_s * 0.9);
         let dl = (drive * l * pre).tanh();
         let dr = (drive * r * pre).tanh();
 
@@ -290,8 +311,10 @@ impl Drone {
         let fl = self.filt_l.lowpass(dl, cutoff, self.res, self.sr);
         let fr = self.filt_r.lowpass(dr, cutoff, self.res, self.sr);
 
-        // A subtle swell with intensity so motion feels like it pushes the dirge.
-        let g = self.master * amp * self.vol * (1.0 + 0.10 * self.intensity_s);
+        // A subtle swell with intensity so motion feels like it pushes the dirge; warp adds a
+        // throbbing tremolo so warp zones pulse, unstable.
+        let trem = 1.0 - self.warp_s * 0.5 * (0.5 + 0.5 * (self.trem_phase * TAU).sin());
+        let g = self.master * amp * self.vol * (1.0 + 0.10 * self.intensity_s) * trem;
         [(fl * g).clamp(-1.0, 1.0), (fr * g).clamp(-1.0, 1.0)]
     }
 
@@ -366,5 +389,22 @@ mod tests {
         }
         assert!(peak <= 1.0, "intensity pushed past full scale: {peak}");
         assert!(diff > 0.0, "intensity had no audible effect");
+    }
+
+    #[test]
+    fn warp_modulates_without_clipping() {
+        let mut a = Drone::new(9, 44_100);
+        let mut b = Drone::new(9, 44_100);
+        b.set_warp(1.0);
+        let (mut peak, mut diff) = (0.0f32, 0.0f32);
+        for _ in 0..44_100 {
+            let [la, _] = a.next_frame();
+            let [lb, rb] = b.next_frame();
+            assert!(lb.is_finite() && rb.is_finite());
+            peak = peak.max(lb.abs()).max(rb.abs());
+            diff += (la - lb).abs();
+        }
+        assert!(peak <= 1.0, "warp pushed past full scale: {peak}");
+        assert!(diff > 0.0, "warp had no audible effect");
     }
 }
