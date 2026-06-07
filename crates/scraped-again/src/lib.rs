@@ -15,37 +15,35 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
+// Scraped Again — the game: a lonely surveyor crossing a dead world of fallen giants.
+// It owns the app/event-loop + mode machine, the world content (terrain recipe, biomes,
+// colossi, inscriptions), the doom drone, and the player; it consumes the brickmap engine.
+//
+// The brickmap engine surface, re-exported under the original short module paths so the
+// app + content modules keep resolving `crate::world::…`, `crate::gfx::…`, etc. (the game
+// consumes the engine purely through the `brickmap` facade — never the bm-* crates).
+pub use brickmap::{
+    edit, foliage, gamepad, gfx, hud, map, mesh, noise, palette, particles, post, scene, ship, sim,
+    text, textures, visibility, world, WorldGen,
+};
+
 pub mod audio;
 pub mod biome;
 pub mod creatures;
-pub mod map;
+// The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
+pub mod palettes;
 pub mod player;
 pub mod relic;
-pub mod ship;
+// The terrain recipe — this game's specific world, composed from the engine's noise.
+pub mod worldgen;
 // cpal audio output (E16): desktop + **Android** (AAudio backend); web uses Web Audio.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod audio_native;
-pub mod edit;
-pub mod foliage;
-pub mod gamepad;
-mod gfx;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
-pub mod hud;
-pub mod mesh;
 pub mod model;
-pub mod palette;
-pub mod particles;
-mod post;
-pub mod scene;
 pub mod share;
-pub mod sim;
 pub mod structures;
-pub mod text;
-pub mod textures;
-pub mod visibility;
-pub mod world;
-pub mod worldgen;
 use gfx::{ChunkInstance, State, Toggles};
 use mesh::{greedy_mesh_section_with, Neighbors};
 use particles::ParticleSystem;
@@ -125,7 +123,7 @@ struct App {
     wobble: f32,
     color_steps: f32,
     /// Palette post-process (E10): selection pushed to the renderer each frame. `on` gates
-    /// the whole pass; `index` picks a `palette::PALETTES` entry; `count` is how many of its
+    /// the whole pass; `index` picks a `palettes::PALETTES` entry; `count` is how many of its
     /// colours to use; `dither` is the ordered-dither spread. Driven by native keys or, on
     /// the web, the page controls.
     palette_on: bool,
@@ -245,7 +243,7 @@ impl App {
     /// palette on, reset the colour count to that palette's full length.
     #[cfg(not(target_arch = "wasm32"))]
     fn cycle_palette(&mut self) {
-        let n = palette::PALETTES.len();
+        let n = palettes::PALETTES.len();
         if !self.palette_on {
             self.palette_on = true;
             self.palette_index = 0;
@@ -255,8 +253,8 @@ impl App {
             self.palette_on = false;
             self.palette_index = 0;
         }
-        self.palette_count = palette::PALETTES[self.palette_index].colors.len() as u32;
-        let name = palette::PALETTES[self.palette_index].name;
+        self.palette_count = palettes::PALETTES[self.palette_index].colors.len() as u32;
+        let name = palettes::PALETTES[self.palette_index].name;
         if self.palette_on {
             log::info!("palette → {name} ({} colours)", self.palette_count);
         } else {
@@ -302,7 +300,7 @@ impl App {
                 return true;
             }
             KeyCode::Equal => {
-                let max = palette::PALETTES[self.palette_index].colors.len() as u32;
+                let max = palettes::PALETTES[self.palette_index].colors.len() as u32;
                 self.palette_count = (self.palette_count + 1).min(max);
                 return true;
             }
@@ -398,7 +396,9 @@ impl App {
             world::BlockId::AIR
         };
         let cmd = edit::Edit::Set { pos: target, block };
-        if let Some((coord, inverse)) = edit::apply(&mut self.overlay, seed, &cmd) {
+        if let Some((coord, inverse)) =
+            edit::apply(&mut self.overlay, &worldgen::TerrainGen { seed }, &cmd)
+        {
             self.undo.push(inverse);
             self.remesh(coord);
         }
@@ -410,7 +410,9 @@ impl App {
             return;
         };
         let seed = self.seed;
-        if let Some((coord, _)) = edit::apply(&mut self.overlay, seed, &inverse) {
+        if let Some((coord, _)) =
+            edit::apply(&mut self.overlay, &worldgen::TerrainGen { seed }, &inverse)
+        {
             self.remesh(coord);
         }
     }
@@ -1456,11 +1458,15 @@ impl ApplicationHandler<AppEvent> for App {
                     // Push the palette (biome-blended ramp in biome mode, else the manual
                     // selection) + pixel scale (E10) before drawing.
                     if let Some(b) = bio {
-                        state.set_palette_colors(&b.colors, b.count, b.dither);
+                        state.set_palette_colors(&b.colors, b.count, b.dither, true);
                     } else {
-                        state.set_palette(
-                            self.palette_index,
-                            self.palette_count,
+                        // The game owns the curated set; resolve the chosen index to its ramp
+                        // and feed the engine's colour seam (it carries no palette table).
+                        let pal = &palettes::PALETTES
+                            [self.palette_index.min(palettes::PALETTES.len() - 1)];
+                        state.set_palette_colors(
+                            pal.colors,
+                            self.palette_count.max(1),
                             self.palette_dither,
                             self.palette_on,
                         );
@@ -1539,7 +1545,7 @@ impl ApplicationHandler<AppEvent> for App {
                         } else if self.palette_on {
                             format!(
                                 " · {} {}c",
-                                palette::PALETTES[self.palette_index].name,
+                                palettes::PALETTES[self.palette_index].name,
                                 self.palette_count
                             )
                         } else {

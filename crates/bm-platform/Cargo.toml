@@ -1,0 +1,25 @@
+[package]
+name = "bm-platform"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.94"
+description = "brickmap engine: platform edges — gamepad/controller input across native, web, and Android."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/00-1/brickmap"
+
+[dependencies]
+bm-core = { path = "../bm-core" }
+winit = "0.30"
+
+# --- Desktop-only (native, not Android): gilrs controller input ----------
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+gilrs = "0.11"
+
+# --- Web / WASM-only: the browser Gamepad API ----------------------------
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Window", "Navigator", "Gamepad", "GamepadButton"] }
+
+# --- Android-only: winit's Android activity input ------------------------
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30", features = ["android-native-activity"] }

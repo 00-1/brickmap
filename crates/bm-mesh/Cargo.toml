@@ -1,0 +1,12 @@
+[package]
+name = "bm-mesh"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.94"
+description = "brickmap engine: binary greedy mesher (packed-vertex draw contract) + per-chunk visibility graph."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/00-1/brickmap"
+
+[dependencies]
+bm-core = { path = "../bm-core" }
+bm-world = { path = "../bm-world" }

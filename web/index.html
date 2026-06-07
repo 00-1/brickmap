@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>brickmap — spike</title>
+    <title>Scraped Again — brickmap engine</title>
     <!-- Self-heal a stale, browser-cached index.html. GitHub Pages serves HTML
          with a short cache lifetime, so a plain reload can keep handing you the
          old page (the wasm is ?v=-busted, but the HTML itself isn't). This runs
@@ -208,7 +208,7 @@
         set_audio_drive,
         set_audio_tone,
         set_biome_mode,
-      } from "./pkg/brickmap.js?v=__CACHE_BUST__";
+      } from "./pkg/scraped_again.js?v=__CACHE_BUST__";
       // Palette colour counts, indexed like PALETTES in palette.rs (mono is 4, rest 5).
       const PALETTE_LEN = [4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
       // Order must match TOGGLE_LABELS in gfx.rs.
@@ -231,7 +231,7 @@
         setTimeout(() => { if (status.textContent === msg) status.textContent = ""; }, 1500);
       }
 
-      init({ module_or_path: "./pkg/brickmap_bg.wasm?v=__CACHE_BUST__" })
+      init({ module_or_path: "./pkg/scraped_again_bg.wasm?v=__CACHE_BUST__" })
         .catch((err) => {
           // winit's web backend escapes its run loop by throwing; that's expected.
           if (!`${err}`.includes("Using exceptions for control flow")) {

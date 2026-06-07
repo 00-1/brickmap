@@ -64,7 +64,7 @@ const PALETTE: [[f32; 4]; 8] = [
 ];
 
 /// How to drive the palette post-process for a headless capture: which entry of
-/// [`crate::palette::PALETTES`], how many of its colours to use, and the dither spread.
+/// [`crate::palettes::PALETTES`], how many of its colours to use, and the dither spread.
 /// `None` (the default) skips the pass entirely so the hero shot is unchanged.
 #[derive(Copy, Clone)]
 pub struct PaletteSpec {
@@ -209,7 +209,12 @@ pub fn capture_view(
     });
     let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
 
-    let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+    // The shader WGSL now lives in bm-render (the headless tool rebuilds pipelines inline,
+    // mirroring gfx); pull the source through the engine crate rather than include_wgsl!.
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("shader.wgsl"),
+        source: wgpu::ShaderSource::Wgsl(brickmap::bm_render::SHADER_WGSL.into()),
+    });
     let uniform_bgl = |vis| {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
@@ -287,8 +292,14 @@ pub fn capture_view(
     let palette_pass = (palette.is_some() || scale > 1).then(|| {
         let pass = crate::palette::PalettePass::new(&device, COLOR_FORMAT);
         match palette {
-            Some(spec) => pass.set(&queue, spec.index, spec.count, spec.dither, true),
-            None => pass.set(&queue, 0, 1, 0.0, false), // passthrough (upscale only)
+            Some(spec) => {
+                // Resolve the curated index to its ramp (the game owns the set) + feed the seam.
+                let pal =
+                    &crate::palettes::PALETTES[spec.index.min(crate::palettes::PALETTES.len() - 1)];
+                pass.set_colors(&queue, pal.colors, spec.count, spec.dither, true);
+            }
+            // Passthrough (upscale only): any ramp, disabled.
+            None => pass.set_colors(&queue, crate::palette::DEFAULT_RAMP, 1, 0.0, false),
         }
         let post = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("headless-post"),
@@ -402,7 +413,10 @@ pub fn capture_view(
     }
     let particle_instances = psys.instances();
 
-    let particle_shader = device.create_shader_module(wgpu::include_wgsl!("particles.wgsl"));
+    let particle_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("particles.wgsl"),
+        source: wgpu::ShaderSource::Wgsl(brickmap::bm_render::PARTICLES_WGSL.into()),
+    });
     let particle_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("headless-particle-layout"),
         bind_group_layouts: &[Some(&globals_bgl)],

@@ -649,17 +649,15 @@ impl State {
         let ship_depth = create_depth_view(&device, config.width.max(1), config.height.max(1));
 
         // Palette post-process (E10), off by default so the live preview is unchanged until
-        // a palette is chosen. Defaults to the full `mono` ramp with ordered dithering.
+        // a palette is chosen. Seeded with the engine's neutral default ramp; the game pushes
+        // its own curated/biome ramp via `set_palette_colors`.
         let palette = crate::palette::PalettePass::new(&device, config.format);
-        let palette_index = 0usize;
-        let palette_count = crate::palette::PALETTES[palette_index].colors.len() as u32;
-        let palette_dither = 1.0f32;
         let palette_on = false;
-        palette.set(
+        palette.set_colors(
             &queue,
-            palette_index,
-            palette_count,
-            palette_dither,
+            crate::palette::DEFAULT_RAMP,
+            crate::palette::DEFAULT_RAMP.len() as u32,
+            1.0,
             palette_on,
         );
         let palette_view = create_scene_view(&device, config.format, iw, ih);
@@ -799,20 +797,6 @@ impl State {
             .collect();
     }
 
-    /// Reconfigure the palette post-process (E10) and re-upload its uniform. `on == false`
-    /// makes the pass a no-op (the bloom output reaches the surface unchanged). `count` is
-    /// clamped to the chosen palette's length inside [`crate::palette::PalettePass::set`].
-    pub fn set_palette(&mut self, index: usize, count: u32, dither: f32, on: bool) {
-        self.palette_on = on;
-        self.palette.set(
-            &self.queue,
-            index.min(crate::palette::PALETTES.len() - 1),
-            count.max(1),
-            dither,
-            on,
-        );
-    }
-
     /// Explored-world map (E10): whether the fullscreen map overlay is shown this frame.
     pub fn set_map_active(&mut self, active: bool) {
         self.map_active = active;
@@ -832,10 +816,13 @@ impl State {
         self.map.set_uniform(&self.queue, u);
     }
 
-    /// Set the palette from an explicit (biome-blended) colour ramp; turns the pass on.
-    pub fn set_palette_colors(&mut self, colors: &[[f32; 3]], count: u32, dither: f32) {
-        self.palette_on = true;
-        self.palette.set_colors(&self.queue, colors, count, dither);
+    /// Set the palette from an explicit colour ramp (a curated entry the game resolved, a
+    /// biome-blended ramp, or the engine default). `on == false` makes the pass a passthrough.
+    /// This is the engine's whole palette seam — it knows no curated set (M9).
+    pub fn set_palette_colors(&mut self, colors: &[[f32; 3]], count: u32, dither: f32, on: bool) {
+        self.palette_on = on;
+        self.palette
+            .set_colors(&self.queue, colors, count, dither, on);
     }
 
     /// Last frame's draw counts, for the perf HUD.
@@ -1331,7 +1318,7 @@ fn build_chunk_draw(
 /// index, instanced per `SplatInstance`, billboarded with the camera basis. Alpha-test
 /// (round mask via `discard`), depth-write on, no blend → no sorting. Shares the globals
 /// group. `format` is the colour target. Shared with the headless renderer.
-pub(crate) fn build_splat_pipeline(
+pub fn build_splat_pipeline(
     device: &wgpu::Device,
     globals_bgl: &wgpu::BindGroupLayout,
     format: wgpu::TextureFormat,
@@ -1390,7 +1377,7 @@ const SPLAT_INSTANCE_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBuf
 /// Fullscreen sky-gradient pipeline: no bind groups, no vertex buffers (the vertex
 /// shader builds a fullscreen triangle), no depth write (drawn behind the terrain).
 /// Shared with the headless renderer. `format` is the colour target format.
-pub(crate) fn build_sky_pipeline(
+pub fn build_sky_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
@@ -1439,7 +1426,7 @@ pub(crate) fn build_sky_pipeline(
 
 /// Bind-group layout for the material texture array (group 2): a `2d_array` texture
 /// plus a sampler, both fragment-only. Shared with the headless renderer.
-pub(crate) fn material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+pub fn material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("material-bgl"),
         entries: &[
@@ -1467,7 +1454,7 @@ pub(crate) fn material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGro
 /// Unorm (not sRGB): the tiles are a brightness multiplier the shader applies to the
 /// already-sRGB palette colour. Nearest + repeat so each voxel shows one crisp tile.
 /// Shared with the headless renderer.
-pub(crate) fn build_material_bind_group(
+pub fn build_material_bind_group(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,

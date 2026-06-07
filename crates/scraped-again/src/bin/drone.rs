@@ -14,7 +14,7 @@ fn main() {
     let seed: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1337);
     let sr: u32 = 44_100;
 
-    let samples = brickmap::audio::Drone::render(seed, sr, seconds);
+    let samples = scraped_again::audio::Drone::render(seed, sr, seconds);
     write_wav(&path, &samples, sr, 2).expect("write wav");
     eprintln!(
         "wrote {path} ({seconds}s, seed {seed}, {} frames @ {sr} Hz)",

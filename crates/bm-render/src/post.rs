@@ -6,7 +6,7 @@
 
 const BLOOM_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
-pub(crate) struct Bloom {
+pub struct Bloom {
     bright: wgpu::RenderPipeline,
     blur_h: wgpu::RenderPipeline,
     blur_v: wgpu::RenderPipeline,
@@ -23,7 +23,7 @@ pub(crate) struct Bloom {
 impl Bloom {
     /// `output_format` is the final target (surface / headless colour); the scene
     /// input and the composite output share it (both are the scene's colour format).
-    pub(crate) fn new(
+    pub fn new(
         device: &wgpu::Device,
         output_format: wgpu::TextureFormat,
         width: u32,
@@ -133,7 +133,7 @@ impl Bloom {
     }
 
     /// Recreate the ¼-res ping-pong targets for a new output size.
-    pub(crate) fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         let (a, b) = Self::make_targets(device, width, height);
         self.view_a = a;
         self.view_b = b;
@@ -167,7 +167,7 @@ impl Bloom {
 
     /// Record the bloom passes: bright (scene → a), blur H (a → b), blur V (b → a),
     /// composite (scene + a → output).
-    pub(crate) fn render(
+    pub fn render(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
@@ -219,7 +219,7 @@ impl Bloom {
     }
 
     /// Copy the scene straight to the output (bloom toggled off).
-    pub(crate) fn blit(
+    pub fn blit(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,

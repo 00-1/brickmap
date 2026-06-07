@@ -7,7 +7,7 @@
 //!
 //! Pure logic (no wgpu): the renderer/app read [`Blended`] and apply it. Deterministic in the seed.
 
-use crate::palette::PALETTES;
+use crate::palettes::PALETTES;
 
 /// One biome preset. Scalar fields are levels/multipliers that get blended between neighbours;
 /// `palette` indexes [`PALETTES`] (every palette is a biome).

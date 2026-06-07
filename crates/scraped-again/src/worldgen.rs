@@ -1,7 +1,12 @@
-//! Procedural terrain (M3): dependency-free fractal **value noise**. Deterministic
-//! (seeded) so renders/golden-images are reproducible. Knows only `world` types.
+//! Scraped Again's **terrain recipe** — the specific dead world (block ids, sea level,
+//! domain-warped/ridged height, biome surface, caves, the rare glowing crystal). It's
+//! *content*: it composes the engine's reusable noise (`brickmap::noise`) into this world.
+//! Moved out of the engine in M9; the engine reaches it only through the [`WorldGen`] seam.
+//! Deterministic (seeded) so renders/golden-images reproduce.
 
-use crate::world::{BlockId, Section, World};
+use brickmap::noise::{fbm, fbm3, hash, lerp, ridged, smoothstep_range};
+use brickmap::world::{BlockId, ChunkCoord, Section, World};
+use brickmap::WorldGen;
 
 const STONE: BlockId = BlockId(1);
 const DIRT: BlockId = BlockId(2);
@@ -17,96 +22,6 @@ const WATER: BlockId = BlockId(7);
 /// lights (E3), so they're seeded densely enough that with the sun off the landscape still
 /// reads as pools of light in the dark — but sparse enough to feel like scattered glimmers.
 const CRYSTAL_CHANCE: f32 = 0.008;
-
-/// Hash a lattice point to `[0, 1)`.
-fn hash(x: i32, z: i32, seed: u32) -> f32 {
-    let mut h = (x as u32)
-        .wrapping_mul(0x1657_4c2f)
-        .wrapping_add((z as u32).wrapping_mul(0x68b3_8d2b))
-        .wrapping_add(seed.wrapping_mul(0x9e37_79b9));
-    h ^= h >> 15;
-    h = h.wrapping_mul(0x2c1b_3c6d);
-    h ^= h >> 12;
-    h = h.wrapping_mul(0x297a_2d39);
-    h ^= h >> 15;
-    (h & 0x00ff_ffff) as f32 / 0x0100_0000 as f32
-}
-
-fn smoothstep(t: f32) -> f32 {
-    t * t * (3.0 - 2.0 * t)
-}
-
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
-}
-
-/// Bilinearly-interpolated value noise at `(x, z)`.
-fn value_noise(x: f32, z: f32, seed: u32) -> f32 {
-    let (xi, zi) = (x.floor() as i32, z.floor() as i32);
-    let (xf, zf) = (x - xi as f32, z - zi as f32);
-    let (u, v) = (smoothstep(xf), smoothstep(zf));
-    let top = lerp(hash(xi, zi, seed), hash(xi + 1, zi, seed), u);
-    let bot = lerp(hash(xi, zi + 1, seed), hash(xi + 1, zi + 1, seed), u);
-    lerp(top, bot, v)
-}
-
-/// Fractal Brownian motion (a few octaves) → `[0, 1)`.
-fn fbm(x: f32, z: f32, seed: u32) -> f32 {
-    let mut sum = 0.0;
-    let mut amp = 1.0;
-    let mut freq = 1.0;
-    let mut norm = 0.0;
-    for octave in 0..4 {
-        sum += amp * value_noise(x * freq, z * freq, seed.wrapping_add(octave * 1013));
-        norm += amp;
-        amp *= 0.5;
-        freq *= 2.0;
-    }
-    sum / norm
-}
-
-/// Hash a 3D lattice point to `[0, 1)` (for the cave noise).
-fn hash3(x: i32, y: i32, z: i32, seed: u32) -> f32 {
-    let mut h = (x as u32)
-        .wrapping_mul(0x1657_4c2f)
-        .wrapping_add((y as u32).wrapping_mul(0x456b_2f1d))
-        .wrapping_add((z as u32).wrapping_mul(0x68b3_8d2b))
-        .wrapping_add(seed.wrapping_mul(0x9e37_79b9));
-    h ^= h >> 15;
-    h = h.wrapping_mul(0x2c1b_3c6d);
-    h ^= h >> 12;
-    h = h.wrapping_mul(0x297a_2d39);
-    h ^= h >> 15;
-    (h & 0x00ff_ffff) as f32 / 0x0100_0000 as f32
-}
-
-/// Trilinearly-interpolated 3D value noise.
-fn value_noise3(x: f32, y: f32, z: f32, seed: u32) -> f32 {
-    let (xi, yi, zi) = (x.floor() as i32, y.floor() as i32, z.floor() as i32);
-    let (xf, yf, zf) = (x - xi as f32, y - yi as f32, z - zi as f32);
-    let (u, v, w) = (smoothstep(xf), smoothstep(yf), smoothstep(zf));
-    let c = |dx, dy, dz| hash3(xi + dx, yi + dy, zi + dz, seed);
-    let x00 = lerp(c(0, 0, 0), c(1, 0, 0), u);
-    let x10 = lerp(c(0, 1, 0), c(1, 1, 0), u);
-    let x01 = lerp(c(0, 0, 1), c(1, 0, 1), u);
-    let x11 = lerp(c(0, 1, 1), c(1, 1, 1), u);
-    lerp(lerp(x00, x10, v), lerp(x01, x11, v), w)
-}
-
-/// 3D fractal noise (2 octaves) → `[0, 1)`, for carving caves.
-fn fbm3(x: f32, y: f32, z: f32, seed: u32) -> f32 {
-    let a = value_noise3(x, y, z, seed);
-    let b = value_noise3(x * 2.1, y * 2.1, z * 2.1, seed.wrapping_add(8101));
-    (a * 2.0 + b) / 3.0
-}
-
-/// Ridged noise → `[0, 1)` with sharp **ridge lines** (mountain crests) instead of
-/// fbm's rounded hills: fold the noise around its midpoint and square the result.
-fn ridged(x: f32, z: f32, seed: u32) -> f32 {
-    let n = fbm(x, z, seed);
-    let r = 1.0 - (2.0 * n - 1.0).abs();
-    r * r
-}
 
 /// Continuous surface height (in voxels, fractional) at a world column. Shared by the
 /// generator and any caller that wants a smooth value (e.g. water depth).
@@ -135,11 +50,6 @@ fn height_f(wx: i32, wz: i32, seed: u32) -> f32 {
     let rv = ridged(wxp * 0.021 + 3.0, wzp * 0.021 + 9.0, seed ^ 0x00f7);
     let river = smoothstep_range(0.86, 0.97, rv);
     lerp(land, SEA_LEVEL as f32 - 1.5, river * 0.9)
-}
-
-/// `smoothstep` remapped to an `[edge0, edge1]` range → `[0, 1]`.
-fn smoothstep_range(edge0: f32, edge1: f32, x: f32) -> f32 {
-    smoothstep(((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0))
 }
 
 /// Sea floor / base height offset (voxels) the terrain rises from.
@@ -190,8 +100,6 @@ fn surface_block(height: u32, temp: f32, humidity: f32) -> BlockId {
     }
 }
 
-/// Fill one section at chunk `(cx, cz)` with seeded terrain (single vertical layer
-/// of chunks for now; `cy` is assumed 0).
 /// Whether the cave pass carves voxel `(wx, y, wz)` to air, given the column height `h`. Shared
 /// by `generate_section` (meshing) and `solid_at` (collision) so they never disagree. Keeps a
 /// 2-voxel surface skin except at rare breached "entrance" columns (widened there into a mouth).
@@ -282,6 +190,21 @@ pub fn generate_world(radius: i32, seed: u32) -> World {
         }
     }
     world
+}
+
+/// The game's [`WorldGen`] for a given seed — the engine's world-generation seam (M9).
+/// Hands the engine (streaming, edits, collision) sections + solidity from the recipe above.
+pub struct TerrainGen {
+    pub seed: u32,
+}
+
+impl WorldGen for TerrainGen {
+    fn generate(&self, coord: ChunkCoord) -> Section {
+        generate_section(coord.0, coord.2, self.seed)
+    }
+    fn solid(&self, x: i32, y: i32, z: i32) -> bool {
+        solid_at(x, y, z, self.seed)
+    }
 }
 
 #[cfg(test)]

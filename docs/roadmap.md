@@ -494,6 +494,32 @@ wire the lighting data path, record real numbers. *(Skip: depth pre-pass, Hi-Z �
 - **Blocked (b):** profiling needs the reference iGPU + phone to measure — logged in
   `docs/unattended-questions.md` for when the hardware's available.
 
+### M9 — Engine / game split (Cargo workspace) ✅ &nbsp;→ [`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md)
+Make design §3's "a rendering engine, not a game" **true in the code**: split the single
+`brickmap` crate into a Cargo **workspace** with a graph-enforced boundary — content-agnostic
+**engine** library crates (`bm-core`/`bm-world`/`bm-mesh`/`bm-scene`/`bm-render`/`bm-platform`,
+re-exported by the `brickmap` facade) and a **`game`** binary crate that owns all content
+(terrain recipe, biomes, colossi, inscriptions, the doom drone, player, the app/mode-machine,
+wasm/Android entry) and plugs in through seven small extension seams (`WorldGen`, splat feed,
+structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructors).
+- **Outcome:** the engine renders a content-free demo (streamed raw terrain) on its own, and the
+  game builds on it **pixel-identical to today** on every target.
+- **De-risks:** the "engine, not a game" identity claim; reusability; stops content leaking back
+  into the engine (the crate DAG mechanically forbids any `bm-*`→`game` dep, CI-checked).
+- **Behaviour-preserving:** the D1 golden image + E12 golden voxel-hash stay identical across the
+  worldgen/biome/palette extractions.
+- **Acceptance:** see the brief's checklist (workspace up; seven seams + four fused files split;
+  crate graph proves the boundary; engine-alone demo renders; golden image + voxel-hash unchanged;
+  all four targets + live preview/APK/desktop green).
+- **Landed:** the workspace is `crates/{bm-core,bm-world,bm-mesh,bm-scene,bm-render,bm-platform,
+  brickmap}` (engine) + `crates/scraped-again` — the game is **Scraped Again** (a lonely surveyor
+  of a dead world of fallen giants). `worldgen`/`biome`/`palette` extracted behind the noise +
+  `WorldGen` + palette-colour seams; recipe/biomes/drone/player/app all in the game; an
+  `engine_demo` example renders flat terrain with zero game content; a CI step asserts no
+  engine→game dep. Golden voxel-hash + headless render byte-identical throughout. *Residue:* the
+  cruiser ship mesh still lives in `bm-render`, and the `AudioSource` seam is left unformalised
+  (audio is wholly in the game per Decision 3) — both flagged as follow-ups.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear
