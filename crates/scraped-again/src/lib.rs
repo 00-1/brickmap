@@ -23,8 +23,8 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 // app + content modules keep resolving `crate::world::…`, `crate::gfx::…`, etc. (the game
 // consumes the engine purely through the `brickmap` facade — never the bm-* crates).
 pub use brickmap::{
-    edit, foliage, gamepad, gfx, hud, map, mesh, noise, palette, particles, post, scene, ship, sim,
-    text, textures, visibility, world, WorldGen,
+    edit, foliage, gamepad, gfx, hud, map, mesh, noise, overlay, palette, particles, post, scene,
+    ship, sim, text, textures, visibility, world, WorldGen,
 };
 
 pub mod audio;
@@ -34,6 +34,8 @@ pub mod creatures;
 pub mod cruiser;
 // Gameplay (Scraped Again): data strata, the codex, collect events (G1).
 pub mod progress;
+// The survey-beam (G2): cast → collect-along-path → persist/fade, drawn post-palette.
+pub mod beam;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
 pub mod palettes;
 pub mod player;
@@ -168,10 +170,14 @@ struct App {
     /// Scraped Again gameplay (G1): banked data strata + the codex of collected inscriptions.
     progress: progress::Progress,
     /// Nearby still-collectible inscriptions (rebuilt as text streams in) — the targets the
-    /// collect pick (`T`) aims at.
+    /// collect pick (`T`) and the survey-beam aim at.
     collectible: Vec<progress::Collectible>,
     /// Whether the codex list overlay is open (key `J`).
     codex_open: bool,
+    /// The active survey-beam (G2), if one is cast — persists then fades.
+    beam: Option<beam::Beam>,
+    /// Monotonic seconds, accumulated each frame — the beam's clock (birth + fade).
+    time: f32,
     /// Biome-driven auto mode (the new default): when on, the biome at the camera drives the
     /// palette, spawn densities, lighting/wobble, ground, and drone mix — blended smoothly as you
     /// move, no manual toggles. Off → the manual settings ("as we currently have it"). Key `G`.
@@ -482,6 +488,31 @@ impl App {
                 progress::stratum_of(c.script).label(),
             );
         }
+    }
+
+    /// G2: cast the survey-beam from the camera along the aim direction. Sweeps up every
+    /// collectible glyph along its path on cast (one-shot, feeding G1), then persists + fades.
+    fn cast_beam(&mut self) {
+        let b = beam::Beam::cast(self.camera.position, self.camera.forward(), self.time);
+        let mut swept = 0u32;
+        let mut done: Vec<u64> = Vec::new();
+        for c in &self.collectible {
+            if beam::on_path(Vec3::from(c.pos), b.a, b.b) {
+                let ev = progress::Event::Collect {
+                    find_id: c.find_id,
+                    script: c.script,
+                    text: c.text.clone(),
+                    pos: c.pos,
+                };
+                if self.progress.apply(&ev) {
+                    swept += 1;
+                    done.push(c.find_id);
+                }
+            }
+        }
+        self.collectible.retain(|c| !done.contains(&c.find_id));
+        self.beam = Some(b);
+        log::info!("beam: cast — swept {swept} glyph(s)");
     }
 
     /// The G1 strata readout line for the HUD.
@@ -1304,15 +1335,19 @@ impl ApplicationHandler<AppEvent> for App {
                 // (Android gamepad input is read directly in `android_main`, not via
                 // winit key events — see `gamepad::android` + the pump loop.)
             }
-            // Click to capture the pointer for mouselook (and to re-capture after
-            // Esc / tabbing away). Idempotent, so re-clicking is harmless.
+            // Left click captures the pointer for mouselook; once captured, a click **casts
+            // the survey-beam** (G2) where you aim — the signature manual verb.
             WindowEvent::MouseInput {
                 button: MouseButton::Left,
                 state: ElementState::Pressed,
                 ..
             } => {
                 self.auto_fly = false;
-                self.set_capture(true);
+                if self.cursor_locked {
+                    self.cast_beam();
+                } else {
+                    self.set_capture(true);
+                }
             }
             // Pointer lock is lost when focus leaves; reflect that in our state.
             WindowEvent::Focused(false) => self.set_capture(false),
@@ -1484,6 +1519,16 @@ impl ApplicationHandler<AppEvent> for App {
                 // `build_map_image` borrows `&self`, so it must run before the mutable `state`
                 // borrow below; the upload + uniform are pushed inside the state block.
                 self.map_anim += dt;
+                // G2 beam clock + expiry, then build this frame's overlay ribbon (before the
+                // mutable `state` borrow below).
+                self.time += dt;
+                if self.beam.is_some_and(|b| b.dead(self.time)) {
+                    self.beam = None;
+                }
+                let overlay_verts = self
+                    .beam
+                    .map(|b| b.ribbon(self.camera.position, self.time))
+                    .unwrap_or_default();
                 let map_upload = (self.map_view && self.map_dirty)
                     .then(|| self.build_map_image())
                     .flatten();
@@ -1590,6 +1635,9 @@ impl ApplicationHandler<AppEvent> for App {
                         );
                     }
                     state.set_pixel_scale(self.pixel_scale);
+                    // Survey-beam (G2): feed this frame's ribbon to the engine's post-palette
+                    // overlay (empty when no beam is up).
+                    state.set_overlay(&overlay_verts);
                     // Explored-map overlay (E10): upload a fresh image if it grew, push the
                     // pan/zoom/you-are-here uniform, and flag it on/off for the render pass.
                     if let Some((w, h, _, _, rgba)) = &map_upload {
@@ -1892,6 +1940,8 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         progress: initial_progress(),
         collectible: Vec::new(),
         codex_open: false,
+        beam: None,
+        time: 0.0,
         biome_mode: true, // the new default mode
         biome_label: String::new(),
         map: std::collections::HashMap::new(),

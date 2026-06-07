@@ -638,7 +638,7 @@ pub fn capture_view(
                 view: &depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Discard, // nothing reads depth after this pass (M8)
+                    store: wgpu::StoreOp::Store, // retained for the G2 overlay's occlusion test
                 }),
                 stencil_ops: None,
             }),
@@ -701,6 +701,26 @@ pub fn capture_view(
     // Cruiser nav-lights over the finished (palettised) frame, true colour — the hull was
     // already drawn into the scene above.
     ship.draw_lights(&mut encoder, &target_view, &ship_depth);
+
+    // G2 A/B (opt-in via `SCRAPED_BEAM`): cast a survey-beam through the scene and draw it via
+    // the engine's post-palette overlay. Proves the beam is **vivid over the palette** (warm,
+    // un-palettised) *and* **occluded by terrain** it passes behind (depth-tested). Kept off by
+    // default so the standard/CI renders are unchanged.
+    if std::env::var("SCRAPED_BEAM").is_ok() {
+        let mut ov =
+            crate::overlay::OverlayRenderer::new(&device, COLOR_FORMAT, DEPTH_FORMAT, iw, ih);
+        // A vertical beam rising out of the ground near the parked ship: the stretch below the
+        // surface is occluded by terrain, the stretch above is vivid against the world — the A/B.
+        let b = crate::beam::Beam {
+            a: glam::Vec3::new(12.0, ship_gy - 5.0, 10.0),
+            b: glam::Vec3::new(12.0, ship_gy + 28.0, 10.0),
+            born: 0.0,
+        };
+        ov.set_lines(&device, &b.ribbon(camera.position, 0.0));
+        ov.set_view_proj(&queue, camera.view_proj(width as f32 / height as f32));
+        ov.draw(&mut encoder, &depth_view);
+        ov.composite(&mut encoder, &target_view);
+    }
     // In-engine HUD overlay — same code path as the live app, so the hero shot verifies it.
     let mut hud = crate::hud::HudOverlay::new(&device, COLOR_FORMAT);
     hud.set_text(

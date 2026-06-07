@@ -19,6 +19,7 @@ pub mod foliage;
 pub mod gfx;
 pub mod hud;
 pub mod map;
+pub mod overlay;
 pub mod palette;
 pub mod particles;
 pub mod post;
