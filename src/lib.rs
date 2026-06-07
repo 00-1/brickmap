@@ -1110,6 +1110,7 @@ impl ApplicationHandler<AppEvent> for App {
                     self.palette_count = pcount;
                     self.palette_dither = pdither;
                     self.pixel_scale = controls::pixel_scale();
+                    self.biome_mode = controls::biome_mode();
                     if let Some(seed) = controls::take_pending_seed() {
                         self.set_seed(seed);
                     }
@@ -1731,6 +1732,9 @@ pub mod controls {
         /// Feature-toggle bitmask, one bit per switch. `0xBFF` = bits 0–11 on except sand (10),
         /// with melt (12) + sun (13) off — the dark, point-lit default; sand off (sim costs FPS).
         static TOGGLES: Cell<u32> = const { Cell::new(0xBFF) };
+        /// Biome-driven auto mode (the new default). When on, the biome at the camera drives the
+        /// look + mix and the manual controls are disabled on the page.
+        static BIOME_MODE: Cell<bool> = const { Cell::new(true) };
         /// A seed change requested from the page, consumed by the app next frame.
         static PENDING_SEED: Cell<Option<u32>> = const { Cell::new(None) };
         /// The app's current share string, refreshed each HUD tick for "copy link".
@@ -1842,6 +1846,15 @@ pub mod controls {
     }
     pub(crate) fn pixel_scale() -> u32 {
         PIXEL_SCALE.with(Cell::get)
+    }
+
+    /// Biome auto mode on/off, set from the page (the master "mode" switch).
+    #[wasm_bindgen]
+    pub fn set_biome_mode(on: bool) {
+        BIOME_MODE.with(|c| c.set(on));
+    }
+    pub(crate) fn biome_mode() -> bool {
+        BIOME_MODE.with(Cell::get)
     }
 
     /// Switch to a seed parsed from user text (numeric or folded). Returns the resolved

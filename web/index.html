@@ -88,6 +88,16 @@
       <span id="seed-status" style="color: #6c8cff"></span>
     </div>
 
+    <!-- Mode (E10): biome auto-mode drives every setting from the world's biome as you fly;
+         turn it off to adjust the dials/palette/audio/toggles manually. -->
+    <div
+      style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; color: #cfe; font-size: 13px; margin-top: 10px"
+    >
+      <label><input type="checkbox" id="biome-mode" checked /> <b>biome auto-mode</b>
+        <span style="color: #4a5266">— drives palette / wobble / sun / drone / spawns by biome (manual controls below disabled)</span>
+      </label>
+    </div>
+
     <!-- Live aesthetic dials (D2): drive shader params via wasm setters. -->
     <div
       style="display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; color: #8a93a8; font-size: 12px; margin-top: 8px"
@@ -197,6 +207,7 @@
         set_audio_volume,
         set_audio_drive,
         set_audio_tone,
+        set_biome_mode,
       } from "./pkg/brickmap.js?v=__CACHE_BUST__";
       // Palette colour counts, indexed like PALETTES in palette.rs (mono is 4, rest 5).
       const PALETTE_LEN = [4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
@@ -342,6 +353,24 @@
             label.append(cb, " " + name);
             box.append(label);
           });
+
+          // Mode switch (E10): biome auto-mode drives the look/mix from the world, so the manual
+          // controls it overrides are disabled + dimmed while it's on. Toggle it to get the
+          // adjustable mode (dials/palette/audio/toggles) back. `pixel` + `drone enable` stay live.
+          const biomeMode = document.getElementById("biome-mode");
+          const managed = [wobble, steps, palOn, palWhich, palCount, palDither, audVol, audDrive, audMurk];
+          const refreshMode = () => {
+            const on = biomeMode.checked;
+            set_biome_mode(on);
+            managed.forEach((el) => {
+              el.disabled = on;
+              if (el.parentElement) el.parentElement.style.opacity = on ? 0.4 : 1;
+            });
+            box.querySelectorAll("input").forEach((cb) => { cb.disabled = on; });
+            box.style.opacity = on ? 0.4 : 1;
+          };
+          biomeMode.addEventListener("change", refreshMode);
+          refreshMode();
 
           // Seed controls (E12).
           status = document.getElementById("seed-status");
