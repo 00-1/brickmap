@@ -337,6 +337,11 @@ dependencies = [
  "bm-scene",
  "bm-world",
  "criterion",
+ "env_logger",
+ "glam",
+ "log",
+ "pollster",
+ "winit",
 ]
 
 [[package]]
