@@ -15,6 +15,14 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
+// Engine crates (M9): re-exported under their original module paths so the rest of the
+// crate keeps resolving `crate::world::…`, `crate::mesh::…`, etc. while the carve is in
+// progress. These paths will dissolve as the app itself moves into the game crate.
+pub use bm_core;
+pub use bm_mesh::{mesh, visibility};
+pub use bm_scene::scene;
+pub use bm_world::{edit, sim, world, worldgen};
+
 pub mod audio;
 pub mod biome;
 pub mod creatures;
@@ -25,27 +33,20 @@ pub mod ship;
 // cpal audio output (E16): desktop + **Android** (AAudio backend); web uses Web Audio.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod audio_native;
-pub mod edit;
 pub mod foliage;
 pub mod gamepad;
 mod gfx;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
 pub mod hud;
-pub mod mesh;
 pub mod model;
 pub mod palette;
 pub mod particles;
 mod post;
-pub mod scene;
 pub mod share;
-pub mod sim;
 pub mod structures;
 pub mod text;
 pub mod textures;
-pub mod visibility;
-pub mod world;
-pub mod worldgen;
 use gfx::{ChunkInstance, State, Toggles};
 use mesh::{greedy_mesh_section_with, Neighbors};
 use particles::ParticleSystem;

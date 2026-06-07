@@ -266,10 +266,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "bm-core"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "glam",
+]
+
+[[package]]
+name = "bm-mesh"
+version = "0.0.1"
+dependencies = [
+ "bm-core",
+ "bm-world",
+]
+
+[[package]]
+name = "bm-scene"
+version = "0.0.1"
+dependencies = [
+ "bm-core",
+ "glam",
+]
+
+[[package]]
+name = "bm-world"
+version = "0.0.1"
+dependencies = [
+ "bm-core",
+ "glam",
+]
+
+[[package]]
 name = "brickmap"
 version = "0.0.1"
 dependencies = [
  "android_logger",
+ "bm-core",
+ "bm-mesh",
+ "bm-scene",
+ "bm-world",
  "bytemuck",
  "cfg-if",
  "console_error_panic_hook",

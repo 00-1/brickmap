@@ -17,6 +17,12 @@ name = "brickmap"
 path = "src/main.rs"
 
 [dependencies]
+# --- brickmap engine crates (M9 workspace split) -------------------------
+bm-core = { path = "../bm-core" }
+bm-world = { path = "../bm-world" }
+bm-mesh = { path = "../bm-mesh" }
+bm-scene = { path = "../bm-scene" }
+
 # --- Core, all targets ---------------------------------------------------
 wgpu = "29"
 winit = "0.30"
