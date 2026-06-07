@@ -321,12 +321,6 @@ pub struct State {
     creature_count: u32,
     creature_capacity: usize,
 
-    // Space cruiser (E19): a point-cloud ship drawn (via the splat pipeline) at its landed
-    // position while you're on foot, so you can see + walk back to it. Empty while piloting.
-    cruiser_splats: wgpu::Buffer,
-    cruiser_count: u32,
-    cruiser_capacity: usize,
-
     /// Eased camera position driving the splat recession (E18 polish): lags the real camera
     /// so points drift out of the way with inertia. `lag_time` is the previous frame's clock
     /// for the frame-rate-independent ease; a negative value means "not yet initialised".
@@ -354,6 +348,13 @@ pub struct State {
     /// Explored-world map overlay (E10): a fullscreen biome map drawn over the frame when open.
     map: crate::map::MapView,
     map_active: bool,
+    /// Space cruiser (E19): a polygonal ship drawn over the palette in true colour, with its own
+    /// (surface-res) depth buffer. Shown parked while you're on foot.
+    ship: crate::ship::ShipRenderer,
+    ship_depth: wgpu::TextureView,
+    ship_active: bool,
+    ship_pos: Vec3,
+    ship_yaw: f32,
 
     // The window must outlive the surface; keep an Arc so `Surface<'static>` is sound.
     window: Arc<Window>,
@@ -630,13 +631,6 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let cruiser_capacity = 512usize;
-        let cruiser_splats = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("cruiser-splats"),
-            size: (cruiser_capacity * std::mem::size_of::<SplatInstance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
 
         // --- Foliage splats (E6): instanced billboards sharing the globals group ---
         let splat_pipeline = build_splat_pipeline(&device, &globals_bgl, config.format);
@@ -650,6 +644,9 @@ impl State {
         let hud = crate::hud::HudOverlay::new(&device, config.format);
         let text = crate::text::WorldText::new(&device, config.format, DEPTH_FORMAT, &globals_bgl);
         let map = crate::map::MapView::new(&device, config.format);
+        let ship = crate::ship::ShipRenderer::new(&device, config.format, DEPTH_FORMAT);
+        // Ship depth is full surface resolution (it draws after the palette upscale).
+        let ship_depth = create_depth_view(&device, config.width.max(1), config.height.max(1));
 
         // Palette post-process (E10), off by default so the live preview is unchanged until
         // a palette is chosen. Defaults to the full `mono` ramp with ordered dithering.
@@ -697,9 +694,6 @@ impl State {
             creature_splats,
             creature_count: 0,
             creature_capacity,
-            cruiser_splats,
-            cruiser_count: 0,
-            cruiser_capacity,
             lag_camera: Vec3::ZERO,
             lag_time: -1.0,
             particle_pipeline,
@@ -714,6 +708,11 @@ impl State {
             text,
             map,
             map_active: false,
+            ship,
+            ship_depth,
+            ship_active: false,
+            ship_pos: Vec3::ZERO,
+            ship_yaw: 0.0,
             window,
         }
     }
@@ -789,26 +788,6 @@ impl State {
             .write_buffer(&self.creature_splats, 0, bytemuck::cast_slice(points));
     }
 
-    /// Replace the cruiser's point cloud (E19): the ship's splats at its world position (or empty
-    /// while piloting). Small, set only when the cruiser moves/lands. Grows on demand.
-    pub fn set_cruiser_points(&mut self, points: &[SplatInstance]) {
-        self.cruiser_count = points.len() as u32;
-        if points.is_empty() {
-            return;
-        }
-        if points.len() > self.cruiser_capacity {
-            self.cruiser_capacity = points.len().next_power_of_two();
-            self.cruiser_splats = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("cruiser-splats"),
-                size: (self.cruiser_capacity * std::mem::size_of::<SplatInstance>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-        }
-        self.queue
-            .write_buffer(&self.cruiser_splats, 0, bytemuck::cast_slice(points));
-    }
-
     /// Replace the solid colossal-structure meshes (E18) — greedy-meshed giant instances drawn
     /// with the terrain pipeline. Rebuilt by the app when the in-range set changes.
     pub fn set_structure_meshes(&mut self, instances: &[ChunkInstance]) {
@@ -837,6 +816,12 @@ impl State {
     /// Explored-world map (E10): whether the fullscreen map overlay is shown this frame.
     pub fn set_map_active(&mut self, active: bool) {
         self.map_active = active;
+    }
+    /// Space cruiser (E19): whether to draw the parked ship this frame, and where/at what yaw.
+    pub fn set_ship(&mut self, active: bool, pos: Vec3, yaw: f32) {
+        self.ship_active = active;
+        self.ship_pos = pos;
+        self.ship_yaw = yaw;
     }
     /// Upload a fresh chunk-image for the map (RGBA, one texel per chunk). Only when it grows.
     pub fn set_map_image(&mut self, w: u32, h: u32, rgba: &[u8]) {
@@ -915,6 +900,13 @@ impl State {
         self.palette_bind_group = self
             .palette
             .make_bind_group(&self.device, &self.palette_view);
+        // The ship draws at full surface resolution (after the palette upscale), so its depth
+        // buffer tracks the surface size, not the internal one.
+        self.ship_depth = create_depth_view(
+            &self.device,
+            self.config.width.max(1),
+            self.config.height.max(1),
+        );
     }
 
     /// Set the internal-resolution divisor (1 = native; higher = chunkier + cheaper). Rebuilds
@@ -1188,15 +1180,6 @@ impl State {
                 splats += self.creature_count;
             }
 
-            // Space cruiser (E19): the parked ship's point cloud, same pipeline.
-            if self.cruiser_count > 0 {
-                pass.set_pipeline(&self.splat_pipeline);
-                pass.set_bind_group(0, &self.globals_bind_group, &[]);
-                pass.set_vertex_buffer(0, self.cruiser_splats.slice(..));
-                pass.draw(0..6, 0..self.cruiser_count);
-                splats += self.cruiser_count;
-            }
-
             // In-world text (E17): glowing inscriptions, camera-facing billboards in the scene
             // pass (depth-tested against the world, palettised + fogged, glow through bloom).
             self.text.draw(&mut pass, &self.globals_bind_group);
@@ -1251,6 +1234,14 @@ impl State {
         }
         self.palette
             .render(&mut encoder, &self.palette_bind_group, &view);
+
+        // Space cruiser (E19): drawn over the palettised frame so its true colours + glowing
+        // nav-lights survive (its own depth buffer self-occludes). Skipped under the map.
+        if self.ship_active && !self.map_active {
+            self.ship
+                .set_transform(&self.queue, view_proj, self.ship_pos, self.ship_yaw);
+            self.ship.draw(&mut encoder, &view, &self.ship_depth);
+        }
 
         // Explored-world map (E10): when open, drawn fullscreen over the finished scene (the HUD
         // still composites on top, so status + biome stay visible).

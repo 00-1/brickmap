@@ -21,6 +21,7 @@ pub mod creatures;
 pub mod map;
 pub mod player;
 pub mod relic;
+pub mod ship;
 // cpal audio output (E16): desktop + **Android** (AAudio backend); web uses Web Audio.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod audio_native;
@@ -1058,49 +1059,6 @@ impl ChunkLoader {
 /// Debris emitters scattered on the terrain *ahead of* the camera along its
 /// heading, so the flight sweeps over rising embers. Emitting at the camera itself
 /// just leaves the debris behind at cruise speed (it spawns and the camera is gone).
-/// The cruiser's point-cloud model (E19) positioned at `pos`: a small ship — tapered fuselage
-/// rings, swept wings, a tail fin, and glowing engines — drawn through the splat pipeline.
-fn cruiser_points_at(pos: Vec3) -> Vec<foliage::SplatInstance> {
-    use std::f32::consts::TAU;
-    let mut v = Vec::new();
-    let mut push = |x: f32, y: f32, z: f32, c: [f32; 3], s: f32| {
-        v.push(foliage::SplatInstance {
-            offset: [pos.x + x, pos.y + y, pos.z + z],
-            size: s,
-            color: c,
-            sway: 0.0,
-            alpha: 1.0,
-        });
-    };
-    let hull = [0.60, 0.65, 0.72];
-    // Fuselage: tapered rings along z (−4..4).
-    for i in -8..=8 {
-        let z = i as f32 * 0.5;
-        let r = 0.75 * (1.0 - (z / 5.5).abs());
-        for k in 0..6 {
-            let a = k as f32 / 6.0 * TAU;
-            push(a.cos() * r, a.sin() * r * 0.7, z, hull, 0.42);
-        }
-    }
-    // Swept wings either side around mid-body.
-    for i in 1..=7 {
-        let x = i as f32 * 0.5;
-        let z = -0.2 - i as f32 * 0.18; // sweep back
-        push(x, -0.1, z, hull, 0.42);
-        push(-x, -0.1, z, hull, 0.42);
-    }
-    // Tail fin.
-    for i in 0..5 {
-        push(0.0, 0.4 + i as f32 * 0.35, -3.0, hull, 0.4);
-    }
-    // Engine glow at the back (emissive → blooms).
-    for k in 0..8 {
-        let a = k as f32 / 8.0 * TAU;
-        push(a.cos() * 0.45, a.sin() * 0.35, -4.3, [0.45, 0.9, 1.0], 0.5);
-    }
-    v
-}
-
 fn lead_emitters(camera: &Camera, seed: u32) -> Vec<Vec3> {
     // Horizontal heading + right vector (the camera looks slightly down).
     let mut fwd = camera.forward();
@@ -1366,16 +1324,13 @@ impl ApplicationHandler<AppEvent> for App {
                 let wisp_mult =
                     biome::at(self.camera.position.x, self.camera.position.z, self.seed).wisps;
                 let wisp_n = (7.0 * wisp_mult).round() as usize;
-                // The cruiser's point cloud shows only when you're on foot (parked); while
-                // piloting you're inside it, so it's hidden.
-                let cruiser_pts = if self.mode == Mode::Walk {
-                    cruiser_points_at(self.cruiser_pos)
-                } else {
-                    Vec::new()
-                };
+                // The polygonal cruiser shows parked while you're on foot; while piloting you're
+                // inside it (hidden). Drawn over the palette in true colour (gfx).
+                let ship_shown = self.mode == Mode::Walk;
+                let ship_pos = self.cruiser_pos;
                 if let Some(state) = self.state.as_mut() {
                     state.set_creature_points(&self.creatures.points_n(wisp_n));
-                    state.set_cruiser_points(&cruiser_pts);
+                    state.set_ship(ship_shown, ship_pos, 0.0);
                 }
                 // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
                 self.sim(dt);
