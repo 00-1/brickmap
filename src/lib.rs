@@ -18,6 +18,7 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 pub mod audio;
 pub mod biome;
 pub mod creatures;
+pub mod map;
 pub mod relic;
 // Native (desktop) audio output via cpal; web uses Web Audio, Android is a follow-up.
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
@@ -149,6 +150,16 @@ struct App {
     biome_mode: bool,
     /// The current biome label, refreshed each frame in biome mode (shown on the HUD).
     biome_label: String,
+    /// Explored-world map (E10): biome colour per visited chunk `(cx, cz)`, built as you fly.
+    map: std::collections::HashMap<(i32, i32), [u8; 3]>,
+    /// Whether the fullscreen map view is open; the pan centre (chunk coords); whether the
+    /// explored set grew since the GPU image was last built; and the cached image origin/dims.
+    map_view: bool,
+    map_pan: (f32, f32),
+    map_dirty: bool,
+    map_origin: (i32, i32),
+    map_dims: (u32, u32),
+    map_anim: f32,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
     /// Native doom-drone output (E16). `None` if no audio device. Desktop only.
@@ -286,6 +297,28 @@ impl App {
             KeyCode::KeyG => {
                 self.biome_mode = !self.biome_mode;
                 log::info!("biome mode → {}", self.biome_mode);
+                return true;
+            }
+            // Explored map (E10): N opens/closes it; arrows pan it while open (else fall
+            // through to camera movement).
+            KeyCode::KeyN => {
+                self.toggle_map();
+                return true;
+            }
+            KeyCode::ArrowUp if self.map_view => {
+                self.map_pan.1 -= MAP_PAN_STEP;
+                return true;
+            }
+            KeyCode::ArrowDown if self.map_view => {
+                self.map_pan.1 += MAP_PAN_STEP;
+                return true;
+            }
+            KeyCode::ArrowLeft if self.map_view => {
+                self.map_pan.0 -= MAP_PAN_STEP;
+                return true;
+            }
+            KeyCode::ArrowRight if self.map_view => {
+                self.map_pan.0 += MAP_PAN_STEP;
                 return true;
             }
             // Audio (E16): M mutes/unmutes the drone (desktop only).
@@ -482,6 +515,63 @@ impl App {
         }
     }
 
+    /// Open/close the explored-map view (E10). Entering centres the pan on the camera + forces a
+    /// rebuild so the latest explored set shows.
+    fn toggle_map(&mut self) {
+        self.map_view = !self.map_view;
+        if self.map_view {
+            let n = world::Section::SIZE as f32;
+            self.map_pan = (self.camera.position.x / n, self.camera.position.z / n);
+            self.map_dirty = true;
+        }
+        if let Some(state) = self.state.as_mut() {
+            state.set_map_active(self.map_view);
+        }
+    }
+
+    /// Record a streamed-in chunk on the explored map: store its biome's representative colour at
+    /// `(cx, cz)`. First time only (the world is one chunk layer). Marks the map image dirty.
+    fn record_chunk(&mut self, coord: ChunkCoord) {
+        let key = (coord.0, coord.2);
+        if self.map.contains_key(&key) {
+            return;
+        }
+        let n = world::Section::SIZE as i32;
+        let (wx, wz) = ((coord.0 * n + n / 2) as f32, (coord.2 * n + n / 2) as f32);
+        let c = biome::at(wx, wz, self.seed).colors[2]; // mid-ramp hue reads the biome
+        self.map.insert(
+            key,
+            [
+                (c[0] * 255.0) as u8,
+                (c[1] * 255.0) as u8,
+                (c[2] * 255.0) as u8,
+            ],
+        );
+        self.map_dirty = true;
+    }
+
+    /// Build the explored-map RGBA image (one texel per visited chunk, alpha 0 = unseen) over the
+    /// bounding box of visited chunks. Returns `(w, h, min_cx, min_cz, rgba)` or `None` if empty.
+    fn build_map_image(&self) -> Option<(u32, u32, i32, i32, Vec<u8>)> {
+        if self.map.is_empty() {
+            return None;
+        }
+        let (mut minx, mut maxx, mut minz, mut maxz) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
+        for &(cx, cz) in self.map.keys() {
+            minx = minx.min(cx);
+            maxx = maxx.max(cx);
+            minz = minz.min(cz);
+            maxz = maxz.max(cz);
+        }
+        let (w, h) = ((maxx - minx + 1) as u32, (maxz - minz + 1) as u32);
+        let mut rgba = vec![0u8; w as usize * h as usize * 4];
+        for (&(cx, cz), &c) in &self.map {
+            let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4;
+            rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
+        }
+        Some((w, h, minx, minz, rgba))
+    }
+
     /// Stream chunks in and out around the camera (M3 part 3). Generates + meshes
     /// newly-entered chunks (nearest first, within a per-frame budget) and evicts
     /// those that have fallen outside the radius. Synchronous for now (design D3);
@@ -545,6 +635,7 @@ impl App {
             }
             self.state.as_mut().unwrap().upload_chunk(&inst);
             self.loaded.insert(inst.coord);
+            self.record_chunk(inst.coord); // build the explored map as we stream
         }
     }
 
@@ -1032,12 +1123,22 @@ impl ApplicationHandler<AppEvent> for App {
                 if pad.toggle_melt {
                     self.toggles.melt = !self.toggles.melt;
                 }
+                // X / square opens/closes the explored map; entering centres it on the camera.
+                if pad.toggle_map {
+                    self.toggle_map();
+                }
                 let stick = pad.strafe != 0.0
                     || pad.forward != 0.0
                     || pad.vertical != 0.0
                     || pad.look_x != 0.0
                     || pad.look_y != 0.0;
-                if stick {
+                if self.map_view {
+                    // In the map: the left stick pans (chunk space); the world keeps flying
+                    // underneath, so the you-are-here dot drifts live. North (−z) is up.
+                    let sp = MAP_ZOOM * dt * 0.7;
+                    self.map_pan.0 += pad.strafe * sp;
+                    self.map_pan.1 -= pad.forward * sp;
+                } else if stick {
                     self.auto_fly = false;
                     self.controller
                         .add_move(pad.strafe, pad.vertical, pad.forward);
@@ -1132,6 +1233,19 @@ impl ApplicationHandler<AppEvent> for App {
                 #[cfg(target_arch = "wasm32")]
                 let share_str = self.current_share().encode();
 
+                // Explored-map prep (E10): rebuild the GPU image only when the explored set grew.
+                // `build_map_image` borrows `&self`, so it must run before the mutable `state`
+                // borrow below; the upload + uniform are pushed inside the state block.
+                self.map_anim += dt;
+                let map_upload = (self.map_view && self.map_dirty)
+                    .then(|| self.build_map_image())
+                    .flatten();
+                if let Some((w, h, ox, oz, _)) = &map_upload {
+                    self.map_origin = (*ox, *oz);
+                    self.map_dims = (*w, *h);
+                    self.map_dirty = false;
+                }
+
                 // Biome-driven auto mode (E10): blend the biome at the camera and drive the
                 // look + drone mix (palette below; wobble/steps/sun + audio here). Blended fields
                 // vary continuously with position, so all of it transitions smoothly.
@@ -1208,6 +1322,31 @@ impl ApplicationHandler<AppEvent> for App {
                         );
                     }
                     state.set_pixel_scale(self.pixel_scale);
+                    // Explored-map overlay (E10): upload a fresh image if it grew, push the
+                    // pan/zoom/you-are-here uniform, and flag it on/off for the render pass.
+                    if let Some((w, h, _, _, rgba)) = &map_upload {
+                        state.set_map_image(*w, *h, rgba);
+                    }
+                    if self.map_view {
+                        let nch = world::Section::SIZE as f32;
+                        let blink = 0.5 + 0.5 * (self.map_anim * 7.0).sin();
+                        state.set_map_uniform(&map::MapUniform {
+                            origin_dims: [
+                                self.map_origin.0 as f32,
+                                self.map_origin.1 as f32,
+                                self.map_dims.0 as f32,
+                                self.map_dims.1 as f32,
+                            ],
+                            view: [self.map_pan.0, self.map_pan.1, MAP_ZOOM, state.aspect()],
+                            user: [
+                                self.camera.position.x / nch,
+                                self.camera.position.z / nch,
+                                blink,
+                                0.0,
+                            ],
+                        });
+                    }
+                    state.set_map_active(self.map_view);
                     // `render` handles lost/outdated/transient surfaces internally.
                     state.render(
                         view_proj,
@@ -1449,6 +1588,13 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         audio_prev_pos: None,
         biome_mode: true, // the new default mode
         biome_label: String::new(),
+        map: std::collections::HashMap::new(),
+        map_view: false,
+        map_pan: (0.0, 0.0),
+        map_dirty: false,
+        map_origin: (0, 0),
+        map_dims: (0, 0),
+        map_anim: 0.0,
         pad: gamepad::Pad::new(),
         // Start the drone on the world seed so the dirge matches the world (native; a no-op
         // None if there's no audio device). Web starts audio from the page on first tap.
@@ -1536,6 +1682,10 @@ const STREAM_REQUESTS: usize = 8;
 const STRUCTURE_RADIUS: f32 = 210.0;
 /// Radius (world units) within which in-world inscriptions (E17) are streamed in around the camera.
 const TEXT_RADIUS: f32 = 150.0;
+/// Explored-map view (E10): chunks shown across the screen height (zoom), and the per-keypress
+/// pan step (chunks) for arrow-key panning.
+const MAP_ZOOM: f32 = 110.0;
+const MAP_PAN_STEP: f32 = 8.0;
 /// Structure-approach wobble (E18×E10): within this horizontal distance of a colossus the vertex
 /// wobble lerps toward the giant's own extreme (heavy = low snap, crisp = high snap).
 const WOBBLE_APPROACH: f32 = 75.0;

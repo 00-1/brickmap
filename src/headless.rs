@@ -504,6 +504,9 @@ pub fn capture_view(
     }
 
     // Foliage splats (E6): instanced billboards sharing the globals; one buffer for all.
+    // Construct the map overlay too (not drawn here) so its shader (`map.wgsl`) is validated by
+    // the headless render — the live `State` is the only other place it's built.
+    let _map = crate::map::MapView::new(&device, COLOR_FORMAT);
     let splat_pipeline = crate::gfx::build_splat_pipeline(&device, &globals_bgl, COLOR_FORMAT);
     let splat_vbuf = (!foliage_all.is_empty()).then(|| {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

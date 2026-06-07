@@ -345,6 +345,9 @@ pub struct State {
     /// In-world text (E17): seed-placed glowing inscriptions, drawn as camera-facing billboards
     /// inside the scene pass. Rebuilt by the app when the in-range set changes.
     text: crate::text::WorldText,
+    /// Explored-world map overlay (E10): a fullscreen biome map drawn over the frame when open.
+    map: crate::map::MapView,
+    map_active: bool,
 
     // The window must outlive the surface; keep an Arc so `Surface<'static>` is sound.
     window: Arc<Window>,
@@ -633,6 +636,7 @@ impl State {
         let bloom = Bloom::new(&device, config.format, iw, ih);
         let hud = crate::hud::HudOverlay::new(&device, config.format);
         let text = crate::text::WorldText::new(&device, config.format, DEPTH_FORMAT, &globals_bgl);
+        let map = crate::map::MapView::new(&device, config.format);
 
         // Palette post-process (E10), off by default so the live preview is unchanged until
         // a palette is chosen. Defaults to the full `mono` ramp with ordered dithering.
@@ -692,6 +696,8 @@ impl State {
             start: web_time::Instant::now(),
             hud,
             text,
+            map,
+            map_active: false,
             window,
         }
     }
@@ -790,6 +796,19 @@ impl State {
             dither,
             on,
         );
+    }
+
+    /// Explored-world map (E10): whether the fullscreen map overlay is shown this frame.
+    pub fn set_map_active(&mut self, active: bool) {
+        self.map_active = active;
+    }
+    /// Upload a fresh chunk-image for the map (RGBA, one texel per chunk). Only when it grows.
+    pub fn set_map_image(&mut self, w: u32, h: u32, rgba: &[u8]) {
+        self.map.set_image(&self.device, &self.queue, w, h, rgba);
+    }
+    /// Update the map's pan/zoom/user uniform (cheap, every frame the map is open).
+    pub fn set_map_uniform(&self, u: &crate::map::MapUniform) {
+        self.map.set_uniform(&self.queue, u);
     }
 
     /// Set the palette from an explicit (biome-blended) colour ramp; turns the pass on.
@@ -1187,6 +1206,12 @@ impl State {
         }
         self.palette
             .render(&mut encoder, &self.palette_bind_group, &view);
+
+        // Explored-world map (E10): when open, drawn fullscreen over the finished scene (the HUD
+        // still composites on top, so status + biome stay visible).
+        if self.map_active {
+            self.map.draw(&mut encoder, &view);
+        }
 
         // In-engine text overlay (HUD), composited last — identical on every platform.
         self.hud.draw(
