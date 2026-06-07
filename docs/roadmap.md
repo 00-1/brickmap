@@ -569,11 +569,17 @@ idle scan→map→triage loop before the tree sits on it.*
   opportunity marker (alpha-code 200) cleared on collect; HUD "known/found"; the scanned set
   saves/restores in the `pg=` payload (v2). 133 tests green; golden voxel-hash unchanged.
 
-### ✨ G4+ — the tech tree, autonomy, depth ⏳
-Sketched in [`game-mechanics.md`](game-mechanics.md) §13: the first tech tree + in-engine menu
-on the E17 text path + auto-collect/auto-route (G4); "ship learns to seek" routing + Descent/Hull
-foot-collision interiors (G5); then the flight/walking branches and the late Concordance/Synthesis
-lore arc. Fleshed into briefs when we reach them.
+### ✨ G4 — The first tech tree (+ the in-engine menu) & auto-collect ⏳ &nbsp;→ [`milestones/G4-first-tree.md`](milestones/G4-first-tree.md)
+The economy payoff: a small tuned tree (Sensing/Memory/Decipherment) spent at the first
+**in-engine menu** (on the E17 text path — no DOM UI), with **Legibility** turning a script
+readable (translated rendering) and **Auto-Collect** closing the hands-off loop. The game's one
+substantial new system — v1 small + tuned, the shape built to expand. *Proves the economy + payoff.*
+
+### ✨ G5+ — autonomy, interiors, depth ⏳
+Sketched in [`game-mechanics.md`](game-mechanics.md) §13: "ship learns to seek" auto-route +
+Descent/Hull foot-collision interiors + the flight/walking branches (G5); then each branch toward
+the late **Concordance/Synthesis** lore arc, the Resonance/pristine branch, and co-op shared
+archive (N1). Fleshed into briefs when we reach them.
 
 ## Dev tooling & process (D-series)
 

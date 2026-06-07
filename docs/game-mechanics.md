@@ -428,7 +428,8 @@ crate, so the loop can now land in vertical slices, each a milestone brief:
    **(Landed — [`milestones/G3-cruiser-scan-map.md`](milestones/G3-cruiser-scan-map.md).)**
 4. **G4 — The first tree.** A small tuned tree (a few nodes per branch) + the in-engine tree
    UI on the E17 text path; Sensing + Memory first; Decipherment legibility for one script;
-   auto-collect + auto-route. *Proves the economy + the payoff.*
+   auto-collect. *Proves the economy + the payoff.* (Brief:
+   [`milestones/G4-first-tree.md`](milestones/G4-first-tree.md).)
 5. **G5 — Autonomy + interiors.** "Ship learns to seek" routing; Descent/Hull tech +
    foot-collision so caves and solid colossi become collectible interiors.
 6. **G6+ — Depth.** Expand each branch toward the late-game **Concordance/Synthesis**
