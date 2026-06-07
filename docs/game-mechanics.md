@@ -37,6 +37,31 @@ a cave, into a pristine pocket — for the rare data and the keys autopilot can'
 The mood stays **melancholy**: numbers go up quietly, in service of mourning-by-
 understanding. The endpoint isn't power. It's knowing what was lost.
 
+### Three ways to play (one economy, three experiences)
+
+The same strata economy and the same tech tree underlie all three, but **what you can
+reach and which branches pay off depend on how you engage** — so each mode is a genuinely
+different game, and you can live in one, or blend them.
+
+- **Autopilot — the *management* game.** Playable **entirely through menus**: manage
+  strata, buy upgrades, set routes, and watch the ship scan / auto-collect / seek. **The
+  whole core completes hands-off** (the tree *and* the decipherment payoff). Its branches:
+  **Memory** (storage / indexing / auto-collect / auto-route) + **Sensing** (scan). The
+  *abstract, distant* register of the mourning.
+- **Manual flight — the *navigation* game.** Take the stick: choose headings, reach
+  off-corridor, make precise approaches, collect from the air. Its branch: **Locomotion
+  (flight)** — handling, ceiling, a cruiser-mounted beam. Finds the autopilot corridor
+  never sweeps.
+- **Walking — the *exploration* game** (the richest divergence). Land and go on foot:
+  interiors, cave depths, climbing solid colossi, the survey-beam as a traversal rail,
+  reading inscriptions up close. Its branch: **Locomotion (foot)** + beam-rail traversal +
+  on-foot collection. The **deepest, most resonant lore lives here**. The *intimate,
+  on-the-ground* register.
+
+The load-bearing rule: **the core spine completes on autopilot; flight and walking are
+*additional, parallel* experiences and upgrade paths — never *gates* on the core.** A pure
+idler, a pilot, a walker, or any mix is a complete way to play.
+
 ## 2. What we already have to build with
 
 The world has, live and on-aesthetic (see [`roadmap.md`](roadmap.md)):
@@ -68,9 +93,10 @@ is the **tech-tree + codex UI** (§12).
    winning.
 2. **Autopilot is a complete way to play — not a punished one.** The passive layer is
    genuinely rewarding and time-respecting (drift, tab away, return); an autopilot-only
-   run still climbs the tree and earns the decipherment payoff. Manual play is a
-   **multiplier, not a gate** — faster, farther, and the *optional* deep stuff — always
-   *additive*, never the only path to progress.
+   run still climbs the tree and earns the decipherment payoff. Manual flight and walking
+   are **additive, never gates** — both a *multiplier* on the shared economy *and* their
+   own distinct experiences + upgrade paths (the three modes of §1), never the only path
+   to core progress.
 3. **Stay cheap and on-brand.** Weak-hardware-first (design §4) + "expose the tech"
    (§11). Reuse the splat path, world-text, map, audio, and event seam; add ~no render
    cost.
@@ -253,6 +279,12 @@ Five branches. Nodes are **illustrative** (the structure is the commitment); eac
 is meant to deepen "to the extreme" over time, terminating in a long, expensive
 late-game arc. **Every node is comprehension or reach — never force.**
 
+The branches **lean toward the three playstyles** (§1): **Memory + Sensing** ↔ the
+autopilot/management game; **Locomotion (flight)** ↔ manual flight; **Locomotion (foot) +
+the survey-beam** ↔ walking. **Decipherment** and the strata are shared by all. The
+autopilot-completable core lives in the shared + Memory/Sensing nodes; the flight and foot
+nodes are the *other two games' own* paths.
+
 ### 8.1 Sensing — *the scan beam: what the ship can read* &nbsp;(feeds: Records, Schematics)
 The cruiser's auto-scan (§6) and what it reveals on the map.
 - **Scan Range / Rate I–V** — widen and quicken the auto-scan as you drift.
@@ -276,18 +308,26 @@ The cruiser's auto-scan (§6) and what it reveals on the map.
   lore. *Effect, beyond lore:* a deciphered script's **yield rises** (you extract more
   once you understand it) — a multiplier with a diegetic reason.
 
-### 8.3 Locomotion — *reach & autopilot autonomy* &nbsp;(feeds: Schematics, Relics)
-- **Drift Efficiency / Range** — go further between stops.
+### 8.3 Locomotion — *reach* &nbsp;(feeds: Schematics, Relics) — the *flight* and *foot* games' own paths
+
+*Autopilot (shared with Memory):*
 - **Autopilot Heuristics I–III** — *"the ship learns to seek"*: the drift stops being
-  blind and routes toward dense / rare / **undiscovered** sites. The idle layer
-  literally improves itself.
+  blind and routes toward dense / rare / **undiscovered** sites (into the forward scan
+  zone). The idle layer literally improves itself.
+
+*Manual flight:*
+- **Drift Efficiency / Range** — go further between stops.
+- **Handling / Banking** — responsive piloting for precise approaches and off-corridor reach.
+- **Atmospheric Ceiling** — altitude to reach high giants and overview vantage.
+- **Cruiser-mounted beam** — collect from the air without landing.
+
+*Walking (the survey-beam is the foot game's core verb):*
 - **Survey-beam: Lifespan I–V** — the beam lasts longer before it fades (the reach
   budget; see §6).
 - **Survey-beam: Capacity I–III** — how many beams you can hold up *at once* → longer
   multi-segment routes through space.
 - **Survey-beam: Length / Reel Speed / Re-cast** — cast farther, ride faster, fire again
   sooner (candidates; tune on play).
-- **Atmospheric Ceiling** — altitude to reach high giants and overview vantage.
 - **Descent Rig** — safely enter **caves** on foot (consumes the E19 foot-collision
   follow-up).
 - **Hull Attunement** — walk **solid-colossus interiors** (the explorable giants).
