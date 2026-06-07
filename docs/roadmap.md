@@ -411,19 +411,24 @@ content kinds (pivot 2026-06):**
 
 ### ✨ E19 — Movement: walk + cruiser *(exploration)* ✅
 A movement-mode system so the world is explored on foot *and* by ship, not just a fly-cam.
-- ✅ **Walking** (`src/player.rs`): on-foot movement with **gravity**, ground-following, and an
-  **auto-step** up ~1-block ledges (taller = a wall). Pure physics over the surface height field
-  (no voxel world needed), unit-tested; the camera controller drives the look, the `Walker`
-  constrains the position. *(Caves/overhangs aren't collidable on foot yet — you walk the surface.)*
-- ✅ **Space cruiser** (`cruiser_points_at`): a point-cloud ship drawn via the splat pipeline at
-  its parked spot while you're on foot. **Mode machine:** start piloting on **autopilot** (the
-  existing cinematic auto-fly, unchanged default); toggle autopilot↔manual (F / pad A); land
-  (within ~9 blocks of the ground) and press **E / pad B** to step out and **walk**; walk back to
-  the parked ship and press E / pad B to re-enter. Gamepad gains a B/circle "enter/exit" button
-  (native/web/android). HUD shows the mode; the map shows the parked cruiser (orange marker).
-- **Outcome:** land the ship, get out, walk the terrain (into cave-mouths / up to colossi), fly on.
-- **Next ideas:** voxel collision on foot (enter caves/structures properly), a jump button,
-  third-person cruiser cam, cruiser banking/:physics.
+- ✅ **Walking** (`src/player.rs`): on-foot movement with **gravity**, falling, and an **animated
+  auto-step** up ~1-block ledges (taller = a wall), collided against the **actual voxels** via
+  `worldgen::solid_at` (shares the cave logic with `generate_section`; golden hash unchanged) — so
+  you can walk *down into cave-mouths* and along cave floors, not just over the surface. Per-axis
+  wall-slide; the camera controller drives the look, the `Walker` constrains the position.
+  Unit-tested. *(Colossi aren't in `solid_at` yet → not collidable on foot.)*
+- ✅ **Space cruiser** (`src/ship.rs` + `ship.wgsl`): a **polygonal** ship (hull/wings/fin/cockpit/
+  engines) with glowing **nav-lights** (white-blue nose, amber tail, port-red/starboard-green
+  wingtips), drawn in its **own pass after the palette** so its true colours + lights survive (not
+  palettised), with its own depth buffer (self-occludes), shown parked while on foot. **Mode
+  machine:** start piloting on **autopilot** (cinematic — now **wanders** to new terrain in
+  S-curves, no longer a circle); toggle autopilot↔manual (F / pad A); land (within ~9 blocks of
+  the ground) and press **E / pad B** to step out and **walk**; walk back to the ship to re-enter.
+  Gamepad B/circle = enter/exit (native/web/android). HUD shows the mode; the map shows the parked
+  cruiser (orange marker).
+- **Outcome:** land the ship, get out, walk the terrain (down into cave-mouths), fly on.
+- **Next ideas:** colossi collision on foot (walk inside the structures), a jump button,
+  third-person cruiser cam, cruiser banking/physics.
 
 ### M7 — Distance dissolve (LOD that's also the look) 🛠
 Reframed from "octree-mip LOD": instead of coarser distant *meshes* (crack-prone, low
