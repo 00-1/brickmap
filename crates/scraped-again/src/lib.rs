@@ -30,6 +30,8 @@ pub use brickmap::{
 pub mod audio;
 pub mod biome;
 pub mod creatures;
+// The cruiser's geometry (the engine renderer is generic — the ship is the game's).
+pub mod cruiser;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
 pub mod palettes;
 pub mod player;
@@ -1128,8 +1130,10 @@ impl ApplicationHandler<AppEvent> for App {
         // The draw set starts empty; chunks stream in around the camera each frame.
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // Native: just block until the GPU is ready.
-            self.state = Some(pollster::block_on(State::new(window, &[])));
+            // Native: just block until the GPU is ready, then hand the engine the cruiser mesh.
+            let mut state = pollster::block_on(State::new(window, &[]));
+            state.set_ship_mesh(&cruiser::hull(), &cruiser::lights());
+            self.state = Some(state);
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -1144,7 +1148,8 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
-        let AppEvent::Initialized(state) = event;
+        let AppEvent::Initialized(mut state) = event;
+        state.set_ship_mesh(&cruiser::hull(), &cruiser::lights());
         state.window().request_redraw();
         self.state = Some(state);
     }

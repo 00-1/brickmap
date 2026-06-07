@@ -517,8 +517,11 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
   `WorldGen` + palette-colour seams; recipe/biomes/drone/player/app all in the game; an
   `engine_demo` example renders flat terrain with zero game content; a CI step asserts no
   engine→game dep. Golden voxel-hash + headless render byte-identical throughout. *Residue:* the
-  cruiser ship mesh still lives in `bm-render`, and the `AudioSource` seam is left unformalised
-  (audio is wholly in the game per Decision 3) — both flagged as follow-ups.
+  `AudioSource` seam is left unformalised (audio is wholly in the game per Decision 3) — flagged
+  as a follow-up. *(The cruiser was then redesigned — a faceted low-poly dart whose lit hull is
+  drawn through the palette and whose nav-lights are after-palette true-colour points — which also
+  moved its geometry into the game's `cruiser` module, so the engine's ShipRenderer is now fully
+  generic.)*
 
 ## Dev tooling & process (D-series)
 

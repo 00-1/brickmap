@@ -589,6 +589,39 @@ pub fn capture_view(
 
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+    // Cruiser (E19): build the engine renderer + the game's mesh, parked near the human-figure
+    // demo. The hull draws *into* the scene below (so it's palettised + depth-tested like the
+    // live path); the nav-lights draw after the palette. Verifies both stages offscreen.
+    let mut ship = crate::ship::ShipRenderer::new(&device, COLOR_FORMAT, DEPTH_FORMAT);
+    ship.set_meshes(&device, &crate::cruiser::hull(), &crate::cruiser::lights());
+    let ship_gy = crate::worldgen::height(12, 10, crate::WORLD_SEED) as f32;
+    let ship_vp = camera.view_proj(width as f32 / height as f32);
+    // Float the showcase cruiser clear of the terrain so it reads against the sky (the live
+    // game parks it on the ground; this is just the verification/hero placement).
+    ship.set_transform(
+        &queue,
+        ship_vp,
+        glam::Vec3::new(12.0, ship_gy + 8.0, 10.0),
+        0.6,
+    );
+    let ship_depth = device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("headless-ship-depth"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
+        .create_view(&wgpu::TextureViewDescriptor::default());
+
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("headless-pass"),
@@ -653,6 +686,8 @@ pub fn capture_view(
         }
         // In-world text inscriptions (E17), depth-tested against the scene.
         world_text.draw(&mut pass, &globals_bind_group);
+        // Cruiser hull drawn into the scene → palettised + depth-tested like the live path.
+        ship.draw_hull(&mut pass);
     }
     // Bloom: composite scene + glow. With a palette it lands in `post`, which the palette
     // pass then maps into `target`; without one it composites straight into `target`.
@@ -663,31 +698,9 @@ pub fn capture_view(
         }
         None => bloom.render(&device, &mut encoder, &scene_view, &target_view),
     }
-    // Space cruiser (E19): draw the ship over the finished frame so its shader + model are
-    // verified offscreen (parked near the human-figure demo). Mirrors the live post-palette pass.
-    {
-        let ship = crate::ship::ShipRenderer::new(&device, COLOR_FORMAT, DEPTH_FORMAT);
-        let ship_depth = device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("headless-ship-depth"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            })
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let gy = crate::worldgen::height(12, 10, crate::WORLD_SEED) as f32;
-        let vp = camera.view_proj(width as f32 / height as f32);
-        ship.set_transform(&queue, vp, glam::Vec3::new(12.0, gy + 3.0, 10.0), 0.6);
-        ship.draw(&mut encoder, &target_view, &ship_depth);
-    }
+    // Cruiser nav-lights over the finished (palettised) frame, true colour — the hull was
+    // already drawn into the scene above.
+    ship.draw_lights(&mut encoder, &target_view, &ship_depth);
     // In-engine HUD overlay — same code path as the live app, so the hero shot verifies it.
     let mut hud = crate::hud::HudOverlay::new(&device, COLOR_FORMAT);
     hud.set_text(
