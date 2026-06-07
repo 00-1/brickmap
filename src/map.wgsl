@@ -7,6 +7,7 @@ struct MapU {
     origin_dims: vec4<f32>, // xy = texture origin chunk (min cx, cz); zw = texture size (chunks)
     view: vec4<f32>,        // xy = pan centre (chunk coords); z = chunks per screen height; w = aspect
     user: vec4<f32>,        // xy = user chunk (fractional); z = blink 0..1; w unused
+    cruiser: vec4<f32>,     // xy = cruiser chunk; z = show flag; w unused
 };
 @group(0) @binding(0) var<uniform> u: MapU;
 @group(0) @binding(1) var tex: texture_2d<f32>;
@@ -65,6 +66,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let g = abs(cell);
     if (cps_y < 90.0 && (g.x > 0.47 || g.y > 0.47)) {
         col = col * 0.82;
+    }
+
+    // Parked cruiser marker (E19): a solid orange square, when on foot.
+    if (u.cruiser.z > 0.5) {
+        let cc = chunk - u.cruiser.xy;
+        let rc = max(0.7, cps_y * 0.013);
+        if (abs(cc.x) < rc && abs(cc.y) < rc) {
+            col = vec3<f32>(1.0, 0.6, 0.15);
+        }
     }
 
     // Blinking "you are here" dot (size in chunk units, scaled a little with zoom).

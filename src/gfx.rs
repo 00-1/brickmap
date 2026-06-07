@@ -321,6 +321,12 @@ pub struct State {
     creature_count: u32,
     creature_capacity: usize,
 
+    // Space cruiser (E19): a point-cloud ship drawn (via the splat pipeline) at its landed
+    // position while you're on foot, so you can see + walk back to it. Empty while piloting.
+    cruiser_splats: wgpu::Buffer,
+    cruiser_count: u32,
+    cruiser_capacity: usize,
+
     /// Eased camera position driving the splat recession (E18 polish): lags the real camera
     /// so points drift out of the way with inertia. `lag_time` is the previous frame's clock
     /// for the frame-rate-independent ease; a negative value means "not yet initialised".
@@ -624,6 +630,13 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let cruiser_capacity = 512usize;
+        let cruiser_splats = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cruiser-splats"),
+            size: (cruiser_capacity * std::mem::size_of::<SplatInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         // --- Foliage splats (E6): instanced billboards sharing the globals group ---
         let splat_pipeline = build_splat_pipeline(&device, &globals_bgl, config.format);
@@ -684,6 +697,9 @@ impl State {
             creature_splats,
             creature_count: 0,
             creature_capacity,
+            cruiser_splats,
+            cruiser_count: 0,
+            cruiser_capacity,
             lag_camera: Vec3::ZERO,
             lag_time: -1.0,
             particle_pipeline,
@@ -771,6 +787,26 @@ impl State {
         }
         self.queue
             .write_buffer(&self.creature_splats, 0, bytemuck::cast_slice(points));
+    }
+
+    /// Replace the cruiser's point cloud (E19): the ship's splats at its world position (or empty
+    /// while piloting). Small, set only when the cruiser moves/lands. Grows on demand.
+    pub fn set_cruiser_points(&mut self, points: &[SplatInstance]) {
+        self.cruiser_count = points.len() as u32;
+        if points.is_empty() {
+            return;
+        }
+        if points.len() > self.cruiser_capacity {
+            self.cruiser_capacity = points.len().next_power_of_two();
+            self.cruiser_splats = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("cruiser-splats"),
+                size: (self.cruiser_capacity * std::mem::size_of::<SplatInstance>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        self.queue
+            .write_buffer(&self.cruiser_splats, 0, bytemuck::cast_slice(points));
     }
 
     /// Replace the solid colossal-structure meshes (E18) — greedy-meshed giant instances drawn
@@ -1150,6 +1186,15 @@ impl State {
                 pass.set_vertex_buffer(0, self.creature_splats.slice(..));
                 pass.draw(0..6, 0..self.creature_count);
                 splats += self.creature_count;
+            }
+
+            // Space cruiser (E19): the parked ship's point cloud, same pipeline.
+            if self.cruiser_count > 0 {
+                pass.set_pipeline(&self.splat_pipeline);
+                pass.set_bind_group(0, &self.globals_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.cruiser_splats.slice(..));
+                pass.draw(0..6, 0..self.cruiser_count);
+                splats += self.cruiser_count;
             }
 
             // In-world text (E17): glowing inscriptions, camera-facing billboards in the scene

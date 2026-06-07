@@ -21,6 +21,8 @@ pub struct PadInput {
     pub toggle_melt: bool,
     /// Rising-edge "toggle the explored map view" (face button X / square).
     pub toggle_map: bool,
+    /// Rising-edge "enter / exit the cruiser" (face button B / circle).
+    pub toggle_enter: bool,
     /// Any stick/button engaged this frame (so the app can yield auto-fly to the pad).
     pub active: bool,
 }
@@ -49,6 +51,7 @@ impl PadInput {
         toggle_fly: bool,
         toggle_melt: bool,
         toggle_map: bool,
+        toggle_enter: bool,
     ) -> PadInput {
         let strafe = deadzone(strafe);
         let forward = deadzone(forward);
@@ -61,7 +64,8 @@ impl PadInput {
             || ly != 0.0
             || toggle_fly
             || toggle_melt
-            || toggle_map;
+            || toggle_map
+            || toggle_enter;
         PadInput {
             strafe,
             forward,
@@ -71,6 +75,7 @@ impl PadInput {
             toggle_fly,
             toggle_melt,
             toggle_map,
+            toggle_enter,
             active,
         }
     }
@@ -96,15 +101,16 @@ mod tests {
 
     #[test]
     fn from_raw_sets_active_and_deadzones() {
-        let idle = PadInput::from_raw(0.05, -0.05, 0.0, 0.1, 0.0, false, false, false);
+        let idle = PadInput::from_raw(0.05, -0.05, 0.0, 0.1, 0.0, false, false, false, false);
         assert!(!idle.active, "tiny drift should read as idle");
-        let moving = PadInput::from_raw(0.9, 0.0, 0.0, 0.0, 0.0, false, false, false);
+        let moving = PadInput::from_raw(0.9, 0.0, 0.0, 0.0, 0.0, false, false, false, false);
         assert!(moving.active);
         assert!(moving.strafe > 0.5);
-        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, true, false, false).active); // fly
-        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, false, true, false).active); // melt
-        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, false, false, true).active);
-        // map
+        // Each face button alone counts as active (fly / melt / map / enter).
+        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, true, false, false, false).active);
+        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, false, true, false, false).active);
+        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, false, false, true, false).active);
+        assert!(PadInput::from_raw(0.0, 0.0, 0.0, 0.0, 0.0, false, false, false, true).active);
     }
 }
 
@@ -129,6 +135,7 @@ mod native {
         prev_toggle: bool,
         prev_melt: bool,
         prev_map: bool,
+        prev_enter: bool,
     }
 
     impl Pad {
@@ -141,6 +148,7 @@ mod native {
                 prev_toggle: false,
                 prev_melt: false,
                 prev_map: false,
+                prev_enter: false,
             }
         }
 
@@ -174,6 +182,10 @@ mod native {
             let map_now = gp.is_pressed(Button::West);
             let toggle_map = map_now && !self.prev_map;
             self.prev_map = map_now;
+            // Enter/exit the cruiser on East (B / circle).
+            let enter_now = gp.is_pressed(Button::East);
+            let toggle_enter = enter_now && !self.prev_enter;
+            self.prev_enter = enter_now;
             PadInput::from_raw(
                 strafe,
                 forward,
@@ -183,6 +195,7 @@ mod native {
                 toggle_fly,
                 toggle_melt,
                 toggle_map,
+                toggle_enter,
             )
         }
     }
@@ -197,6 +210,7 @@ mod web {
         prev_toggle: bool,
         prev_melt: bool,
         prev_map: bool,
+        prev_enter: bool,
     }
 
     impl Pad {
@@ -206,6 +220,7 @@ mod web {
                 prev_toggle: false,
                 prev_melt: false,
                 prev_map: false,
+                prev_enter: false,
             }
         }
 
@@ -214,6 +229,7 @@ mod web {
                 self.prev_toggle = false;
                 self.prev_melt = false;
                 self.prev_map = false;
+                self.prev_enter = false;
                 return PadInput::default();
             };
             let axes = pad.axes();
@@ -242,6 +258,9 @@ mod web {
             let map_now = pressed(2); // X / square
             let toggle_map = map_now && !self.prev_map;
             self.prev_map = map_now;
+            let enter_now = pressed(1); // B / circle
+            let toggle_enter = enter_now && !self.prev_enter;
+            self.prev_enter = enter_now;
             PadInput::from_raw(
                 strafe,
                 forward,
@@ -251,6 +270,7 @@ mod web {
                 toggle_fly,
                 toggle_melt,
                 toggle_map,
+                toggle_enter,
             )
         }
     }
@@ -296,6 +316,7 @@ mod android {
         toggle_pending: bool,
         melt_pending: bool,
         map_pending: bool,
+        enter_pending: bool,
     }
 
     impl Pad {
@@ -356,6 +377,11 @@ mod android {
                                 self.map_pending = true;
                             }
                         }
+                        Keycode::ButtonB => {
+                            if pressed {
+                                self.enter_pending = true;
+                            }
+                        }
                         _ => return false,
                     }
                     true
@@ -372,8 +398,9 @@ mod android {
             let toggle = std::mem::take(&mut self.toggle_pending);
             let melt = std::mem::take(&mut self.melt_pending);
             let map = std::mem::take(&mut self.map_pending);
+            let enter = std::mem::take(&mut self.enter_pending);
             PadInput::from_raw(
-                self.lx, -self.ly, vertical, look_x, self.ry, toggle, melt, map,
+                self.lx, -self.ly, vertical, look_x, self.ry, toggle, melt, map, enter,
             )
         }
     }

@@ -13,6 +13,8 @@ pub struct MapUniform {
     pub origin_dims: [f32; 4],
     pub view: [f32; 4],
     pub user: [f32; 4],
+    /// xy = cruiser chunk (fractional); z = show flag (1 = parked / draw it); w unused.
+    pub cruiser: [f32; 4],
 }
 
 /// Fullscreen map overlay: an RGBA chunk-image + a pan/zoom uniform.

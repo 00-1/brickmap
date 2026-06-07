@@ -19,6 +19,7 @@ pub mod audio;
 pub mod biome;
 pub mod creatures;
 pub mod map;
+pub mod player;
 pub mod relic;
 // cpal audio output (E16): desktop + **Android** (AAudio backend); web uses Web Audio.
 #[cfg(not(target_arch = "wasm32"))]
@@ -77,6 +78,13 @@ struct CachedRelic {
     meshes: Vec<ChunkInstance>,
 }
 
+/// Movement mode (E19): in the cruiser (flying — autopilot or manual) or on foot (walking).
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum Mode {
+    Pilot,
+    Walk,
+}
+
 struct App {
     state: Option<State>,
     // Only used on the web (async init handoff); inert on native.
@@ -97,10 +105,18 @@ struct App {
     sim_active: HashSet<ChunkCoord>,
     sim_timer: f32,
     sand_timer: f32,
-    /// Cinematic auto-fly: on by default so the build is watchable with no input
-    /// (mobile / hands-off). Manual input switches it off; `F` toggles it.
+    /// Cinematic auto-fly / **autopilot**: on by default so the build is watchable with no input
+    /// (mobile / hands-off). Manual input switches it off; `F` / pad A toggles it. In `Walk` mode
+    /// it's ignored (you're on foot).
     auto_fly: bool,
     auto_fly_angle: f32,
+    /// Movement mode (E19): piloting the cruiser (fly — autopilot or manual) vs walking on foot.
+    mode: Mode,
+    /// The cruiser's world position: tracks the camera while piloting; where it's parked once you
+    /// exit on foot. You walk back to it to re-enter.
+    cruiser_pos: Vec3,
+    /// Walking physics state (gravity), used in `Walk` mode.
+    walker: player::Walker,
     /// Live aesthetic dials (D2): `[wobble snap, colour steps]`. On the web these are
     /// driven by `controls`; on native they stay at the defaults.
     wobble: f32,
@@ -546,6 +562,41 @@ impl App {
         }
         if let Some(state) = self.state.as_mut() {
             state.set_map_active(self.map_view);
+        }
+    }
+
+    /// Enter/exit the cruiser (E19). Pilot → Walk only when landed (within `CRUISER_EXIT_ALT` of
+    /// the ground, so you have to set down first); Walk → Pilot only when on foot near the parked
+    /// ship. On entry you take manual control; the ship is parked just above the ground on exit.
+    fn toggle_cruiser(&mut self) {
+        let seed = self.seed;
+        let ground =
+            |x: f32, z: f32| worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32;
+        match self.mode {
+            Mode::Pilot => {
+                let pos = self.camera.position;
+                let gy = ground(pos.x, pos.z);
+                if pos.y - gy <= CRUISER_EXIT_ALT {
+                    self.cruiser_pos = Vec3::new(pos.x, gy + 2.0, pos.z); // park it here
+                    self.camera.position.y = gy + player::EYE; // step out onto the ground
+                    self.walker = player::Walker::default();
+                    self.mode = Mode::Walk;
+                    log::info!("exited cruiser → walking");
+                } else {
+                    log::info!("too high to exit — land the cruiser first");
+                }
+            }
+            Mode::Walk => {
+                let p = self.camera.position;
+                let d = ((p.x - self.cruiser_pos.x).powi(2) + (p.z - self.cruiser_pos.z).powi(2))
+                    .sqrt();
+                if d <= CRUISER_ENTER_DIST {
+                    self.camera.position = self.cruiser_pos + Vec3::new(0.0, 1.5, 0.0);
+                    self.auto_fly = false; // take manual control on entry
+                    self.mode = Mode::Pilot;
+                    log::info!("entered cruiser → piloting (manual)");
+                }
+            }
         }
     }
 
@@ -1005,6 +1056,49 @@ impl ChunkLoader {
 /// Debris emitters scattered on the terrain *ahead of* the camera along its
 /// heading, so the flight sweeps over rising embers. Emitting at the camera itself
 /// just leaves the debris behind at cruise speed (it spawns and the camera is gone).
+/// The cruiser's point-cloud model (E19) positioned at `pos`: a small ship — tapered fuselage
+/// rings, swept wings, a tail fin, and glowing engines — drawn through the splat pipeline.
+fn cruiser_points_at(pos: Vec3) -> Vec<foliage::SplatInstance> {
+    use std::f32::consts::TAU;
+    let mut v = Vec::new();
+    let mut push = |x: f32, y: f32, z: f32, c: [f32; 3], s: f32| {
+        v.push(foliage::SplatInstance {
+            offset: [pos.x + x, pos.y + y, pos.z + z],
+            size: s,
+            color: c,
+            sway: 0.0,
+            alpha: 1.0,
+        });
+    };
+    let hull = [0.60, 0.65, 0.72];
+    // Fuselage: tapered rings along z (−4..4).
+    for i in -8..=8 {
+        let z = i as f32 * 0.5;
+        let r = 0.75 * (1.0 - (z / 5.5).abs());
+        for k in 0..6 {
+            let a = k as f32 / 6.0 * TAU;
+            push(a.cos() * r, a.sin() * r * 0.7, z, hull, 0.42);
+        }
+    }
+    // Swept wings either side around mid-body.
+    for i in 1..=7 {
+        let x = i as f32 * 0.5;
+        let z = -0.2 - i as f32 * 0.18; // sweep back
+        push(x, -0.1, z, hull, 0.42);
+        push(-x, -0.1, z, hull, 0.42);
+    }
+    // Tail fin.
+    for i in 0..5 {
+        push(0.0, 0.4 + i as f32 * 0.35, -3.0, hull, 0.4);
+    }
+    // Engine glow at the back (emissive → blooms).
+    for k in 0..8 {
+        let a = k as f32 / 8.0 * TAU;
+        push(a.cos() * 0.45, a.sin() * 0.35, -4.3, [0.45, 0.9, 1.0], 0.5);
+    }
+    v
+}
+
 fn lead_emitters(camera: &Camera, seed: u32) -> Vec<Vec3> {
     // Horizontal heading + right vector (the camera looks slightly down).
     let mut fwd = camera.forward();
@@ -1109,7 +1203,9 @@ impl ApplicationHandler<AppEvent> for App {
                         // Release the pointer. (The browser also does this on Esc.)
                         self.set_capture(false);
                     } else if code == KeyCode::KeyF && pressed {
-                        self.auto_fly = !self.auto_fly; // toggle cinematic orbit
+                        self.auto_fly = !self.auto_fly; // toggle autopilot (cinematic)
+                    } else if code == KeyCode::KeyE && pressed {
+                        self.toggle_cruiser(); // enter/exit the cruiser
                     } else if pressed && self.handle_seed_key(code) {
                         // handled: R reseed / P print share (native)
                     } else if let Some(i) = toggle_index(code) {
@@ -1168,6 +1264,10 @@ impl ApplicationHandler<AppEvent> for App {
                 if pad.toggle_map {
                     self.toggle_map();
                 }
+                // B / circle enters/exits the cruiser (E19).
+                if pad.toggle_enter {
+                    self.toggle_cruiser();
+                }
                 let stick = pad.strafe != 0.0
                     || pad.forward != 0.0
                     || pad.vertical != 0.0
@@ -1189,21 +1289,40 @@ impl ApplicationHandler<AppEvent> for App {
                     );
                 }
 
-                if self.auto_fly {
-                    // Cinematic travel: cruise forward, banking gently, hugging the
-                    // terrain — an endless flight that streams the world in around us.
-                    self.auto_fly_angle += dt * AUTO_FLY_TURN;
-                    let yaw = self.auto_fly_angle;
-                    let dir = Vec3::new(yaw.cos(), 0.0, yaw.sin());
-                    let mut pos = self.camera.position + dir * (AUTO_FLY_SPEED * dt);
-                    let ground =
-                        worldgen::height(pos.x.floor() as i32, pos.z.floor() as i32, self.seed)
-                            as f32;
-                    let target_y = ground + CRUISE_HEIGHT;
-                    pos.y += (target_y - pos.y) * (dt * 1.2).min(1.0);
-                    self.camera = Camera::new(pos, yaw, AUTO_FLY_PITCH);
-                } else {
-                    self.controller.update(&mut self.camera, dt);
+                match self.mode {
+                    Mode::Pilot if self.auto_fly => {
+                        // Autopilot — cinematic travel: cruise forward, banking gently, hugging
+                        // the terrain — an endless flight that streams the world in around us.
+                        self.auto_fly_angle += dt * AUTO_FLY_TURN;
+                        let yaw = self.auto_fly_angle;
+                        let dir = Vec3::new(yaw.cos(), 0.0, yaw.sin());
+                        let mut pos = self.camera.position + dir * (AUTO_FLY_SPEED * dt);
+                        let ground =
+                            worldgen::height(pos.x.floor() as i32, pos.z.floor() as i32, self.seed)
+                                as f32;
+                        let target_y = ground + CRUISE_HEIGHT;
+                        pos.y += (target_y - pos.y) * (dt * 1.2).min(1.0);
+                        self.camera = Camera::new(pos, yaw, AUTO_FLY_PITCH);
+                    }
+                    Mode::Pilot => {
+                        // Manual flight (free 6-DOF).
+                        self.controller.update(&mut self.camera, dt);
+                    }
+                    Mode::Walk => {
+                        // The controller still drives the look (and *wants* to free-fly); the
+                        // walker constrains that to a walk on the surface (gravity + auto-step).
+                        let prev = self.camera.position;
+                        self.controller.update(&mut self.camera, dt);
+                        let wanted = self.camera.position;
+                        let seed = self.seed;
+                        self.camera.position = self.walker.constrain(prev, wanted, dt, |x, z| {
+                            worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
+                        });
+                    }
+                }
+                // While piloting, the cruiser is wherever you are (you're in it).
+                if self.mode == Mode::Pilot {
+                    self.cruiser_pos = self.camera.position;
                 }
                 // Stream chunks in/out around the (possibly moved) camera.
                 self.stream();
@@ -1239,8 +1358,16 @@ impl ApplicationHandler<AppEvent> for App {
                 let wisp_mult =
                     biome::at(self.camera.position.x, self.camera.position.z, self.seed).wisps;
                 let wisp_n = (7.0 * wisp_mult).round() as usize;
+                // The cruiser's point cloud shows only when you're on foot (parked); while
+                // piloting you're inside it, so it's hidden.
+                let cruiser_pts = if self.mode == Mode::Walk {
+                    cruiser_points_at(self.cruiser_pos)
+                } else {
+                    Vec::new()
+                };
                 if let Some(state) = self.state.as_mut() {
                     state.set_creature_points(&self.creatures.points_n(wisp_n));
+                    state.set_cruiser_points(&cruiser_pts);
                 }
                 // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
                 self.sim(dt);
@@ -1398,6 +1525,13 @@ impl ApplicationHandler<AppEvent> for App {
                                 blink,
                                 0.0,
                             ],
+                            // Show the cruiser marker when it's parked (you're on foot).
+                            cruiser: [
+                                self.cruiser_pos.x / nch,
+                                self.cruiser_pos.z / nch,
+                                if self.mode == Mode::Walk { 1.0 } else { 0.0 },
+                                0.0,
+                            ],
                         });
                     }
                     state.set_map_active(self.map_view);
@@ -1454,6 +1588,12 @@ impl ApplicationHandler<AppEvent> for App {
                         } else {
                             self.toggles.off_summary()
                         };
+                        // Movement mode (E19): piloting (autopilot/manual) or walking.
+                        let mode = match self.mode {
+                            Mode::Pilot if self.auto_fly => " · cruiser:auto [E exit when low]",
+                            Mode::Pilot => " · cruiser:manual [E exit when low]",
+                            Mode::Walk => " · walking [E enter near ship]",
+                        };
                         // When the map is open, the HUD becomes its key + coordinates (crosshair
                         // centre + your position), instead of the perf line.
                         let hud = if self.map_view {
@@ -1463,12 +1603,12 @@ impl ApplicationHandler<AppEvent> for App {
                             let (vx, vz) =
                                 ((self.map_pan.0 * nch) as i32, (self.map_pan.1 * nch) as i32);
                             format!(
-                                "MAP  seed {}\nyou x{px} z{pz}   +crosshair x{vx} z{vz}\nkey: yellow=you  cyan dot=text  violet diamond=pristine\n[stick / arrows] pan    [X / N] close",
+                                "MAP  seed {}\nyou x{px} z{pz}   +crosshair x{vx} z{vz}\nkey: yellow=you  cyan dot=text  violet diamond=pristine  orange=cruiser\n[stick / arrows] pan    [X / N] close",
                                 self.seed,
                             )
                         } else {
                             format!(
-                                "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{off}",
+                                "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{mode}{off}",
                                 self.frame_ms_ema,
                                 self.seed,
                                 s.drawn_chunks,
@@ -1632,6 +1772,9 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         sand_timer: 0.0,
         auto_fly: true,
         auto_fly_angle: 0.0,
+        mode: Mode::Pilot, // start in the cruiser, on autopilot (the watchable default)
+        cruiser_pos: pos,
+        walker: player::Walker::default(),
         wobble: view.wobble,
         color_steps: view.color_steps,
         // House look by default: the `bruise` palette (index 11), all 5 colours, heavy dither.
@@ -1790,6 +1933,10 @@ const SAND_REMESH_BUDGET: usize = 3;
 
 /// How high above the terrain the cinematic camera cruises.
 const CRUISE_HEIGHT: f32 = 22.0;
+/// Cruiser (E19): exit-to-walk is only allowed when piloting within this height of the ground
+/// (so you have to land first); you re-enter when on foot within this horizontal distance.
+const CRUISER_EXIT_ALT: f32 = 9.0;
+const CRUISER_ENTER_DIST: f32 = 11.0;
 /// Auto-fly cruise speed (world units/second) and turn rate (radians/second).
 const AUTO_FLY_SPEED: f32 = 26.0;
 const AUTO_FLY_TURN: f32 = 0.05;
