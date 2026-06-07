@@ -8,7 +8,28 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `344382c` (G6 2/2).
+**Reviewed through:** `df6a944` (run checkpoint).
+
+---
+
+## 2026-06-07 · df6a944 — unattended-run checkpoint (docs only)
+
+**What landed.** A 12-line roadmap "unattended-run log": G4 ✅, G5 ✅, G6 ◑ landed, main green
+throughout; G7 + the M/E/D backlog + hardware-gated items (M8b profiling, D7/D8 device
+verification) noted as outstanding. No code.
+
+**Assessment.** A responsible checkpoint, and a good sign: the agent **stopped after G6 rather
+than charging into the overloaded "G7+"** — which is exactly the boundary I escalated at. So it
+implicitly reached the same conclusion (G7+ isn't a clean single milestone) and left a clean
+state marker instead of forcing it. The run appears paused here pending the human.
+
+**This is the natural intervention point.** Before anything resumes, the human should re-scope:
+pull the **routine runtime + free-form editor** out of "G7+" into its own next-priority
+milestone (control vocabulary lands on it; two-agents/expedition/co-op move to G8+). See the
+G6 (2/2) escalation entry below for the full rationale. Nothing to fix in this commit.
+
+**Verdict.** Clean wrap-up of a high-quality-but-structurally-incomplete run. Standing
+recommendation unchanged and now actionable: re-scope the runtime before continuing.
 
 ---
 
