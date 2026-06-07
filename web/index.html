@@ -327,19 +327,25 @@
           window.__reinitAudio = (s) => {
             if (audioCtx && audioNode) audio_init(s >>> 0, audioCtx.sampleRate), pushAudioParams();
           };
-          // Autoplay policy: a Web AudioContext can't start without a user gesture. The drone
-          // box defaults checked, so kick it off on the first interaction anywhere on the page.
-          // Listen in the **capture** phase (so the winit canvas can't swallow the event first)
-          // across pointer/touch/key/click, and only detach once the node is actually running —
-          // so if the first attempt is blocked it retries on the next gesture.
-          const KICKS = ["pointerdown", "touchstart", "mousedown", "keydown", "click"];
-          const kick = () => {
-            if (audOn.checked && !audioNode) {
+          // Autoplay policy: a Web AudioContext only starts inside a user gesture, and only
+          // *completed* gestures (click / touchend / keydown / pointerup) reliably let it resume —
+          // pointerdown often leaves it suspended. So unlock on those, in the capture phase (the
+          // winit canvas can't swallow them first), and keep retrying resume() until the context
+          // is genuinely *running* (creating the node alone isn't enough). `ensureAudio` is also
+          // called from the control checkboxes/buttons below, which are themselves gestures.
+          const UNLOCKS = ["click", "touchend", "keydown", "pointerup"];
+          function ensureAudio() {
+            if (!audOn.checked) return;
+            if (!audioNode) {
               try { startAudio(); } catch (e) { console.warn("audio start failed", e); }
             }
-            if (audioNode) KICKS.forEach((t) => window.removeEventListener(t, kick, true));
-          };
-          KICKS.forEach((t) => window.addEventListener(t, kick, true));
+            if (audioCtx && audioCtx.state !== "running") audioCtx.resume();
+            if (audioCtx && audioCtx.state === "running") {
+              UNLOCKS.forEach((t) => window.removeEventListener(t, ensureAudio, true));
+            }
+          }
+          window.__ensureAudio = ensureAudio;
+          UNLOCKS.forEach((t) => window.addEventListener(t, ensureAudio, true));
 
           // Build the feature-toggle checkboxes, reflecting any restored toggle mask.
           // Default mask 0xbff: bits 0–11 on except sand (10); melt (12) + sun (13) off — the
@@ -360,16 +366,21 @@
           // controls it overrides are disabled + dimmed while it's on. Toggle it to get the
           // adjustable mode (dials/palette/audio/toggles) back. `pixel` + `drone enable` stay live.
           const biomeMode = document.getElementById("biome-mode");
-          const managed = [wobble, steps, palOn, palWhich, palCount, palDither, audVol, audDrive, audMurk];
+          // In biome mode the drone is part of the auto experience (always on, biome-driven), so
+          // its checkbox is managed/disabled too — kept *checked* so it auto-starts on the first
+          // gesture. The audio sliders + palette + dials are likewise disabled.
+          const managed = [wobble, steps, palOn, palWhich, palCount, palDither, audOn, audVol, audDrive, audMurk];
           const refreshMode = () => {
             const on = biomeMode.checked;
             set_biome_mode(on);
+            if (on) audOn.checked = true; // drone on in biome mode
             managed.forEach((el) => {
               el.disabled = on;
               if (el.parentElement) el.parentElement.style.opacity = on ? 0.4 : 1;
             });
             box.querySelectorAll("input").forEach((cb) => { cb.disabled = on; });
             box.style.opacity = on ? 0.4 : 1;
+            ensureAudio(); // toggling the mode is a gesture — a good moment to unlock audio
           };
           biomeMode.addEventListener("change", refreshMode);
           refreshMode();

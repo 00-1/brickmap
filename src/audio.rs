@@ -153,10 +153,15 @@ pub struct Drone {
     trem_phase: f32,
     /// Ethereal `0..1` (E10): set high in the rare pristine pockets. A distinct, *unmistakable*
     /// shift — guts the distortion, throws the filter wide open, lightens the sub + dread voices,
-    /// and adds a glassy shimmer — so a pristine pocket sounds airy/holy, not like the doom drone.
+    /// and swells a **choral pad** (a detuned sine cluster on the root power-chord, breathing) —
+    /// so a pristine pocket sounds airy/choral/holy, not like the doom drone.
     ethereal: f32,
     ethereal_s: f32,
-    shimmer_phase: f32,
+    /// Seed root (Hz), so the choral pad sits in tune with the dirge; phases of the 6 detuned
+    /// choir partials; and a slow swell phase so the "aah" breathes.
+    root: f32,
+    choir: [f32; 6],
+    choir_swell: f32,
 }
 
 impl Drone {
@@ -256,7 +261,9 @@ impl Drone {
             trem_phase: 0.0,
             ethereal: 0.0,
             ethereal_s: 0.0,
-            shimmer_phase: 0.0,
+            root,
+            choir: [0.1, 0.3, 0.5, 0.7, 0.2, 0.9],
+            choir_swell: 0.0,
         }
     }
 
@@ -337,19 +344,48 @@ impl Drone {
         let mut fl = self.filt_l.lowpass(dl, cutoff, self.res, self.sr);
         let mut fr = self.filt_r.lowpass(dr, cutoff, self.res, self.sr);
 
-        // Ethereal shimmer: a glassy high chord (added *after* the filter so it stays bright),
-        // panned gently, only present in pristine pockets — the "holy" sparkle over the cleaned drone.
+        // Ethereal choral pad: a detuned sine cluster on the root power-chord (root, fifth,
+        // octave — two octaves up, in voice register), each tone doubled ±0.3% for a chorused,
+        // breathing "aah". Added *after* the filter so it stays airy; only in pristine pockets.
         if eth > 0.001 {
-            self.shimmer_phase += 1.0 / self.sr;
-            if self.shimmer_phase >= 1.0 {
-                self.shimmer_phase -= 1.0;
+            let r = self.root;
+            // (-detune → left, +detune → right) per chord tone, for a wide choral spread.
+            let freqs = [
+                r * 4.0 * 0.997,
+                r * 4.0 * 1.003,
+                r * 6.0 * 0.997,
+                r * 6.0 * 1.003,
+                r * 8.0 * 0.997,
+                r * 8.0 * 1.003,
+            ];
+            let weights = [1.0f32, 1.0, 0.8, 0.8, 0.55, 0.55];
+            let (mut cl, mut cr) = (0.0f32, 0.0f32);
+            for (i, (ph, (&f, &w))) in self
+                .choir
+                .iter_mut()
+                .zip(freqs.iter().zip(weights.iter()))
+                .enumerate()
+            {
+                *ph += f / self.sr;
+                if *ph >= 1.0 {
+                    *ph -= 1.0;
+                }
+                let s = (*ph * TAU).sin() * w;
+                if i % 2 == 0 {
+                    cl += s;
+                } else {
+                    cr += s;
+                }
             }
-            let t = self.shimmer_phase * TAU;
-            let sh = ((t * 330.0).sin() + 0.6 * (t * 495.0).sin() + 0.4 * (t * 660.0).sin())
-                * eth
-                * 0.12;
-            fl += sh;
-            fr += sh * 0.85;
+            // Slow breathing swell (~14 s) so the choir rises and falls like held voices.
+            self.choir_swell += 0.07 / self.sr;
+            if self.choir_swell >= 1.0 {
+                self.choir_swell -= 1.0;
+            }
+            let swell = 0.6 + 0.4 * (self.choir_swell * TAU).sin();
+            let cg = eth * 0.13 * swell;
+            fl += cl * cg;
+            fr += cr * cg;
         }
 
         // A subtle swell with intensity so motion feels like it pushes the dirge; warp adds a
