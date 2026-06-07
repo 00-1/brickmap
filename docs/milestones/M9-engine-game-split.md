@@ -230,14 +230,14 @@ Bottom-up, **green at every step** (`cargo fmt && clippy -D warnings && test --a
 > defaults** (library-style; keep `bm-audio`/`bm-geom` generators in the game for
 > now — extract only noise + palette apply; **monorepo** path-dep crate, Decision 4
 > already firmed; do the full §3 7-crate split in Phase 2; engine keeps the runnable
-> Phase 4 demo). **Decision 1 (the game's name) stays open** — it is the human's call;
-> the crate is named `game` as a placeholder and we **stop to ask before Phase 3**
-> (when the game crate is created). Everything before Phase 3 proceeds without it.
+> Phase 4 demo). **Decision 1 (the game's name) — RESOLVED 2026-06-07: the game is
+> *Scraped Again*** (crate `scraped-again`, lib `scraped_again`). The engine stays
+> `brickmap`. Phase 3 creates `crates/scraped-again` as the binary/cdylib.
 
-1. **Game name.** brickmap stays the engine; the game needs its own name. *Default:*
-   pick one before Phase 3 (placeholder crate `game` until then). The product name is
-   a taste call — worth a short brainstorm; the fiction is "a lonely surveyor of a
-   dead world of fallen giants."
+1. **Game name. → Resolved: *Scraped Again*.** brickmap stays the engine; the game is
+   the Cargo package `scraped-again` (lib `scraped_again`) — the binary you run, the
+   APK, the Pages app. The fiction is "a lonely surveyor of a dead world of fallen
+   giants."
 2. **Library-style vs framework-style.** Game-owns-`main` and calls the engine
    (library) **vs** engine-owns-`main` and calls a `Game` trait (framework).
    *Default: **library-style*** — simpler, matches "a game that uses the engine," and

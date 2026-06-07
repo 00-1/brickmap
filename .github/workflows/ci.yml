@@ -37,5 +37,5 @@ jobs:
       - name: Tests
         run: cargo test --all
 
-      - name: Web target still builds
-        run: cargo build -p brickmap --lib --target wasm32-unknown-unknown
+      - name: Web target still builds (the game cdylib is what Pages ships)
+        run: cargo build -p scraped-again --lib --target wasm32-unknown-unknown

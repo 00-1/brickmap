@@ -15,7 +15,7 @@ fn main() {
     if args.first().map(String::as_str) == Some("palettes") {
         let width: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(960);
         let height: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(720);
-        brickmap::headless::capture_view(
+        scraped_again::headless::capture_view(
             width,
             height,
             "palette-off.png",
@@ -26,14 +26,14 @@ fn main() {
             1,
             false,
         );
-        for (i, pal) in brickmap::palette::PALETTES.iter().enumerate() {
-            let spec = brickmap::headless::PaletteSpec {
+        for (i, pal) in scraped_again::palette::PALETTES.iter().enumerate() {
+            let spec = scraped_again::headless::PaletteSpec {
                 index: i,
                 count: pal.colors.len() as u32,
                 dither: 1.0,
             };
             let path = format!("palette-{}.png", pal.name);
-            brickmap::headless::capture_view(
+            scraped_again::headless::capture_view(
                 width,
                 height,
                 &path,
@@ -49,13 +49,13 @@ fn main() {
         // via ordered dithering (the "fake more colours" goal). `<name>-<count>[-nodither]`.
         for (name, idx, count) in [("mono", 0usize, 2u32), ("verdant", 1, 3)] {
             for (dither, suffix) in [(1.0f32, ""), (0.0, "-nodither")] {
-                let spec = brickmap::headless::PaletteSpec {
+                let spec = scraped_again::headless::PaletteSpec {
                     index: idx,
                     count,
                     dither,
                 };
                 let path = format!("palette-{name}-{count}{suffix}.png");
-                brickmap::headless::capture_view(
+                scraped_again::headless::capture_view(
                     width,
                     height,
                     &path,
@@ -106,8 +106,8 @@ fn main() {
         let index = tok("pal=").unwrap_or(0.0) as usize;
         let count = tok("count=")
             .map(|c| c as u32)
-            .unwrap_or_else(|| brickmap::palette::PALETTES[index].colors.len() as u32);
-        brickmap::headless::PaletteSpec {
+            .unwrap_or_else(|| scraped_again::palette::PALETTES[index].colors.len() as u32);
+        scraped_again::headless::PaletteSpec {
             index,
             count,
             dither: tok("dither=").unwrap_or(1.0),
@@ -117,5 +117,7 @@ fn main() {
     // `scale=<n>` sets the pixel-scale / internal-resolution divisor (E10 halftone dial).
     let scale = tok("scale=").map(|s| s as u32).unwrap_or(1);
 
-    brickmap::headless::capture_view(width, height, &path, eye, target, palette, sun, scale, ink);
+    scraped_again::headless::capture_view(
+        width, height, &path, eye, target, palette, sun, scale, ink,
+    );
 }

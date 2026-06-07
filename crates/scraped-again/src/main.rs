@@ -2,5 +2,5 @@
 //! shim in `lib.rs` instead, so this file is native-only.
 
 fn main() {
-    brickmap::run();
+    scraped_again::run();
 }

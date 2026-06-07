@@ -1,0 +1,90 @@
+[package]
+name = "scraped-again"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.94"
+description = "Scraped Again — a lonely surveyor crossing a dead world of fallen giants, built on the brickmap engine."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/00-1/brickmap"
+
+# The game owns the binary (native) + the cdylib the web/Android platforms load; the
+# rlib lets the bins (drone/screenshot) and tests reuse it.
+[lib]
+name = "scraped_again"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The brickmap engine, consumed as a crate (re-exports the bm-* API).
+brickmap = { path = "../brickmap" }
+
+# --- Core, all targets ---------------------------------------------------
+wgpu = "29"
+winit = "0.30"
+glam = "0.33"
+bytemuck = { version = "1", features = ["derive"] }
+log = "0.4"
+cfg-if = "1"
+font8x8 = "0.3"
+web-time = "1"
+
+# --- Native-only ---------------------------------------------------------
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "0.4"
+env_logger = "0.11"
+# Headless render-to-PNG (D1): software-Vulkan offscreen capture for golden-image
+# tests and self-checked renders. Native only.
+png = "0.17"
+# Off-thread chunk generation + meshing (M6). Web meshes on the main thread instead.
+rayon = "1"
+
+# --- Desktop-only (native, not Android) ----------------------------------
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+# Cross-platform audio output (E16) for the doom-drone. On Linux needs libasound2-dev.
+cpal = "0.17"
+
+# --- Web / WASM-only -----------------------------------------------------
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "29", features = ["webgl"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+console_log = "1"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Location",
+    "Element",
+    "HtmlCanvasElement",
+    "Navigator",
+    "Gamepad",
+    "GamepadButton",
+] }
+
+# --- Android-only (D4) ---------------------------------------------------
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30", features = ["android-native-activity"] }
+android_logger = "0.14"
+cpal = "0.17"
+
+# cargo-apk packaging (D4): builds a sideloadable, debug-signed APK from this crate's
+# `cdylib` + `android_main`. Locally: `cargo install cargo-apk` then
+# `cargo apk build --release --lib`. CI does the same (see .github/workflows/android.yml).
+[package.metadata.android]
+# Kept on the original application id so sideloaded builds keep updating in place
+# (the rename is cosmetic — only the label changes).
+package = "dev.brickmap.app"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+# 26 = the minimum for cpal's AAudio backend (E16 Android audio).
+min_sdk_version = 26
+target_sdk_version = 34
+
+[package.metadata.android.application]
+label = "Scraped Again"
+
+# Self-signed sideload key (committed `release.keystore`) so `cargo apk build --release`
+# can produce a release APK and successive sideloaded builds update in place.
+[package.metadata.android.signing.release]
+path = "release.keystore"
+keystore_password = "brickmap"

@@ -1,9 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
-# Bare `cargo build`/`cargo run` resolve to the engine crate for now; once the game
-# crate lands (M9 Phase 3) this points at the thing you actually run.
-default-members = ["crates/brickmap"]
+# Bare `cargo build`/`cargo run` resolve to the game — the thing you actually run.
+default-members = ["crates/scraped-again"]
 
 [profile.dev.package."*"]
 # wgpu shader compilation and validation are heavy; build deps optimised even in

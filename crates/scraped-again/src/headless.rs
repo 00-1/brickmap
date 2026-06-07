@@ -213,7 +213,7 @@ pub fn capture_view(
     // mirroring gfx); pull the source through the engine crate rather than include_wgsl!.
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("shader.wgsl"),
-        source: wgpu::ShaderSource::Wgsl(bm_render::SHADER_WGSL.into()),
+        source: wgpu::ShaderSource::Wgsl(brickmap::bm_render::SHADER_WGSL.into()),
     });
     let uniform_bgl = |vis| {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -409,7 +409,7 @@ pub fn capture_view(
 
     let particle_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("particles.wgsl"),
-        source: wgpu::ShaderSource::Wgsl(bm_render::PARTICLES_WGSL.into()),
+        source: wgpu::ShaderSource::Wgsl(brickmap::bm_render::PARTICLES_WGSL.into()),
     });
     let particle_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("headless-particle-layout"),

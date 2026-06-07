@@ -330,33 +330,13 @@ dependencies = [
 name = "brickmap"
 version = "0.0.1"
 dependencies = [
- "android_logger",
  "bm-core",
  "bm-mesh",
  "bm-platform",
  "bm-render",
  "bm-scene",
  "bm-world",
- "bytemuck",
- "cfg-if",
- "console_error_panic_hook",
- "console_log",
- "cpal",
  "criterion",
- "env_logger",
- "font8x8",
- "gilrs",
- "glam",
- "log",
- "png",
- "pollster",
- "rayon",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "web-time",
- "wgpu",
- "winit",
 ]
 
 [[package]]
@@ -2271,6 +2251,32 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "scraped-again"
+version = "0.0.1"
+dependencies = [
+ "android_logger",
+ "brickmap",
+ "bytemuck",
+ "cfg-if",
+ "console_error_panic_hook",
+ "console_log",
+ "cpal",
+ "env_logger",
+ "font8x8",
+ "glam",
+ "log",
+ "png",
+ "pollster",
+ "rayon",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "wgpu",
+ "winit",
+]
 
 [[package]]
 name = "sctk-adwaita"
