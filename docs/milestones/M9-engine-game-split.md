@@ -226,6 +226,14 @@ Bottom-up, **green at every step** (`cargo fmt && clippy -D warnings && test --a
 
 ## Decisions to resolve (with recommended defaults)
 
+> **Resolution (Phase 0, 2026-06-07).** Decisions **2–6 take their recommended
+> defaults** (library-style; keep `bm-audio`/`bm-geom` generators in the game for
+> now — extract only noise + palette apply; **monorepo** path-dep crate, Decision 4
+> already firmed; do the full §3 7-crate split in Phase 2; engine keeps the runnable
+> Phase 4 demo). **Decision 1 (the game's name) stays open** — it is the human's call;
+> the crate is named `game` as a placeholder and we **stop to ask before Phase 3**
+> (when the game crate is created). Everything before Phase 3 proceeds without it.
+
 1. **Game name.** brickmap stays the engine; the game needs its own name. *Default:*
    pick one before Phase 3 (placeholder crate `game` until then). The product name is
    a taste call — worth a short brainstorm; the fiction is "a lonely surveyor of a
@@ -313,8 +321,9 @@ plus **"prove the boundary exists"**:
 
 ## Acceptance checklist
 
-- [ ] Decisions 1–6 resolved and recorded; design §3 + architecture §3 + a roadmap
-      rung updated to describe the engine/game split (Phase 0).
+- [x] Decisions 1–6 resolved and recorded; design §3 + architecture §3 + a roadmap
+      rung updated to describe the engine/game split (Phase 0). *(Decision 1 — game
+      name — deferred to the human before Phase 3, per the resolution note.)*
 - [ ] Cargo **workspace** in place; engine is library crates with **no `main`**; the
       game crate owns the binary + wasm/android entry.
 - [ ] The **seven extension seams** implemented; the four fused files split per plan

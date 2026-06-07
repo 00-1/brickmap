@@ -61,7 +61,20 @@ they are separate crates). Proposed split:
 | `bm-render` | wgpu abstraction: device/queue/surface management, pipelines, the **forward(+)** frame graph, texture-array material system, GPU buffer pools that ingest `bm-mesh` output. **Knows nothing about how the world is generated.** | `bm-core`, `bm-mesh` (contract only) |
 | `bm-platform` | winit windowing/surface, input, timing, and the **threading shim** (rayon pool on native; single-thread / Web Worker fallback on web). | `bm-core` |
 | `bm-scene` | Camera, view/projection, frustum extraction; owns culling policy that combines frustum + the visibility graph into draw lists. | `bm-core`, `bm-world`, `bm-mesh` |
-| `brickmap` (bin/lib) | The `app`: glues the above, owns the event loop, frame scheduling, and the wasm `start` shim. | all |
+| `brickmap` (engine facade, **rlib**) | Re-exports the `bm-*` engine API as one import surface; ships the engine-only demo (`examples/`). **No `main`, no game content.** | all `bm-*` |
+| **`game` (bin + cdylib)** | **Not an engine crate.** The thing you run: owns the binary + the winit `ApplicationHandler` event loop, the wasm/Android entry points, the mode machine, and *all* world content — terrain recipe, biome presets, colossi/inscriptions, the doom drone, curated palettes, player controller. Implements the engine's extension seams. | `brickmap` |
+
+### The engine / game cut (M9)
+
+The **load-bearing boundary** is between the `bm-*` engine crates (mechanism) and
+the `game` crate (policy/content/fiction). It is enforced *mechanically* by the
+crate graph: **no `bm-*` crate may depend on `game`** (a CI check asserts this).
+The game plugs in through a small, fixed set of **extension seams** (a `WorldGen`
+trait, a splat feed, structure draws, the `Edit`/`apply` mutation seam,
+`LookParams`, an `AudioSource`, and engine constructors the game drives) — that
+set is the *entire* contract surface. This is executed by milestone **M9** (see
+[`M9-engine-game-split.md`](M9-engine-game-split.md)); §3's internal engine
+granularity (the 6 `bm-*` crates) lands in the same effort.
 
 Until the split lands, these are **modules** inside the one crate with the same
 names and the same dependency rules enforced by discipline + review.

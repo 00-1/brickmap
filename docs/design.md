@@ -15,6 +15,12 @@ graphical: how to store, mesh, cull, and draw very large voxel worlds fast. This
 is a personal-interest project, so we favour **interesting and correct**
 approaches over shipping speed.
 
+A world *has* grown on top of the engine (fallen colossi, inscriptions, a doom
+drone, exploration on foot and by cruiser). As of **M9** that content no longer
+lives in the engine: it is a separate **game crate** in the same Cargo workspace
+that *consumes* the engine. The engine stays content-agnostic; see §3 and
+[`milestones/M9-engine-game-split.md`](milestones/M9-engine-game-split.md).
+
 ## 2. Goals
 
 - Render large voxel worlds at a smooth, stable frame rate on **weak hardware**.
@@ -28,6 +34,13 @@ approaches over shipping speed.
   not decoration.)
 
 ## 3. Non-goals (for now)
+
+These are non-goals **of the engine** (`brickmap` + the `bm-*` crates). Since M9
+they are not "things the project avoids" so much as "things that live in the
+**game** crate, not the engine": the engine has no gameplay, no specific world,
+no fiction — it provides the *mechanisms* (rendering, meshing, streaming, the
+extension seams) and the game supplies the *policy/content*. The crate graph
+enforces this — no engine crate may depend on the game (M9 §"boundary principle").
 
 - Gameplay, physics, networking, entities, AI, persistence-as-a-feature.
 - **Photorealism / AAA mimicry.** We borrow Minecraft's *performance spine*, not
