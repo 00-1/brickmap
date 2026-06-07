@@ -38,6 +38,8 @@ pub mod progress;
 pub mod beam;
 // Cruiser auto-scan (G3): forward-cone sensing → the map opportunity surface.
 pub mod scan;
+// The operations console (G4): the game's actions as clickable blocks + given routines.
+pub mod console;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
 pub mod palettes;
 pub mod player;
@@ -176,6 +178,8 @@ struct App {
     collectible: Vec<progress::Collectible>,
     /// Whether the codex list overlay is open (key `J`).
     codex_open: bool,
+    /// The operations console (G4): blocks + given routines; open with `O`.
+    console: console::Console,
     /// The active survey-beam (G2), if one is cast — persists then fades.
     beam: Option<beam::Beam>,
     /// When attached to the beam as a rail (Walk mode): the parametric ride position `t∈[0,1]`.
@@ -557,14 +561,23 @@ impl App {
     fn autoscan(&mut self, dt: f32) {
         let now = self.time;
         self.flicks.retain(|f| !f.dead(now)); // prune spent flicks every frame
-        if self.mode != Mode::Pilot {
-            return; // scanning is the cruiser's job (idle / flight)
+                                              // Driven by the `survey` routine (G4): only scan while it's enabled + piloting.
+        if self.mode != Mode::Pilot || !self.console.survey_enabled() {
+            return;
         }
         self.scan_timer += dt;
         if self.scan_timer < scan::INTERVAL {
             return;
         }
         self.scan_timer = 0.0;
+        self.scan_pulse();
+    }
+
+    /// One scan pulse (`scan(shards)` block): mark uncollected sites ahead **known** (the map
+    /// opportunity surface) + fire cool flicks; if the `survey` routine wires `on-scan → collect`
+    /// it then auto-collects (G4). Reused by the routine tick and a manual `scan` block click.
+    fn scan_pulse(&mut self) {
+        let now = self.time;
         let cam = self.camera.position;
         let fwd = self.camera.forward();
         // Gather candidates ahead (immutable borrow), then mark them known (mutable) — keeping
@@ -583,6 +596,7 @@ impl App {
             .filter(|(id, _)| self.progress.scan(*id))
             .map(|(_, p)| p)
             .collect();
+        let found = !fresh.is_empty();
         let nch = world::Section::SIZE as f32;
         let nose = cam + fwd * 1.5;
         for (i, p) in fresh.into_iter().enumerate() {
@@ -598,6 +612,47 @@ impl App {
                     born: now,
                 });
             }
+        }
+        // on-scan → collect (the survey routine's auto-collect). One-block parity: this is the
+        // same G1 collect as a manual `T`, so at altitude it harvests ~nothing (sites sit below
+        // the aim ray's reach) — net behaviour ≈ today's; it bites when you scan/fly low.
+        if found && self.console.survey_autocollects() {
+            self.collect_aimed();
+        }
+    }
+
+    /// G4: keyboard/pad control of the open console (no typing) — cursor + confirm.
+    fn console_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::KeyO | KeyCode::Escape => self.console.open = false,
+            KeyCode::ArrowUp | KeyCode::KeyW => self.console.move_cursor(-1),
+            KeyCode::ArrowDown | KeyCode::KeyS => self.console.move_cursor(1),
+            KeyCode::Enter | KeyCode::Space => self.console_confirm(),
+            _ => {}
+        }
+    }
+
+    /// G4: confirm on the cursor — run a block, or toggle a routine (drift gates the autopilot).
+    fn console_confirm(&mut self) {
+        match self.console.selected() {
+            console::Sel::Block(b) => self.dispatch_block(b),
+            console::Sel::Routine(i) => {
+                let on = self.console.toggle_routine(i);
+                if self.console.routines[i].name == "drift" {
+                    self.auto_fly = on; // the drift routine governs the autopilot wander
+                }
+            }
+        }
+    }
+
+    /// G4: run a console block once — parity with its keybind shortcut; routines call this too.
+    fn dispatch_block(&mut self, b: console::Block) {
+        match b {
+            console::Block::Scan => self.scan_pulse(),
+            console::Block::Collect => self.collect_aimed(),
+            console::Block::FireBeam => self.cast_beam(),
+            console::Block::Drift => self.auto_fly = true, // (re)engage the wander
+            other => log::info!("block {}: not available yet", other.label()),
         }
     }
 
@@ -615,7 +670,7 @@ impl App {
     fn strata_hud(&self) -> String {
         let s = &self.progress.strata;
         format!(
-            "REC {} · SCH {} · RIT {} · REL {} · SIG {}   known {} · found {}   [T collect · J codex]",
+            "REC {} · SCH {} · RIT {} · REL {} · SIG {}   known {} · found {}   [T collect · J codex · O console]",
             s.records,
             s.schematics,
             s.rites,
@@ -1410,7 +1465,15 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput { event: key, .. } => {
                 if let PhysicalKey::Code(code) = key.physical_key {
                     let pressed = key.state.is_pressed();
-                    if code == KeyCode::Escape && pressed {
+                    if self.console.open {
+                        // G4: while the operations console is open it owns the keyboard
+                        // (cursor + confirm, no typing); everything else is suppressed.
+                        if pressed {
+                            self.console_key(code);
+                        }
+                    } else if code == KeyCode::KeyO && pressed {
+                        self.console.open = true; // open the operations console (G4)
+                    } else if code == KeyCode::Escape && pressed {
                         // Release the pointer. (The browser also does this on Esc.)
                         self.set_capture(false);
                     } else if code == KeyCode::KeyF && pressed {
@@ -1508,6 +1571,11 @@ impl ApplicationHandler<AppEvent> for App {
                     );
                 }
 
+                // G4: the `drift` routine governs the autopilot wander — disabling it stops the
+                // auto-drift (you keep manual control); re-enabling it re-engages auto_fly.
+                if !self.console.drift_enabled() {
+                    self.auto_fly = false;
+                }
                 match self.mode {
                     Mode::Pilot if self.auto_fly => {
                         // Autopilot — cinematic travel that **wanders to new places** (not a
@@ -1742,9 +1810,10 @@ impl ApplicationHandler<AppEvent> for App {
                 let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
                 let cam_up = cam_right.cross(fwd).normalize_or_zero();
 
-                // G1 HUD bits, computed before the mutable `state` borrow below.
+                // G1/G4 HUD overlays, computed before the mutable `state` borrow below.
                 let strata_line = self.strata_hud();
                 let codex_view = self.codex_open.then(|| self.codex_text());
+                let console_view = self.console.open.then(|| self.console.render());
 
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
@@ -1862,7 +1931,9 @@ impl ApplicationHandler<AppEvent> for App {
                         };
                         // When the map is open, the HUD becomes its key + coordinates (crosshair
                         // centre + your position), instead of the perf line.
-                        let hud = if let Some(codex) = &codex_view {
+                        let hud = if let Some(console) = &console_view {
+                            console.clone()
+                        } else if let Some(codex) = &codex_view {
                             codex.clone()
                         } else if self.map_view {
                             let nch = world::Section::SIZE as f32;
@@ -2071,6 +2142,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         progress: initial_progress(),
         collectible: Vec::new(),
         codex_open: false,
+        console: console::Console::default(),
         beam: None,
         ride_t: None,
         scan_timer: 0.0,

@@ -1,6 +1,16 @@
 # G4 — Block substrate & console (the retrofit)
 
-> **Status: ready to build, after the ✅ G1–G3.** The **foundational block substrate**
+> **Status: ✅ landed (2026-06-07).** A minimal block runtime + the operations console (`O`):
+> G1–G3's actions are now visible, clickable **blocks** (`scan(shards)`/`collect`/`fire-beam`/
+> `drift`, trigger `on-scan`, vocabulary stubs `spend`/`goto`) wired into two **given routines**
+> (`drift`; `survey: scan(shards) → on-scan → collect`) the runtime ticks. Clicking a block =
+> its keybind; toggling `drift`/`survey` gates the autopilot/auto-scan. Console on the E17 text
+> path, cursor+confirm (no typing). Behaviour-parity; golden voxel-hash + headless render
+> unchanged. See the acceptance checklist + the solo-decisions note in `console.rs`.
+
+> _(Original brief follows.)_
+
+> **Was: ready to build, after the ✅ G1–G3.** The **foundational block substrate**
 > ([`../game-system.md`](../game-system.md)) — which G1–G3 shipped *before*, as direct
 > keybind features. This milestone retrofits it: it re-expresses those existing actions as
 > **blocks** and adds the **console**, *without changing what they do*. It **supersedes the
@@ -94,11 +104,20 @@ unlock economy, Decipherment legibility (G6); `scanMany`, more items (G6); two-a
 
 ## Acceptance checklist
 
-- [ ] Minimal block runtime: blocks visible + **clickable to trigger**; the given
-      `scan(shards) → on-scan → collect` and `drift` routines run and can be toggled/opened.
-- [ ] `collect`/`scan`/`fire-beam`/`spend`/`goto`/`drift`/`on-scan` exist as blocks dispatching
-      to the existing G1–G3 effect paths (behaviour-parity tested); current keybinds still work.
-- [ ] Console + routine view render on the E17 text path (no typing; click/controller-driven).
-- [ ] No gameplay behaviour change; golden voxel-hash + headless render unchanged.
-- [ ] CI green (fmt / clippy -D / tests / wasm); crate boundary intact.
-- [ ] Docs in lockstep: game-mechanics §13 G4 + game-system §11 Tier 0 ticked.
+- [x] Minimal block runtime (`console` module): blocks visible + **clickable to trigger** (cursor
+      + confirm); the given `survey: scan(shards) → on-scan → collect` and `drift` routines run
+      and can be toggled/opened. Model unit-tested.
+- [x] `scan`/`collect`/`fire-beam`/`drift`/`on-scan` dispatch to the existing G1–G3 effect paths
+      (`scan_pulse`/`collect_aimed`/`cast_beam`/`auto_fly`); `spend`/`goto` are vocabulary stubs
+      (G5/G6); current keybinds (`T`/`F`/click) still work as shortcuts.
+- [x] Console + routine view render on the E17/HUD text path (terminal-styled, no typing; `O`
+      open, ↑↓ select, Enter run/toggle).
+- [x] No gameplay behaviour change at altitude (the given auto-collect uses the same aimed G1
+      collect → harvests ~nothing from cruise height); golden voxel-hash + headless render unchanged.
+- [x] CI green (fmt / clippy -D / 137 tests / wasm); crate boundary intact (all in `scraped-again`).
+- [x] Docs in lockstep: game-mechanics §13 G4 + game-system §11 Tier 0 ticked.
+
+> **Assumptions / decisions taken solo** (also in `console.rs`): one `collect` behaviour for
+> manual + routine (parity, so net autopilot ≈ today's); console is cursor+confirm (mouse
+> per-row hit-testing → G5); `spend`/`goto` inert until G5/G6; the `survey`/`drift` routines are
+> enabled by default (the onboarding artifact).

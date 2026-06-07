@@ -580,13 +580,17 @@ idle scan→map→triage loop before the tree sits on it.*
   opportunity marker (alpha-code 200) cleared on collect; HUD "known/found"; the scanned set
   saves/restores in the `pg=` payload (v2). 133 tests green; golden voxel-hash unchanged.
 
-### ✨ G4 — Block substrate & console (the retrofit) ⏳ &nbsp;→ [`milestones/G4-block-substrate.md`](milestones/G4-block-substrate.md)
+### ✨ G4 — Block substrate & console (the retrofit) ✅ &nbsp;→ [`milestones/G4-block-substrate.md`](milestones/G4-block-substrate.md)
 **The missing foundation**, retrofitted onto the built G1–G3: re-express today's keybind
 actions (`collect`, `scan`, `fire-beam`, nav) as **visible, clickable blocks**; a minimal
 runtime that runs the **given routines** (`scan(shards) → on-scan → collect`, `drift`); and the
 **console UI** (E17 text path, no typing). Turns the existing features into the block interface
 *without* changing what they do. *Everything later composes on this.* **Supersedes the
 conventional "first tech tree."**
+- **Landed:** `console` module (block vocabulary + given routines + cursor/render, unit-tested);
+  `O` opens the console; clicking a block fires its existing G1–G3 path (parity); toggling
+  `drift`/`survey` gates the autopilot/auto-scan; `scan_pulse` shared by the routine + a manual
+  `scan` click. 137 tests green; golden voxel-hash + headless render unchanged.
 
 ### ✨ G5 — Composition editor & parameterised blocks ⏳
 The **wiring editor** (author your own routines) + the generic `match` filter + **parameterised

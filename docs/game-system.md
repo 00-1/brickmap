@@ -159,8 +159,11 @@ A concrete first cut — ~6 blocks to start, ~two dozen across the first three t
 combinatorial growth. Illustrative + expandable; the *shape* is the commitment. Blocks are
 tagged **ship / foot / shared**.
 
-### Tier 0 — what you begin with (the starter handful)
-Enough to play the whole loop by hand + see two given automations.
+### Tier 0 — what you begin with (the starter handful) — ✅ realised in G4
+Enough to play the whole loop by hand + see two given automations. **(Landed in
+[G4](milestones/G4-block-substrate.md): the console + `scan`/`collect`/`fire-beam`/`drift`/
+`on-scan` blocks + the given `drift` and `survey: scan(shards) → on-scan → collect` routines.
+`spend`/`goto` are present as vocabulary stubs pending G5/G6.)**
 - **Actions:** `scan(item)` (ship — **starts as `scan(shards)`**) · `fire-beam` (foot —
   survey-beam: collect-along-path + ride) · `collect` (shared) · `spend` (shared)
 - **Nav:** `drift` (ship — aimless cinematic wander = **today's default autopilot**) ·

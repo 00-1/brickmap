@@ -450,7 +450,7 @@ survive, reframed as the console + composed routines + comprehension unlocks (G4
    past (cool scan flick → the map fills with amber scanned-but-uncollected pins you triage).
    *Proved the idle scan→map→triage loop.*
    ([`milestones/G3-cruiser-scan-map.md`](milestones/G3-cruiser-scan-map.md).)
-4. **⏳ G4 — Block substrate & console (the retrofit)** ([brief](milestones/G4-block-substrate.md)).
+4. **✅ G4 — Block substrate & console (the retrofit)** ([brief](milestones/G4-block-substrate.md)).
    The **missing foundation**: re-express G1–G3's keybind actions (`collect`/`scan`/`fire-beam`/
    nav) as **visible, clickable blocks**; a minimal runtime running the **given routines**
    (`scan(shards) → on-scan → collect`, `drift`); the **console UI** (E17 text path, no typing).
