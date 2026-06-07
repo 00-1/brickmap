@@ -241,7 +241,10 @@ mod tests {
         let b = colossus_label(&p);
         assert_eq!(a.text, b.text); // same colossus → same inscription
         assert!(!a.text.is_empty());
-        assert!(a.pos.y > p.pos.y, "label should float above the giant's feet");
+        assert!(
+            a.pos.y > p.pos.y,
+            "label should float above the giant's feet"
+        );
     }
 
     #[test]

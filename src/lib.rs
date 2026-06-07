@@ -16,6 +16,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
 pub mod audio;
+pub mod biome;
 pub mod creatures;
 pub mod relic;
 // Native (desktop) audio output via cpal; web uses Web Audio, Android is a follow-up.
