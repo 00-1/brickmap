@@ -23,8 +23,8 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 // app + content modules keep resolving `crate::world::…`, `crate::gfx::…`, etc. (the game
 // consumes the engine purely through the `brickmap` facade — never the bm-* crates).
 pub use brickmap::{
-    edit, foliage, gamepad, gfx, hud, map, mesh, noise, palette, particles, post, scene, ship, sim,
-    text, textures, visibility, world, WorldGen,
+    edit, foliage, gamepad, gfx, hud, map, mesh, noise, overlay, palette, particles, post, scene,
+    ship, sim, text, textures, visibility, world, WorldGen,
 };
 
 pub mod audio;
@@ -32,6 +32,12 @@ pub mod biome;
 pub mod creatures;
 // The cruiser's geometry (the engine renderer is generic — the ship is the game's).
 pub mod cruiser;
+// Gameplay (Scraped Again): data strata, the codex, collect events (G1).
+pub mod progress;
+// The survey-beam (G2): cast → collect-along-path → persist/fade, drawn post-palette.
+pub mod beam;
+// Cruiser auto-scan (G3): forward-cone sensing → the map opportunity surface.
+pub mod scan;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
 pub mod palettes;
 pub mod player;
@@ -163,6 +169,24 @@ struct App {
     text_cells: std::collections::HashSet<(i32, i32, u8)>,
     /// Previous-frame camera position, for the reactive-audio (E16) flight-speed estimate.
     audio_prev_pos: Option<Vec3>,
+    /// Scraped Again gameplay (G1): banked data strata + the codex of collected inscriptions.
+    progress: progress::Progress,
+    /// Nearby still-collectible inscriptions (rebuilt as text streams in) — the targets the
+    /// collect pick (`T`) and the survey-beam aim at.
+    collectible: Vec<progress::Collectible>,
+    /// Whether the codex list overlay is open (key `J`).
+    codex_open: bool,
+    /// The active survey-beam (G2), if one is cast — persists then fades.
+    beam: Option<beam::Beam>,
+    /// When attached to the beam as a rail (Walk mode): the parametric ride position `t∈[0,1]`.
+    ride_t: Option<f32>,
+    /// Cruiser auto-scan (G3): seconds since the last scan pulse, and the active cool flicks.
+    scan_timer: f32,
+    flicks: Vec<scan::Flick>,
+    /// Chunks holding a **scanned-but-uncollected** site — the map opportunity surface (G3).
+    map_scanned: std::collections::HashSet<(i32, i32)>,
+    /// Monotonic seconds, accumulated each frame — the beam's clock (birth + fade).
+    time: f32,
     /// Biome-driven auto mode (the new default): when on, the biome at the camera drives the
     /// palette, spawn densities, lighting/wobble, ground, and drone mix — blended smoothly as you
     /// move, no manual toggles. Off → the manual settings ("as we currently have it"). Key `G`.
@@ -230,6 +254,7 @@ impl App {
         self.map.clear(); // the explored map is per-world
         self.map_text.clear();
         self.map_pristine.clear();
+        self.map_scanned.clear(); // G3 opportunity surface is per-world
         self.map_dirty = true;
         self.loader.set_seed(seed);
         let ground = worldgen::height(
@@ -275,7 +300,7 @@ impl App {
                 return true;
             }
             KeyCode::KeyP => {
-                log::info!("share: #{}", self.current_share().encode());
+                log::info!("share: #{}", self.share_string());
                 return true;
             }
             // Voxel editing (E14): V place, B break, U undo.
@@ -433,6 +458,192 @@ impl App {
     }
 
     /// The current world + view as a `ShareState` (E12) — for "copy link" / `--share`.
+    /// G1: collect the inscription the player is aiming at — the nearest still-collectible
+    /// glyph within reach and close to the view ray (the E14-style aim). Routed through the
+    /// serializable `progress::Event`/`apply` seam; banks its stratum + records it in the codex.
+    fn collect_aimed(&mut self) {
+        const REACH: f32 = 60.0; // how far a collect pick carries
+        const AIM_RADIUS: f32 = 3.0; // forgiving perpendicular tolerance (glyphs are ~1u tall)
+        let origin = self.camera.position;
+        let dir = self.camera.forward();
+        let mut best_t = f32::INFINITY;
+        let mut best_i: Option<usize> = None;
+        for (i, c) in self.collectible.iter().enumerate() {
+            let v = Vec3::from(c.pos) - origin;
+            let t = v.dot(dir);
+            if t <= 0.0 || t > REACH {
+                continue; // behind us / out of reach
+            }
+            if (v - dir * t).length() <= AIM_RADIUS && t < best_t {
+                best_t = t;
+                best_i = Some(i);
+            }
+        }
+        let Some(idx) = best_i else {
+            log::info!("collect: nothing in your sights");
+            return;
+        };
+        let c = self.collectible.remove(idx);
+        let ev = progress::Event::Collect {
+            find_id: c.find_id,
+            script: c.script,
+            text: c.text.clone(),
+            pos: c.pos,
+        };
+        if self.progress.apply(&ev) {
+            log::info!(
+                "collected \"{}\" → +{} {}",
+                c.text,
+                progress::yield_amount(c.script, progress::glyph_count(&c.text)),
+                progress::stratum_of(c.script).label(),
+            );
+            self.forget_scanned_chunk(c.pos); // it's no longer an opportunity (G3)
+        }
+    }
+
+    /// G2: cast the survey-beam from the camera along the aim direction. In Walk mode it can
+    /// **board the cruiser** (lock-on, reach-gated) or **attach as a rail**; either way it
+    /// sweeps up every collectible glyph along its path on cast (one-shot, feeding G1).
+    fn cast_beam(&mut self) {
+        let b = beam::Beam::cast(self.camera.position, self.camera.forward(), self.time);
+        // Board: on foot, a beam that locks onto the parked cruiser within reach reels you in
+        // and boards (the E19 "enter" as a *ranged* alternative to walk-up-and-press-E).
+        if self.mode == Mode::Walk
+            && beam::within_reach(self.camera.position, self.cruiser_pos)
+            && beam::dist_point_segment(self.cruiser_pos, b.a, b.b) <= 6.0
+        {
+            self.beam = Some(b);
+            self.camera.position = self.cruiser_pos + Vec3::new(0.0, 1.5, 0.0);
+            self.mode = Mode::Pilot;
+            self.auto_fly = false;
+            self.ride_t = None;
+            log::info!("beam: locked on — reeled in and boarded the cruiser");
+            return;
+        }
+        let mut swept = 0u32;
+        let mut done: Vec<u64> = Vec::new();
+        let mut done_pos: Vec<[f32; 3]> = Vec::new();
+        for c in &self.collectible {
+            if beam::on_path(Vec3::from(c.pos), b.a, b.b) {
+                let ev = progress::Event::Collect {
+                    find_id: c.find_id,
+                    script: c.script,
+                    text: c.text.clone(),
+                    pos: c.pos,
+                };
+                if self.progress.apply(&ev) {
+                    swept += 1;
+                    done.push(c.find_id);
+                    done_pos.push(c.pos);
+                }
+            }
+        }
+        self.collectible.retain(|c| !done.contains(&c.find_id));
+        for p in done_pos {
+            self.forget_scanned_chunk(p); // collected → no longer opportunities (G3)
+        }
+        self.beam = Some(b);
+        // On foot, attach to the fresh beam as a rail (ride it to escape pits/cliffs — and
+        // casting mid-fall re-attaches, saving you).
+        if self.mode == Mode::Walk {
+            self.ride_t = Some(0.0);
+        }
+        log::info!("beam: cast — swept {swept} glyph(s)");
+    }
+
+    /// G3: while piloting, the cruiser auto-scans the forward cone — marking nearby
+    /// uncollected sites **known** (the map opportunity surface) and firing brief cool flicks.
+    /// Does not collect. Rate-limited so it reads as a sweep.
+    fn autoscan(&mut self, dt: f32) {
+        let now = self.time;
+        self.flicks.retain(|f| !f.dead(now)); // prune spent flicks every frame
+        if self.mode != Mode::Pilot {
+            return; // scanning is the cruiser's job (idle / flight)
+        }
+        self.scan_timer += dt;
+        if self.scan_timer < scan::INTERVAL {
+            return;
+        }
+        self.scan_timer = 0.0;
+        let cam = self.camera.position;
+        let fwd = self.camera.forward();
+        // Gather candidates ahead (immutable borrow), then mark them known (mutable) — keeping
+        // only the newly-known ones for flicks/map.
+        let candidates: Vec<(u64, [f32; 3])> = self
+            .collectible
+            .iter()
+            .filter(|c| {
+                !self.progress.is_scanned(c.find_id)
+                    && scan::in_cone(Vec3::from(c.pos), cam, fwd, scan::RANGE)
+            })
+            .map(|c| (c.find_id, c.pos))
+            .collect();
+        let fresh: Vec<[f32; 3]> = candidates
+            .into_iter()
+            .filter(|(id, _)| self.progress.scan(*id))
+            .map(|(_, p)| p)
+            .collect();
+        let nch = world::Section::SIZE as f32;
+        let nose = cam + fwd * 1.5;
+        for (i, p) in fresh.into_iter().enumerate() {
+            let pv = Vec3::from(p);
+            let k = ((pv.x / nch).floor() as i32, (pv.z / nch).floor() as i32);
+            if self.map_scanned.insert(k) {
+                self.map_dirty = true;
+            }
+            if i < scan::FLICKS_PER_PULSE {
+                self.flicks.push(scan::Flick {
+                    from: nose,
+                    to: pv,
+                    born: now,
+                });
+            }
+        }
+    }
+
+    /// A site at `pos` was collected — drop its chunk from the opportunity surface (G3). A v1
+    /// approximation (one opportunity per chunk); refine if chunks routinely hold several.
+    fn forget_scanned_chunk(&mut self, pos: [f32; 3]) {
+        let nch = world::Section::SIZE as f32;
+        let k = ((pos[0] / nch).floor() as i32, (pos[2] / nch).floor() as i32);
+        if self.map_scanned.remove(&k) {
+            self.map_dirty = true;
+        }
+    }
+
+    /// The G1 strata readout + the G3 known/found counts, for the HUD.
+    fn strata_hud(&self) -> String {
+        let s = &self.progress.strata;
+        format!(
+            "REC {} · SCH {} · RIT {} · REL {} · SIG {}   known {} · found {}   [T collect · J codex]",
+            s.records,
+            s.schematics,
+            s.rites,
+            s.relics,
+            s.signals,
+            self.progress.known_count(),
+            self.progress.collected_count(),
+        )
+    }
+
+    /// The codex list overlay (text only, most-recent first) — the G1 archive screen.
+    fn codex_text(&self) -> String {
+        let c = &self.progress.codex;
+        let mut out = format!("CODEX — {} finds   [J close]\n", c.len());
+        if c.is_empty() {
+            out.push_str("(nothing yet — aim at a glowing inscription and press T)");
+        } else {
+            for e in c.iter().rev().take(20) {
+                out.push_str(&format!(
+                    "{}  {}\n",
+                    progress::stratum_of(e.script).label(),
+                    e.text
+                ));
+            }
+        }
+        out
+    }
+
     fn current_share(&self) -> share::ShareState {
         share::ShareState {
             seed: self.seed,
@@ -443,6 +654,16 @@ impl App {
             color_steps: self.color_steps,
             toggles: self.toggles.to_mask(),
         }
+    }
+
+    /// The full persisted/shared string: the view + the G1 progress segment (`pg=`). Both
+    /// decoders are lenient and ignore each other's keys, so they ride one string.
+    fn share_string(&self) -> String {
+        format!(
+            "{}&{}",
+            self.current_share().encode(),
+            self.progress.encode()
+        )
     }
 
     /// Stream colossal structures (E18) around the camera: seed-placed tube-tech relics, some
@@ -548,9 +769,26 @@ impl App {
                 self.map_dirty = true;
             }
         }
-        let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = marks
+        let inscriptions: Vec<structures::Inscription> = marks
             .into_iter()
             .chain(colossi.iter().map(structures::colossus_label))
+            .collect();
+        // G1: the still-collectible inscriptions in range (already-collected ones filtered
+        // out), used as the collect pick's targets.
+        self.collectible = inscriptions
+            .iter()
+            .filter_map(|m| {
+                let id = progress::find_id(m.cell, m.script, &m.text);
+                (!self.progress.has(id)).then(|| progress::Collectible {
+                    find_id: id,
+                    script: m.script,
+                    text: m.text.clone(),
+                    pos: m.pos.to_array(),
+                })
+            })
+            .collect();
+        let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
+            .into_iter()
             .map(|m| (m.text, m.script, m.pos, m.height, m.color))
             .collect();
         if let Some(state) = self.state.as_mut() {
@@ -644,6 +882,7 @@ impl App {
             .keys()
             .chain(self.map_text.iter())
             .chain(self.map_pristine.iter())
+            .chain(self.map_scanned.iter())
         {
             minx = minx.min(cx);
             maxx = maxx.max(cx);
@@ -657,11 +896,16 @@ impl App {
             rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
         }
         // Markers keep the biome colour in RGB but tag the **alpha** with a code, so the shader
-        // can draw a *distinct shaped icon* per type (a filled dot for text, a hollow diamond for
-        // pristine) rather than just a coloured pixel. Codes: 255 plain, 160 text, 96 pristine.
+        // can draw a *distinct shaped icon* per type rather than just a coloured pixel.
+        // Codes: 255 plain, 200 scanned-uncollected (G3 opportunity), 160 text, 96 pristine.
         for &(cx, cz) in &self.map_text {
             let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4 + 3;
             rgba[i] = 160;
+        }
+        // G3 opportunity surface: a scanned-but-uncollected site (overrides the plain text dot).
+        for &(cx, cz) in &self.map_scanned {
+            let i = (((cz - minz) as usize) * w as usize + (cx - minx) as usize) * 4 + 3;
+            rgba[i] = 200;
         }
         for &(cx, cz) in &self.map_pristine {
             // Pristine overrides text if a chunk has both.
@@ -1173,6 +1417,10 @@ impl ApplicationHandler<AppEvent> for App {
                         self.auto_fly = !self.auto_fly; // toggle autopilot (cinematic)
                     } else if code == KeyCode::KeyE && pressed {
                         self.toggle_cruiser(); // enter/exit the cruiser
+                    } else if code == KeyCode::KeyT && pressed {
+                        self.collect_aimed(); // G1: collect the aimed inscription
+                    } else if code == KeyCode::KeyJ && pressed {
+                        self.codex_open = !self.codex_open; // G1: codex list overlay
                     } else if pressed && self.handle_seed_key(code) {
                         // handled: R reseed / P print share (native)
                     } else if let Some(i) = toggle_index(code) {
@@ -1195,15 +1443,19 @@ impl ApplicationHandler<AppEvent> for App {
                 // (Android gamepad input is read directly in `android_main`, not via
                 // winit key events — see `gamepad::android` + the pump loop.)
             }
-            // Click to capture the pointer for mouselook (and to re-capture after
-            // Esc / tabbing away). Idempotent, so re-clicking is harmless.
+            // Left click captures the pointer for mouselook; once captured, a click **casts
+            // the survey-beam** (G2) where you aim — the signature manual verb.
             WindowEvent::MouseInput {
                 button: MouseButton::Left,
                 state: ElementState::Pressed,
                 ..
             } => {
                 self.auto_fly = false;
-                self.set_capture(true);
+                if self.cursor_locked {
+                    self.cast_beam();
+                } else {
+                    self.set_capture(true);
+                }
             }
             // Pointer lock is lost when focus leaves; reflect that in our state.
             WindowEvent::Focused(false) => self.set_capture(false),
@@ -1280,17 +1532,35 @@ impl ApplicationHandler<AppEvent> for App {
                         self.controller.update(&mut self.camera, dt);
                     }
                     Mode::Walk => {
-                        // The controller still drives the look (and *wants* to free-fly); the
-                        // walker constrains that to a voxel-collided walk (gravity + animated
-                        // auto-step), so you can descend into cave-mouths and along cave floors.
+                        // The controller drives the look + the *wanted* free-fly delta.
                         let prev = self.camera.position;
                         self.controller.update(&mut self.camera, dt);
                         let wanted = self.camera.position;
-                        let seed = self.seed;
-                        self.camera.position =
-                            self.walker.constrain(prev, wanted, dt, |x, y, z| {
-                                worldgen::solid_at(x, y, z, seed)
-                            });
+                        // Riding the survey-beam (G2): if attached to a live beam, the wanted
+                        // movement projected onto the beam axis slides you along the rail (1-DoF,
+                        // any angle). Reaching the far end detaches; expiry drops you (gravity).
+                        let riding = self
+                            .ride_t
+                            .zip(self.beam)
+                            .filter(|(_, b)| !b.dead(self.time));
+                        if let Some((t, b)) = riding {
+                            let seg = b.b - b.a;
+                            let len = seg.length().max(1e-3);
+                            let along = (wanted - prev).dot(seg / len) / len;
+                            let nt = (t + along).clamp(0.0, 1.0);
+                            self.camera.position = b.a.lerp(b.b, nt);
+                            self.ride_t = (nt < 1.0).then_some(nt); // arrive → detach
+                        } else {
+                            // Not riding (no beam / expired): a voxel-collided walk (gravity +
+                            // animated auto-step) — so you can descend into cave-mouths, and you
+                            // *drop* when the rail fades out from under you.
+                            self.ride_t = None;
+                            let seed = self.seed;
+                            self.camera.position =
+                                self.walker.constrain(prev, wanted, dt, |x, y, z| {
+                                    worldgen::solid_at(x, y, z, seed)
+                                });
+                        }
                     }
                 }
                 // While piloting, the cruiser is wherever you are (you're in it).
@@ -1369,12 +1639,26 @@ impl ApplicationHandler<AppEvent> for App {
                 // The current share string for "copy link" (computed before the mutable
                 // `state` borrow below; cheap, refreshed every frame).
                 #[cfg(target_arch = "wasm32")]
-                let share_str = self.current_share().encode();
+                let share_str = self.share_string();
 
                 // Explored-map prep (E10): rebuild the GPU image only when the explored set grew.
                 // `build_map_image` borrows `&self`, so it must run before the mutable `state`
                 // borrow below; the upload + uniform are pushed inside the state block.
                 self.map_anim += dt;
+                // G2 beam clock + expiry, G3 auto-scan, then build this frame's overlay verts
+                // (warm beam ribbon + cool scan flicks) before the mutable `state` borrow below.
+                self.time += dt;
+                if self.beam.is_some_and(|b| b.dead(self.time)) {
+                    self.beam = None;
+                }
+                self.autoscan(dt);
+                let mut overlay_verts = self
+                    .beam
+                    .map(|b| b.ribbon(self.camera.position, self.time))
+                    .unwrap_or_default();
+                for f in &self.flicks {
+                    overlay_verts.extend(f.ribbon(self.camera.position, self.time));
+                }
                 let map_upload = (self.map_view && self.map_dirty)
                     .then(|| self.build_map_image())
                     .flatten();
@@ -1458,6 +1742,10 @@ impl ApplicationHandler<AppEvent> for App {
                 let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
                 let cam_up = cam_right.cross(fwd).normalize_or_zero();
 
+                // G1 HUD bits, computed before the mutable `state` borrow below.
+                let strata_line = self.strata_hud();
+                let codex_view = self.codex_open.then(|| self.codex_text());
+
                 if let Some(state) = self.state.as_mut() {
                     let view_proj = self.camera.view_proj(state.aspect());
                     // Push the palette (biome-blended ramp in biome mode, else the manual
@@ -1477,6 +1765,9 @@ impl ApplicationHandler<AppEvent> for App {
                         );
                     }
                     state.set_pixel_scale(self.pixel_scale);
+                    // Survey-beam (G2): feed this frame's ribbon to the engine's post-palette
+                    // overlay (empty when no beam is up).
+                    state.set_overlay(&overlay_verts);
                     // Explored-map overlay (E10): upload a fresh image if it grew, push the
                     // pan/zoom/you-are-here uniform, and flag it on/off for the render pass.
                     if let Some((w, h, _, _, rgba)) = &map_upload {
@@ -1566,23 +1857,26 @@ impl ApplicationHandler<AppEvent> for App {
                         let mode = match self.mode {
                             Mode::Pilot if self.auto_fly => " · cruiser:auto [E exit when low]",
                             Mode::Pilot => " · cruiser:manual [E exit when low]",
-                            Mode::Walk => " · walking [E enter near ship]",
+                            Mode::Walk if self.ride_t.is_some() => " · riding the beam",
+                            Mode::Walk => " · walking [E enter · click: survey-beam]",
                         };
                         // When the map is open, the HUD becomes its key + coordinates (crosshair
                         // centre + your position), instead of the perf line.
-                        let hud = if self.map_view {
+                        let hud = if let Some(codex) = &codex_view {
+                            codex.clone()
+                        } else if self.map_view {
                             let nch = world::Section::SIZE as f32;
                             let (px, pz) =
                                 (self.camera.position.x as i32, self.camera.position.z as i32);
                             let (vx, vz) =
                                 ((self.map_pan.0 * nch) as i32, (self.map_pan.1 * nch) as i32);
                             format!(
-                                "MAP  seed {}\nyou x{px} z{pz}   +crosshair x{vx} z{vz}\nkey: yellow=you  cyan dot=text  violet diamond=pristine  orange=cruiser\n[stick / arrows] pan    [X / N] close",
+                                "MAP  seed {}\nyou x{px} z{pz}   +crosshair x{vx} z{vz}\nkey: yellow=you  amber ring=scanned (go collect)  cyan dot=text  violet=pristine  orange=cruiser\n[stick / arrows] pan    [X / N] close",
                                 self.seed,
                             )
                         } else {
                             format!(
-                                "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{mode}{off}",
+                                "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{mode}{off}\n{}",
                                 self.frame_ms_ema,
                                 self.seed,
                                 s.drawn_chunks,
@@ -1591,6 +1885,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 s.particles,
                                 s.splats,
                                 s.relics,
+                                strata_line,
                             )
                         };
                         // In-engine text overlay on every platform (no DOM HUD).
@@ -1772,6 +2067,16 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         creatures: creatures::Swarm::new(view.seed ^ 0xE15_E15, 12, pos, 80.0),
         text_cells: std::collections::HashSet::new(),
         audio_prev_pos: None,
+        // Restore collected strata + codex from the same share source as the view (G1).
+        progress: initial_progress(),
+        collectible: Vec::new(),
+        codex_open: false,
+        beam: None,
+        ride_t: None,
+        scan_timer: 0.0,
+        flicks: Vec::new(),
+        map_scanned: std::collections::HashSet::new(),
+        time: 0.0,
         biome_mode: true, // the new default mode
         biome_label: String::new(),
         map: std::collections::HashMap::new(),
@@ -1833,6 +2138,27 @@ fn initial_view(default: share::ShareState) -> share::ShareState {
         .and_then(|w| w.location().hash().ok())
         .and_then(|h| share::ShareState::decode(&h, default))
         .unwrap_or(default)
+}
+
+/// Restore collected progress (strata + codex) from the same share source as the view (G1):
+/// the native `--share <blob>` arg, or the web URL hash. Absent/garbled → empty progress.
+#[cfg(not(target_arch = "wasm32"))]
+fn initial_progress() -> progress::Progress {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter()
+        .position(|a| a == "--share")
+        .and_then(|i| args.get(i + 1))
+        .map(|blob| progress::Progress::decode(blob))
+        .unwrap_or_default()
+}
+
+/// Web: restore progress from the URL hash fragment (its own `pg=` key).
+#[cfg(target_arch = "wasm32")]
+fn initial_progress() -> progress::Progress {
+    web_sys::window()
+        .and_then(|w| w.location().hash().ok())
+        .map(|h| progress::Progress::decode(&h))
+        .unwrap_or_default()
 }
 
 /// Seed for the world (the default + the headless demo).

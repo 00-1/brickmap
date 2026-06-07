@@ -144,13 +144,14 @@ blank console. No tutorial wall; the example *is* the teacher.
 
 ## 10. Build implications
 
-- **The block runtime is foundational, introduced early and minimally**, then grown — *not*
-  a late "tree" feature. Even early manual collection is "clicking the `collect` block."
+- **The block runtime is foundational** — but **G1–G3 shipped before it was settled** (as
+  direct keybind features), so it's **retrofitted at G4**
+  ([`milestones/G4-block-substrate.md`](milestones/G4-block-substrate.md)): re-express
+  collect/scan/beam/nav as **blocks** + the console + the given routines, no behaviour change.
 - This **reframed existing docs**: game-mechanics §6 (auto-collect → a composed routine),
-  §8 (the tree → the block vocabulary), and the **G-series**, now **re-sliced
-  substrate-first** — a minimal block runtime + console lands in **G1**
-  ([`milestones/G1-console-economy.md`](milestones/G1-console-economy.md)); scan/collect/beam
-  are *blocks*; the composition editor is **G3**. See game-mechanics §13 / roadmap G-series.
+  §8 (the tree → the block vocabulary), and the **G-series** — the **composition editor is
+  G5**, the block-vocabulary "tree" is **G6** (it supersedes the old conventional-tree G4).
+  See game-mechanics §13 / roadmap G-series.
 
 ## 11. Starter set & unlock tiers (first cut)
 

@@ -543,36 +543,67 @@ Briefs are fleshed just before each rung, as usual.
 > automation are **one block substrate** (the "tech tree" reframed). Blocks *are* the
 > interface — visible, clickable to trigger, wireable to automate — fully transparent, no
 > typing (controller/phone-first). It's the **manual→automatable ladder** that *is* the
-> three modes; it spans **two independently-running agents** (ship + walker, with a *hail*);
-> and it's **foundational infra introduced early & minimally, then grown** — not a late
-> feature. The G-series below is **re-sliced substrate-first** to match (full plan:
-> [`game-mechanics.md`](game-mechanics.md) §13).
+> three modes; it spans **two independently-running agents** (ship + walker, with a *hail*).
+> **Reconciliation note:** G1–G3 were built (below) *before* this architecture was settled —
+> as direct keybind features, **not** blocks. So the substrate is **retrofitted at G4**, and
+> the old "G4 — first tech tree" (a conventional spend-on-nodes menu) is **superseded** — its
+> goals (in-engine menu, decipherment-legibility, auto-collect) survive, reframed as the
+> console + composed routines + comprehension unlocks. Full plan: [`game-mechanics.md`](game-mechanics.md) §13.
 
-### ✨ G1 — Console & the economy spine ⏳ &nbsp;→ [`milestones/G1-console-economy.md`](milestones/G1-console-economy.md)
-A *minimal* block runtime + console (blocks visible, **clickable to trigger**, one given
-pre-wired `on-scan → collect` routine + the given `drift` autopilot), plus the economy:
-collecting → five **strata**, finds → the **codex**, progress = seed + sparse log. *No
-editor yet.* *Proves the substrate + the core collecting sensation together.*
+### ✨ G1 — Data, strata & the codex ✅ &nbsp;→ [`milestones/G1-data-strata-codex.md`](milestones/G1-data-strata-codex.md)
+The economy spine: glyphs collect into five typed strata + a codex; progress = seed + a
+sparse log (extends `share`). No engine changes. *Proves the core collecting sensation.*
+- **Landed:** `progress` module (strata/codex/`Event`+`apply`, all unit-tested); aim-and-**`T`**
+  collect picks the nearest in-reach inscription to the view ray; strata readout on the HUD +
+  a **`J`** codex list; progress round-trips through a versioned `pg=` share segment (restored
+  on load). Golden voxel-hash + headless render untouched (pure game logic). 124 tests green.
+- *(Built pre-substrate — collect is a keybind, not yet a block; the G4 retrofit wraps it.)*
 
-### ✨ G2 — The survey-beam ⏳ &nbsp;→ [`milestones/G2-survey-beam.md`](milestones/G2-survey-beam.md)
-The foot action-block `fire-beam`: a vivid cast→persist→fade beam that collects-along-path
-and is a rideable rail (+ board/hail). Needs one new **engine capability** — a post-palette,
-depth-aware emissive overlay in `bm-render` (flagged in M9). *De-risks that + fixes "you get
-stuck on foot."*
+### ✨ G2 — The survey-beam ✅ &nbsp;→ [`milestones/G2-survey-beam.md`](milestones/G2-survey-beam.md)
+The signature manual verb: a vivid cast→persist→fade beam that collects-along-path and is a
+rideable rail (+ boards the cruiser). Needs one new **engine capability** — a post-palette,
+depth-aware emissive overlay in `bm-render` (the capability flagged in M9). *De-risks that
+capability + fixes "you get stuck on foot."*
+- **Landed:** `bm-render::overlay` (generic post-palette, depth-aware, non-palettised overlay
+  with its own glow — depth retained only when active) + `scraped-again::beam` (left-click cast,
+  eased fade, collect-along-path into G1, 1-DoF ride rail with drop-on-expire + mid-fall re-cast,
+  reach-gated lock-on cruiser board). Headless A/B (opt-in `SCRAPED_BEAM`) proves vivid-over-
+  palette + terrain-occluded. Crate boundary intact; 129 tests green; golden voxel-hash unchanged.
 
-### ✨ G3 — Composition & the map ⏳
-The **wiring editor** (author your own routines) + the generic `match` filter + nav
-`seek`/`circle` + **`scan` populating the map** (opportunity surface + map-as-picker). *The
-management game: selective auto-collect + routing you build.*
+### ✨ G3 — Cruiser auto-scan & the map opportunity surface ✅ &nbsp;→ [`milestones/G3-cruiser-scan-map.md`](milestones/G3-cruiser-scan-map.md)
+The autopilot/idle half: the cruiser auto-scans what it drifts past (a cool scan beam) and the
+explored map fills with **scanned-but-uncollected** pins you triage. Reuses G2's overlay (cool
+vs warm) + the G1 find model + the E10 map; fixed basic scan (tech gating is G6). *Proves the
+idle scan→map→triage loop before the tree sits on it.*
+- **Landed:** `scan` module (forward-cone predicate + cool `Flick`, unit-tested); `autoscan`
+  pulses while piloting → marks sites known + spawns flicks; the map gains an **amber-ring**
+  opportunity marker (alpha-code 200) cleared on collect; HUD "known/found"; the scanned set
+  saves/restores in the `pg=` payload (v2). 133 tests green; golden voxel-hash unchanged.
 
-### ✨ G4 — Control, budgets & the growing vocabulary (the "tree") ⏳
-`when`/`repeat`/`budget`/`priority`/`survey`/`route` + `decode` + the comprehension-gated
-**unlock economy** (strata → blocks). *The deep idle/management depth.*
+### ✨ G4 — Block substrate & console (the retrofit) ⏳ &nbsp;→ [`milestones/G4-block-substrate.md`](milestones/G4-block-substrate.md)
+**The missing foundation**, retrofitted onto the built G1–G3: re-express today's keybind
+actions (`collect`, `scan`, `fire-beam`, nav) as **visible, clickable blocks**; a minimal
+runtime that runs the **given routines** (`scan(shards) → on-scan → collect`, `drift`); and the
+**console UI** (E17 text path, no typing). Turns the existing features into the block interface
+*without* changing what they do. *Everything later composes on this.* **Supersedes the
+conventional "first tech tree."**
 
-### ✨ G5+ — Two agents, the expedition & the arc ⏳
-The walking branch + **independent simultaneous agents** + the **hail** + cross-agent meta
-(automate a whole expedition); then decipherment fluency, the late **Concordance/Synthesis**,
-Resonance/pristine, and the co-op shared archive (with N1). Fleshed into briefs when reached.
+### ✨ G5 — Composition editor & parameterised blocks ⏳
+The **wiring editor** (author your own routines) + the generic `match` filter + **parameterised
+blocks** (swap `scan`'s item; unlock fields) + nav `seek`/`circle`. *The management game:
+selective auto-collect + routing you build* (scan→map already shipped in G3).
+
+### ✨ G6 — Control, budgets & the block vocabulary (the "tree") ⏳
+`when`/`repeat`/`budget`/`priority`/`survey`/`route`/`scanMany` + `decode` + the comprehension-
+gated **unlock economy** (strata → blocks) + **Decipherment legibility** (a script renders
+translated). The "tech tree" *as the growing block vocabulary* — the deep idle/management depth;
+carries the superseded G4's auto-collect + legibility goals.
+
+### ✨ G7+ — Two agents, the expedition & the arc ⏳
+The walking branch (Descent/Hull foot-collision interiors) + **independent simultaneous agents**
++ the **hail** + cross-agent meta (automate a whole expedition); then decipherment fluency, the
+late **Concordance/Synthesis** lore arc, the Resonance/pristine branch, and co-op shared archive
+(N1). Fleshed into briefs when reached.
 
 ## Dev tooling & process (D-series)
 

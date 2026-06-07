@@ -352,6 +352,8 @@ pub struct State {
     /// (surface-res) depth buffer. Shown parked while you're on foot.
     ship: crate::ship::ShipRenderer,
     ship_depth: wgpu::TextureView,
+    /// Generic post-palette overlay (G2): vivid, depth-tested lines the game feeds (the beam).
+    overlay: crate::overlay::OverlayRenderer,
     ship_active: bool,
     ship_pos: Vec3,
     ship_yaw: f32,
@@ -645,6 +647,8 @@ impl State {
         let text = crate::text::WorldText::new(&device, config.format, DEPTH_FORMAT, &globals_bgl);
         let map = crate::map::MapView::new(&device, config.format);
         let ship = crate::ship::ShipRenderer::new(&device, config.format, DEPTH_FORMAT);
+        let overlay =
+            crate::overlay::OverlayRenderer::new(&device, config.format, DEPTH_FORMAT, iw, ih);
         // Ship depth is full surface resolution (it draws after the palette upscale).
         let ship_depth = create_depth_view(&device, config.width.max(1), config.height.max(1));
 
@@ -708,6 +712,7 @@ impl State {
             map_active: false,
             ship,
             ship_depth,
+            overlay,
             ship_active: false,
             ship_pos: Vec3::ZERO,
             ship_yaw: 0.0,
@@ -808,6 +813,12 @@ impl State {
         self.ship.set_meshes(&self.device, hull, lights);
     }
 
+    /// Feed this frame's post-palette overlay triangles (G2) — the game's survey-beam ribbons.
+    /// Empty clears it. Generic: the engine draws whatever it's handed, depth-tested + vivid.
+    pub fn set_overlay(&mut self, verts: &[crate::overlay::OverlayVertex]) {
+        self.overlay.set_lines(&self.device, verts);
+    }
+
     /// Space cruiser (E19): whether to draw the parked ship this frame, and where/at what yaw.
     pub fn set_ship(&mut self, active: bool, pos: Vec3, yaw: f32) {
         self.ship_active = active;
@@ -894,6 +905,8 @@ impl State {
         self.palette_bind_group = self
             .palette
             .make_bind_group(&self.device, &self.palette_view);
+        // The G2 overlay draws at internal res (sharing the scene depth), then composites up.
+        self.overlay.resize(&self.device, iw, ih);
         // The ship draws at full surface resolution (after the palette upscale), so its depth
         // buffer tracks the surface size, not the internal one.
         self.ship_depth = create_depth_view(
@@ -1037,6 +1050,8 @@ impl State {
             self.ship
                 .set_transform(&self.queue, view_proj, self.ship_pos, self.ship_yaw);
         }
+        // Whether to retain scene depth this frame for the G2 overlay's occlusion test.
+        let overlay_keep_depth = self.overlay.active() && !self.map_active;
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1056,9 +1071,15 @@ impl State {
                     view: &self.depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        // Nothing reads depth after this single forward pass, so don't pay
-                        // to write it back to memory — free bandwidth on tiled GPUs (M8).
-                        store: wgpu::StoreOp::Discard,
+                        // Normally nothing reads depth after this single forward pass, so don't
+                        // pay to store it (free bandwidth on tiled GPUs, M8). But when a
+                        // post-palette overlay is active (G2), keep it so the overlay can
+                        // depth-test against the terrain.
+                        store: if overlay_keep_depth {
+                            wgpu::StoreOp::Store
+                        } else {
+                            wgpu::StoreOp::Discard
+                        },
                     }),
                     stencil_ops: None,
                 }),
@@ -1221,6 +1242,14 @@ impl State {
             }
         }
 
+        // Post-palette overlay (G2), part 1: draw the game's vivid overlay lines into the
+        // overlay buffer, depth-tested against the scene depth we just retained (so terrain in
+        // front occludes them). Composited over the finished frame after the palette, below.
+        if self.overlay.active() && !self.map_active {
+            self.overlay.set_view_proj(&self.queue, view_proj);
+            self.overlay.draw(&mut encoder, &self.depth_view);
+        }
+
         // Post chain (all at the internal resolution): bloom composites scene + glow into the
         // internal `palette_view`, then the palette pass *presents* it to the surface — it
         // palettises (when on) and always upscales by the pixel scale with nearest sampling.
@@ -1242,6 +1271,12 @@ impl State {
         }
         self.palette
             .render(&mut encoder, &self.palette_bind_group, &view);
+
+        // Post-palette overlay (G2), part 2: composite the overlay buffer additively over the
+        // finished frame — vivid, un-palettised, with its own cheap glow.
+        if self.overlay.active() && !self.map_active {
+            self.overlay.composite(&mut encoder, &view);
+        }
 
         // Space cruiser (E19): the lit hull was drawn *into* the scene (palettised + depth-
         // tested against terrain); now draw just the nav-lights over the finished frame so
