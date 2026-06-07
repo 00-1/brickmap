@@ -387,8 +387,9 @@ impl Drone {
             if self.choir_swell >= 1.0 {
                 self.choir_swell -= 1.0;
             }
-            let swell = 0.6 + 0.4 * (self.choir_swell * TAU).sin();
-            let cg = eth * 0.17 * swell;
+            let swell = 0.7 + 0.3 * (self.choir_swell * TAU).sin();
+            // Loud — matches the dirge it replaces (the doom is pulled back above, leaving room).
+            let cg = eth * 0.6 * swell;
             fl += cl * cg;
             fr += cr * cg;
         }

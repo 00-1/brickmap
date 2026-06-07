@@ -260,8 +260,9 @@ const BIG_SCALE: f32 = 1.0 / 12000.0;
 const FINE_SCALE: f32 = 1.0 / 650.0;
 /// Scale over which the *amount* of fine banding varies (narrow-here, vast-there).
 const BAND_SCALE: f32 = 1.0 / 5000.0;
-/// Scale of the rare ethereal-variant field (smaller → scattered pockets within biomes).
-const VARIANT_SCALE: f32 = 1.0 / 420.0;
+/// Scale of the rare ethereal-variant field. Low frequency → pockets can be **very large**
+/// (up to ~a couple thousand blocks across); paired with a high threshold so they're rare.
+const VARIANT_SCALE: f32 = 1.0 / 2000.0;
 
 /// The two biomes and blend fraction at a world `(x, z)`. `frac` is the weight of the *second*.
 pub fn field(x: f32, z: f32, seed: u32) -> (usize, usize, f32) {
@@ -282,8 +283,9 @@ pub fn field(x: f32, z: f32, seed: u32) -> (usize, usize, f32) {
 /// turns ethereal. `smoothstep` gives soft pocket edges (a smooth transition, not a hard switch).
 pub fn variant(x: f32, z: f32, seed: u32) -> f32 {
     let v = fbm(x * VARIANT_SCALE, z * VARIANT_SCALE, seed ^ 0xE7E7_0001);
-    // Only the top sliver of the field becomes ethereal → rare.
-    let t = ((v - 0.80) / 0.10).clamp(0.0, 1.0);
+    // Only the very top of the field becomes ethereal → rare (the large low-freq pockets are
+    // easy to find once you do, so they're scarce).
+    let t = ((v - 0.86) / 0.07).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
