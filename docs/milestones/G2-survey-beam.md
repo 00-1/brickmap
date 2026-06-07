@@ -1,10 +1,11 @@
 # G2 — The survey-beam (the active verb + the engine capability it needs)
 
-> **Status: ready to build, after [G1](G1-data-strata-codex.md).** The signature manual
-> verb of **Scraped Again** ([`../game-mechanics.md`](../game-mechanics.md) §6), and the
-> one slice that needs a **new engine capability** — so it also de-risks the post-palette
-> overlay flagged in [`M9-engine-game-split.md`](M9-engine-game-split.md). Split across
-> `bm-render` (the capability) and `scraped-again` (the beam itself).
+> **Status: ready to build, after [G1](G1-console-economy.md).** The signature manual
+> verb of **Scraped Again** ([`../game-mechanics.md`](../game-mechanics.md) §6) — added as
+> the foot **action-block `fire-beam`** in G1's runtime ([`../game-system.md`](../game-system.md),
+> Tier 0) — and the one slice that needs a **new engine capability**, so it also de-risks
+> the post-palette overlay flagged in [`M9-engine-game-split.md`](M9-engine-game-split.md).
+> Split across `bm-render` (the capability) and `scraped-again` (the beam itself).
 
 ## Goal · Demonstrable outcome · What it de-risks
 

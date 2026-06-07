@@ -545,24 +545,34 @@ Briefs are fleshed just before each rung, as usual.
 > typing (controller/phone-first). It's the **manual→automatable ladder** that *is* the
 > three modes; it spans **two independently-running agents** (ship + walker, with a *hail*);
 > and it's **foundational infra introduced early & minimally, then grown** — not a late
-> feature. This reframes the G-series ordering below (a minimal block runtime lands with the
-> first slices; scan/collect/beam are *blocks*); a detailed re-slice is a follow-up.
+> feature. The G-series below is **re-sliced substrate-first** to match (full plan:
+> [`game-mechanics.md`](game-mechanics.md) §13).
 
-### ✨ G1 — Data, strata & the codex ⏳ &nbsp;→ [`milestones/G1-data-strata-codex.md`](milestones/G1-data-strata-codex.md)
-The economy spine: glyphs collect into five typed strata + a codex; progress = seed + a
-sparse log (extends `share`). No engine changes. *Proves the core collecting sensation.*
+### ✨ G1 — Console & the economy spine ⏳ &nbsp;→ [`milestones/G1-console-economy.md`](milestones/G1-console-economy.md)
+A *minimal* block runtime + console (blocks visible, **clickable to trigger**, one given
+pre-wired `on-scan → collect` routine + the given `drift` autopilot), plus the economy:
+collecting → five **strata**, finds → the **codex**, progress = seed + sparse log. *No
+editor yet.* *Proves the substrate + the core collecting sensation together.*
 
 ### ✨ G2 — The survey-beam ⏳ &nbsp;→ [`milestones/G2-survey-beam.md`](milestones/G2-survey-beam.md)
-The signature manual verb: a vivid cast→persist→fade beam that collects-along-path and is a
-rideable rail (+ boards the cruiser). Needs one new **engine capability** — a post-palette,
-depth-aware emissive overlay in `bm-render` (the capability flagged in M9). *De-risks that
-capability + fixes "you get stuck on foot."*
+The foot action-block `fire-beam`: a vivid cast→persist→fade beam that collects-along-path
+and is a rideable rail (+ board/hail). Needs one new **engine capability** — a post-palette,
+depth-aware emissive overlay in `bm-render` (flagged in M9). *De-risks that + fixes "you get
+stuck on foot."*
 
-### ✨ G3+ — scan/map, the tree, depth ⏳
-Sketched in [`game-mechanics.md`](game-mechanics.md) §13 (cruiser auto-scan → map
-opportunity surface; the first tech tree + in-engine menu on the E17 text path +
-auto-collect; then flight/walking branches and the late Concordance/Synthesis lore arc).
-Fleshed into briefs when we reach them.
+### ✨ G3 — Composition & the map ⏳
+The **wiring editor** (author your own routines) + the generic `match` filter + nav
+`seek`/`circle` + **`scan` populating the map** (opportunity surface + map-as-picker). *The
+management game: selective auto-collect + routing you build.*
+
+### ✨ G4 — Control, budgets & the growing vocabulary (the "tree") ⏳
+`when`/`repeat`/`budget`/`priority`/`survey`/`route` + `decode` + the comprehension-gated
+**unlock economy** (strata → blocks). *The deep idle/management depth.*
+
+### ✨ G5+ — Two agents, the expedition & the arc ⏳
+The walking branch + **independent simultaneous agents** + the **hail** + cross-agent meta
+(automate a whole expedition); then decipherment fluency, the late **Concordance/Synthesis**,
+Resonance/pristine, and the co-op shared archive (with N1). Fleshed into briefs when reached.
 
 ## Dev tooling & process (D-series)
 
