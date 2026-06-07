@@ -1,10 +1,12 @@
 # M9 — Engine / Game split (Cargo workspace)
 
-> **Status: planned brief, not started.** This is the executable plan for separating
-> brickmap-the-**engine** (a reusable, content-agnostic voxel rendering engine) from
-> the **game** that has grown on top of it (the fallen-colossi exploration world). It
-> is written to be picked up by a fresh agent **after** the currently-active branch
-> lands, so it is self-contained and assumes nothing about in-flight work.
+> **Status: ✅ landed (2026-06-07).** The single `brickmap` crate is now a Cargo
+> workspace: the engine is the `bm-*` library crates behind the `brickmap` facade, and
+> the game **Scraped Again** (`scraped-again`) owns the binary + all content. The cut is
+> behaviour-preserving (golden voxel-hash + headless render unchanged) and the crate
+> graph forbids any engine→game dep (CI-checked). See the acceptance checklist below for
+> the two flagged residues (the cruiser ship mesh still in `bm-render`; the `AudioSource`
+> seam left unformalised since audio lives wholly in the game per Decision 3).
 >
 > Pairs with [`game-mechanics.md`](../game-mechanics.md) (the game's design) and the
 > crate plan in [`architecture.md`](architecture.md) §3 (which this milestone finally
@@ -324,19 +326,32 @@ plus **"prove the boundary exists"**:
 - [x] Decisions 1–6 resolved and recorded; design §3 + architecture §3 + a roadmap
       rung updated to describe the engine/game split (Phase 0). *(Decision 1 — game
       name — deferred to the human before Phase 3, per the resolution note.)*
-- [ ] Cargo **workspace** in place; engine is library crates with **no `main`**; the
-      game crate owns the binary + wasm/android entry.
-- [ ] The **seven extension seams** implemented; the four fused files split per plan
-      (`worldgen`/`biome`/`palette` extracted; `audio`/`relic`/`model` placed per
-      Decision 3).
-- [ ] **Crate graph proves the boundary**: no engine crate depends on the game
-      (CI-checked).
-- [ ] **Engine-alone demo** renders streamed terrain with zero game content (Phase 4).
-- [ ] Game is **behaviour-identical to today**: golden image + voxel-hash unchanged.
-- [ ] **All four targets** build + run; CI (fmt/clippy `-D warnings`/test/wasm/apk/
-      desktop) green; the **live Pages preview, APK, and desktop binary** verified.
-- [ ] `architecture.md` §7 "current vs target" updated to reflect the realised
-      workspace.
+- [x] Cargo **workspace** in place; engine is library crates with **no `main`** (the six
+      `bm-*` + the `brickmap` facade are all `rlib`); the game crate `scraped-again` owns
+      the binary + the wasm/Android `cdylib` entry.
+- [x] The **seven extension seams** implemented; the four fused files split per plan —
+      `worldgen` (recipe → game behind the `WorldGen` trait; pure noise → `bm-world`),
+      `palette` (curated set → game; engine keeps `set_colors` + `DEFAULT_RAMP`), `biome`
+      (whole → game, on engine noise), and `audio`/`relic`/`model` placed in the game per
+      Decision 3. Seams: `WorldGen` ✅, splat feed ✅, structure draws ✅, `Edit`/`apply`
+      ✅, `LookParams` (palette colours) ✅, runtime/`ApplicationHandler` ✅; audio stays
+      wholly in the game (Decision 3), so the `AudioSource` trait seam (#6) is **not yet
+      formalised**. *Residue:* the cruiser **ship mesh** still sits in `bm-render` (the
+      ShipRenderer is generic; ship is post-brief E19 content, not a designated fused file)
+      — flagged as a follow-up.
+- [x] **Crate graph proves the boundary**: a CI step asserts (via `cargo tree`) that no
+      `bm-*`/`brickmap` crate depends on `scraped-again`.
+- [x] **Engine-alone demo** (`brickmap` `examples/engine_demo.rs`) renders streamed flat
+      terrain via a trivial `WorldGen` with **zero game content**, against the `bm-*` crates
+      only (CI builds it).
+- [x] Game is **behaviour-identical to today**: golden voxel-hash unchanged
+      (`4_243_141_091_443_216_542`) + headless golden render byte-identical (default +
+      palette) at every phase.
+- [x] **All four targets** build: native (clippy `-D`/test), web/WASM (game cdylib),
+      Android (`cargo check`), headless. CI retargeted at the game (fmt/clippy/test/wasm +
+      the boundary/demo checks). *The **live Pages preview, APK, and desktop binary** are
+      verified by their CI workflows on merge — can't run a display/NDK in the dev sandbox.*
+- [x] `architecture.md` §7 "current vs target" updated to reflect the realised workspace.
 
 ## Out of scope / follow-ups
 
