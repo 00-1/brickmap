@@ -31,6 +31,12 @@ hardware**, which overlaps the hardware-gated **M8(b)** profiling — the win ca
 here. The algorithm (the hard, testable part) is in place; gate any wiring default-off so the
 golden render stays valid.
 
+> **Decision (babysitter-confirmed, 2026-06-08):** bundle the far-LOD **wiring** with **M8b**, when
+> the reference iGPU/phone is available to tune the crossfade **and measure the perf win**.
+> `decimate_surface` is the tested, shelved core. (This is the *exception* to "wire it, don't leave
+> a dead function" — which still holds for here-verifiable features like E11's water; M7's only
+> payoff is unmeasurable-here perf.)
+
 ## Acceptance (this slice)
 - [x] `decimate_surface` — pure, deterministic, stride-scaled, unit-tested; engine-generic
       (`bm-render`, no game dep). clippy `-D` / tests / wasm + golden hash green.
