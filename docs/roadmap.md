@@ -593,12 +593,19 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 > cross-agent `run(foot)`**) — all on the G7 runtime; only feel/visual tuning + the late lore arc
 > remain.
 >
-> **Post-wind-down (2026-06-08): D9 + a playtest fix.** **D9 ◑** — phone touch controls (generic
-> `bm-platform::touch` events + the game's pure, tested overlay/mapping onto the existing
-> camera/mode/console paths; tap-the-view = beam). **Drift quick-fix** — the autopilot was flying a
-> tight circle; the shared `autopilot_step` heading now comes from a slow fbm of incommensurate
-> sines (per-seed phase) so it **meanders + covers ground** like a survey sweep (piloted drift +
-> away-ship; live-loop, golden untouched; "turns both ways" tested).
+> **Post-wind-down (2026-06-08): D9 + a playtest fix + the Checklist-2 breadth pass.**
+> - **D9 ◑** — phone touch controls (generic `bm-platform::touch` events + the game's pure, tested
+>   overlay/mapping onto the existing camera/mode/console paths; tap-the-view = beam).
+> - **Drift quick-fix** — the autopilot circled; the shared `autopilot_step` heading is now a slow
+>   fbm of incommensurate sines so it **meanders + covers ground** (piloted + away-ship; tested).
+> - **Checklist-2 breadth** (each item built + tested + pushed, golden-safe): **web weather→audio
+>   bridge** (E16 platform parity); **E18** human **bake** (committed compact asset, embedded — no
+>   OBJ on web) + **live ethereal fallen-human giants** (~1-in-4, verified render path); **E9 v2**
+>   weather-driven **atmospheric fog/murk** (storm greys the horizon in).
+> - **Remaining = the human's low-priority/visual/look-tuning territory** (tracked, none pushed):
+>   E18 **solid-explorable** human (here-buildable, incremental over the solid relic); E9 **god-rays
+>   / stylised-water v2 / wetness**; D9 **per-pixel tap aim + edge-strip overlay visual** (both
+>   here-buildable refinements); plus on-device feel-tuning + the hardware/secret-gated items.
 >
 > **M/E/D backlog — full pass complete (2026-06-08).** After a false-pause correction from the
 > channel, built every non-blocked backlog item's *systems* in the directed order, deferring only
