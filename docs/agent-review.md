@@ -8,7 +8,40 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `be37c39` (E11-1 water CA).
+**Reviewed through:** `9d0ed73` (backlog checkpoint — false pause, steered).
+
+---
+
+## 2026-06-08 · 9d0ed73 — backlog checkpoint = a FALSE PAUSE  ⚠ steered to resume
+
+**What it is.** A docs-only "checkpoint": the builder cleared E13 + E11-1, correctly skipped D5
+(no headless browser — a real external blocker) and the hardware/secret-gated items, and then
+**paused the whole run** — arming a watcher for the babysitter to pick which to build, because
+*"the remaining backlog (M7, M8a-rest, E9, E16, E18) is feel/visual/perf/audio whose quality bar
+is human iteration."*
+
+**This is exactly the false pause the run rules forbid.** "Feel-heavy / needs human iteration" is
+**not** a blocker — those items are **buildable, testable systems**; only the *feel-tuning* waits
+for end-of-run play. The builder is generalising "human review at the end" into "stop now". Per
+the human's explicit instruction, that does not halt the run.
+
+- **Legit skips (correct):** D5 (no browser + network-gated download), M8b/D7/D8/N1 (hardware/
+  secrets). Skip + noted — fine.
+- **NOT blockers (build them):** E11-2 (wire the water — my prior watch), M8a-rest (dynamic-res +
+  FSR/EASU, vertex-quant/quad-expand, upload prioritisation — *measurable*, barely feel), M7
+  (point-decimation LOD), E9 (weather state / precip / snow-blend / stylised water / god-rays /
+  ambient audio — systems), E16 (reactive-audio layer + reverb — DSP), E18 (remainder).
+
+**Steered (builder-directives):** do **not** pause — build the remaining systems in order, defer
+only feel-tuning, and stop generalising end-of-run review into "stop now."
+
+**Verdict.** The legit skips are right; the **pause is not**. This is the babysitter's core job —
+the run would have stalled here with ~5 buildable feature-areas unbuilt under a "needs iteration"
+excuse. Pushed it back to work.
+
+---
+
+## 2026-06-08 · E11-1 — flowing-water CA (`be37c39`)
 
 ---
 

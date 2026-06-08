@@ -51,6 +51,31 @@ risks; resist both.
   auto-collect reach fixed, parity held. (See `agent-review.md`.) Good work — **keep this
   momentum; do not pause for review.**
 
+### ⚠ STEER (2026-06-08, after backlog checkpoint) — DON'T PAUSE; build the backlog systems
+
+You paused the run, saying the rest (M7, M8a-rest, E9, E16, E18) is "feel/visual/perf/audio whose
+quality bar is human iteration," and asked which to build. **That's a false pause — resume now.**
+"Feel-heavy / needs human iteration" is **NOT** a blocker: these are **buildable, testable
+systems**; only the *feel-tuning* waits for end-of-run play. Build them. Don't stop to ask which —
+**build them all**, in this order, deferring only feel:
+
+1. **E11-2 — wire the water CA into the live world** (finish E11): active-set seeding + re-mesh
+   budget; handle the golden-hash determinism (gate live flow so the static golden world/voxel-hash
+   stay valid, or version it). Water should actually flow in-game, not just in a unit test.
+2. **M8a (rest) — perf systems** (dynamic resolution + FSR1/EASU upscale; further vertex quant +
+   quad-expansion; upload prioritisation/coalescing). *Measurable on the HUD — barely feel-gated.*
+3. **M7 — point-decimation LOD** (the deferred perf half: decimate distant chunks to real point
+   sets). System now; tune distances by eye later.
+4. **E9 — weather/water/sound**: the global weather state + precip particles + snow/wetness blend +
+   stylised water + god-rays + procedural ambient audio. Build the *systems*; tune feel later.
+5. **E16 — reactive-audio layer**: biome/weather→param mapping, a voice cap, one FDN reverb. DSP
+   systems — testable (finite/bounded), tune the *sound* later.
+6. **E18 — remainder** (solid/explorable colossi follow-ups).
+
+**Only D5 + M8b/D7/D8/N1 are real skips** (browser/hardware/secrets — noted, fine). **Do NOT pause
+again** because something is "feel-heavy" — build the system, record the tuning note, keep going.
+Only stop when all of the above are built or you hit a *real* external blocker.
+
 ### ✅ G8 systems-complete (2026-06-08)
 
 G8a/G8b/G8c-1/G8c-2a/**G8c-2b** all ✅ — the automated expedition (cross-agent `run(foot)`,
@@ -80,3 +105,7 @@ are **not** stopping points. Human review is end-of-run. Chain straight into the
 - **2026-06-08** — G8a/G8b/G8c-1 ✅. **Steer:** don't defer G8c-2 (the expedition systems) to
   "end-of-run play-iteration" — build them now (testable), tune feel later. Build before the
   M/E/D backlog.
+- **2026-06-08** — G8 systems-complete ✅ (expedition + away-walker landed; steer resolved).
+- **2026-06-08** — E13 ✅ (photo v1), E11-1 ✅ (water CA). Then the builder **paused** ("rest is
+  feel-heavy"). **Steer: false pause — resume; build E11-2 → M8a-rest → M7 → E9 → E16 → E18,
+  defer only feel; don't pause for "needs human iteration" again.**
