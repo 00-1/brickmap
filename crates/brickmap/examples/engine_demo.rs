@@ -109,6 +109,7 @@ impl ApplicationHandler for Demo {
                     Toggles::default(),
                     1.0,
                     0.0,
+                    0.0, // murk (E9): clear air in the engine demo
                 );
                 if let Some(w) = self.window.as_ref() {
                     w.request_redraw();

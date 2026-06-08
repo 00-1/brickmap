@@ -2675,6 +2675,7 @@ impl ApplicationHandler<AppEvent> for App {
                         self.toggles,
                         sun_amt,
                         ink_amt,
+                        weather_amt, // E9: precipitation greys the horizon in (murk)
                     );
 
                     // Perf HUD (M5): smooth the frame time, refresh a few times/sec.

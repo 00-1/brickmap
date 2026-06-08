@@ -951,13 +951,18 @@ impl State {
         // "Ink" blueprint-grid amount 0..1 (0/1 from the toggle in manual mode; a smooth biome
         // ethereal-pocket fade in biome mode). Carried in fog_color.w.
         ink: f32,
+        // Atmospheric **murk** 0..1 (E9): pulls the fog band inward so the world greys out closer
+        // in (the game drives this from weather/precipitation). 0 = the default clear-air band.
+        murk: f32,
     ) {
         let time = self.start.elapsed().as_secs_f32();
         // Particles off → draw none (the system keeps simulating; cheap).
         let particles: &[ParticleInstance] = if toggles.particles { particles } else { &[] };
-        // Fog off → push the band out past anything visible.
+        // Fog off → push the band out past anything visible. On: **murk** (E9, weather-driven)
+        // pulls the band inward so a storm closes the horizon in (murk 0 = the default band).
         let (fog_start, fog_end) = if toggles.fog {
-            (FOG_START, FOG_END)
+            let m = murk.clamp(0.0, 1.0);
+            (FOG_START * (1.0 - m * 0.5), FOG_END * (1.0 - m * 0.45))
         } else {
             (1.0e9, 1.0e9 + 1.0)
         };

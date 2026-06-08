@@ -255,8 +255,13 @@ its own brief.
 - **Landed (v1):** a seeded global **weather** state machine (`weather::Weather` — `Clear →
   Building → Precip → Clearing`, jittered, deterministic, unit-tested) driving **precipitation** —
   rain/snow (by frost biome) spawned through the particle system, scaled by intensity; HUD shows
-  the phase. Live-loop only → the headless/golden render stays dry. **Deferred (visual/audio):**
-  fog/wetness blend, god-rays, stylised-water upgrades, and the weather→drone audio term (→ E16).
+  the phase. Live-loop only → the headless/golden render stays dry.
+- **Landed (v2, weather→atmosphere):** the engine's fog band takes a generic **`murk`** factor
+  (`State::render`); the game drives it from `weather.intensity()`, so a storm **greys the horizon
+  in** (the fog closes from ~176→~97 world units at full precip). Generic engine param (no game
+  concept); `murk 0` = the default clear-air band, so the golden render (dry) is unchanged. The
+  weather→drone **audio** term landed in **E16** (native + web). **Deferred (visual):** wetness
+  sheen, **god-rays** (a volumetric post pass), and stylised-water upgrades — look-tuning.
 From the research (backlog §H): a single **global weather state** (wind + gust + precip +
 sun) driving everything; **screen-space god-rays**; **rain/snow as camera-space
 particles** with **snow/wetness accumulation as a per-column shader blend**; **stylized
