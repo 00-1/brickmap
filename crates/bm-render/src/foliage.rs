@@ -171,6 +171,51 @@ fn plant_tree(out: &mut Vec<SplatInstance>, base: [f32; 3], seed_pt: u32) {
     }
 }
 
+/// A representative flat colour for a surface material, for point-decimation (M7). A small,
+/// deterministic earth palette keyed by `BlockId` (grass / sand / water / rock / default) — the
+/// decimated point cloud reads as the terrain it stands in. Exact hues are tuning.
+fn mat_color(b: BlockId) -> [f32; 3] {
+    match b.0 {
+        3 => [0.22, 0.30, 0.16], // grass
+        4 => [0.52, 0.45, 0.30], // sand
+        7 => [0.12, 0.20, 0.32], // water
+        2 => [0.30, 0.30, 0.33], // stone-ish
+        _ => [0.28, 0.26, 0.24], // default rock/earth
+    }
+}
+
+/// **Point-decimation (M7):** sample `section`'s top surface on a `stride` grid and emit one
+/// billboard splat per sample, coloured by the surface material — a decimated point set standing
+/// in for the chunk's surface, so a far LOD can draw ~`(SIZE/stride)²` points instead of the full
+/// mesh (mesh-near, points-far). Pure + deterministic in `(section, cx, cz, stride)`; the render
+/// path chooses when to use it (paired with the distance dissolve). `stride` is clamped to ≥1.
+pub fn decimate_surface(section: &Section, cx: i32, cz: i32, stride: u32) -> Vec<SplatInstance> {
+    let stride = stride.max(1);
+    let s = Section::SIZE as i32;
+    let mut out = Vec::new();
+    let mut z = 0u32;
+    while z < Section::SIZE {
+        let mut x = 0u32;
+        while x < Section::SIZE {
+            if let Some(ty) = top_solid(section, x, z) {
+                let (wx, wz) = (cx * s + x as i32, cz * s + z as i32);
+                out.push(SplatInstance {
+                    offset: [wx as f32 + 0.5, ty as f32 + 0.5, wz as f32 + 0.5],
+                    // A point covers roughly its stride footprint so the decimated set still
+                    // reads as a continuous surface, not gaps.
+                    size: 0.5 * stride as f32,
+                    color: mat_color(section.get(x, ty, z)),
+                    sway: 0.0, // terrain doesn't sway
+                    alpha: 1.0,
+                });
+            }
+            x += stride;
+        }
+        z += stride;
+    }
+    out
+}
+
 /// Scatter point-cloud **trees** over the grass columns of `section` (E7). Candidate
 /// positions are a jittered grid (so woods look planted, not gridded); `forest` (0..1,
 /// from biome lushness) sets how many candidates actually sprout. Deterministic.
@@ -322,6 +367,30 @@ mod tests {
         let b = scatter(&s, 1, -2, 99, 3);
         assert_eq!(a, b);
         assert!(!a.is_empty());
+    }
+
+    #[test]
+    fn decimate_surface_count_scales_with_stride() {
+        // M7: a full grass floor → one point per stride×stride cell, deterministic, sitting on
+        // the surface (y = top+0.5). Coarser stride → fewer points (≈ 1/stride²).
+        let s = grass_section();
+        let n = Section::SIZE; // 32
+        let one = decimate_surface(&s, 0, 0, 1);
+        assert_eq!(one.len() as u32, n * n, "stride 1 = one point per column");
+        let four = decimate_surface(&s, 0, 0, 4);
+        assert_eq!(four.len() as u32, (n / 4) * (n / 4));
+        assert!(four.len() < one.len());
+        // Deterministic + on the surface (grass at y=2 → centre y=2.5) + grass-coloured.
+        assert_eq!(four, decimate_surface(&s, 0, 0, 4));
+        assert_eq!(four[0].offset[1], 2.5);
+        assert_eq!(four[0].color, mat_color(GRASS));
+        // stride 0 is clamped to 1 (no divide-by-zero / empty).
+        assert_eq!(decimate_surface(&s, 0, 0, 0).len() as u32, n * n);
+    }
+
+    #[test]
+    fn decimate_empty_section_is_empty() {
+        assert!(decimate_surface(&Section::new(), 0, 0, 2).is_empty());
     }
 
     #[test]

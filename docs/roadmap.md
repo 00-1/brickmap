@@ -475,13 +475,18 @@ sidestepping LOD seams, while extending the point-cloud look to the whole world.
   CPU switch) → the transition is smooth *and* causes no rebuild hitch. Tunable via the shader
   consts. A complementary points-fade-in (true cross-fade to the ethereal cloud) is the polish;
   terrain dissolve to points is still the deferred general case below.
-- **Deferred (perf) → a general point-cloud render mode:** decimate distant chunks (and any
-  voxel volume) into actual **point sets** so *primitives* drop with distance — today
-  fragments are discarded but geometry isn't. Points are **sized camera-facing billboards**
-  (any size; true 1px `PointList` points are size-locked in wgpu, so we use billboards),
-  shrinking with distance — cheap when small/far, the killer being overdraw when big/near.
-  This same mode is the **far-LOD substrate for E18 colossal bodies** (mesh-near, points-far)
-  and the home for "clouds of small pixels".
+- **Landed (perf core — point-decimation):** `foliage::decimate_surface` → a chunk's top surface
+  sampled on a `stride` grid into `~(SIZE/stride)²` material-coloured billboard splats — the
+  reusable algorithm a far-LOD draws instead of the mesh (primitives drop with distance). Pure +
+  deterministic + unit-tested; engine-generic. See [`milestones/M7-point-decimation.md`](milestones/M7-point-decimation.md).
+- **Deferred (perf — the render-path integration):** wire `decimate_surface` into a per-chunk
+  point buffer + a **points-fade-in** in the splat shader **paired with `melt`'s mesh dissolve**
+  (points fade in as the mesh stipples out — no near overdraw), suppressing mesh draws past the
+  crossfade for the actual primitive saving. Deferred: it's a shader/feel slice **and** its win is
+  perf on weak hardware (overlaps the hardware-gated M8b). Gate default-off to keep golden valid.
+  This mode is also the **far-LOD substrate for E18 colossal bodies** + the home for "clouds of
+  small pixels". Points are **sized camera-facing billboards** (true 1px `PointList` is size-locked
+  in wgpu) — cheap when small/far, overdraw-bound when big/near.
 
 ### M8 — Hit the budget (perf systems + profiling) 🛠
 Two halves. **(a) Engine perf systems** (doable now, no special hardware; from research
