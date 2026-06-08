@@ -301,11 +301,11 @@ then **pressure water** (compressible-mass; rendered as a separate vertex-displa
 (explode→carve→eject→rest→write→slump), and **growth** (moss/vines/crystals).
 - **Outcome:** water that finds its level, fire that spreads, things that grow and crumble.
 - **De-risks:** re-mesh churn (active-set + off-thread mesher + don't-mesh-water absorb it).
-- **Landed (E11-1, the CA rule):** `sim::step_water` — deterministic, mass-conserving, terminating
-  water that **falls + flows downhill + pools** (slides diagonally like sand, else flows sideways
-  toward a way down). Unit-tested (falls/conserved, flows off a ledge, rests when boxed in);
-  golden-neutral (not run on the static world). **Next:** flat-floor leveling via the
-  pressure/compressible-mass model + wiring the live world's water to flow (active-set seeding).
+- **Landed (E11-1 rule + E11-2 wiring):** `sim::step_water` — deterministic, mass-conserving,
+  terminating water that **falls + flows downhill + pools** (unit-tested). The cellular-sim toggle
+  (default off) now seeds + steps **both sand and water** and re-meshes, so water actually flows
+  in-game; gated by the toggle + overlay-only, so the golden world/voxel-hash stay valid. **Next:**
+  flat-floor *leveling* via the pressure/compressible-mass model; a dedicated water material/look.
 
 ### ✨ Features (E12–E18) — from the research passes (backlog §L–P) + 2026-06 ideas
 User-facing features, all rated *great fit* because they reuse machinery we already have.

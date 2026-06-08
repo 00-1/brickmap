@@ -118,6 +118,8 @@ struct App {
     sim_active: HashSet<ChunkCoord>,
     sim_timer: f32,
     sand_timer: f32,
+    /// E11: water-seed accumulator (water seeds slower than sand — it pools).
+    water_timer: f32,
     /// Cinematic auto-fly / **autopilot**: on by default so the build is watchable with no input
     /// (mobile / hands-off). Manual input switches it off; `F` / pad A toggles it. In `Walk` mode
     /// it's ignored (you're on foot).
@@ -1430,10 +1432,11 @@ impl App {
         }
     }
 
-    /// Falling-sand simulation step (E5). Seeds sand ahead of the camera (into loaded
-    /// chunks only — so it never races the streaming loader), steps active overlay
-    /// sections on a fixed tick, and re-meshes the few that changed. Re-mesh is
-    /// synchronous: the sim is localized, so it's a small, occasional cost.
+    /// Cellular-voxel simulation step (E5 sand + E11 water). Seeds sand + water ahead of the
+    /// camera (into loaded chunks only — so it never races the streaming loader), steps active
+    /// overlay sections on a fixed tick, and re-meshes the few that changed. Re-mesh is
+    /// synchronous: the sim is localized, so it's a small, occasional cost. Gated by the sim
+    /// toggle (off by default — re-meshing costs FPS), so the golden render is untouched.
     fn sim(&mut self, dt: f32) {
         if !self.toggles.sand || self.state.is_none() {
             return;
@@ -1443,6 +1446,12 @@ impl App {
             self.sand_timer -= SAND_INTERVAL;
             self.seed_sand();
         }
+        // Water seeds on its own, slower cadence (E11) — it pools, so less of it reads as more.
+        self.water_timer += dt;
+        while self.water_timer >= WATER_INTERVAL {
+            self.water_timer -= WATER_INTERVAL;
+            self.seed_water();
+        }
 
         self.sim_timer += dt.min(0.1);
         let mut dirty: HashSet<ChunkCoord> = HashSet::new();
@@ -1450,7 +1459,11 @@ impl App {
             self.sim_timer -= SIM_TICK;
             let active: Vec<ChunkCoord> = self.sim_active.iter().copied().collect();
             for coord in active {
-                let moved = self.overlay.get_mut(&coord).map(sim::step_sand);
+                // Step both materials; `|` (not `||`) so water still runs when sand also moved.
+                let moved = self
+                    .overlay
+                    .get_mut(&coord)
+                    .map(|sec| sim::step_sand(sec) | sim::step_water(sec));
                 match moved {
                     Some(true) => {
                         dirty.insert(coord);
@@ -1482,17 +1495,27 @@ impl App {
         }
     }
 
-    /// Seed a clump of sand high in a loaded chunk ahead of the camera; it falls onto
-    /// the terrain. Spread into a *curtain* across the forward path (pseudo-random from
-    /// the camera position) and placed far enough ahead that grains finish falling while
-    /// we approach — so the fall is watchable from the cruise instead of whooshing past.
+    /// Seed a clump of sand high in a loaded chunk ahead of the camera; it falls onto the terrain.
     fn seed_sand(&mut self) {
+        self.seed_material(sim::SAND, 0.0);
+    }
+
+    /// Seed a clump of **water** (E11) ahead of the camera; it falls, runs downhill, and pools in
+    /// hollows (offset laterally from the sand curtain so the two are distinct).
+    fn seed_water(&mut self) {
+        self.seed_material(sim::WATER, std::f32::consts::PI);
+    }
+
+    /// Drop a 2×2 clump of `mat` high in a loaded chunk ahead of the camera (a *curtain* across the
+    /// forward path, pseudo-random from the camera position), far enough ahead that it's watchable
+    /// from the cruise. `phase` offsets the lateral sweep so different materials seed apart.
+    fn seed_material(&mut self, mat: crate::world::BlockId, phase: f32) {
         let mut fwd = self.camera.forward();
         fwd.y = 0.0;
         let fwd = fwd.normalize_or_zero();
         let right = Vec3::new(-fwd.z, 0.0, fwd.x);
         let t = self.camera.position.x * 0.7 + self.camera.position.z * 0.9;
-        let lateral = t.sin() * 16.0;
+        let lateral = (t + phase).sin() * 16.0;
         let ahead = 42.0 + (t * 1.7).cos() * 6.0;
         let p = self.camera.position + fwd * ahead + right * lateral;
         let sz = Section::SIZE as f32;
@@ -1513,7 +1536,7 @@ impl App {
             let (x, z) = (lx + dx, lz + dz);
             if (0..n).contains(&x) && (0..n).contains(&z) && sec.get(x as u32, y, z as u32).is_air()
             {
-                sec.set(x as u32, y, z as u32, sim::SAND);
+                sec.set(x as u32, y, z as u32, mat);
                 added = true;
             }
         }
@@ -2670,6 +2693,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         sim_active: HashSet::new(),
         sim_timer: 0.0,
         sand_timer: 0.0,
+        water_timer: 0.0,
         auto_fly: true,
         auto_fly_angle: 0.0,
         auto_fly_t: 0.0,
@@ -2884,6 +2908,8 @@ const FOLIAGE_DENSITY: u32 = 4;
 /// Falling-sand tick (seconds) and how often a clump is dropped (E5).
 const SIM_TICK: f32 = 0.05;
 const SAND_INTERVAL: f32 = 0.14;
+/// How often a water clump is dropped (E11) — slower than sand: water pools, so less is more.
+const WATER_INTERVAL: f32 = 0.55;
 /// Max sand sections re-meshed per frame (synchronous; bounds the frame cost of a wide
 /// sandfall — leftovers settle next frame).
 const SAND_REMESH_BUDGET: usize = 3;

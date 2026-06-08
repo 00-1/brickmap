@@ -11,7 +11,7 @@ fire/smoke/steam under a heat field, the destruction loop, and growth.
 
 ## Slices
 
-### E11-1 — flowing water  ◑ (this slice: the CA rule)
+### E11-1/2 — flowing water  ✅ (the CA rule + live wiring)
 - **Landed:** `sim::step_water` — water (the terrain's stylised-water material, `BlockId(7)`)
   falls straight down, slides diagonally down (settling like sand), and otherwise **flows sideways
   into an adjacent air cell that can itself fall**, so it runs **downhill and pools**. The rule is
@@ -19,11 +19,18 @@ fire/smoke/steam under a heat field, the destruction loop, and growth.
   and **terminating** (a sideways move only happens toward a way down, so water can't ping-pong —
   each grain monotonically descends or feeds a descent). Unit-tested: falls + conserved, flows off
   a ledge to a lower floor + conserved, boxed-in water rests (no spurious dirty).
-- **Deferred:** *leveling* a puddle on a flat floor (water seeking a flat surface) needs the
-  **pressure / compressible-mass** model (rendered as a vertex-displaced pass, not re-meshed) —
-  the roadmap's "pressure water"; a later slice. **Wiring** the live world's water to actually
-  flow (active-set seeding around the player, re-mesh budget) is the integration slice — kept out
-  of this one so the static golden world / hash are untouched.
+- **Landed (E11-2, live wiring):** the cellular-sim (the existing sim toggle, default off) now
+  seeds + steps **both** sand and water and re-meshes dirty overlay sections, so water actually
+  **flows + pools in-game**. `seed_sand`/`seed_water` share a `seed_material` curtain-dropper
+  (water on a slower cadence + a lateral phase offset so the two read apart); the tick steps
+  `step_sand(sec) | step_water(sec)` (bitwise — water runs even when sand moved); sections leave
+  the active set once both settle. **Golden-hash determinism handled by gating:** the sim runs only
+  under the toggle (off by default), and it mutates the *overlay* (not worldgen), so the static
+  golden world + E12 voxel-hash are untouched (the hash tests pure generation).
+- **Deferred:** *leveling* a puddle on a flat floor needs the **pressure / compressible-mass**
+  model (rendered as a vertex-displaced pass, not re-meshed) — the roadmap's "pressure water"; a
+  later slice. A dedicated water *material/look* (vs. reusing the stylised-water id) is visual
+  polish.
 
 ### E11-2+ ⏳ (later)
 Block/Margolus substrate + active-set/dirty-AABB; pressure water; fire/smoke/steam under one heat

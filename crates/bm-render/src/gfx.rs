@@ -48,6 +48,8 @@ pub struct Toggles {
     pub block_light: bool,
     pub emissive: bool,
     pub relief: bool,
+    /// The cellular-voxel sim toggle (E5 falling-sand + E11 flowing-water). Off by default — the
+    /// re-meshing costs FPS. (Name kept `sand` for the existing bitmask/label; it now drives both.)
     pub sand: bool,
     pub foliage: bool,
     /// Distance-dissolve (M7): stipple distant terrain/foliage into a pixel haze. Opt-in
