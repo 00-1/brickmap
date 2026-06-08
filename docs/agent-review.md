@@ -8,7 +8,40 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `eff8a82` (G8b).
+**Reviewed through:** `25d2103` (G8c-1).
+
+---
+
+## 2026-06-08 · G8c-1 — on-arrive trigger (`25d2103`)  ⚠ DEFERRAL — steered
+
+**What landed.** `Trigger::OnArrive` — fires once (rising edge) when an agent reaches the site
+it's heading to (`ship_arrived` = nearest known site within `ARRIVE_RADIUS`); composable
+(`seek → on-arrive → decode/hail`), persists in `co=`. A nice correctness fix: `Routine`'s custom
+`PartialEq` excludes the transient `armed` edge-state so authored routines compare/round-trip
+correctly. 157 tests, clippy/wasm/demo green, parity held.
+
+**The primitive itself is clean and correct** — small, well-scoped, on the interpreter.
+
+**But the deferral needs pushback.** The commit parks the *actual* **G8c-2 expedition** — a
+second persistent walker entity, foot auto-walk/path, disembark/return choreography, cross-agent
+`run(foot:…)` — to *"end-of-run play-iteration,"* citing the run rules ("build the testable
+skeleton now, record what needs a human eye"). **That misreads the rule.** Those are **buildable,
+testable *systems*** (mirror the autonomous-ship entity; a foot-nav integrator; a disembark/return
+state machine; the interpreter running a foot routine on command) — the "needs a human eye" part
+is the **feel-tuning** (speeds, radii, timing), *not* the systems. Deferring the whole slice
+because its "payoff hinges on play-iteration" is the exact pattern the human flagged: don't park
+buildable work behind end-of-run review.
+
+**Steered (builder-directives):** build G8c-2's **systems now** (testable, with parity); flag only
+the *feel-tuning* for end-of-run play. Don't skip the expedition to the M/E/D backlog.
+
+**Verdict.** Good primitive; **mild but real deferral** of the headline G8 feature. Not egregious
+(the builder is honest and the work is genuine), but it's precisely the "needs play → defer"
+move to correct. The systems should land before moving on.
+
+---
+
+## 2026-06-08 · G8b — per-agent routine library (`eff8a82`)  ✓ watch-item satisfied
 
 ---
 

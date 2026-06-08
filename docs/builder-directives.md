@@ -51,11 +51,27 @@ risks; resist both.
   auto-collect reach fixed, parity held. (See `agent-review.md`.) Good work — **keep this
   momentum; do not pause for review.**
 
+### ⚠ STEER (2026-06-08, after G8c-1) — build the expedition, don't defer it to "end-of-run"
+
+G8a ✅, G8b ✅, G8c-1 ✅ (on-arrive trigger) are good. **But do NOT park G8c-2.** You flagged the
+full expedition (second persistent walker entity, foot auto-walk/path, disembark/return, cross-
+agent `run(foot:…)`) for "end-of-run play-iteration." **That's a misread of the run rules.** Those
+are **buildable, testable systems** — build them **now**, as the next slice:
+
+- a tracked **second walker entity** that auto-walks off-screen (mirror the autonomous ship);
+- **foot nav** (`walk`/`path`) on the interpreter;
+- the **disembark / return** choreography (a state machine — unit-testable);
+- cross-agent **`run(foot:…)`** (a ship routine running the walker's routine).
+
+"Needs a human eye" applies ONLY to the **feel-tuning** (speeds, radii, timing) — build the
+systems, **record the tuning notes**, keep moving. Do **not** skip G8c-2 to the M/E/D backlog;
+the automated expedition is the headline G8 payoff and it must be built before G8 is "done".
+
 **Now, continue unattended:**
 
-1. **G8 — two agents + expedition + hail + cross-agent meta**, built **on the new interpreter**
-   (routines per-agent; the ship runs its own routine while you walk; `hail` recalls it). Write
-   the brief first.
+1. **G8c-2 — the expedition systems (next, before anything else):** the second persistent walker
+   entity, foot nav, disembark/return choreography, cross-agent `run(foot:…)` — built + tested
+   now, feel-tuning noted for end-of-run. This completes G8.
 2. **Then the M/E/D backlog:** M7, M8a, E9, E11, E13, E16, E18, D5 … — pick a sensible order
    (finish in-progress, respect deps). Write each brief just before building.
 3. **Skip + NOTE (don't stop the run for):** anything needing hardware/devices/secrets — M8b
@@ -72,3 +88,6 @@ are **not** stopping points. Human review is end-of-run. Chain straight into the
   cleanups; then G8 + the M/E/D backlog. Issued after the babysitter's G6 (2/2) escalation.
 - **2026-06-08** — G7 ✅ passed review (escalation resolved). Directive updated: proceed to G8
   (two agents on the new interpreter) → M/E/D backlog; keep moving, don't pause for review.
+- **2026-06-08** — G8a/G8b/G8c-1 ✅. **Steer:** don't defer G8c-2 (the expedition systems) to
+  "end-of-run play-iteration" — build them now (testable), tune feel later. Build before the
+  M/E/D backlog.
