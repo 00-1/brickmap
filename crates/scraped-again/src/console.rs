@@ -1,23 +1,56 @@
-//! G4 — the operations **console**: the game's actions surfaced as visible, **clickable
-//! blocks**, with a couple of **given routines** a minimal runtime runs ([`game-system.md`]).
-//! No typing — a cursor + a confirm button (controller/phone-first). This module is the pure
-//! model (the block vocabulary, the given routines, cursor/toggle, the terminal render); the
-//! app dispatches each block's effect through the **existing G1–G3 paths** (behaviour parity).
+//! G7 — the operations **console**: a real, **interpreted** routine model + a no-typing
+//! **free-form editor** ([`game-system.md`] §2). The game's actions are visible **blocks**;
+//! routines are **data** (a trigger + a linear body of steps) that an **interpreter** runs each
+//! tick. The two (now three) given routines are *ordinary instances* of that model — there are
+//! **no per-name branches** anywhere. The player can create / delete routines and
+//! insert / remove / reorder / re-param their blocks from the console with **no typing**
+//! (cursor + discrete buttons, controller/phone-first); authored routines persist (`co=`).
 //!
-//! Assumptions / decisions taken solo (G4): (1) `collect` is the single G1 `collect_aimed`
-//! behaviour for both a manual click and the routine's `on-scan → collect` — so at cruise
-//! altitude the given auto-collect harvests ~nothing (sites sit below the aim ray's reach),
-//! keeping net autopilot behaviour ≈ today's; it bites as you fly/scan low (and as reach grows
-//! in G6). (2) Console interaction is keyboard/pad **cursor + confirm**; per-row *mouse* hit-
-//! testing on the text path is deferred to G5. (3) `spend`/`goto` are in the Tier-0 vocabulary
-//! but inert in G4 (no spend targets / no map picker yet → G5/G6).
+//! The app reads behaviour **from the interpreter** ([`Console::tick`] / [`Console::on_scan_acts`])
+//! — nav steering, a scan request, and one-shot acts — and dispatches each block's effect through
+//! the **existing G1–G6 effect paths** (behaviour parity). This module is the pure model: the
+//! block vocabulary, the routine/step types, the interpreter, the editor ops, and the terminal
+//! render.
+//!
+//! Decisions taken solo (G7), recorded per the unattended-run norm:
+//! 1. **Body shape.** A routine is `trigger + linear Vec<Step>`; control flow is expressed by
+//!    *prefix-modifier* steps — `match(field)` filters the Collect(s) that follow it, and
+//!    `repeat(n)` multiplies the **next** `Do`. This is the simplest shape that expresses the
+//!    givens *and* `when`/`repeat`/match-gated collect (brief Decision 1 default: "linear body
+//!    with optional if/repeat, not a node graph") without the navigation cost of nested
+//!    `Vec<Step>` in a no-typing editor.
+//! 2. **The given "survey" splits into two data routines** — `survey` (continuous `scan`) +
+//!    `collect` (on-scan `collect`) — exactly the brief's "`{OnScan,[Do(Collect)]}` + a continuous
+//!    `Do(Scan)`" decomposition. So the home screen now shows **three** givens, all plain data.
+//! 3. **Persistence stays in the console's own `co=` segment** (full routine list), not `pg=`.
+//!    The console owns its serialization (it already round-tripped through `co=`); what the brief
+//!    requires is that authored routines *persist + round-trip*, which `co=` satisfies.
 
-/// A generic filter field for `match(field)` (game-system §11 Tier 1). v1 fields, both
-/// comprehensible from G1's `script→stratum→rarity` (the collectible set is already
-/// uncollected, so the useful filter is by *rarity*); more fields arrive in G6.
+use std::collections::HashSet;
+
+use crate::progress::Stratum;
+
+/// The item a `scan` block senses. v1 has only `shards` (the data sites); the parameterised
+/// form (`scan(item)`) is here so the model carries block params uniformly (G7 cleanup).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ScanItem {
+    Shards,
+}
+
+impl ScanItem {
+    pub fn label(self) -> &'static str {
+        match self {
+            ScanItem::Shards => "shards",
+        }
+    }
+}
+
+/// A generic filter field for a `match(field)` step (game-system §11 Tier 1). v1: by *rarity*
+/// (the collectible set is already uncollected, so the useful filter is "save the buffer for the
+/// good stuff"). Recovered by comprehending **Rites**.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum MatchField {
-    /// Only rare strata (Relics + Signals) — "save the buffer for the good stuff".
+    /// Only rare strata (Relics + Signals).
     Rare,
 }
 
@@ -27,29 +60,34 @@ impl MatchField {
             MatchField::Rare => "rare",
         }
     }
+    /// The stratum whose comprehension recovers the `match` step.
+    pub fn required(self) -> Stratum {
+        Stratum::Rites
+    }
 }
 
-/// A block — one recovered console operation (game-system §11). G4 = Tier 0; G5 adds the nav
-/// vocabulary (`seek`/`circle`) and the generic `match` filter.
+/// A block — one recovered console **action** (game-system §11). Triggers (`on-scan`, `when`) and
+/// the `match`/`repeat` modifiers are *not* blocks: they live on the routine ([`Trigger`]) or as
+/// modifier [`Step`]s, so this enum is exactly "things the ship can *do*".
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Block {
-    Scan,              // scan(shards): sense sites in the forward cone (G3)
-    Collect,           // collect the aimed/nearest in-reach site (G1)
-    FireBeam,          // cast the survey-beam (G2)
-    Decode,            // decode/comprehend the richest affordable stratum (G6)
-    Spend,             // spend a shard on a faculty (inert until G6 gives targets)
-    Goto,              // direct travel to a picked map target (inert until a map picker)
-    Drift,             // aimless cinematic wander — today's default autopilot
-    Seek,              // head to the nearest known-uncollected site (G5)
-    Circle,            // loiter / orbit the current area (G5)
-    Match(MatchField), // generic filter in an on-scan pipeline (G5)
-    OnScan,            // trigger: fires when a scan finds something (not a clickable action)
+    Scan(ScanItem), // sense sites of `item` in the forward cone (G3)
+    Collect,        // collect the aimed/nearest in-reach site (G1)
+    FireBeam,       // cast the survey-beam (G2)
+    Decode,         // decode/comprehend the richest affordable stratum (G6)
+    Spend,          // spend a shard on a faculty (vocabulary stub — no targets yet)
+    Goto,           // direct travel to a picked map target (vocabulary stub — no map picker yet)
+    Drift,          // aimless cinematic wander — the default autopilot
+    Seek,           // head to the nearest known-uncollected site (nav)
+    Circle,         // loiter / orbit the current area (nav)
 }
 
 impl Block {
     pub fn label(self) -> &'static str {
         match self {
-            Block::Scan => "scan(shards)",
+            Block::Scan(i) => match i {
+                ScanItem::Shards => "scan(shards)",
+            },
             Block::Collect => "collect",
             Block::FireBeam => "fire-beam",
             Block::Decode => "decode",
@@ -58,104 +96,341 @@ impl Block {
             Block::Drift => "drift",
             Block::Seek => "seek(uncollected)",
             Block::Circle => "circle",
-            Block::Match(f) => match f {
-                MatchField::Rare => "match(rare)",
-            },
-            Block::OnScan => "on-scan",
         }
     }
-    /// The stratum whose **comprehension** (G6 `decode`) recovers this block — `None` = a
-    /// starter (Tier 0). This is the "tree": decoding grows the vocabulary (game-system §4).
-    pub fn required(self) -> Option<crate::progress::Stratum> {
-        use crate::progress::Stratum;
+
+    /// The stratum whose **comprehension** (G6 `decode`) recovers this block — `None` = a starter
+    /// (Tier 0). This is the "tree": decoding grows the vocabulary (game-system §4).
+    pub fn required(self) -> Option<Stratum> {
         match self {
             Block::Seek | Block::Circle | Block::Goto => Some(Stratum::Schematics),
-            Block::Match(_) => Some(Stratum::Rites),
-            _ => None, // scan/collect/fire-beam/decode/drift/spend/on-scan are starters
+            _ => None, // scan/collect/fire-beam/decode/drift/spend are starters
         }
     }
 
-    /// Wired to real behaviour? (`spend`/`goto` are vocabulary stubs for now.)
+    /// Wired to a real effect? (`spend`/`goto` are vocabulary stubs for now.)
     pub fn wired(self) -> bool {
-        matches!(
-            self,
-            Block::Scan
-                | Block::Collect
-                | Block::FireBeam
-                | Block::Decode
-                | Block::Drift
-                | Block::Seek
-                | Block::Circle
-                | Block::Match(_)
-        )
+        !matches!(self, Block::Spend | Block::Goto)
+    }
+
+    /// Is this a navigation block (it steers the autopilot rather than firing an effect)?
+    pub fn is_nav(self) -> bool {
+        matches!(self, Block::Drift | Block::Seek | Block::Circle)
     }
 }
 
-/// A given routine (no player editor in G4): actions run **every tick** while enabled, plus
-/// actions fired on the **on-scan** event. The two givens (drift; scan→on-scan→collect) fit
-/// this shape; G5's editor will generalise it.
-#[derive(Clone, Debug)]
-pub struct Routine {
-    pub name: &'static str,
-    pub enabled: bool,
-    pub continuous: Vec<Block>,
-    pub on_scan: Vec<Block>,
+/// One step in a routine body. A linear sequence of these is the routine's program;
+/// `Match`/`Repeat` are *prefix modifiers* (see the module decision note).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Step {
+    /// Do a block.
+    Do(Block),
+    /// Filter the Collect(s) that follow it in this body to only matching sites.
+    Match(MatchField),
+    /// Repeat the **next** `Do` this many times (1..=9).
+    Repeat(u8),
 }
 
-/// What the cursor is currently on.
+impl Step {
+    pub fn label(self) -> String {
+        match self {
+            Step::Do(b) => b.label().to_string(),
+            Step::Match(f) => format!("match({})", f.label()),
+            Step::Repeat(n) => format!("repeat ×{n}"),
+        }
+    }
+    /// The stratum gating this step (so a locked step can't be inserted/cycled into).
+    fn required(self) -> Option<Stratum> {
+        match self {
+            Step::Do(b) => b.required(),
+            Step::Match(f) => Some(f.required()),
+            Step::Repeat(_) => None,
+        }
+    }
+}
+
+/// A state the `when` trigger can test. v1: the **total banked data** (all strata).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum State {
+    Data,
+}
+
+impl State {
+    pub fn label(self) -> &'static str {
+        match self {
+            State::Data => "data",
+        }
+    }
+}
+
+/// A `when(state ≥ min)` condition.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct Cond {
+    pub state: State,
+    pub min: u32,
+}
+
+impl Cond {
+    fn holds(self, value: u32) -> bool {
+        match self.state {
+            State::Data => value >= self.min,
+        }
+    }
+}
+
+/// When a routine's body runs. The interpreter fires `Continuous` every tick, `OnScan` on a scan
+/// that finds something, and `When` once on the rising edge of its condition.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Trigger {
+    Continuous,
+    OnScan,
+    When(Cond),
+}
+
+impl Trigger {
+    pub fn label(self) -> String {
+        match self {
+            Trigger::Continuous => "every tick".to_string(),
+            Trigger::OnScan => "on scan".to_string(),
+            Trigger::When(c) => format!("when {} ≥ {}", c.state.label(), c.min),
+        }
+    }
+}
+
+/// A routine: **data** the interpreter runs. No per-name behaviour — the givens are just the
+/// default instances.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Routine {
+    pub name: String,
+    pub enabled: bool,
+    pub trigger: Trigger,
+    pub body: Vec<Step>,
+    /// `When`-edge state: was the condition satisfied last tick? (Runtime only; not persisted.)
+    pub armed: bool,
+}
+
+impl Routine {
+    fn new(name: impl Into<String>, trigger: Trigger, body: Vec<Step>) -> Self {
+        Routine {
+            name: name.into(),
+            enabled: true,
+            trigger,
+            body,
+            armed: false,
+        }
+    }
+
+    /// Does this routine steer the autopilot? (A continuous routine whose body does a nav block.)
+    pub fn is_nav(&self) -> bool {
+        matches!(self.trigger, Trigger::Continuous)
+            && self
+                .body
+                .iter()
+                .any(|s| matches!(s, Step::Do(b) if b.is_nav()))
+    }
+}
+
+/// One resolved action the app dispatches: a block plus the match-filter context it runs under.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct Act {
+    pub block: Block,
+    pub filter: Option<MatchField>,
+}
+
+/// This tick's intents, produced by the interpreter from the enabled routines. The app applies
+/// them through the existing G1–G6 effect paths (replacing the old named-accessor hacks).
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct Tick {
+    /// Autopilot steering from a continuous nav routine (`None` ⇒ no drift routine ⇒ autopilot off).
+    pub nav: Option<Block>,
+    /// A continuous routine wants to pulse the scan (the app throttles it to `scan::INTERVAL`).
+    pub scan: bool,
+    /// Other one-shot acts to dispatch this tick (continuous non-nav/non-scan + `when`-edge fires).
+    pub acts: Vec<Act>,
+}
+
+/// What the editor cursor is on while editing a routine.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum EditFocus {
+    Trigger,
+    Step(usize),
+    AddStep,
+}
+
+/// What the home cursor is on.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Sel {
     Routine(usize),
+    NewRoutine,
     Block(Block),
 }
 
-/// The console: the given routines + the clickable block palette + cursor/open state.
+/// Which screen the console is showing.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum View {
+    /// Routine list + "new routine" + the manual-run block palette.
+    Home,
+    /// Editing routine `i`'s trigger + body (the free-form editor).
+    Edit(usize),
+}
+
+/// The console: the routines (data), the manual/insert block palette, cursor + view state.
 pub struct Console {
     pub open: bool,
+    pub view: View,
     pub cursor: usize,
     pub routines: Vec<Routine>,
     pub palette: Vec<Block>,
     /// Comprehended strata (synced from `progress` each frame) — gates the block vocabulary (G6).
-    pub unlocked: std::collections::HashSet<crate::progress::Stratum>,
+    pub unlocked: HashSet<Stratum>,
 }
 
 impl Default for Console {
     fn default() -> Self {
         Console {
             open: false,
+            view: View::Home,
             cursor: 0,
-            // The onboarding artifact: two working routines shown as their blocks (game-system §8).
+            // The onboarding artifact: the hands-off loop shown as three plain data routines
+            // (drift; survey scans; collect harvests on scan) — all ordinary instances (§8).
             routines: vec![
-                Routine {
-                    name: "drift",
-                    enabled: true,
-                    continuous: vec![Block::Drift],
-                    on_scan: vec![],
-                },
-                Routine {
-                    name: "survey",
-                    enabled: true,
-                    continuous: vec![Block::Scan],
-                    on_scan: vec![Block::Collect],
-                },
+                Routine::new("drift", Trigger::Continuous, vec![Step::Do(Block::Drift)]),
+                Routine::new(
+                    "survey",
+                    Trigger::Continuous,
+                    vec![Step::Do(Block::Scan(ScanItem::Shards))],
+                ),
+                Routine::new("collect", Trigger::OnScan, vec![Step::Do(Block::Collect)]),
             ],
             palette: vec![
-                Block::Scan,
+                Block::Scan(ScanItem::Shards),
                 Block::Collect,
                 Block::FireBeam,
                 Block::Decode,
                 Block::Goto,
                 Block::Drift,
             ],
-            unlocked: std::collections::HashSet::new(),
+            unlocked: HashSet::new(),
         }
     }
 }
 
 impl Console {
-    /// Total selectable rows: routines (toggle) then palette blocks (run).
-    pub fn rows(&self) -> usize {
-        self.routines.len() + self.palette.len()
+    // ---- vocabulary gating ------------------------------------------------------------------
+
+    /// Has this block been recovered? (Starters always; gated blocks need their stratum decoded.)
+    pub fn is_unlocked(&self, b: Block) -> bool {
+        b.required().is_none_or(|s| self.unlocked.contains(&s))
+    }
+
+    fn step_unlocked(&self, s: Step) -> bool {
+        s.required().is_none_or(|st| self.unlocked.contains(&st))
+    }
+
+    /// The steps the player may insert / cycle to, in cycle order, filtered to what's recovered.
+    /// (Blocks, then the `match` modifier, then `repeat`.)
+    pub fn vocabulary(&self) -> Vec<Step> {
+        let all = [
+            Step::Do(Block::Scan(ScanItem::Shards)),
+            Step::Do(Block::Collect),
+            Step::Do(Block::FireBeam),
+            Step::Do(Block::Decode),
+            Step::Do(Block::Drift),
+            Step::Do(Block::Seek),
+            Step::Do(Block::Circle),
+            Step::Do(Block::Goto),
+            Step::Do(Block::Spend),
+            Step::Match(MatchField::Rare),
+            Step::Repeat(2),
+        ];
+        all.into_iter().filter(|s| self.step_unlocked(*s)).collect()
+    }
+
+    // ---- the interpreter --------------------------------------------------------------------
+
+    /// Expand a body into resolved acts: `match` sets the filter for following Collects;
+    /// `repeat(n)` multiplies the next `Do`.
+    fn expand(body: &[Step]) -> Vec<Act> {
+        let mut out = Vec::new();
+        let mut filter = None;
+        let mut times: u8 = 1;
+        for step in body {
+            match step {
+                Step::Match(f) => filter = Some(*f),
+                Step::Repeat(n) => times = (*n).max(1),
+                Step::Do(b) => {
+                    for _ in 0..times {
+                        out.push(Act { block: *b, filter });
+                    }
+                    times = 1;
+                }
+            }
+        }
+        out
+    }
+
+    /// Run one interpreter tick over the **continuous** + **when** routines, given the current
+    /// `data` (total banked strata) for `when` conditions. Returns this tick's [`Tick`] intents.
+    /// (`on-scan` routines fire separately, on a scan hit — see [`Console::on_scan_acts`].)
+    pub fn tick(&mut self, data: u32) -> Tick {
+        let mut t = Tick::default();
+        for r in &mut self.routines {
+            if !r.enabled {
+                r.armed = false;
+                continue;
+            }
+            match r.trigger {
+                Trigger::Continuous => {
+                    for act in Self::expand(&r.body) {
+                        if act.block.is_nav() {
+                            t.nav = Some(act.block);
+                        } else if matches!(act.block, Block::Scan(_)) {
+                            t.scan = true;
+                        } else {
+                            t.acts.push(act);
+                        }
+                    }
+                }
+                Trigger::OnScan => {} // fired on a scan hit, not per tick
+                Trigger::When(c) => {
+                    let sat = c.holds(data);
+                    if sat && !r.armed {
+                        t.acts.extend(Self::expand(&r.body)); // rising edge → fire once
+                    }
+                    r.armed = sat;
+                }
+            }
+        }
+        t
+    }
+
+    /// The acts the enabled **on-scan** routines want, when a scan finds something (typically a
+    /// filtered collect). Walked through the same interpreter as everything else.
+    pub fn on_scan_acts(&self) -> Vec<Act> {
+        self.routines
+            .iter()
+            .filter(|r| r.enabled && matches!(r.trigger, Trigger::OnScan))
+            .flat_map(|r| Self::expand(&r.body))
+            .collect()
+    }
+
+    // ---- home navigation --------------------------------------------------------------------
+
+    /// Home rows: routines (toggle/edit), a "new routine" row, then the manual block palette.
+    pub fn home_rows(&self) -> usize {
+        self.routines.len() + 1 + self.palette.len()
+    }
+
+    /// Editor rows for routine `i`: the trigger row, each body step, then an "add step" row.
+    fn edit_rows(&self, i: usize) -> usize {
+        1 + self.routines[i].body.len() + 1
+    }
+
+    fn rows(&self) -> usize {
+        match self.view {
+            View::Home => self.home_rows(),
+            View::Edit(i) => self.edit_rows(i),
+        }
     }
 
     pub fn move_cursor(&mut self, delta: i32) {
@@ -163,168 +438,344 @@ impl Console {
         self.cursor = (((self.cursor as i32 + delta) % n + n) % n) as usize;
     }
 
-    /// Resolve the cursor to a routine-toggle or a block-trigger.
+    /// Resolve the home cursor.
     pub fn selected(&self) -> Sel {
-        if self.cursor < self.routines.len() {
+        let nr = self.routines.len();
+        if self.cursor < nr {
             Sel::Routine(self.cursor)
+        } else if self.cursor == nr {
+            Sel::NewRoutine
         } else {
-            Sel::Block(self.palette[self.cursor - self.routines.len()])
+            Sel::Block(self.palette[self.cursor - nr - 1])
         }
     }
 
-    /// Toggle the routine under the cursor (if it's a routine row). Returns its new state.
+    /// Resolve the editor cursor for routine `i`.
+    pub fn edit_focus(&self, i: usize) -> EditFocus {
+        let nb = self.routines[i].body.len();
+        if self.cursor == 0 {
+            EditFocus::Trigger
+        } else if self.cursor <= nb {
+            EditFocus::Step(self.cursor - 1)
+        } else {
+            EditFocus::AddStep
+        }
+    }
+
+    // ---- routine-level edits ----------------------------------------------------------------
+
+    /// Toggle the routine under index `i`. Returns its new enabled state.
     pub fn toggle_routine(&mut self, i: usize) -> bool {
         let r = &mut self.routines[i];
         r.enabled = !r.enabled;
         r.enabled
     }
 
-    fn routine(&self, name: &str) -> Option<&Routine> {
-        self.routines.iter().find(|r| r.name == name)
+    /// Create a fresh empty routine and open its editor. Returns the new index.
+    pub fn create_routine(&mut self) -> usize {
+        let name = format!("routine-{}", self.routines.len() + 1);
+        self.routines
+            .push(Routine::new(name, Trigger::Continuous, Vec::new()));
+        let i = self.routines.len() - 1;
+        self.view = View::Edit(i);
+        self.cursor = 0;
+        i
     }
 
-    /// Is the `drift` (autopilot) routine enabled? Gates the auto-wander.
-    pub fn drift_enabled(&self) -> bool {
-        self.routine("drift").is_some_and(|r| r.enabled)
+    /// Delete routine `i` and return to the home screen.
+    pub fn delete_routine(&mut self, i: usize) {
+        if i < self.routines.len() {
+            self.routines.remove(i);
+        }
+        self.view = View::Home;
+        self.cursor = self.cursor.min(self.home_rows().saturating_sub(1));
     }
 
-    /// Is the `survey` routine (scan + on-scan→collect) enabled? Gates auto-scan/collect.
-    pub fn survey_enabled(&self) -> bool {
-        self.routine("survey").is_some_and(|r| r.enabled)
+    pub fn open_editor(&mut self, i: usize) {
+        self.view = View::Edit(i);
+        self.cursor = 0;
     }
 
-    /// Does the `survey` routine auto-collect on scan? (on-scan → collect wired.)
-    pub fn survey_autocollects(&self) -> bool {
-        self.routine("survey")
-            .is_some_and(|r| r.enabled && r.on_scan.contains(&Block::Collect))
+    pub fn close_editor(&mut self) {
+        if let View::Edit(i) = self.view {
+            // Going home — land the cursor on the routine we were editing (if it still exists).
+            self.cursor = i.min(self.routines.len().saturating_sub(1));
+        }
+        self.view = View::Home;
     }
 
-    fn routine_mut(&mut self, name: &str) -> Option<&mut Routine> {
-        self.routines.iter_mut().find(|r| r.name == name)
+    // ---- body / step edits (the free-form editor) -------------------------------------------
+
+    /// Insert a step after the editor cursor (or append, on the "add step" row). The inserted
+    /// step is the first unlocked vocabulary entry; ←/→ then cycles it. No-op if nothing unlocked.
+    pub fn insert_step(&mut self, i: usize) {
+        let Some(first) = self.vocabulary().into_iter().next() else {
+            return;
+        };
+        let at = match self.edit_focus(i) {
+            EditFocus::Trigger => 0,
+            EditFocus::Step(s) => s + 1,
+            EditFocus::AddStep => self.routines[i].body.len(),
+        };
+        self.routines[i].body.insert(at, first);
+        self.cursor = at + 1; // land on the new step (trigger row is 0)
     }
 
-    /// Has this block been recovered? (Starters always; gated blocks need their stratum decoded.)
-    pub fn is_unlocked(&self, b: Block) -> bool {
-        b.required().is_none_or(|s| self.unlocked.contains(&s))
-    }
-
-    /// The current nav block of the `drift` routine (Drift / Seek / Circle).
-    pub fn nav_block(&self) -> Block {
-        self.routine("drift")
-            .and_then(|r| r.continuous.first().copied())
-            .unwrap_or(Block::Drift)
-    }
-
-    /// The `survey` routine's collect filter, if any (the `match` step before `collect`).
-    pub fn filter(&self) -> Option<MatchField> {
-        self.routine("survey").and_then(|r| {
-            r.on_scan.iter().find_map(|b| match b {
-                Block::Match(f) => Some(*f),
-                _ => None,
-            })
-        })
-    }
-
-    /// G5 picker: step the routine under the cursor's parameter — the nav block for `drift`,
-    /// the collect filter for `survey` (no typing; ←/→ cycle).
-    pub fn cycle_param(&mut self, i: i32) {
-        match self.selected() {
-            Sel::Routine(r) if self.routines[r].name == "drift" => {
-                // Only cycle to nav blocks that have been recovered (Seek/Circle need Schematics).
-                let nav: Vec<Block> = [Block::Drift, Block::Seek, Block::Circle]
-                    .into_iter()
-                    .filter(|b| self.is_unlocked(*b))
-                    .collect();
-                let cur = nav.iter().position(|b| *b == self.nav_block()).unwrap_or(0) as i32;
-                let n = nav.len() as i32;
-                let next = nav[(((cur + i) % n + n) % n) as usize];
-                if let Some(d) = self.routine_mut("drift") {
-                    d.continuous = vec![next];
-                }
-            }
-            Sel::Routine(r) if self.routines[r].name == "survey" => {
-                // Cycle the filter: none ↔ match(rare) — only once `match` is recovered (Rites).
-                if !self.is_unlocked(Block::Match(MatchField::Rare)) {
-                    return;
-                }
-                let on = self.filter().is_some();
-                if let Some(s) = self.routine_mut("survey") {
-                    s.on_scan = if on {
-                        vec![Block::Collect]
-                    } else {
-                        vec![Block::Match(MatchField::Rare), Block::Collect]
-                    };
-                }
-            }
-            _ => {}
+    /// Remove the step under the editor cursor.
+    pub fn remove_step(&mut self, i: usize) {
+        if let EditFocus::Step(s) = self.edit_focus(i) {
+            self.routines[i].body.remove(s);
+            self.cursor = self.cursor.min(self.edit_rows(i).saturating_sub(1));
         }
     }
 
-    /// Encode the editable routine state (nav + filter) as a `co=` share segment.
-    pub fn encode(&self) -> String {
-        let nav = match self.nav_block() {
-            Block::Seek => 1,
-            Block::Circle => 2,
-            _ => 0,
-        };
-        let filter = u8::from(self.filter().is_some());
-        format!("co={nav}.{filter}")
+    /// Move the step under the cursor up/down within the body (reorder).
+    pub fn move_step(&mut self, i: usize, dir: i32) {
+        if let EditFocus::Step(s) = self.edit_focus(i) {
+            let body = &mut self.routines[i].body;
+            let j = s as i32 + dir;
+            if (0..body.len() as i32).contains(&j) {
+                body.swap(s, j as usize);
+                self.cursor = (j as usize) + 1;
+            }
+        }
     }
 
-    /// Restore the nav + filter from a `co=` segment (lenient; absent → the given defaults).
+    /// ←/→ on the focused row: cycle the trigger kind, or cycle the focused step through the
+    /// unlocked vocabulary. (`When` threshold + `Repeat` count are nudged by [`Console::adjust`].)
+    pub fn cycle(&mut self, i: i32) {
+        let View::Edit(r) = self.view else {
+            return;
+        };
+        match self.edit_focus(r) {
+            EditFocus::Trigger => self.cycle_trigger(r, i),
+            EditFocus::Step(s) => self.cycle_step(r, s, i),
+            EditFocus::AddStep => {}
+        }
+    }
+
+    fn cycle_trigger(&mut self, r: usize, i: i32) {
+        let kinds = [
+            Trigger::Continuous,
+            Trigger::OnScan,
+            Trigger::When(Cond {
+                state: State::Data,
+                min: 10,
+            }),
+        ];
+        // Compare by discriminant so the current `When(min)` matches the `When` slot.
+        let cur = kinds
+            .iter()
+            .position(|k| {
+                std::mem::discriminant(k) == std::mem::discriminant(&self.routines[r].trigger)
+            })
+            .unwrap_or(0) as i32;
+        let n = kinds.len() as i32;
+        self.routines[r].trigger = kinds[(((cur + i) % n + n) % n) as usize];
+        self.routines[r].armed = false;
+    }
+
+    fn cycle_step(&mut self, r: usize, s: usize, i: i32) {
+        let vocab = self.vocabulary();
+        if vocab.is_empty() {
+            return;
+        }
+        let cur = self.routines[r].body[s];
+        // Find the current step in the vocabulary by *kind* (so a Repeat(5) matches the Repeat slot).
+        let pos = vocab
+            .iter()
+            .position(|v| std::mem::discriminant(v) == std::mem::discriminant(&cur))
+            .unwrap_or(0) as i32;
+        let n = vocab.len() as i32;
+        self.routines[r].body[s] = vocab[(((pos + i) % n + n) % n) as usize];
+    }
+
+    /// −/+ on the focused row: nudge a numeric parameter — the `When` threshold (±5) or a
+    /// `Repeat` count (±1, 1..=9).
+    pub fn adjust(&mut self, delta: i32) {
+        let View::Edit(r) = self.view else {
+            return;
+        };
+        match self.edit_focus(r) {
+            EditFocus::Trigger => {
+                if let Trigger::When(c) = &mut self.routines[r].trigger {
+                    let step = 5 * delta;
+                    c.min = (c.min as i32 + step).clamp(0, 9_999) as u32;
+                }
+            }
+            EditFocus::Step(s) => {
+                if let Step::Repeat(n) = &mut self.routines[r].body[s] {
+                    *n = (*n as i32 + delta).clamp(1, 9) as u8;
+                }
+            }
+            EditFocus::AddStep => {}
+        }
+    }
+
+    // ---- persistence (`co=` segment) --------------------------------------------------------
+
+    fn step_code(s: Step) -> String {
+        match s {
+            Step::Do(Block::Scan(ScanItem::Shards)) => "S".into(),
+            Step::Do(Block::Collect) => "C".into(),
+            Step::Do(Block::FireBeam) => "B".into(),
+            Step::Do(Block::Decode) => "D".into(),
+            Step::Do(Block::Spend) => "p".into(),
+            Step::Do(Block::Goto) => "g".into(),
+            Step::Do(Block::Drift) => "d".into(),
+            Step::Do(Block::Seek) => "k".into(),
+            Step::Do(Block::Circle) => "o".into(),
+            Step::Match(MatchField::Rare) => "m".into(),
+            Step::Repeat(n) => format!("r{n}"),
+        }
+    }
+
+    fn parse_steps(s: &str) -> Vec<Step> {
+        let mut out = Vec::new();
+        let mut it = s.chars().peekable();
+        while let Some(c) = it.next() {
+            let step = match c {
+                'S' => Step::Do(Block::Scan(ScanItem::Shards)),
+                'C' => Step::Do(Block::Collect),
+                'B' => Step::Do(Block::FireBeam),
+                'D' => Step::Do(Block::Decode),
+                'p' => Step::Do(Block::Spend),
+                'g' => Step::Do(Block::Goto),
+                'd' => Step::Do(Block::Drift),
+                'k' => Step::Do(Block::Seek),
+                'o' => Step::Do(Block::Circle),
+                'm' => Step::Match(MatchField::Rare),
+                'r' => {
+                    let mut num = String::new();
+                    while let Some(d) = it.peek().filter(|d| d.is_ascii_digit()) {
+                        num.push(*d);
+                        it.next();
+                    }
+                    Step::Repeat(num.parse::<u8>().unwrap_or(2).clamp(1, 9))
+                }
+                _ => continue,
+            };
+            out.push(step);
+        }
+        out
+    }
+
+    fn trigger_code(t: Trigger) -> String {
+        match t {
+            Trigger::Continuous => "c".into(),
+            Trigger::OnScan => "s".into(),
+            Trigger::When(c) => format!("w:{}", c.min),
+        }
+    }
+
+    fn parse_trigger(s: &str) -> Trigger {
+        match s.chars().next() {
+            Some('s') => Trigger::OnScan,
+            Some('w') => Trigger::When(Cond {
+                state: State::Data,
+                min: s
+                    .split(':')
+                    .nth(1)
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(10),
+            }),
+            _ => Trigger::Continuous,
+        }
+    }
+
+    /// Encode the authored routines as a `co=` share segment (URL-fragment safe — names are
+    /// `[a-z0-9-]`, fields `|`, routines `;`, steps `,`).
+    pub fn encode(&self) -> String {
+        let body = self
+            .routines
+            .iter()
+            .map(|r| {
+                let steps = r
+                    .body
+                    .iter()
+                    .map(|s| Self::step_code(*s))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(
+                    "{}|{}|{}|{}",
+                    r.name,
+                    u8::from(r.enabled),
+                    Self::trigger_code(r.trigger),
+                    steps
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(";");
+        format!("co={body}")
+    }
+
+    /// Restore authored routines from a `co=` segment (lenient; absent/malformed → the givens).
     pub fn restore(&mut self, s: &str) {
         let s = s.strip_prefix('#').unwrap_or(s);
         let Some(v) = s.split('&').find_map(|p| p.strip_prefix("co=")) else {
             return;
         };
-        let mut it = v.split('.');
-        if let Some(nav) = it.next().and_then(|n| n.parse::<u8>().ok()) {
-            if let Some(d) = self.routine_mut("drift") {
-                d.continuous = vec![match nav {
-                    1 => Block::Seek,
-                    2 => Block::Circle,
-                    _ => Block::Drift,
-                }];
-            }
+        let mut routines = Vec::new();
+        for chunk in v.split(';').filter(|c| !c.is_empty()) {
+            let mut f = chunk.split('|');
+            let name = f.next().unwrap_or("routine").to_string();
+            let enabled = f.next() != Some("0");
+            let trigger = Self::parse_trigger(f.next().unwrap_or("c"));
+            let body = Self::parse_steps(f.next().unwrap_or(""));
+            routines.push(Routine {
+                name,
+                enabled,
+                trigger,
+                body,
+                armed: false,
+            });
         }
-        if let Some(filter) = it.next().and_then(|n| n.parse::<u8>().ok()) {
-            if let Some(s) = self.routine_mut("survey") {
-                s.on_scan = if filter == 1 {
-                    vec![Block::Match(MatchField::Rare), Block::Collect]
-                } else {
-                    vec![Block::Collect]
-                };
-            }
+        if !routines.is_empty() {
+            self.routines = routines;
         }
     }
 
+    // ---- render -----------------------------------------------------------------------------
+
     /// The terminal-styled console text for the HUD/text overlay.
     pub fn render(&self) -> String {
-        let mut s = String::from("OPERATIONS CONSOLE   [O close]\nroutines (Enter toggles):\n");
+        match self.view {
+            View::Home => self.render_home(),
+            View::Edit(i) => self.render_edit(i),
+        }
+    }
+
+    fn render_home(&self) -> String {
+        let mut s = String::from(
+            "OPERATIONS CONSOLE   [O close]\nroutines (Enter toggle · E edit · X delete):\n",
+        );
         let mut row = 0usize;
         for r in &self.routines {
             let cur = if row == self.cursor { ">" } else { " " };
             let on = if r.enabled { "on " } else { "off" };
-            let pipe: Vec<&str> = r
-                .continuous
-                .iter()
-                .chain(r.on_scan.iter())
-                .map(|b| b.label())
-                .collect();
+            let steps: Vec<String> = r.body.iter().map(|b| b.label()).collect();
+            let pipe = if steps.is_empty() {
+                "—".to_string()
+            } else {
+                steps.join(" → ")
+            };
             s.push_str(&format!(
-                "{cur} [{on}] {:<7}: {}\n",
+                "{cur} [{on}] {:<9} {:<11}: {}\n",
                 r.name,
-                pipe.join(" → ")
+                r.trigger.label(),
+                pipe
             ));
             row += 1;
         }
+        let cur = if row == self.cursor { ">" } else { " " };
+        s.push_str(&format!("{cur} + new routine\n"));
+        row += 1;
         s.push_str("blocks (Enter runs):\n");
         for b in &self.palette {
             let cur = if row == self.cursor { ">" } else { " " };
-            // Locked blocks read as a recovered-but-un-comprehended man-page entry (decode to gain).
             let tag = match b.required() {
-                Some(s2) if !self.unlocked.contains(&s2) => {
-                    format!("  (locked: decode {})", s2.label())
+                Some(st) if !self.unlocked.contains(&st) => {
+                    format!("  (locked: decode {})", st.label())
                 }
                 _ if !b.wired() => "  (—)".to_string(),
                 _ => String::new(),
@@ -332,7 +783,33 @@ impl Console {
             s.push_str(&format!("{cur} {}{}\n", b.label(), tag));
             row += 1;
         }
-        s.push_str("[↑↓ select · ←→ change · Enter run/toggle]");
+        s.push_str("[↑↓ select · Enter run/toggle · E edit · X delete]");
+        s
+    }
+
+    fn render_edit(&self, i: usize) -> String {
+        let r = &self.routines[i];
+        let mut s = format!(
+            "EDIT ROUTINE  {}  [{}]   [O back]\n",
+            r.name,
+            if r.enabled { "on" } else { "off" }
+        );
+        // Trigger row.
+        let cur = if self.cursor == 0 { ">" } else { " " };
+        s.push_str(&format!("{cur} trigger: {}\n", r.trigger.label()));
+        // Body steps.
+        for (si, step) in r.body.iter().enumerate() {
+            let cur = if self.cursor == si + 1 { ">" } else { " " };
+            s.push_str(&format!("{cur}   {}. {}\n", si + 1, step.label()));
+        }
+        // Add-step row.
+        let cur = if self.cursor == r.body.len() + 1 {
+            ">"
+        } else {
+            " "
+        };
+        s.push_str(&format!("{cur}   + add step\n"));
+        s.push_str("[↑↓ move · ←→ change · -/+ value · Enter insert · X remove · [ ] reorder]");
         s
     }
 }
@@ -342,117 +819,243 @@ mod tests {
     use super::*;
 
     #[test]
-    fn given_routines_are_the_onboarding_artifact() {
+    fn given_routines_are_plain_data() {
         let c = Console::default();
-        assert!(c.drift_enabled());
-        assert!(c.survey_enabled());
-        assert!(c.survey_autocollects());
-        // The survey routine reads as scan(shards) → on-scan → collect.
-        let survey = c.routines.iter().find(|r| r.name == "survey").unwrap();
-        assert_eq!(survey.continuous, vec![Block::Scan]);
-        assert_eq!(survey.on_scan, vec![Block::Collect]);
+        // Three givens, all ordinary instances (no per-name behaviour anywhere).
+        assert_eq!(c.routines.len(), 3);
+        let drift = &c.routines[0];
+        assert_eq!(drift.name, "drift");
+        assert!(drift.is_nav());
+        assert_eq!(drift.trigger, Trigger::Continuous);
+        let survey = &c.routines[1];
+        assert_eq!(survey.trigger, Trigger::Continuous);
+        assert_eq!(survey.body, vec![Step::Do(Block::Scan(ScanItem::Shards))]);
+        let collect = &c.routines[2];
+        assert_eq!(collect.trigger, Trigger::OnScan);
+        assert_eq!(collect.body, vec![Step::Do(Block::Collect)]);
     }
 
     #[test]
-    fn cursor_wraps_and_resolves() {
+    fn interpreter_runs_the_givens() {
         let mut c = Console::default();
-        assert_eq!(c.selected(), Sel::Routine(0)); // drift
-        c.move_cursor(-1);
-        assert_eq!(c.cursor, c.rows() - 1); // wrapped to the last block
-        assert!(matches!(c.selected(), Sel::Block(_)));
-        c.move_cursor(1);
-        assert_eq!(c.cursor, 0);
-    }
-
-    #[test]
-    fn toggling_a_routine_gates_it() {
-        let mut c = Console::default();
-        c.move_cursor(1); // survey row
-        assert!(!c.toggle_routine(1));
-        assert!(!c.survey_enabled());
-        assert!(c.toggle_routine(1));
-        assert!(c.survey_enabled());
-    }
-
-    #[test]
-    fn vocabulary_marks_wired_vs_stub() {
-        assert!(Block::Collect.wired() && Block::Scan.wired() && Block::FireBeam.wired());
-        assert!(!Block::Spend.wired() && !Block::Goto.wired());
-        assert!(
-            Block::Seek.wired() && Block::Circle.wired() && Block::Match(MatchField::Rare).wired()
+        let t = c.tick(0);
+        // drift → nav steering; survey → scan request; collect is on-scan (not in the tick).
+        assert_eq!(t.nav, Some(Block::Drift));
+        assert!(t.scan);
+        assert!(t.acts.is_empty());
+        // on-scan collect, no filter.
+        assert_eq!(
+            c.on_scan_acts(),
+            vec![Act {
+                block: Block::Collect,
+                filter: None
+            }]
         );
     }
 
     #[test]
-    fn cycle_nav_steps_drift_seek_circle() {
+    fn disabling_drift_drops_the_nav_intent() {
         let mut c = Console::default();
-        c.unlocked.insert(crate::progress::Stratum::Schematics); // recover seek/circle
-        assert_eq!(c.nav_block(), Block::Drift); // cursor on drift (row 0)
-        c.cycle_param(1);
-        assert_eq!(c.nav_block(), Block::Seek);
-        c.cycle_param(1);
-        assert_eq!(c.nav_block(), Block::Circle);
-        c.cycle_param(1);
-        assert_eq!(c.nav_block(), Block::Drift); // wraps
-        c.cycle_param(-1);
-        assert_eq!(c.nav_block(), Block::Circle);
+        c.toggle_routine(0); // drift off
+        let t = c.tick(0);
+        assert_eq!(t.nav, None); // no continuous nav routine ⇒ autopilot off
+        assert!(t.scan); // survey still scans
     }
 
     #[test]
-    fn cycle_filter_toggles_match_rare() {
+    fn authored_match_gated_collect_filters() {
         let mut c = Console::default();
-        c.unlocked.insert(crate::progress::Stratum::Rites); // recover match()
-        c.move_cursor(1); // survey row
-        assert_eq!(c.filter(), None);
-        c.cycle_param(1);
-        assert_eq!(c.filter(), Some(MatchField::Rare));
-        assert!(c.survey_autocollects()); // still collects, now filtered
-        c.cycle_param(1);
-        assert_eq!(c.filter(), None);
+        c.unlocked.insert(Stratum::Rites); // recover match()
+                                           // Author the collect routine to "match(rare) → collect".
+        c.routines[2].body = vec![Step::Match(MatchField::Rare), Step::Do(Block::Collect)];
+        assert_eq!(
+            c.on_scan_acts(),
+            vec![Act {
+                block: Block::Collect,
+                filter: Some(MatchField::Rare)
+            }]
+        );
+    }
+
+    #[test]
+    fn repeat_multiplies_the_next_do() {
+        let body = vec![
+            Step::Repeat(3),
+            Step::Do(Block::Decode),
+            Step::Do(Block::Collect),
+        ];
+        let acts = Console::expand(&body);
+        // decode ×3 then collect ×1 (repeat only multiplies the *next* Do).
+        assert_eq!(acts.len(), 4);
+        assert!(acts[..3].iter().all(|a| a.block == Block::Decode));
+        assert_eq!(acts[3].block, Block::Collect);
+    }
+
+    #[test]
+    fn when_fires_once_on_the_rising_edge() {
+        let mut c = Console::default();
+        // A when(data ≥ 10) → decode routine.
+        c.routines.push(Routine::new(
+            "auto-decode",
+            Trigger::When(Cond {
+                state: State::Data,
+                min: 10,
+            }),
+            vec![Step::Do(Block::Decode)],
+        ));
+        assert!(c.tick(5).acts.is_empty()); // below threshold
+        let fired = c.tick(12); // crosses ⇒ fires once
+        assert_eq!(
+            fired.acts,
+            vec![Act {
+                block: Block::Decode,
+                filter: None
+            }]
+        );
+        assert!(c.tick(12).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
+        c.tick(0); // drop below ⇒ re-arm
+        assert!(!c.tick(20).acts.is_empty()); // crosses again ⇒ fires
+    }
+
+    #[test]
+    fn create_insert_remove_reorder() {
+        let mut c = Console::default();
+        let i = c.create_routine();
+        assert_eq!(c.routines.len(), 4);
+        assert_eq!(c.view, View::Edit(i));
+        assert!(c.routines[i].body.is_empty());
+        // Insert a step (cursor on the trigger row → inserts at front).
+        c.cursor = 0;
+        c.insert_step(i);
+        assert_eq!(c.routines[i].body.len(), 1);
+        // Insert another after it, then reorder.
+        c.insert_step(i);
+        assert_eq!(c.routines[i].body.len(), 2);
+        c.routines[i].body = vec![
+            Step::Do(Block::Scan(ScanItem::Shards)),
+            Step::Do(Block::Collect),
+        ];
+        c.cursor = 1; // first step
+        c.move_step(i, 1); // swap down
+        assert_eq!(c.routines[i].body[0], Step::Do(Block::Collect));
+        // Remove the step under the cursor.
+        c.cursor = 1;
+        c.remove_step(i);
+        assert_eq!(c.routines[i].body.len(), 1);
+    }
+
+    #[test]
+    fn cycle_step_skips_locked_vocabulary() {
+        let mut c = Console::default();
+        let i = c.create_routine();
+        c.cursor = 0;
+        c.insert_step(i); // a step exists now (cursor on it, row 1)
+        c.cursor = 1;
+        // Cycle through the whole vocabulary; with nothing decoded it must never become a
+        // locked block (seek/circle/goto/match).
+        for _ in 0..20 {
+            c.cycle(1);
+            let s = c.routines[i].body[0];
+            assert!(c.step_unlocked(s), "cycled into a locked step: {s:?}");
+        }
+        // Once Schematics is comprehended, seek becomes reachable.
+        c.unlocked.insert(Stratum::Schematics);
+        let reachable = c.vocabulary().contains(&Step::Do(Block::Seek));
+        assert!(reachable);
+    }
+
+    #[test]
+    fn cycle_trigger_and_adjust_value() {
+        let mut c = Console::default();
+        let i = c.create_routine();
+        c.cursor = 0; // trigger row
+        assert_eq!(c.routines[i].trigger, Trigger::Continuous);
+        c.cycle(1);
+        assert_eq!(c.routines[i].trigger, Trigger::OnScan);
+        c.cycle(1);
+        assert!(matches!(c.routines[i].trigger, Trigger::When(_)));
+        // -/+ nudges the threshold by 5.
+        c.adjust(1);
+        if let Trigger::When(cond) = c.routines[i].trigger {
+            assert_eq!(cond.min, 15);
+        } else {
+            panic!("expected When");
+        }
+    }
+
+    #[test]
+    fn adjust_repeat_count() {
+        let mut c = Console::default();
+        let i = c.create_routine();
+        c.routines[i].body = vec![Step::Repeat(2)];
+        c.cursor = 1; // the step
+        c.adjust(3);
+        assert_eq!(c.routines[i].body[0], Step::Repeat(5));
+        c.adjust(-10); // clamps to 1
+        assert_eq!(c.routines[i].body[0], Step::Repeat(1));
+    }
+
+    #[test]
+    fn delete_routine_returns_home() {
+        let mut c = Console::default();
+        c.open_editor(1);
+        c.delete_routine(1);
+        assert_eq!(c.view, View::Home);
+        assert_eq!(c.routines.len(), 2);
+    }
+
+    #[test]
+    fn routines_round_trip_through_co_segment() {
+        let mut c = Console::default();
+        c.unlocked.insert(Stratum::Schematics);
+        c.unlocked.insert(Stratum::Rites);
+        // Author: drift → seek; collect → match(rare) → collect; add a when-decode routine.
+        c.routines[0].body = vec![Step::Do(Block::Seek)];
+        c.routines[2].body = vec![Step::Match(MatchField::Rare), Step::Do(Block::Collect)];
+        c.toggle_routine(1); // survey off
+        c.routines.push(Routine::new(
+            "routine-4",
+            Trigger::When(Cond {
+                state: State::Data,
+                min: 25,
+            }),
+            vec![Step::Repeat(3), Step::Do(Block::Decode)],
+        ));
+        let s = format!("s=1&{}&x=2", c.encode());
+        let mut back = Console::default();
+        back.restore(&s);
+        assert_eq!(back.routines, c.routines);
+        // Lenient: no co= leaves the givens.
+        let mut d = Console::default();
+        d.restore("s=1&x=2");
+        assert_eq!(d.routines.len(), 3);
+        assert_eq!(d.routines[0].body, vec![Step::Do(Block::Drift)]);
     }
 
     #[test]
     fn vocabulary_is_gated_by_comprehension() {
-        use crate::progress::Stratum;
         let mut c = Console::default();
-        // Starters are always available; seek/match are locked until their stratum is decoded.
-        assert!(c.is_unlocked(Block::Scan) && c.is_unlocked(Block::Decode));
-        assert!(!c.is_unlocked(Block::Seek) && !c.is_unlocked(Block::Match(MatchField::Rare)));
-        // Cycling nav can't reach Seek while locked.
-        c.cycle_param(1);
-        assert_eq!(c.nav_block(), Block::Drift);
-        // Comprehend Schematics → seek unlocks + becomes reachable.
+        // Starters available; nav (Schematics) + match (Rites) locked by default.
+        assert!(c.is_unlocked(Block::Scan(ScanItem::Shards)) && c.is_unlocked(Block::Decode));
+        assert!(!c.is_unlocked(Block::Seek));
+        let vocab = c.vocabulary();
+        assert!(!vocab.contains(&Step::Do(Block::Seek)));
+        assert!(!vocab.contains(&Step::Match(MatchField::Rare)));
         c.unlocked.insert(Stratum::Schematics);
-        assert!(c.is_unlocked(Block::Seek));
-        c.cycle_param(1);
-        assert_eq!(c.nav_block(), Block::Seek);
-        // The filter stays locked until Rites.
-        c.move_cursor(1); // survey
-        c.cycle_param(1);
-        assert_eq!(c.filter(), None);
         c.unlocked.insert(Stratum::Rites);
-        c.cycle_param(1);
-        assert_eq!(c.filter(), Some(MatchField::Rare));
+        let vocab = c.vocabulary();
+        assert!(vocab.contains(&Step::Do(Block::Seek)));
+        assert!(vocab.contains(&Step::Match(MatchField::Rare)));
     }
 
     #[test]
-    fn routine_state_round_trips_through_co_segment() {
-        use crate::progress::Stratum;
+    fn home_cursor_resolves_routine_new_and_block() {
+        let c = Console::default();
+        assert_eq!(c.selected(), Sel::Routine(0));
         let mut c = Console::default();
-        c.unlocked.insert(Stratum::Schematics);
-        c.unlocked.insert(Stratum::Rites);
-        c.cycle_param(1); // drift → seek
-        c.move_cursor(1);
-        c.cycle_param(1); // survey filter → rare
-        let s = format!("s=1&{}&x=2", c.encode());
-        let mut back = Console::default();
-        back.restore(&s);
-        assert_eq!(back.nav_block(), Block::Seek);
-        assert_eq!(back.filter(), Some(MatchField::Rare));
-        // Lenient: no co= leaves the givens.
-        let mut d = Console::default();
-        d.restore("s=1&x=2");
-        assert_eq!(d.nav_block(), Block::Drift);
-        assert_eq!(d.filter(), None);
+        c.cursor = c.routines.len(); // the "new routine" row
+        assert_eq!(c.selected(), Sel::NewRoutine);
+        c.cursor = c.routines.len() + 1; // first palette block
+        assert!(matches!(c.selected(), Sel::Block(_)));
     }
 }

@@ -459,13 +459,17 @@ survive, reframed as the console + composed routines + comprehension unlocks (G4
 5. **✅ G5 — Composition editor & parameterised blocks.** The **wiring editor** (author routines)
    + the generic `match` filter + parameterised blocks (swap `scan`'s item; unlock fields) + nav
    `seek`/`circle`. *The management game — selective auto-collect + routing you build.*
-6. **◑ G6 — Control, budgets & the block vocabulary (the "tree").** `when`/`repeat`/`budget`/
-   `priority`/`survey`/`route`/`scanMany` + `decode` + the comprehension-gated **unlock economy**
-   (strata → blocks) + **Decipherment legibility**. The tree *as the growing block vocabulary*.
-7. **⏳ G7+ — Two agents, the expedition & the arc.** Walking branch (Descent/Hull interiors) +
-   **independent simultaneous agents** + the **hail** + cross-agent meta (automate an
-   expedition); then decipherment fluency, the late **Concordance/Synthesis**, Resonance/pristine,
-   co-op shared archive (N1).
+6. **◑ G6 — Control, budgets & the block vocabulary (the "tree").** `decode` + the
+   comprehension-gated **unlock economy** (strata → blocks) + **Decipherment legibility**. The
+   tree *as the growing block vocabulary*. *(`when`/`repeat` + the free-form runtime moved to G7.)*
+7. **✅ G7 — Routine runtime & free-form editor** ([brief](milestones/G7-routine-runtime.md)). The
+   **composability core**: a real `Routine { trigger, body }` model run by an **interpreter**
+   (the named-accessor hacks deleted; the givens are plain data), a no-typing **free-form editor**
+   (create/delete/insert/remove/reorder/param), `when`/`repeat` on the interpreter, `scan(item)`.
+8. **⏳ G8+ — Two agents, the expedition & the arc.** Walking branch (Descent/Hull interiors) +
+   **independent simultaneous agents** (now on the real runtime) + the **hail** + cross-agent meta
+   (automate an expedition); then decipherment fluency, the late **Concordance/Synthesis**,
+   Resonance/pristine, co-op shared archive (N1).
 
 ## 14. Open items
 

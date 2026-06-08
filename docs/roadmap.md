@@ -531,17 +531,19 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 
 ## Scraped Again — gameplay (G-series)
 
-> **Unattended run log (2026-06-07).** This session completed the active G-series thread on the
-> block substrate: **G4 ✅** (block runtime + console), **G5 ✅** (console editor + `match` +
-> nav `seek`/`circle`), **G6 ◑** (`decode`/comprehension economy + decipherment legibility +
-> comprehension-gated vocabulary; the `when`/`repeat`/`budget` control vocabulary is folded into
-> G7). `main` is green at every commit (fmt / clippy `-D` / 144 tests / wasm; golden voxel-hash
-> + headless render unchanged; engine↔game boundary CI-checked). **Still outstanding** (next
-> picks, roughly in order): **G7** (two simultaneous agents + hail + walking/foot-collision
-> interiors + the control-block vocabulary + the Concordance arc — large), then the engine/
-> tooling backlog **M7 🛠 · E9 ⏳ · E11 ⏳ · D5 ⏳** and the **device/hardware-gated** items I
-> can't verify here — **M8(b)** profiling (needs the reference iGPU/phone), **D7/D8** (need a
-> controller / desktop+APK device to verify runtime) — flagged blocked per the run rules.
+> **Unattended run log (2026-06-08).** Block-substrate thread: **G4 ✅** (block runtime + console),
+> **G5 ✅** (console editor + `match` + nav `seek`/`circle`), **G6 ◑** (`decode`/comprehension
+> economy + decipherment legibility + comprehension-gated vocabulary), **G7 ✅** (the
+> composability core: a **real routine model + interpreter** replacing the named-accessor hacks,
+> a no-typing **free-form editor**, `when`/`repeat` on the interpreter, `scan(item)`, and
+> auto-collect that bites at cruise altitude). The old overloaded "G7+" is re-scoped to **G8+**.
+> `main` is green at every commit (fmt / clippy `-D` / 150 tests / wasm; golden voxel-hash +
+> headless render unchanged; engine↔game boundary CI-checked). **Still outstanding** (next picks,
+> roughly in order): **G8** (two simultaneous agents + hail + walking/foot-collision interiors +
+> the Concordance arc), then the engine/tooling backlog **M7 🛠 · E9 ⏳ · E11 ⏳ · D5 ⏳** and the
+> **device/hardware-gated** items I can't verify here — **M8(b)** profiling (needs the reference
+> iGPU/phone), **D7/D8** (need a controller / desktop+APK device to verify runtime) — flagged
+> blocked per the run rules.
 
 The game built on the engine (now `crates/scraped-again`). Full design:
 [`game-mechanics.md`](game-mechanics.md) — a **melancholy-archival** game where progress is
@@ -621,14 +623,30 @@ legibility** (a script renders translated). The "tech tree" *as the growing bloc
   v3); a per-block `required(stratum)` gate grows the console vocabulary (palette shows locks;
   nav/filter cycling + dispatch gated); a comprehended script's inscriptions render **translated**
   via a seeded `lexicon` grammar. 144 tests; golden voxel-hash unchanged.
-- **Deferred to G7:** the `when`/`repeat`/`budget`/`priority`/`survey`/`route`/`scanMany` control
-  vocabulary (needs the general free-form routine runtime/editor that lands with G7).
+- **Deferred to G7:** the `when`/`repeat` control vocabulary + the **general free-form routine
+  runtime/editor** (the composability core — landed in G7 below).
 
-### ✨ G7+ — Two agents, the expedition & the arc ⏳
+### ✨ G7 — Routine runtime & free-form editor ✅ &nbsp;→ [`milestones/G7-routine-runtime.md`](milestones/G7-routine-runtime.md)
+**The composability core**, pulled out of the old "G7+" catch-all and prioritised: replace the
+named-routine accessor hacks with a **real `Routine` model executed by an interpreter**, and let
+the player **author routines** from the console (create/delete/insert/remove/reorder/param, no
+typing). The first **control vocabulary** (`when`/`repeat`) lands *on* the interpreter; `scan` is
+parameterised (`scan(item)`).
+- **Landed:** `console` rewritten — `Routine { trigger, body: Vec<Step> }` run by an interpreter
+  ([`Console::tick`]/`on_scan_acts` → nav/scan/collect **intents** the app applies); the
+  named-accessor hacks (`drift_enabled`/`survey_enabled`/`survey_autocollects`/`nav_block`/
+  `filter`) are **deleted** and the three givens (`drift`/`survey`/`collect`) are **ordinary data
+  instances — no per-name branches**. Free-form editor (↑↓ move · ←→ change · −/+ value · Enter
+  insert · X remove · `[`/`]` reorder); `when(data ≥ N)` triggers (rising-edge) + `repeat(n)` +
+  match-gated collect honoured by the interpreter; locked blocks can't be inserted; authored
+  routines round-trip through `co=`. **Auto-collect now bites at cruise altitude** (a generous
+  nearby reach for the hands-off path). 150 tests; golden voxel-hash + headless render unchanged.
+
+### ✨ G8+ — Two agents, the expedition & the arc ⏳
 The walking branch (Descent/Hull foot-collision interiors) + **independent simultaneous agents**
-+ the **hail** + cross-agent meta (automate a whole expedition); then decipherment fluency, the
-late **Concordance/Synthesis** lore arc, the Resonance/pristine branch, and co-op shared archive
-(N1). Fleshed into briefs when reached.
+(now on the real runtime) + the **hail** + cross-agent meta (automate a whole expedition); then
+decipherment fluency, the late **Concordance/Synthesis** lore arc, the Resonance/pristine branch,
+and co-op shared archive (N1). Fleshed into briefs when reached.
 
 ## Dev tooling & process (D-series)
 

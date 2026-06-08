@@ -123,6 +123,10 @@ struct App {
     auto_fly_angle: f32,
     /// Wander clock for the autopilot heading (so it meanders to new terrain, not in a circle).
     auto_fly_t: f32,
+    /// G7: this frame's autopilot steering, from the routine interpreter (a continuous nav block).
+    nav_intent: Option<console::Block>,
+    /// G7: a continuous routine asked to scan this frame (the app throttles it to `scan::INTERVAL`).
+    scan_wanted: bool,
     /// Movement mode (E19): piloting the cruiser (fly — autopilot or manual) vs walking on foot.
     mode: Mode,
     /// The cruiser's world position: tracks the camera while piloting; where it's parked once you
@@ -498,6 +502,37 @@ impl App {
             log::info!("collect: nothing in your sights");
             return;
         };
+        self.collect_index(idx);
+    }
+
+    /// The hands-off **auto-collect** the routine interpreter drives (on-scan / when / continuous
+    /// `collect`): harvest the nearest known site within a generous spherical reach of the ship —
+    /// so the autopilot loop actually collects at **cruise altitude** (sites sit ~`CRUISE_HEIGHT`
+    /// below the forward aim ray, so the precise aim pick used by *manual* collect misses them).
+    /// Honours the optional `match` filter.
+    fn collect_nearby_where(&mut self, keep: impl Fn(&progress::Collectible) -> bool) {
+        const AUTO_REACH: f32 = 45.0; // ~2× cruise height: takes sites the ship passes over
+        let origin = self.camera.position;
+        let mut best = AUTO_REACH * AUTO_REACH;
+        let mut best_i: Option<usize> = None;
+        for (i, c) in self.collectible.iter().enumerate() {
+            if !keep(c) {
+                continue;
+            }
+            let d2 = (Vec3::from(c.pos) - origin).length_squared();
+            if d2 <= best {
+                best = d2;
+                best_i = Some(i);
+            }
+        }
+        if let Some(idx) = best_i {
+            self.collect_index(idx);
+        }
+    }
+
+    /// Collect the `idx`-th collectible: remove it, bank it through the serializable event seam,
+    /// and drop its chunk from the opportunity surface. Shared by the aim pick + the auto-collect.
+    fn collect_index(&mut self, idx: usize) {
         let c = self.collectible.remove(idx);
         let ev = progress::Event::Collect {
             find_id: c.find_id,
@@ -572,8 +607,8 @@ impl App {
     fn autoscan(&mut self, dt: f32) {
         let now = self.time;
         self.flicks.retain(|f| !f.dead(now)); // prune spent flicks every frame
-                                              // Driven by the `survey` routine (G4): only scan while it's enabled + piloting.
-        if self.mode != Mode::Pilot || !self.console.survey_enabled() {
+                                              // Driven by the interpreter (G7): scan only while a continuous routine asks + piloting.
+        if self.mode != Mode::Pilot || !self.scan_wanted {
             return;
         }
         self.scan_timer += dt;
@@ -624,20 +659,32 @@ impl App {
                 });
             }
         }
-        // on-scan → collect (the survey routine's auto-collect). One-block parity: this is the
-        // same G1 collect as a manual `T`, so at altitude it harvests ~nothing (sites sit below
-        // the aim ray's reach) — net behaviour ≈ today's; it bites when you scan/fly low.
-        if found && self.console.survey_autocollects() {
-            // Apply the survey routine's optional `match` filter (G5) to the auto-collect.
-            match self.console.filter() {
-                Some(console::MatchField::Rare) => self.collect_aimed_where(|c| {
-                    matches!(
-                        progress::stratum_of(c.script),
-                        progress::Stratum::Relics | progress::Stratum::Signals
-                    )
-                }),
-                None => self.collect_aimed(),
+        // on-scan → the interpreter's on-scan routines (G7): typically a (filtered) collect. The
+        // collect is the same G1 path as a manual `T`, so at altitude it harvests ~nothing (sites
+        // sit below the aim ray's reach) — net behaviour ≈ today's; it bites when you scan/fly low.
+        if found {
+            for act in self.console.on_scan_acts() {
+                match act.block {
+                    console::Block::Collect => self.dispatch_collect(act.filter),
+                    console::Block::FireBeam => self.cast_beam(),
+                    console::Block::Decode => self.decode_action(),
+                    _ => {}
+                }
             }
+        }
+    }
+
+    /// Run a routine `collect` act (the hands-off auto-collect), honouring an optional `match`
+    /// filter (G5/G7). Uses the generous nearby reach so it harvests at cruise altitude.
+    fn dispatch_collect(&mut self, filter: Option<console::MatchField>) {
+        match filter {
+            Some(console::MatchField::Rare) => self.collect_nearby_where(|c| {
+                matches!(
+                    progress::stratum_of(c.script),
+                    progress::Stratum::Relics | progress::Stratum::Signals
+                )
+            }),
+            None => self.collect_nearby_where(|_| true),
         }
     }
 
@@ -650,29 +697,59 @@ impl App {
             .collect();
     }
 
-    /// G4: keyboard/pad control of the open console (no typing) — cursor + confirm.
+    /// G7: keyboard/pad control of the open console (no typing) — cursor + discrete buttons.
+    /// Home: ↑↓ select · Enter run/toggle/create · E edit · X delete. Editor: ↑↓ move · ←→ change
+    /// step/trigger kind · -/+ nudge a value · Enter insert · X remove · `[`/`]` reorder · O back.
     fn console_key(&mut self, code: KeyCode) {
         self.sync_console_unlock();
-        match code {
-            KeyCode::KeyO | KeyCode::Escape => self.console.open = false,
-            KeyCode::ArrowUp | KeyCode::KeyW => self.console.move_cursor(-1),
-            KeyCode::ArrowDown | KeyCode::KeyS => self.console.move_cursor(1),
-            // G5 pickers/steppers: ←/→ change the selected routine's parameter (nav / filter).
-            KeyCode::ArrowLeft | KeyCode::KeyA => self.console.cycle_param(-1),
-            KeyCode::ArrowRight | KeyCode::KeyD => self.console.cycle_param(1),
-            KeyCode::Enter | KeyCode::Space => self.console_confirm(),
-            _ => {}
+        match self.console.view {
+            console::View::Home => match code {
+                KeyCode::KeyO | KeyCode::Escape => self.console.open = false,
+                KeyCode::ArrowUp | KeyCode::KeyW => self.console.move_cursor(-1),
+                KeyCode::ArrowDown | KeyCode::KeyS => self.console.move_cursor(1),
+                KeyCode::Enter | KeyCode::Space => self.console_confirm(),
+                KeyCode::KeyE => {
+                    if let console::Sel::Routine(i) = self.console.selected() {
+                        self.console.open_editor(i);
+                    }
+                }
+                KeyCode::KeyX | KeyCode::Delete | KeyCode::Backspace => {
+                    if let console::Sel::Routine(i) = self.console.selected() {
+                        self.console.delete_routine(i);
+                    }
+                }
+                _ => {}
+            },
+            console::View::Edit(i) => match code {
+                KeyCode::KeyO | KeyCode::Escape => self.console.close_editor(),
+                KeyCode::ArrowUp | KeyCode::KeyW => self.console.move_cursor(-1),
+                KeyCode::ArrowDown | KeyCode::KeyS => self.console.move_cursor(1),
+                KeyCode::ArrowLeft | KeyCode::KeyA => self.console.cycle(-1),
+                KeyCode::ArrowRight | KeyCode::KeyD => self.console.cycle(1),
+                KeyCode::Minus => self.console.adjust(-1),
+                KeyCode::Equal => self.console.adjust(1),
+                KeyCode::Enter | KeyCode::Space => self.console.insert_step(i),
+                KeyCode::KeyX | KeyCode::Delete | KeyCode::Backspace => self.console.remove_step(i),
+                KeyCode::BracketLeft => self.console.move_step(i, -1),
+                KeyCode::BracketRight => self.console.move_step(i, 1),
+                _ => {}
+            },
         }
     }
 
-    /// G4: confirm on the cursor — run a block, or toggle a routine (drift gates the autopilot).
+    /// G7: confirm on the home cursor — run a block, toggle a routine, or create a new one.
     fn console_confirm(&mut self) {
         match self.console.selected() {
             console::Sel::Block(b) => self.dispatch_block(b),
+            console::Sel::NewRoutine => {
+                self.console.create_routine();
+            }
             console::Sel::Routine(i) => {
                 let on = self.console.toggle_routine(i);
-                if self.console.routines[i].name == "drift" {
-                    self.auto_fly = on; // the drift routine governs the autopilot wander
+                // Re-enabling a routine that steers the autopilot re-engages the wander (generic —
+                // keyed on the routine's body, not its name).
+                if on && self.console.routines[i].is_nav() {
+                    self.auto_fly = true;
                 }
             }
         }
@@ -688,7 +765,7 @@ impl App {
             return;
         }
         match b {
-            console::Block::Scan => self.scan_pulse(),
+            console::Block::Scan(_) => self.scan_pulse(),
             console::Block::Collect => self.collect_aimed(),
             console::Block::FireBeam => self.cast_beam(),
             console::Block::Drift => self.auto_fly = true, // (re)engage the wander
@@ -1659,9 +1736,27 @@ impl ApplicationHandler<AppEvent> for App {
                     );
                 }
 
-                // G4: the `drift` routine governs the autopilot wander — disabling it stops the
-                // auto-drift (you keep manual control); re-enabling it re-engages auto_fly.
-                if !self.console.drift_enabled() {
+                // G7: run one interpreter tick over the enabled routines. The intents replace the
+                // old named-accessor hacks: `nav` steers the autopilot, `scan` gates the auto-scan,
+                // and any one-shot acts (continuous non-nav + `when`-edge fires) dispatch now.
+                let tick = self
+                    .console
+                    .tick(self.progress.strata.total().min(u32::MAX as u64) as u32);
+                self.nav_intent = tick.nav;
+                self.scan_wanted = tick.scan;
+                for act in tick.acts {
+                    match act.block {
+                        console::Block::FireBeam => self.cast_beam(),
+                        console::Block::Decode => self.decode_action(),
+                        console::Block::Collect => self.dispatch_collect(act.filter),
+                        // A `when`-fired nav block engages the autopilot.
+                        b if b.is_nav() => self.auto_fly = true,
+                        _ => {}
+                    }
+                }
+                // A continuous nav routine governs the autopilot wander; without one, drift is off
+                // (you keep manual control) — re-enabling a nav routine re-engages it (in console_confirm).
+                if self.nav_intent.is_none() {
                     self.auto_fly = false;
                 }
                 match self.mode {
@@ -1670,12 +1765,12 @@ impl ApplicationHandler<AppEvent> for App {
                         // circle): a low-frequency, mean-zero turn rate meanders the heading in
                         // long S-curves while always cruising onward over fresh terrain.
                         self.auto_fly_t += dt;
-                        // G5: the nav block steers the heading — `seek` toward the nearest
+                        // G5/G7: the nav block steers the heading — `seek` toward the nearest
                         // known-uncollected site, `circle` loiters, `drift` wanders (default).
                         let wander = (self.auto_fly_t * 0.06).sin() * 0.28
                             + (self.auto_fly_t * 0.017 + 1.3).sin() * 0.14;
-                        let turn = match self.console.nav_block() {
-                            console::Block::Seek => match self.seek_target() {
+                        let turn = match self.nav_intent {
+                            Some(console::Block::Seek) => match self.seek_target() {
                                 Some(t) => {
                                     let want = (t.z - self.camera.position.z)
                                         .atan2(t.x - self.camera.position.x);
@@ -1690,7 +1785,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 None => wander, // nothing known yet → wander until the scan finds one
                             },
-                            console::Block::Circle => 0.5, // steady turn = loiter/orbit
+                            Some(console::Block::Circle) => 0.5, // steady turn = loiter/orbit
                             _ => wander,
                         };
                         self.auto_fly_angle += turn * dt;
@@ -2225,6 +2320,8 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         auto_fly: true,
         auto_fly_angle: 0.0,
         auto_fly_t: 0.0,
+        nav_intent: Some(console::Block::Drift),
+        scan_wanted: true,
         mode: Mode::Pilot, // start in the cruiser, on autopilot (the watchable default)
         cruiser_pos: pos,
         walker: player::Walker::default(),
