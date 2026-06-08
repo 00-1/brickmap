@@ -2882,8 +2882,15 @@ fn autopilot_step(
     seed: u32,
     dt: f32,
 ) -> (Vec3, f32) {
-    // A low-frequency, mean-zero turn rate meanders the heading in long S-curves (not a circle).
-    let wander = (t * 0.06).sin() * 0.28 + (t * 0.017 + 1.3).sin() * 0.14;
+    // Drift heading: a slow, smooth **fbm** of incommensurate sines (per-seed phase) so the turn
+    // rate varies and *crosses zero* on a ~10–30 s scale — the ship **meanders and covers ground**
+    // like an unhurried survey sweep, instead of holding a near-constant rate into a tight circle
+    // (the old two-sine version turned too steadily → a loop). Cheap + deterministic; live-loop
+    // only (doesn't touch the golden hash). Shared by the piloted drift + the autonomous away-ship.
+    let ph = (seed & 0xffff) as f32 * 6.283_185e-5; // per-seed phase offset
+    let wander = (t * 0.13 + ph).sin() * 0.30
+        + (t * 0.29 + 1.7 + ph).sin() * 0.18
+        + (t * 0.07 + 4.1 + ph).sin() * 0.10;
     let turn = match nav {
         Some(console::Block::Seek) => match seek_target {
             Some(tg) => {
@@ -3657,6 +3664,32 @@ pub mod controls {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn autopilot_drift_meanders_not_circles() {
+        // Quick-fix: drift must turn *both ways* over time (a wandering survey sweep), not hold a
+        // near-constant rate into a loop. Run a couple of minutes of drift; the heading delta
+        // should go both positive and negative.
+        let (mut pos, mut angle) = (Vec3::new(0.0, 50.0, 0.0), 0.0f32);
+        let (mut saw_left, mut saw_right) = (false, false);
+        for i in 0..2000 {
+            let t = i as f32 * 0.1;
+            let (np, na) = autopilot_step(pos, angle, t, Some(console::Block::Drift), None, 7, 0.1);
+            let d = na - angle;
+            if d > 1e-4 {
+                saw_right = true;
+            }
+            if d < -1e-4 {
+                saw_left = true;
+            }
+            pos = np;
+            angle = na;
+        }
+        assert!(
+            saw_left && saw_right,
+            "drift should turn both ways (meander), not circle one way"
+        );
+    }
 
     #[test]
     fn autopilot_step_advances_and_tracks_height() {

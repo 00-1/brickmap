@@ -581,6 +581,13 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 > cross-agent `run(foot)`**) — all on the G7 runtime; only feel/visual tuning + the late lore arc
 > remain.
 >
+> **Post-wind-down (2026-06-08): D9 + a playtest fix.** **D9 ◑** — phone touch controls (generic
+> `bm-platform::touch` events + the game's pure, tested overlay/mapping onto the existing
+> camera/mode/console paths; tap-the-view = beam). **Drift quick-fix** — the autopilot was flying a
+> tight circle; the shared `autopilot_step` heading now comes from a slow fbm of incommensurate
+> sines (per-seed phase) so it **meanders + covers ground** like a survey sweep (piloted drift +
+> away-ship; live-loop, golden untouched; "turns both ways" tested).
+>
 > **M/E/D backlog — full pass complete (2026-06-08).** After a false-pause correction from the
 > channel, built every non-blocked backlog item's *systems* in the directed order, deferring only
 > feel:
