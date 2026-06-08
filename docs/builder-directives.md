@@ -46,9 +46,12 @@ risks; resist both.
 
 ## CURRENT DIRECTIVE — 2026-06-08 (NEW: D9 touch controls)
 
-### ⚡ QUICK FIX (squeeze in around D9) — autopilot `drift` wanders, not circles
+### ✅ QUICK FIX DONE (`a5f316f`) — autopilot `drift` wanders, not circles
 
-**Human playtest feedback:** the default autopilot currently flies a **tight circle** — it needs
+*(Resolved: fbm-of-three-sines heading in the shared `autopilot_step`; meanders + covers ground;
+tested turns-both-ways; piloted + away-ship. No further action.)*
+
+~~**Human playtest feedback:** the default autopilot currently flies a **tight circle**~~ — it needs
 to **wander, as if purposely surveying the planet**. The `drift` heading integrator is turning at
 a near-constant rate → a loop. Make it **meander and cover ground**: drive the heading from a
 **slow smooth noise** (value-noise / fbm / low-freq sine over the ship clock) so the turn rate varies

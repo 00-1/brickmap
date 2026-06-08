@@ -8,7 +8,27 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `ef2ac5a` (D9 touch controls).
+**Reviewed through:** `a5f316f` (autopilot wander fix).
+
+---
+
+## 2026-06-08 · autopilot drift wanders, not circles (`a5f316f`)  ✅ playtest fix landed
+
+The human's playtest note (drift = tight circle) — fixed cleanly, exactly per the directive.
+**Diagnosis matched:** the shared `autopilot_step` heading was a low-freq two-sine sum → near-
+constant turn → a loop. **Fix:** a slow **fbm of three incommensurate sines** (per-seed phase) so
+the turn rate varies and *crosses zero* on a ~10–30 s scale → it meanders and covers ground.
+Applied to the **shared `autopilot_step`** (piloted drift + the autonomous away-ship). Cheap,
+deterministic, live-loop (golden hash untouched). **Nice verifiable test:** asserts the drift turns
+*both ways* (meanders), not one way (circles) — a clean unit proxy for the human's "wanders" ask.
+
+- **Correct scoping** (better than my directive): I'd said "+ the away-walker", but the walker uses
+  directed `walk_toward` (toward sites), not free drift — so it never circled; the builder rightly
+  applied the fix only where drift happens.
+- **Still the human's call:** whether it *reads* as a purposeful survey sweep is motion-over-time —
+  in-app confirm on your next look. The *mechanism* (meanders, covers ground) is verified.
+
+**Verdict.** Quick-fix done right — on-directive, all drifting agents, smart test, correct scope.
 
 ---
 
