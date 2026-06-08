@@ -44,7 +44,26 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-08 (updated after G7 review)
+## CURRENT DIRECTIVE — 2026-06-08 (NEW: D9 touch controls)
+
+**The M/E/D backlog pass is complete + green (wind-down confirmed). New work:**
+
+- **D9 — touch controls (phone)** — build per [`milestones/D9-touch-controls.md`](milestones/D9-touch-controls.md).
+  A native touchscreen UI (2 sliders + 4 buttons + tap-the-view), mapping the core controls. Engine
+  side: generic winit **touch events** in `bm-platform` (no game concepts). Game side
+  (`scraped-again`): the on-screen overlay + a **unit-tested pure touch→action mapping** that reuses
+  the existing camera/mode/console paths; **tap-the-view = cast the survey-beam** at the hit point
+  (the universal interaction verb). Pinned defaults are in the brief — follow them; veto only on a
+  genuine fork. **Build the logic + overlay now (testable/headless); the on-device *feel*-tuning
+  (slider sensitivity, button size, tap targeting) is the device-gated human follow-up** — don't
+  block on a real phone, and don't pause for it.
+- Then: the remaining **Checklist-2 "deferred but buildable"** items if you want breadth (E18
+  solid-human placement+bake, E9 v2 fog/god-rays/water, web weather→audio bridge). Skip the
+  hardware/secret-gated ones (M8b/D7/D8/D5/N1).
+
+---
+
+*(superseded — kept for the record)*
 
 - ✅ **G7 (routine runtime & free-form editor) — PASSED review.** Escalation resolved: real
   interpreter, accessor hacks deleted, givens-as-data, editor, when/repeat, parameterised scan,
@@ -104,6 +123,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-08** — wind-down confirmed (176 tests green, independent check). **New directive: D9 touch controls** (phone touch UI; engine touch-events + game overlay + tap=beam; on-device feel-tuning is the device-gated follow-up).
 
 - **2026-06-08** — initial directive: G7 runtime/editor mandated (see above); re-scope G7+ → G8+;
   cleanups; then G8 + the M/E/D backlog. Issued after the babysitter's G6 (2/2) escalation.
