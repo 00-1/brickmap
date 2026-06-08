@@ -8,7 +8,35 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `431eb33` (E13 photo mode v1).
+**Reviewed through:** `be37c39` (E11-1 water CA).
+
+---
+
+## 2026-06-08 · E11-1 — flowing-water CA (`be37c39`)
+
+**What landed.** `bm-world::sim::step_water` — water falls / slides diagonally / flows sideways
+into air that can itself fall, so it runs downhill + pools. **Deterministic** (cell-parity
+tie-break — matters for golden images), **mass-conserving** (water/air swaps), **terminating**
+(sideways only toward a descent → no ping-pong). Engine-generic (no game dep), golden hash
+unchanged. Tests: `water_falls_to_the_floor_and_is_conserved`, `water_flows_off_a_ledge_and_downhill`,
+`resting_water_reports_not_dirty` — the right CA properties.
+
+**Strengths.** Careful, correct sim work with a sound termination argument and conservation +
+determinism verified by tests. And it's **engine work** (`bm-world`) — so the builder isn't
+dodging engine changes (partly answers the E13 "engine-side follow-up" worry).
+
+**Watch (not a steer).** This is the *rule*; the **live feature** (water actually flowing in the
+world) is deferred to wiring — active-set seeding + re-mesh budget + handling the golden-hash
+determinism (live flow mutates the deterministic world, which the E12 hash guards). Honest,
+reasonable slicing — but **the wiring (E11-2) must land**, or this is a tested function that never
+ships as a feature. Pressure/leveling (flat-puddle) is a fair later slice.
+
+**Verdict.** Solid engine increment, properly tested, honest slice. No concerns; watch that the
+live wiring follows. Continue.
+
+---
+
+## 2026-06-08 · E13 — photo / cinematic mode v1 (`431eb33`)
 
 ---
 
