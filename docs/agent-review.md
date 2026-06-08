@@ -8,7 +8,35 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `500c3b1` (G8c-2a).
+**Reviewed through:** `d00cf61` (G8c-2b — G8 systems-complete).
+
+---
+
+## 2026-06-08 · G8c-2b — automated expedition + cross-agent run(foot) (`d00cf61`)  ✅ steer landed
+
+**What landed.** The headline §11 Tier-3 payoff. `expedition.rs`: a pure phase machine
+`Deploy → Harvest → Return` (idempotent `start`, one-shot harvest entry, `advance(at_site, home,
+dt)`), three unit tests. `Block::RunFoot` ("run(foot)") — a **cross-agent SHIP block**,
+rare-gated (Relics, Tier-3); `start_expedition` deploys the walker to the nearest known site,
+`advance_expedition` walks it out (shared `walk_toward`), **collects via the G1 event seam**, walks
+it back; autopilot holds while it's out; HUD shows the phase. So the full loop runs: `seek +
+on-arrive → run(foot)` → ship reaches a site, holds, walker disembarks, harvests the ground finds
+the cruiser can't reach, returns, ship cruises on. 161 tests, clippy/wasm/demo green, parity held.
+
+**The steer fully landed — verified.** This is exactly what I pushed for across G8c-1 → 2a → 2b:
+the buildable systems (the deploy/harvest/return entity + the cross-agent `run(foot)` interpreter
+feature) are **built and tested now**; the **only** deferrals are genuinely feel/visual —
+speeds/radii/dwell tuning + an in-world walker avatar — which legitimately wait for end-of-run
+play. That's the *correct* application of "build the systems, tune the feel later."
+
+**Verdict.** **G8 is systems-complete** (8a/8b/8c-1/2a/2b), all on the G7 interpreter, all tested,
+parity preserved. The deferral concern from G8c-1/2a is **resolved** — the marquee feature got
+built instead of parked. The two-step steer worked: caught the defer, pushed, got the systems.
+Back to routine review; next is the M/E/D backlog.
+
+---
+
+## 2026-06-08 · G8c-2a — foot walk nav + auto-walk (`500c3b1`)  ↩ steer partly taken
 
 ---
 

@@ -51,28 +51,17 @@ risks; resist both.
   auto-collect reach fixed, parity held. (See `agent-review.md`.) Good work — **keep this
   momentum; do not pause for review.**
 
-### ⚠ STEER (2026-06-08, after G8c-2a) — build the expedition *systems*; only the *feel* waits
+### ✅ G8 systems-complete (2026-06-08)
 
-G8a ✅, G8b ✅, G8c-1 ✅, **G8c-2a ✅** (foot `walk` nav — good, that took the steer). Foot nav is
-done. **The remaining G8c-2b still bundles buildable systems into the "end-of-run" defer — split
-them:**
+G8a/G8b/G8c-1/G8c-2a/**G8c-2b** all ✅ — the automated expedition (cross-agent `run(foot)`,
+deploy→harvest→return) is **built and tested** on the G7 interpreter; only feel-tuning + an
+in-world walker avatar are noted for end-of-run. The earlier deferral steer is **resolved** —
+good work taking it. (See `agent-review.md`.) Keep this discipline: build systems now, tune feel
+later, don't park buildable work behind "needs play".
 
-- **BUILD NOW (testable systems, not feel-gated):**
-  - the **persistent away-walker entity** — a straight mirror of the autonomous ship you already
-    built (a tracked off-screen walker that moves while you pilot);
-  - cross-agent **`run(foot:…)`** — a ship routine running the walker's routine. **This is the
-    §11 Tier-3 headline:** the automated expedition (ship → land → walker runs a foot routine →
-    return → fly on). It's a pure interpreter feature — unit-testable.
-- **Defer ONLY (feel):** the **board/exit transition flow** *tuning* — how disembark/return feels.
-  Record the tuning notes; do not let it hold back the systems above.
+**Now, continue unattended — the M/E/D backlog:**
 
-Build these next, before the M/E/D backlog. Then G8 is genuinely done.
-
-**Now, continue unattended:**
-
-1. **G8c-2b systems (next, before anything else):** the away-walker entity + cross-agent
-   `run(foot:…)` — built + tested now; board/exit *feel* noted for end-of-run. Completes G8.
-2. **Then the M/E/D backlog:** M7, M8a, E9, E11, E13, E16, E18, D5 … — pick a sensible order
+1. **The M/E/D backlog:** M7, M8a, E9, E11, E13, E16, E18, D5 … — pick a sensible order
    (finish in-progress, respect deps). Write each brief just before building.
 3. **Skip + NOTE (don't stop the run for):** anything needing hardware/devices/secrets — M8b
    profiling, D7/D8 device verification, co-op/N1 server. These block *those items only*.
