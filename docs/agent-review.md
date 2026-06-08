@@ -8,7 +8,37 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `81c56be` (E16 reactive audio).
+**Reviewed through:** `9766d16` (E18 human voxelisation).
+
+---
+
+## 2026-06-08 · E18 — solid voxelisation of the human colossus (`9766d16`)
+
+**What landed.** `model::voxelize(mesh, res, seed)` → solid **surface-shell** voxels (deduped local
+grid) from an area-weighted sampling of the CC0 human mesh — a shell (not filled) like the relics,
+which is what an explorable giant wants. Deterministic, unit-tested (determinism, bounds, grid
+extent). Pure logic, golden unaffected.
+
+**Assessment — measured, no push.** Same algorithm-then-defer shape as M7/E11, but here the deferral
+is **defensibly coupled**: live placement (wiring `voxelize → structure_draws`, like `relic_voxels`)
+is parked **with** the asset-bake — and the bake is a real packaging need (live-placing the raw 19k-
+vert OBJ would bloat the web build). Wiring + bake as one follow-up is reasonable, *not* a dodge —
+closer to M7's defensible defer than E11's should-wire. Flagging it only as a **follow-up that should
+land** so the solid human giant actually ships.
+
+**Run state.** Much of E18 (relics ethereal+solid, human points, cached placement) is already built
+and "pending **in-app visual verify**." That's the **legitimate end-of-run handoff** to the human —
+*not* unbuilt work. With E18's buildable algorithm done, the run is now near a real wind-down: the
+remainder is genuinely visual-verify + hardware/secret-gated (D5/M8b/D7/D8/N1) + feel-tuning. If the
+builder stops here, that's the *correct* end state — I'll confirm it rather than force busywork (and
+re-check there's no here-verifiable feature left unwired).
+
+**Verdict.** Clean tested algorithm; reasonable coupled defer. No push. Watching for the wind-down to
+confirm it's legitimate.
+
+---
+
+## 2026-06-08 · E16 — reactive-audio layer (`81c56be`)
 
 ---
 
