@@ -551,11 +551,22 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 > (autonomous away-ship + `hail`), **G8b ✅** (per-agent ship/foot routine library), **G8c ✅**
 > (the `on-arrive` trigger, foot `walk` nav + on-foot auto-walk, and the **automated expedition +
 > cross-agent `run(foot)`**) — all on the G7 runtime; only feel/visual tuning + the late lore arc
-> remain. **Now picking up** the engine/tooling backlog **M7 🛠 · M8a 🛠 · E9 ⏳ · E11 ⏳ · E13 ⏳ ·
-> E16 🛠 · E18 🛠 · D5 ⏳** and the
-> **device/hardware-gated** items I can't verify here — **M8(b)** profiling (needs the reference
-> iGPU/phone), **D7/D8** (need a controller / desktop+APK device to verify runtime) — flagged
-> blocked per the run rules.
+> remain.
+>
+> **Backlog checkpoint (2026-06-08).** Cleared the cleanly-testable + golden-safe backlog slices:
+> **E13 ✅** (photo/cinematic mode v1 — pause + free-cam + FOV; game-side, golden-neutral) and
+> **E11-1 ✅** (`sim::step_water` — deterministic, mass-conserving, terminating flowing water;
+> unit-tested; golden-neutral). **D5 blocked** — web-render verification needs a headless browser;
+> none is installed and obtaining one needs network + a heavy download → skipped + noted (a hard
+> external dependency, per the run rules). The **remaining backlog is feel/visual/perf/audio**:
+> **M7** (distant-points dissolve — look), **M8a** (output-neutral perf already landed; the rest is
+> mesh-format/dynamic-res — output-changing/golden-risk — or needs the reference iGPU), **E9**
+> (weather/water/sound — visual), **E16** (reactive-audio mix — "wants the ear"), **E18** (CC0
+> human-figure voxelization — an asset track). Their *systems* are buildable but the *quality bar
+> is visual/auditory iteration* — armed a Monitor on the steering channel for the babysitter to
+> direct which to build blind next; ready to resume on a steer. **Hardware/secret-gated (skip +
+> note):** **M8(b)** profiling (needs the reference iGPU/phone), **D7/D8** (need a controller /
+> desktop+APK device), co-op/**N1** (server) — flagged blocked per the run rules.
 
 The game built on the engine (now `crates/scraped-again`). Full design:
 [`game-mechanics.md`](game-mechanics.md) — a **melancholy-archival** game where progress is
