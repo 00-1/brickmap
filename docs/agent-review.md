@@ -8,7 +8,38 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `04ba341` (G7).
+**Reviewed through:** `d373d3a` (G8a).
+
+---
+
+## 2026-06-08 · G8a — autonomous away-ship + hail (`d373d3a`)
+
+**What landed.** While on foot, the cruiser flies its own course (no longer parked) and
+away-scans the cone ahead, filling the map — both agents active at once. A pure, GPU-free
+`autopilot_step` is extracted and **shared** by the piloted autopilot and the away-ship (DRY +
+unit-testable); `scan_pulse` generalised to `scan_from(origin, forward, do_on_scan)` so any
+vantage can scan. A `hail` block + `H` key recalls the away-ship to the walker (wireable; rounds
+through `co=`). Parity: piloted behaviour + golden hash + headless unchanged. 78 tests, clippy/
+wasm/engine-demo green.
+
+**Strengths.**
+- **Sliced the former "G7+" catch-all into 8a/8b/8c** with explicit scope per slice — exactly
+  the fix my G6 escalation asked for. 8a (ship-as-agent + hail) is the right first slice.
+- **Builds on the G7 interpreter** — the away-ship advances under the interpreter's `nav_intent`
+  (drift/seek/circle), not a bespoke path. The shared `autopilot_step` (tested) is a clean DRY win.
+- Honest as-built note; cheap off-screen agent (no banking) per game-system §7.
+
+**Watch-item.** 8a reuses the **single** `nav_intent` for the away-ship — there's **not yet a
+per-agent routine library** (ship vs foot routine sets); that's explicitly deferred to **G8b**.
+Hold 8b to delivering *genuine* per-agent routines (the ship runs its *own* routine while you
+run yours), not just continued shared-intent reuse — that's the real "two agents" payoff.
+
+**Verdict.** Healthy, transparent incremental progress on the right foundation. No concerns; the
+slicing is honest and the engineering is clean. Continue.
+
+---
+
+## 2026-06-08 · G7 — routine runtime & free-form editor (`04ba341`)  ✅ ESCALATION RESOLVED
 
 ---
 
