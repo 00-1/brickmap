@@ -127,6 +127,7 @@ pub fn capture_view(
                 voxel: 1.0,
                 seed: 4242,
                 solid: true,
+                human: false,
             },
             crate::world::BlockId(5), // snow → pale metal
         ));

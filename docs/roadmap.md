@@ -412,9 +412,15 @@ content kinds (pivot 2026-06):**
   (OBJ parse, sample count/bounds, rests-on-ground). ✅ **Solid voxelisation:** `model::voxelize`
   snaps a dense surface sampling onto a `res`-grid → the human's **solid surface-shell voxels**
   (local coords, deduped, deterministic; unit-tested for determinism/bounds/extent), so the
-  human kind can be greedy-meshed into an **explorable** giant like the solid relics. ⏳ Next:
-  **live placement** of the solid human (wire `voxelize` → the `structure_draws` chunk path, like
-  `relic_voxels`) + baking a compact asset (so the web build needn't ship the raw 19k-vert OBJ).
+  human kind can be greedy-meshed into an **explorable** giant like the solid relics.
+  ✅ **Baked + live-placed (ethereal):** a one-time `bake_human` dev-bin samples the OBJ →
+  `model::encode_points` → the committed `assets/human_points.bin` (84 KB), which the live build
+  **embeds via `include_bytes!`** (all targets — no OBJ shipped/parsed) + decodes once at startup
+  (`model::decode_points`, round-trip tested). `colossi_near` now marks **~1 in 4** giants `human`
+  (a fresh salt, so the tube-tech placements are undisturbed); they render as **ethereal points**
+  via the verified `fallen_splats` path (toppled, bone-tinted, dropped on the terrain), through the
+  same `structure_draws`/points cache. ⏳ Next: the **solid/explorable** human (wire `voxelize` →
+  the `structure_draws` chunk path, like `relic_voxels` — visual, deferred); on-device look.
 - 🛠 **Solid / explorable kind, now live (built blind):** `relic::relic_voxels` →
   `relic_chunk_instances` greedy-meshes a relic into chunk instances; `gfx` draws them via a
   separate `structure_draws` list (terrain pipeline, out of the stream map). ~1 in 3 placed

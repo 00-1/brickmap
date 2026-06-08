@@ -290,6 +290,9 @@ pub struct Placement {
     pub voxel: f32,
     pub seed: u32,
     pub solid: bool,
+    /// E18: this giant is a **fallen human** (the CC0 figure) rather than a tube-tech relic. Human
+    /// giants render as ethereal points from the baked model; tube-tech relics keep `false`.
+    pub human: bool,
 }
 
 /// Seed-driven scatter of relics across a square region centred on the origin (half-extent
@@ -312,6 +315,7 @@ pub fn scatter(
                 voxel: rng.range(1.1, 1.7),
                 seed: rng.0 | 1,
                 solid: false, // demo scatter is ethereal; the live placer decides per relic
+                human: false,
             }
         })
         .collect()

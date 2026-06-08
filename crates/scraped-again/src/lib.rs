@@ -198,6 +198,9 @@ struct App {
     /// ≤1/frame) instead of regenerating everything on every cell crossing (the streaming-hitch
     /// fix), and pick its LOD (mesh near ↔ points far) per frame from the cached pair.
     structures: std::collections::HashMap<(i32, i32), CachedRelic>,
+    /// E18: the baked CC0 human surface points (model-space), decoded once from the embedded
+    /// asset; transformed per placement into a fallen-giant point cloud (`human` colossi).
+    human_points: Vec<Vec3>,
     /// Drifting wisp creatures (E15): a small seed-driven swarm of point-cloud motes kept
     /// loosely tethered to the camera, advanced + re-uploaded every frame so they drift and
     /// shimmer through the fly-through. Cheap (≈ a few hundred splats).
@@ -1112,7 +1115,21 @@ impl App {
                 break;
             }
             budget -= 1;
-            let entry = if p.solid {
+            let entry = if p.human {
+                // E18: a fallen *human* giant — the baked CC0 figure, toppled + scaled to a
+                // colossus + dropped onto the terrain (ethereal points; reuses `fallen_splats`).
+                CachedRelic {
+                    points: model::fallen_splats(
+                        &self.human_points,
+                        p.pos,
+                        p.voxel * 38.0, // ~44–59 world units (comparable to the tube-tech relics)
+                        p.yaw,
+                        HUMAN_COLOR,
+                        p.seed,
+                    ),
+                    meshes: Vec::new(),
+                }
+            } else if p.solid {
                 CachedRelic {
                     points: Vec::new(),
                     meshes: relic_chunk_instances(*p, world::BlockId(5)),
@@ -3022,6 +3039,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         seed: view.seed,
         undo: Vec::new(),
         structures: std::collections::HashMap::new(),
+        human_points: model::decode_points(HUMAN_POINTS_BLOB), // E18 baked human (embedded)
         // A small swarm of drifting wisps tethered to the camera's start (re-tethered each
         // frame to the live camera in the redraw loop). Seed-driven off the world seed.
         // A generous base count; how many actually drift is scaled per-biome each frame.
@@ -3189,6 +3207,11 @@ const WOBBLE_CRISP: f32 = 220.0; // a "stilling" giant calms the wobble — but 
 const WOBBLE_PRISTINE: f32 = 1500.0;
 /// The ethereal colossi's tint (cool pale; the palette recolours it in the house look).
 const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
+/// E18: the fallen-human giant's tint — a pale bone/stone, distinct from the cool tube-tech relics
+/// (environmental art / monument, not gore).
+const HUMAN_COLOR: [f32; 3] = [0.70, 0.67, 0.60];
+/// The baked CC0 human surface points (E18), embedded so no OBJ ships. Decoded once at startup.
+static HUMAN_POINTS_BLOB: &[u8] = include_bytes!("../assets/human_points.bin");
 /// How many newly-entered colossi to generate per frame (the rest wait for later frames), so
 /// crossing structure cells spreads the heavy point/mesh generation instead of hitching.
 const STRUCTURE_GEN_BUDGET: u32 = 1;
@@ -3848,6 +3871,7 @@ mod tests {
             voxel: 1.4,
             seed,
             solid,
+            human: false,
         };
         let relics = 20;
         let t = std::time::Instant::now();

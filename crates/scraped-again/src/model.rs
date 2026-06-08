@@ -119,6 +119,38 @@ pub fn voxelize(mesh: &Mesh, res: u32, seed: u32) -> Vec<[i32; 3]> {
     out
 }
 
+/// Encode a model-space point cloud to a compact little-endian blob (`u32` count + `3×f32` per
+/// point) — the **baked** human asset (E18), so the live build embeds these points instead of
+/// shipping + parsing the raw 19k-vert OBJ. Pure; round-trips with [`decode_points`].
+pub fn encode_points(pts: &[Vec3]) -> Vec<u8> {
+    let mut b = Vec::with_capacity(4 + pts.len() * 12);
+    b.extend_from_slice(&(pts.len() as u32).to_le_bytes());
+    for p in pts {
+        b.extend_from_slice(&p.x.to_le_bytes());
+        b.extend_from_slice(&p.y.to_le_bytes());
+        b.extend_from_slice(&p.z.to_le_bytes());
+    }
+    b
+}
+
+/// Decode the [`encode_points`] blob back to model-space points (lenient: truncates to whatever
+/// whole points are present; empty on a short/garbage blob).
+pub fn decode_points(b: &[u8]) -> Vec<Vec3> {
+    if b.len() < 4 {
+        return Vec::new();
+    }
+    let n = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize;
+    let avail = (b.len() - 4) / 12;
+    let n = n.min(avail);
+    let f = |o: usize| f32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
+    (0..n)
+        .map(|i| {
+            let o = 4 + i * 12;
+            Vec3::new(f(o), f(o + 4), f(o + 8))
+        })
+        .collect()
+}
+
 /// Lay a Y-up standing model down on the ground and place it as a giant point cloud: topple it
 /// onto its back (model +Y → world +Z), scale by `scale`, yaw about +Y, rest its lowest point
 /// at `feet`, and tint `color`. Reuses the splat billboard path (ethereal, drift-through).
@@ -211,6 +243,19 @@ mod tests {
             "should span the grid ({maxx},{maxy})"
         );
         assert!(maxx <= 16 && maxy <= 16, "within the resolution");
+    }
+
+    #[test]
+    fn points_blob_round_trips() {
+        let pts = vec![
+            Vec3::new(1.0, -2.5, 3.25),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(-9.0, 100.0, 0.001),
+        ];
+        let back = decode_points(&encode_points(&pts));
+        assert_eq!(back, pts);
+        assert!(decode_points(&[]).is_empty());
+        assert!(decode_points(&[9, 0, 0, 0]).is_empty()); // claims 9 points, none present
     }
 
     #[test]

@@ -57,12 +57,18 @@ pub fn colossi_near(
                 continue;
             }
             let p = hash(cx ^ 0x5A5A, cz ^ 0x3C3C, seed);
+            // E18: a minority of giants are the fallen *human* figure (a fresh salt, so the
+            // existing tube-tech placements are undisturbed). Humans render ethereal (points).
+            let human =
+                hash(cx ^ 0x6E11, cz ^ 0x4D22, seed.wrapping_add(0x4855_4D4E)).is_multiple_of(4);
             out.push(Placement {
                 pos: Vec3::new(x, ground(x, z), z),
                 yaw: (p % 6283) as f32 / 1000.0,
                 voxel: 1.15 + ((p >> 5) % 70) as f32 / 100.0, // ~95–155 world units across
                 seed: p | 1,
-                solid: (p >> 12).is_multiple_of(3), // ~1 in 3 solid; the other 2/3 ethereal points
+                // Humans are always ethereal (the solid/explorable human is a later slice).
+                solid: !human && (p >> 12).is_multiple_of(3), // ~1 in 3 (non-human) solid
+                human,
             });
         }
     }
@@ -241,6 +247,7 @@ mod tests {
             voxel: 1.3,
             seed: 12345,
             solid: false,
+            human: false,
         };
         let a = colossus_label(&p);
         let b = colossus_label(&p);
