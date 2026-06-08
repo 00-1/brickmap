@@ -76,11 +76,16 @@ gated deep end (game-system §7 ceiling, §11 Tier 3).
   harvest collect + the ship hold, and the HUD surfaces the phase. So the full
   *fly → land → collect → return → fly on* loop runs — the headline G8 payoff, composed from the
   block system (cross-agent meta = a ship routine running the walker's work).
+  - **The persistent away-walker** (the steer's "mirror of the autonomous ship"): while you
+    pilot, the walker is the autonomous **away-agent** (`advance_away_walker`) — a foot `walk`
+    routine steers it toward known sites *from its own position* and its foot acts bank what it
+    reaches, exactly mirroring the away-ship that flies+scans while you walk. The ship-commanded
+    expedition (`run(foot)`) takes precedence over it when out.
   - **Feel-tuning noted for end-of-run** (per the run rules — systems built + tested, numbers to
     taste): walk speed (`WALK_SPEED`), the arrival/board radii + harvest dwell
-    (`expedition::HARVEST_TIME`), and the rarity gate. **Visual:** the deployed walker isn't yet
-    drawn as an in-world avatar (it's tracked + shown via the HUD phase line); a walker avatar /
-    map marker is a visual-polish follow-up.
+    (`expedition::HARVEST_TIME`), and the rarity gate. **Visual:** the deployed/away walker isn't
+    yet drawn as an in-world avatar (it's tracked + shown via the HUD phase line); a walker avatar
+    / map marker is a visual-polish follow-up.
 
 ## G8a — design sketch
 

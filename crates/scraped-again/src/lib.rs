@@ -818,18 +818,21 @@ impl App {
         }
     }
 
-    /// G5 `seek`: the nearest known-uncollected site to steer toward (nearest nearby
-    /// collectible by horizontal distance), if any.
-    fn seek_target(&self) -> Option<Vec3> {
-        let p = self.camera.position;
+    /// The nearest known-uncollected site to `pos`, if any (by distance).
+    fn nearest_site_to(&self, pos: Vec3) -> Option<Vec3> {
         self.collectible
             .iter()
             .min_by(|a, b| {
-                (Vec3::from(a.pos) - p)
+                (Vec3::from(a.pos) - pos)
                     .length_squared()
-                    .total_cmp(&(Vec3::from(b.pos) - p).length_squared())
+                    .total_cmp(&(Vec3::from(b.pos) - pos).length_squared())
             })
             .map(|c| Vec3::from(c.pos))
+    }
+
+    /// G5 `seek`: the nearest known-uncollected site to steer the ship toward, if any.
+    fn seek_target(&self) -> Option<Vec3> {
+        self.nearest_site_to(self.camera.position)
     }
 
     /// A site at `pos` was collected — drop its chunk from the opportunity surface (G3). A v1
@@ -1200,6 +1203,35 @@ impl App {
         self.walker_pos = self.ship_pos();
         self.expedition.start();
         log::info!("run(foot): deploying the walker");
+    }
+
+    /// G8c: the **persistent away-walker** — while you pilot, the walker runs its own foot routine
+    /// off-screen (the mirror of the autonomous away-ship in [`App::fly_autonomous_ship`]). A foot
+    /// `walk` nav steers it toward the nearest known site (from *its* position) and its foot acts
+    /// bank what it reaches — so a foot routine you authored keeps working while you fly. The
+    /// ship-commanded expedition (`run(foot)`) takes precedence when active (handled by the caller).
+    fn advance_away_walker(&mut self, dt: f32, data: u32) {
+        let arrived = self.arrived_at(self.walker_pos);
+        let foot = self.console.tick(console::Agent::Foot, data, arrived);
+        if foot.nav == Some(console::Block::Walk) {
+            if let Some(t) = self.nearest_site_to(self.walker_pos) {
+                self.walker_pos = walk_toward(self.walker_pos, t, WALK_SPEED, dt);
+                let g = worldgen::height(
+                    self.walker_pos.x.floor() as i32,
+                    self.walker_pos.z.floor() as i32,
+                    self.seed,
+                ) as f32;
+                self.walker_pos.y = g + player::EYE;
+            }
+        }
+        let walker_pos = self.walker_pos;
+        for act in foot.acts {
+            match act.block {
+                console::Block::Collect => self.collect_nearest_to(walker_pos),
+                console::Block::Decode => self.decode_action(),
+                _ => {} // hail/fire-beam are no-ops for the off-screen walker
+            }
+        }
     }
 
     /// G8c: advance the **automated expedition** while piloting — the `run(foot)` cross-agent step
@@ -1960,8 +1992,16 @@ impl ApplicationHandler<AppEvent> for App {
                 if self.nav_intent.is_none() {
                     self.auto_fly = false;
                 }
-                // G8c: advance the automated expedition (the ship holds while the walker works).
-                self.advance_expedition(dt);
+                // G8c: while piloting, the walker is the autonomous **away-agent** (mirror of the
+                // away-ship): a ship `run(foot)` expedition drives it if one is out, else its own
+                // foot routine does (the persistent away-walker).
+                if self.mode == Mode::Pilot {
+                    if self.expedition.active() {
+                        self.advance_expedition(dt);
+                    } else {
+                        self.advance_away_walker(dt, data);
+                    }
+                }
                 match self.mode {
                     // The ship hovers in place while a `run(foot)` expedition is out.
                     Mode::Pilot if self.auto_fly && !self.expedition.active() => {
