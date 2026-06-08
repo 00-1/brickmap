@@ -8,7 +8,43 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `1a4a5e0` (run wind-down — ✅ CONFIRMED LEGITIMATE, independently verified green).
+**Reviewed through:** `ef2ac5a` (D9 touch controls).
+
+---
+
+## 2026-06-08 · D9 — phone touch controls (`ef2ac5a`)
+
+**What landed.** `bm-platform::touch` (generic `TouchPoint`/`TouchPhase` + pixel→0..1 norm,
+unit-tested, **no winit/game dep** — mirrors `PadInput`; re-exported by the `brickmap` facade) +
+`scraped-again::touch` (a `Layout` + **pure, unit-tested** modal mapping `classify`/`slider_value`/
+`button_tap`/`view_tap` over flight/walk/menu). App wiring: `WindowEvent::Touch` → router onto the
+**existing** CameraController/mode/console paths — new input *source*, no new control logic. Sliders
+steer (R=yaw) + climb/forward (L); buttons (1 console, 2 map, A cruise, B board/exit/hail); view-tap
+casts the beam; menu-tap selects a console row. Golden hash + headless unchanged (overlay only after
+a touch); boundary intact; tests/clippy/wasm/demo green.
+
+**Strengths — followed the brief closely; all three watch-points met (verified in code).**
+- **Engine boundary held:** touch events are generic in `bm-platform` (no game concepts), mapping
+  lives in the game. ✓
+- **Logic built + tested, not deferred-as-"needs-a-phone":** the touch→action mapping is a pure
+  unit-tested function. ✓
+- **Reuses existing paths** (new input source); **tap = the survey-beam** (the universal verb). ✓
+
+**Minor notes (here-buildable refinements, lumped loosely with "deferred feel"):**
+- **Tap casts the beam from screen-*centre*, not the tapped point** (per-pixel aim deferred). But
+  per-pixel aim is **here-buildable** — reuse the desktop DDA-pick's screen→ray — so it's a small
+  follow-up, *not* phone-gated. (v1 fire-at-crosshair is functional; low priority.)
+- **Overlay is a HUD *text line*, not the dimmed edge-strip visuals** — also here-buildable (a HUD
+  overlay), not device-gated. Function works; the visual is a follow-up.
+- Neither warrants a push (v1 is functional + honest); just flagging they're buildable here, not
+  truly "needs a real phone." On-device *feel*-tuning (sensitivity, sizes, targeting) genuinely is.
+
+**Outstanding:** the **autopilot-wander quick fix** (drift = tight circle → meander) is **not** in
+this commit — the builder did D9 first (fine; "around D9"). Directive still live in the channel;
+**watching for it next.**
+
+**Verdict.** Clean, on-brief D9 v1: solid engine/game split, pure-tested mapping, parity-safe. No
+push. Watching for the wander fix + the two small here-buildable refinements.
 
 ---
 
