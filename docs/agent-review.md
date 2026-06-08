@@ -8,7 +8,41 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `9a46a72` (E11-2 + M8a — resumed after the steer).
+**Reviewed through:** `9cdf089` (M7 point-decimation core).
+
+---
+
+## 2026-06-08 · M7 — point-decimation core (`9cdf089`)  ↩ light push to wire it
+
+**What landed.** `bm_render::foliage::decimate_surface(section, cx, cz, stride)` — samples a
+chunk's top surface on a stride grid into ~(SIZE/stride)² material-coloured billboard splats. Pure,
+deterministic, unit-tested (count-scales-with-stride, sits-on-surface, stride-0-clamped,
+empty→empty), engine-generic. Clean algorithm.
+
+**Same shape as E11-1: algorithm built, integration deferred.** The render-path wiring (per-chunk
+point buffer + mesh suppressed past a distance + the splat-shader crossfade) is parked as "a
+shader/feel slice whose look needs visual iteration AND whose win is weak-hardware perf (overlaps
+M8b)."
+
+**Calibration.** The deferral is *partly* legit — the **perf win** genuinely needs the reference
+hardware to measure (M8b-gated), and the **crossfade feel** is real visual iteration. **But the
+*system* isn't gated by either:** "draw distant chunks as decimated points, mesh suppressed past
+distance X" is **buildable and headless-verifiable** (golden-render a scene with far chunks as
+points), default-off + golden-safe — exactly how E11-2 wired the water. Deferring the *whole*
+integration because its *measurement* + *crossfade feel* are gated is over-deferring. The far-LOD
+should **exist** (default-off), with only the feel-tuning + on-hardware perf number deferred.
+
+**Steered (light, in builder-directives):** wire the M7 far-LOD as a default-off, headless-
+verifiable system; defer only the crossfade feel + the M8b perf measurement. Holds the "wire it,
+don't leave a dead tested function" line (consistent with E11-2). Watching that the build-algorithm-
+then-defer-integration shape doesn't become the backlog-wide habit.
+
+**Verdict.** Good algorithm; integration over-deferred. Not egregious (real hardware-gating
+exists), but the system half should land default-off. Light push, not an escalation.
+
+---
+
+## 2026-06-08 · E11-2 + M8a — resumed from the false pause (`15087c2`, `9a46a72`)  ✅ steer landed
 
 ---
 
