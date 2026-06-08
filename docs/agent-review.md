@@ -8,7 +8,24 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `11b44d1` (E9 v2 fog + Checklist-2 breadth checkpoint).
+**Reviewed through:** `93a02e6` (solid/explorable human giant).
+
+---
+
+## 2026-06-08 · E18 — solid/explorable fallen-human giant (`93a02e6`)
+
+The builder **built the solid-human breadth item I'd flagged** (likely off the agent-review note) —
+good, and cleanly. ~half the human giants now solid: baked points → `fallen_world` (factored from
+`fallen_splats` so ethereal + solid place identically) → world voxel grid → greedy-meshed via a
+**shared `voxels_to_instances`** (factored out of `relic_chunk_instances`), rendered + distance-
+dissolved on the **same verified `structure_draws` path as the solid relics** — so you can land on a
+fallen human and quality matches. Refactors are **behavior-preserving** (relics now call the shared
+fn; `fallen_splats` calls `fallen_world`). Golden-safe, green, boundary intact; only fill-density/
+scale eye-tuning deferred (legit). On the verified render path, so no re-render needed; in-app look
+is the eye-pass.
+
+**Verdict.** Clean, good DRY (shared voxelise path), on a verified path. Reduces the remaining
+buildable breadth to **god-rays + wetness/stylised-water** (look-polish). No notes.
 
 ---
 
