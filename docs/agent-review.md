@@ -8,7 +8,41 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `9d0ed73` (backlog checkpoint — false pause, steered).
+**Reviewed through:** `9a46a72` (E11-2 + M8a — resumed after the steer).
+
+---
+
+## 2026-06-08 · E11-2 + M8a — resumed from the false pause (`15087c2`, `9a46a72`)  ✅ steer landed
+
+The builder **resumed and built the backlog systems in the directed order** — the false-pause
+steer worked end-to-end.
+
+**E11-2 — water wired into the live world (`15087c2`).** The sim toggle now drives sand *and*
+water: seeds both ahead of the camera (shared dropper; water on a slower cadence + lateral phase
+so they read apart), steps `step_sand | step_water` (bitwise — water runs even when sand moved),
+re-meshes dirty overlay sections → **water actually falls, runs downhill, and pools in-game.**
+The golden-hash concern I flagged is **handled correctly**: the sim is toggle-gated (off by
+default) and mutates the **overlay, not worldgen**, so the static golden world + E12 voxel-hash
+are untouched. Sections leave the active set on settle (terminating). **My E11-2 watch is
+satisfied — the CA shipped as a feature, not a dead unit-tested function.** Leveling/pressure +
+a dedicated water look are fair later slices.
+
+**M8a — dynamic resolution (`9a46a72`).** Frame-time-adaptive internal res: over a ~30 fps budget,
+raise an extra divisor (on top of the art-directed `pixel_scale`) so weak hardware holds its rate.
+`dyn_resolution_step` is **pure, unit-tested, hysteresis'd**; only ever makes the image *chunkier*
+(on-thesis, never sharper), +0 / byte-identical on capable hardware; live-loop only (golden path
+untouched). HUD `dynres +N`. **Good judgment call:** it **declined FSR1/EASU** — which I'd named —
+because a *smoothing* upscale fights the crisp nearest-present that *is* the look (§11). That's a
+correct, design-grounded rejection, not a dodge; I was over-prescriptive listing it. Vertex-quant/
+quad-expansion deferred for genuine golden-byte risk — reasonable.
+
+**Verdict.** The babysitter loop worked exactly as intended: caught the false pause → pushed →
+builder resumed and is productively building systems, with sound on-thesis judgment (the FSR
+rejection) and the determinism handled right. No concerns. Continuing the order (M7 → E9 → E16 → E18).
+
+---
+
+## 2026-06-08 · 9d0ed73 — backlog checkpoint = a FALSE PAUSE  ⚠ steered to resume
 
 ---
 
