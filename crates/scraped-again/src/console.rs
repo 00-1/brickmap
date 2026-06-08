@@ -66,9 +66,34 @@ impl MatchField {
     }
 }
 
+/// Which agent a routine drives (game-system §7). Routines are **per-agent**, drawing on a shared
+/// block library; the *insertable* vocabulary is context-scoped to the agent (+ shared blocks).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Agent {
+    /// The cruiser — flies, scans, routes (the autopilot half).
+    Ship,
+    /// The walker — on-foot survey-beam, descent, close collection (the exploration half).
+    Foot,
+}
+
+impl Agent {
+    pub fn label(self) -> &'static str {
+        match self {
+            Agent::Ship => "ship",
+            Agent::Foot => "foot",
+        }
+    }
+    pub fn other(self) -> Agent {
+        match self {
+            Agent::Ship => Agent::Foot,
+            Agent::Foot => Agent::Ship,
+        }
+    }
+}
+
 /// A block — one recovered console **action** (game-system §11). Triggers (`on-scan`, `when`) and
 /// the `match`/`repeat` modifiers are *not* blocks: they live on the routine ([`Trigger`]) or as
-/// modifier [`Step`]s, so this enum is exactly "things the ship can *do*".
+/// modifier [`Step`]s, so this enum is exactly "things an agent can *do*".
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Block {
     Scan(ScanItem), // sense sites of `item` in the forward cone (G3)
@@ -119,6 +144,24 @@ impl Block {
     pub fn is_nav(self) -> bool {
         matches!(self, Block::Drift | Block::Seek | Block::Circle)
     }
+
+    /// Which agent this block belongs to — `None` = **shared** (usable by either agent). Ship
+    /// blocks fly/scan/route; the foot block is the survey-beam; collect/decode/spend/hail are
+    /// shared (game-system §7).
+    pub fn agent(self) -> Option<Agent> {
+        match self {
+            Block::Scan(_) | Block::Drift | Block::Seek | Block::Circle | Block::Goto => {
+                Some(Agent::Ship)
+            }
+            Block::FireBeam => Some(Agent::Foot),
+            Block::Collect | Block::Decode | Block::Spend | Block::Hail => None, // shared
+        }
+    }
+
+    /// Is this block available to `agent`? (Its own agent, or shared.)
+    pub fn for_agent(self, agent: Agent) -> bool {
+        self.agent().is_none_or(|a| a == agent)
+    }
 }
 
 /// One step in a routine body. A linear sequence of these is the routine's program;
@@ -148,6 +191,15 @@ impl Step {
             Step::Match(f) => Some(f.required()),
             Step::Repeat(_) => None,
         }
+    }
+}
+
+/// Is `step` available to `agent`? `Do(block)` follows the block's agent; the `Match`/`Repeat`
+/// modifiers are shared (available to either agent).
+fn step_for_agent(step: Step, agent: Agent) -> bool {
+    match step {
+        Step::Do(b) => b.for_agent(agent),
+        Step::Match(_) | Step::Repeat(_) => true,
     }
 }
 
@@ -205,6 +257,9 @@ impl Trigger {
 pub struct Routine {
     pub name: String,
     pub enabled: bool,
+    /// Which agent runs this routine (game-system §7). Scopes the insertable vocabulary + which
+    /// agent's interpreter ticks it.
+    pub agent: Agent,
     pub trigger: Trigger,
     pub body: Vec<Step>,
     /// `When`-edge state: was the condition satisfied last tick? (Runtime only; not persisted.)
@@ -212,10 +267,11 @@ pub struct Routine {
 }
 
 impl Routine {
-    fn new(name: impl Into<String>, trigger: Trigger, body: Vec<Step>) -> Self {
+    fn new(name: impl Into<String>, agent: Agent, trigger: Trigger, body: Vec<Step>) -> Self {
         Routine {
             name: name.into(),
             enabled: true,
+            agent,
             trigger,
             body,
             armed: false,
@@ -296,13 +352,24 @@ impl Default for Console {
             // The onboarding artifact: the hands-off loop shown as three plain data routines
             // (drift; survey scans; collect harvests on scan) — all ordinary instances (§8).
             routines: vec![
-                Routine::new("drift", Trigger::Continuous, vec![Step::Do(Block::Drift)]),
+                Routine::new(
+                    "drift",
+                    Agent::Ship,
+                    Trigger::Continuous,
+                    vec![Step::Do(Block::Drift)],
+                ),
                 Routine::new(
                     "survey",
+                    Agent::Ship,
                     Trigger::Continuous,
                     vec![Step::Do(Block::Scan(ScanItem::Shards))],
                 ),
-                Routine::new("collect", Trigger::OnScan, vec![Step::Do(Block::Collect)]),
+                Routine::new(
+                    "collect",
+                    Agent::Ship,
+                    Trigger::OnScan,
+                    vec![Step::Do(Block::Collect)],
+                ),
             ],
             palette: vec![
                 Block::Scan(ScanItem::Shards),
@@ -329,9 +396,10 @@ impl Console {
         s.required().is_none_or(|st| self.unlocked.contains(&st))
     }
 
-    /// The steps the player may insert / cycle to, in cycle order, filtered to what's recovered.
-    /// (Blocks, then the `match` modifier, then `repeat`.)
-    pub fn vocabulary(&self) -> Vec<Step> {
+    /// The steps `agent` may insert / cycle to, in cycle order — filtered to what's recovered (G6)
+    /// **and** scoped to the agent's context + shared blocks (game-system §7). (Blocks, then the
+    /// `match` modifier, then `repeat`.)
+    pub fn vocabulary(&self, agent: Agent) -> Vec<Step> {
         let all = [
             Step::Do(Block::Scan(ScanItem::Shards)),
             Step::Do(Block::Collect),
@@ -346,7 +414,9 @@ impl Console {
             Step::Match(MatchField::Rare),
             Step::Repeat(2),
         ];
-        all.into_iter().filter(|s| self.step_unlocked(*s)).collect()
+        all.into_iter()
+            .filter(|s| self.step_unlocked(*s) && step_for_agent(*s, agent))
+            .collect()
     }
 
     // ---- the interpreter --------------------------------------------------------------------
@@ -372,12 +442,15 @@ impl Console {
         out
     }
 
-    /// Run one interpreter tick over the **continuous** + **when** routines, given the current
+    /// Run one interpreter tick for `agent`'s **continuous** + **when** routines, given the current
     /// `data` (total banked strata) for `when` conditions. Returns this tick's [`Tick`] intents.
     /// (`on-scan` routines fire separately, on a scan hit — see [`Console::on_scan_acts`].)
-    pub fn tick(&mut self, data: u32) -> Tick {
+    pub fn tick(&mut self, agent: Agent, data: u32) -> Tick {
         let mut t = Tick::default();
         for r in &mut self.routines {
+            if r.agent != agent {
+                continue;
+            }
             if !r.enabled {
                 r.armed = false;
                 continue;
@@ -407,12 +480,12 @@ impl Console {
         t
     }
 
-    /// The acts the enabled **on-scan** routines want, when a scan finds something (typically a
-    /// filtered collect). Walked through the same interpreter as everything else.
-    pub fn on_scan_acts(&self) -> Vec<Act> {
+    /// The acts `agent`'s enabled **on-scan** routines want, when a scan finds something (typically
+    /// a filtered collect). Walked through the same interpreter as everything else.
+    pub fn on_scan_acts(&self, agent: Agent) -> Vec<Act> {
         self.routines
             .iter()
-            .filter(|r| r.enabled && matches!(r.trigger, Trigger::OnScan))
+            .filter(|r| r.agent == agent && r.enabled && matches!(r.trigger, Trigger::OnScan))
             .flat_map(|r| Self::expand(&r.body))
             .collect()
     }
@@ -474,15 +547,22 @@ impl Console {
         r.enabled
     }
 
-    /// Create a fresh empty routine and open its editor. Returns the new index.
-    pub fn create_routine(&mut self) -> usize {
+    /// Create a fresh empty `agent` routine and open its editor. Returns the new index.
+    pub fn create_routine(&mut self, agent: Agent) -> usize {
         let name = format!("routine-{}", self.routines.len() + 1);
         self.routines
-            .push(Routine::new(name, Trigger::Continuous, Vec::new()));
+            .push(Routine::new(name, agent, Trigger::Continuous, Vec::new()));
         let i = self.routines.len() - 1;
         self.view = View::Edit(i);
         self.cursor = 0;
         i
+    }
+
+    /// Flip the edited routine's agent (ship ↔ foot) — re-scopes its insertable vocabulary.
+    pub fn cycle_agent(&mut self) {
+        if let View::Edit(i) = self.view {
+            self.routines[i].agent = self.routines[i].agent.other();
+        }
     }
 
     /// Delete routine `i` and return to the home screen.
@@ -512,7 +592,7 @@ impl Console {
     /// Insert a step after the editor cursor (or append, on the "add step" row). The inserted
     /// step is the first unlocked vocabulary entry; ←/→ then cycles it. No-op if nothing unlocked.
     pub fn insert_step(&mut self, i: usize) {
-        let Some(first) = self.vocabulary().into_iter().next() else {
+        let Some(first) = self.vocabulary(self.routines[i].agent).into_iter().next() else {
             return;
         };
         let at = match self.edit_focus(i) {
@@ -579,7 +659,7 @@ impl Console {
     }
 
     fn cycle_step(&mut self, r: usize, s: usize, i: i32) {
-        let vocab = self.vocabulary();
+        let vocab = self.vocabulary(self.routines[r].agent);
         if vocab.is_empty() {
             return;
         }
@@ -701,12 +781,17 @@ impl Console {
                     .map(|s| Self::step_code(*s))
                     .collect::<Vec<_>>()
                     .join(",");
+                let agent = match r.agent {
+                    Agent::Ship => 'S',
+                    Agent::Foot => 'F',
+                };
                 format!(
-                    "{}|{}|{}|{}",
+                    "{}|{}|{}|{}|{}",
                     r.name,
                     u8::from(r.enabled),
                     Self::trigger_code(r.trigger),
-                    steps
+                    steps,
+                    agent
                 )
             })
             .collect::<Vec<_>>()
@@ -727,9 +812,15 @@ impl Console {
             let enabled = f.next() != Some("0");
             let trigger = Self::parse_trigger(f.next().unwrap_or("c"));
             let body = Self::parse_steps(f.next().unwrap_or(""));
+            let agent = if f.next() == Some("F") {
+                Agent::Foot
+            } else {
+                Agent::Ship
+            };
             routines.push(Routine {
                 name,
                 enabled,
+                agent,
                 trigger,
                 body,
                 armed: false,
@@ -765,7 +856,8 @@ impl Console {
                 steps.join(" → ")
             };
             s.push_str(&format!(
-                "{cur} [{on}] {:<9} {:<11}: {}\n",
+                "{cur} [{on}] {:<4} {:<9} {:<11}: {}\n",
+                r.agent.label(),
                 r.name,
                 r.trigger.label(),
                 pipe
@@ -795,9 +887,10 @@ impl Console {
     fn render_edit(&self, i: usize) -> String {
         let r = &self.routines[i];
         let mut s = format!(
-            "EDIT ROUTINE  {}  [{}]   [O back]\n",
+            "EDIT ROUTINE  {}  [{}]  agent:{} [Tab]   [O back]\n",
             r.name,
-            if r.enabled { "on" } else { "off" }
+            if r.enabled { "on" } else { "off" },
+            r.agent.label(),
         );
         // Trigger row.
         let cur = if self.cursor == 0 { ">" } else { " " };
@@ -814,7 +907,9 @@ impl Console {
             " "
         };
         s.push_str(&format!("{cur}   + add step\n"));
-        s.push_str("[↑↓ move · ←→ change · -/+ value · Enter insert · X remove · [ ] reorder]");
+        s.push_str(
+            "[↑↓ move · ←→ change · -/+ value · Enter insert · X remove · [ ] reorder · Tab agent]",
+        );
         s
     }
 }
@@ -843,14 +938,14 @@ mod tests {
     #[test]
     fn interpreter_runs_the_givens() {
         let mut c = Console::default();
-        let t = c.tick(0);
+        let t = c.tick(Agent::Ship, 0);
         // drift → nav steering; survey → scan request; collect is on-scan (not in the tick).
         assert_eq!(t.nav, Some(Block::Drift));
         assert!(t.scan);
         assert!(t.acts.is_empty());
         // on-scan collect, no filter.
         assert_eq!(
-            c.on_scan_acts(),
+            c.on_scan_acts(Agent::Ship),
             vec![Act {
                 block: Block::Collect,
                 filter: None
@@ -862,7 +957,7 @@ mod tests {
     fn disabling_drift_drops_the_nav_intent() {
         let mut c = Console::default();
         c.toggle_routine(0); // drift off
-        let t = c.tick(0);
+        let t = c.tick(Agent::Ship, 0);
         assert_eq!(t.nav, None); // no continuous nav routine ⇒ autopilot off
         assert!(t.scan); // survey still scans
     }
@@ -874,7 +969,7 @@ mod tests {
                                            // Author the collect routine to "match(rare) → collect".
         c.routines[2].body = vec![Step::Match(MatchField::Rare), Step::Do(Block::Collect)];
         assert_eq!(
-            c.on_scan_acts(),
+            c.on_scan_acts(Agent::Ship),
             vec![Act {
                 block: Block::Collect,
                 filter: Some(MatchField::Rare)
@@ -902,14 +997,15 @@ mod tests {
         // A when(data ≥ 10) → decode routine.
         c.routines.push(Routine::new(
             "auto-decode",
+            Agent::Ship,
             Trigger::When(Cond {
                 state: State::Data,
                 min: 10,
             }),
             vec![Step::Do(Block::Decode)],
         ));
-        assert!(c.tick(5).acts.is_empty()); // below threshold
-        let fired = c.tick(12); // crosses ⇒ fires once
+        assert!(c.tick(Agent::Ship, 5).acts.is_empty()); // below threshold
+        let fired = c.tick(Agent::Ship, 12); // crosses ⇒ fires once
         assert_eq!(
             fired.acts,
             vec![Act {
@@ -917,15 +1013,15 @@ mod tests {
                 filter: None
             }]
         );
-        assert!(c.tick(12).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
-        c.tick(0); // drop below ⇒ re-arm
-        assert!(!c.tick(20).acts.is_empty()); // crosses again ⇒ fires
+        assert!(c.tick(Agent::Ship, 12).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
+        c.tick(Agent::Ship, 0); // drop below ⇒ re-arm
+        assert!(!c.tick(Agent::Ship, 20).acts.is_empty()); // crosses again ⇒ fires
     }
 
     #[test]
     fn create_insert_remove_reorder() {
         let mut c = Console::default();
-        let i = c.create_routine();
+        let i = c.create_routine(Agent::Ship);
         assert_eq!(c.routines.len(), 4);
         assert_eq!(c.view, View::Edit(i));
         assert!(c.routines[i].body.is_empty());
@@ -952,7 +1048,7 @@ mod tests {
     #[test]
     fn cycle_step_skips_locked_vocabulary() {
         let mut c = Console::default();
-        let i = c.create_routine();
+        let i = c.create_routine(Agent::Ship);
         c.cursor = 0;
         c.insert_step(i); // a step exists now (cursor on it, row 1)
         c.cursor = 1;
@@ -965,14 +1061,14 @@ mod tests {
         }
         // Once Schematics is comprehended, seek becomes reachable.
         c.unlocked.insert(Stratum::Schematics);
-        let reachable = c.vocabulary().contains(&Step::Do(Block::Seek));
+        let reachable = c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek));
         assert!(reachable);
     }
 
     #[test]
     fn cycle_trigger_and_adjust_value() {
         let mut c = Console::default();
-        let i = c.create_routine();
+        let i = c.create_routine(Agent::Ship);
         c.cursor = 0; // trigger row
         assert_eq!(c.routines[i].trigger, Trigger::Continuous);
         c.cycle(1);
@@ -991,7 +1087,7 @@ mod tests {
     #[test]
     fn adjust_repeat_count() {
         let mut c = Console::default();
-        let i = c.create_routine();
+        let i = c.create_routine(Agent::Ship);
         c.routines[i].body = vec![Step::Repeat(2)];
         c.cursor = 1; // the step
         c.adjust(3);
@@ -1020,6 +1116,7 @@ mod tests {
         c.toggle_routine(1); // survey off
         c.routines.push(Routine::new(
             "routine-4",
+            Agent::Ship,
             Trigger::When(Cond {
                 state: State::Data,
                 min: 25,
@@ -1043,14 +1140,60 @@ mod tests {
         // Starters available; nav (Schematics) + match (Rites) locked by default.
         assert!(c.is_unlocked(Block::Scan(ScanItem::Shards)) && c.is_unlocked(Block::Decode));
         assert!(!c.is_unlocked(Block::Seek));
-        let vocab = c.vocabulary();
+        let vocab = c.vocabulary(Agent::Ship);
         assert!(!vocab.contains(&Step::Do(Block::Seek)));
         assert!(!vocab.contains(&Step::Match(MatchField::Rare)));
         c.unlocked.insert(Stratum::Schematics);
         c.unlocked.insert(Stratum::Rites);
-        let vocab = c.vocabulary();
+        let vocab = c.vocabulary(Agent::Ship);
         assert!(vocab.contains(&Step::Do(Block::Seek)));
         assert!(vocab.contains(&Step::Match(MatchField::Rare)));
+    }
+
+    #[test]
+    fn vocabulary_is_scoped_by_agent() {
+        // G8b: ship vocab has scan/nav but not the survey-beam; foot vocab the reverse; collect &
+        // hail are shared (in both). Decode everything so comprehension-gating isn't the cause.
+        let mut c = Console::default();
+        for s in Stratum::ALL {
+            c.unlocked.insert(s);
+        }
+        let ship = c.vocabulary(Agent::Ship);
+        let foot = c.vocabulary(Agent::Foot);
+        assert!(ship.contains(&Step::Do(Block::Scan(ScanItem::Shards))));
+        assert!(!ship.contains(&Step::Do(Block::FireBeam))); // beam is a foot block
+        assert!(foot.contains(&Step::Do(Block::FireBeam)));
+        assert!(!foot.contains(&Step::Do(Block::Seek))); // seek is a ship nav block
+        for shared in [
+            Step::Do(Block::Collect),
+            Step::Do(Block::Hail),
+            Step::Match(MatchField::Rare),
+            Step::Repeat(2),
+        ] {
+            assert!(
+                ship.contains(&shared) && foot.contains(&shared),
+                "shared: {shared:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_scopes_which_routines_tick() {
+        // A foot routine doesn't run on the ship tick, and vice-versa; agent persists.
+        let mut c = Console::default();
+        let i = c.create_routine(Agent::Foot);
+        c.routines[i].trigger = Trigger::OnScan;
+        c.routines[i].body = vec![Step::Do(Block::Collect)];
+        // Ship on-scan = the given `collect` (1); foot on-scan = the new routine (1).
+        assert_eq!(c.on_scan_acts(Agent::Ship).len(), 1);
+        assert_eq!(c.on_scan_acts(Agent::Foot).len(), 1);
+        c.cycle_agent(); // editor is on routine i (just created) → flip foot→ship
+        assert_eq!(c.on_scan_acts(Agent::Foot).len(), 0);
+        assert_eq!(c.on_scan_acts(Agent::Ship).len(), 2);
+        // Agent survives a co= round-trip.
+        let mut back = Console::default();
+        back.restore(&c.encode());
+        assert_eq!(back.routines, c.routines);
     }
 
     #[test]
@@ -1058,7 +1201,7 @@ mod tests {
         // G8a: `hail` is a shared starter block (no comprehension gate), insertable, and persists.
         let c = Console::default();
         assert!(c.is_unlocked(Block::Hail));
-        assert!(c.vocabulary().contains(&Step::Do(Block::Hail)));
+        assert!(c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Hail)));
         let mut c = Console::default();
         c.routines[2].body = vec![Step::Do(Block::Hail)];
         let mut back = Console::default();

@@ -469,9 +469,11 @@ survive, reframed as the console + composed routines + comprehension unlocks (G4
 8. **◑ G8 — Two agents, the expedition & the arc** ([brief](milestones/G8-two-agents.md)). On the
    G7 runtime: **independent simultaneous agents** + the **hail**, then the expedition + the arc.
    **G8a ✅** — the ship flies its own routine + auto-scans while you walk (two agents at once); a
-   `hail` block recalls it. **G8b/c ⏳** — per-agent routine library (ship/foot/shared); then the
-   expedition choreography (`goto → land → run(foot) → return`) + cross-agent meta; then
-   decipherment fluency, the late **Concordance/Synthesis**, Resonance/pristine, co-op (N1).
+   `hail` block recalls it. **G8b ✅** — per-agent routine library: routines are ship/foot, the
+   editor's vocabulary is agent-scoped (+ shared blocks), the interpreter ticks per agent. **G8c
+   ⏳** — foot auto-walk + the expedition choreography (`goto → land → run(foot) → return`) +
+   cross-agent meta; then decipherment fluency, the late **Concordance/Synthesis**,
+   Resonance/pristine, co-op (N1).
 
 ## 14. Open items
 

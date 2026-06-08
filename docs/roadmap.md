@@ -539,8 +539,8 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 > auto-collect that bites at cruise altitude). The old overloaded "G7+" is re-scoped to **G8+**.
 > `main` is green at every commit (fmt / clippy `-D` / tests / wasm; golden voxel-hash +
 > headless render unchanged; engine↔game boundary CI-checked). **G8 in progress:** **G8a ✅**
-> (the ship is an autonomous agent while you walk + the `hail` recall) landed on the G7 runtime;
-> G8b (per-agent routine library) + G8c (the expedition + cross-agent meta) remain. **Still
+> (autonomous away-ship + `hail`) and **G8b ✅** (per-agent ship/foot routine library) landed on
+> the G7 runtime; **G8c ⏳** (foot auto-walk + the expedition + cross-agent meta) remains. **Still
 > outstanding** after that: the engine/tooling backlog **M7 🛠 · E9 ⏳ · E11 ⏳ · D5 ⏳** and the
 > **device/hardware-gated** items I can't verify here — **M8(b)** profiling (needs the reference
 > iGPU/phone), **D7/D8** (need a controller / desktop+APK device to verify runtime) — flagged
@@ -652,8 +652,13 @@ arc. Built in slices.
   **`hail`** block (`H` on foot) recalls the autonomous ship. Piloted autopilot + away-ship share
   one pure `autopilot_step`; `scan_pulse` generalised to scan from any vantage. 78 game-crate
   tests; golden voxel-hash + headless render unchanged.
-- **G8b ⏳ — per-agent routine library** (ship / foot / shared scoping; foot blocks first-class).
-- **G8c ⏳ — the expedition + cross-agent meta** (`goto → land → run(foot) → return`, `on-arrive`,
+- **G8b ✅ — per-agent routine library.** Routines are `Agent::{Ship,Foot}`; `Block::agent()`
+  scopes the editor's insertable vocabulary (ship: scan/nav/goto · foot: survey-beam · shared:
+  collect/decode/spend/hail); `tick(agent,…)`/`on_scan_acts(agent)` run each agent's routines. On
+  foot the walker is a second agent (its shared routines run as you explore); **Tab** flips a
+  routine's agent; agent persists in `co=`. 156 tests; golden voxel-hash + headless unchanged.
+- **G8c ⏳ — the expedition + cross-agent meta** (foot auto-walk/pathing; `goto → land →
+  run(foot) → return`, `on-arrive`,
   cross-agent run; rare-stratum-gated). Then decipherment fluency, the late **Concordance/
   Synthesis** arc, the Resonance/pristine branch, and co-op shared archive (N1).
 

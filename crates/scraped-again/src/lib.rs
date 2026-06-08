@@ -674,7 +674,13 @@ impl App {
         // Skipped for the autonomous away-ship (it fills the map but doesn't bank). The collect is
         // the generous nearby auto-collect, so the hands-off loop bites at cruise altitude (G7).
         if found && do_on_scan {
-            for act in self.console.on_scan_acts() {
+            // The scanning agent is whoever's at the helm: piloting → ship, on foot → walker (G8b).
+            let agent = if self.mode == Mode::Walk {
+                console::Agent::Foot
+            } else {
+                console::Agent::Ship
+            };
+            for act in self.console.on_scan_acts(agent) {
                 match act.block {
                     console::Block::Collect => self.dispatch_collect(act.filter),
                     console::Block::FireBeam => self.cast_beam(),
@@ -743,6 +749,7 @@ impl App {
                 KeyCode::KeyX | KeyCode::Delete | KeyCode::Backspace => self.console.remove_step(i),
                 KeyCode::BracketLeft => self.console.move_step(i, -1),
                 KeyCode::BracketRight => self.console.move_step(i, 1),
+                KeyCode::Tab => self.console.cycle_agent(), // G8b: flip ship ↔ foot
                 _ => {}
             },
         }
@@ -753,7 +760,8 @@ impl App {
         match self.console.selected() {
             console::Sel::Block(b) => self.dispatch_block(b),
             console::Sel::NewRoutine => {
-                self.console.create_routine();
+                // New routines default to the ship agent; Tab in the editor flips to foot (G8b).
+                self.console.create_routine(console::Agent::Ship);
             }
             console::Sel::Routine(i) => {
                 let on = self.console.toggle_routine(i);
@@ -1801,12 +1809,11 @@ impl ApplicationHandler<AppEvent> for App {
                     );
                 }
 
-                // G7: run one interpreter tick over the enabled routines. The intents replace the
-                // old named-accessor hacks: `nav` steers the autopilot, `scan` gates the auto-scan,
-                // and any one-shot acts (continuous non-nav + `when`-edge fires) dispatch now.
-                let tick = self
-                    .console
-                    .tick(self.progress.strata.total().min(u32::MAX as u64) as u32);
+                // G7/G8b: run one interpreter tick per agent. The **ship** agent's intents replace
+                // the old named-accessor hacks: `nav` steers the autopilot, `scan` gates the
+                // auto-scan, one-shot acts (continuous non-nav + `when`-edge fires) dispatch now.
+                let data = self.progress.strata.total().min(u32::MAX as u64) as u32;
+                let tick = self.console.tick(console::Agent::Ship, data);
                 self.nav_intent = tick.nav;
                 self.scan_wanted = tick.scan;
                 for act in tick.acts {
@@ -1818,6 +1825,21 @@ impl ApplicationHandler<AppEvent> for App {
                         // A `when`-fired nav block engages the autopilot.
                         b if b.is_nav() => self.auto_fly = true,
                         _ => {}
+                    }
+                }
+                // G8b: on foot, the walker is a **second agent** — its routines run simultaneously.
+                // Foot nav/scan (auto-walk) is deferred to G8c; for now the shared acts fire
+                // (e.g. a continuous `collect` harvests as you explore; `when … → decode`/`hail`).
+                if self.mode == Mode::Walk {
+                    let foot = self.console.tick(console::Agent::Foot, data);
+                    for act in foot.acts {
+                        match act.block {
+                            console::Block::Collect => self.dispatch_collect(act.filter),
+                            console::Block::Decode => self.decode_action(),
+                            console::Block::Hail => self.hail_ship(),
+                            console::Block::FireBeam => self.cast_beam(),
+                            _ => {}
+                        }
                     }
                 }
                 // A continuous nav routine governs the autopilot wander; without one, drift is off

@@ -34,10 +34,20 @@ flies on*).
 - **De-risks.** That "two independently-running agents + the hail" is viable on the G7 runtime and
   feels good, before the per-agent library + expedition pile on.
 
-### G8b — per-agent routine library (ship / foot / shared)  ⏳
-The console scopes routines + the insertable vocabulary by **agent context**; foot blocks
-(`survey-beam`, `descend`, `collect-up-close`) become first-class. Each agent has its own routine
-set; shared blocks available to both.
+### G8b — per-agent routine library (ship / foot / shared)  ✅ (landed 2026-06-08)
+- **Goal.** Routines are **per-agent** (`Agent { Ship, Foot }`); the console scopes the insertable
+  vocabulary by agent context + shared blocks; the interpreter ticks each agent's routines for
+  that agent. On foot, the walker is a second agent whose shared routines (collect/decode/hail)
+  run simultaneously.
+- **As-built.** `Routine.agent`; `Block::agent()` classifies ship (scan/nav/goto) vs foot (the
+  survey-beam) vs shared (collect/decode/spend/hail); `vocabulary(agent)` filters the editor's
+  insert/cycle list; `tick(agent, data)` / `on_scan_acts(agent)` run only that agent's routines.
+  The editor flips a routine's agent with **Tab**; the home/edit screens show the agent tag; the
+  agent persists in `co=`. The app ticks **ship** for the cruiser (piloted or autonomous) and —
+  when walking — **foot** for the walker's shared acts (a continuous `collect` harvests as you
+  explore; `when … → decode`/`hail` fire). The three givens are ship routines (parity).
+- **Deferred to G8c:** foot **nav** (auto-walk / pathing) — the walker doesn't yet steer itself;
+  foot routines currently contribute their *shared* acts + on-scan collect while you move.
 
 ### G8c — the expedition + cross-agent meta  ⏳
 The choreography (`goto(site) → land → run(foot: collect) → return → fly on`), `on-arrive`
