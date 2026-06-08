@@ -21,6 +21,7 @@ struct Shared {
     intensity: AtomicU32,
     warp: AtomicU32,
     ethereal: AtomicU32,
+    weather: AtomicU32,
 }
 
 impl Shared {
@@ -59,6 +60,7 @@ impl AudioEngine {
             intensity: AtomicU32::new(0.0f32.to_bits()),
             warp: AtomicU32::new(0.0f32.to_bits()),
             ethereal: AtomicU32::new(0.0f32.to_bits()),
+            weather: AtomicU32::new(0.0f32.to_bits()),
         });
 
         let mut drone = crate::audio::Drone::new(seed, sample_rate);
@@ -73,6 +75,7 @@ impl AudioEngine {
             drone.set_tone(Shared::load(&s2.tone));
             drone.set_intensity(Shared::load(&s2.intensity));
             drone.set_warp(Shared::load(&s2.warp));
+            drone.set_weather(Shared::load(&s2.weather));
             drone.set_ethereal(Shared::load(&s2.ethereal));
             let on = s2.enabled.load(Ordering::Relaxed);
             for frame in data.chunks_mut(channels) {
@@ -153,6 +156,10 @@ impl AudioEngine {
     /// Reactive intensity `0..1` (E16): the camera's flight state, read each audio block.
     pub fn set_intensity(&self, x: f32) {
         Shared::store(&self.shared.intensity, x);
+    }
+    /// Weather `0..1` (E16×E9): precipitation intensity, read each audio block.
+    pub fn set_weather(&self, x: f32) {
+        Shared::store(&self.shared.weather, x);
     }
     /// Warp `0..1` (E18): proximity to a max-wobble colossus, read each audio block.
     pub fn set_warp(&self, x: f32) {

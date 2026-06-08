@@ -122,6 +122,52 @@ impl Svf {
 
 /// The streaming doom-drone voice. Build with [`Drone::new`], pull stereo frames with
 /// [`Drone::next_frame`]. Cheap enough to run per audio-callback on weak hardware.
+/// A 4-line **feedback-delay-network** reverb (E16). Mutually-prime delay lengths fed back through
+/// a normalised 4×4 Hadamard matrix scaled by `fb < 1` — orthonormal mixing × a sub-unity gain is
+/// **contractive**, so the tail always decays (bounded + stable, no runaway). One mono in → a
+/// stereo wet tail. Cheap (4 ring reads/writes per sample).
+struct Fdn {
+    lines: [Vec<f32>; 4],
+    idx: [usize; 4],
+    fb: f32,
+}
+
+impl Fdn {
+    fn new(sr: f32) -> Fdn {
+        // Delay times (seconds), mutually prime-ish so the modes don't align into a flutter.
+        let secs = [0.0297, 0.0371, 0.0411, 0.0437];
+        Fdn {
+            lines: secs.map(|t| vec![0.0; ((t * sr) as usize).max(1)]),
+            idx: [0; 4],
+            fb: 0.72,
+        }
+    }
+
+    /// One sample: read the four taps, mix them orthonormally (Hadamard ÷2), feed back `x + fb·mix`
+    /// into each line, and return a stereo wet pair. Stable since `‖Hadamard/2‖ = 1` and `fb < 1`.
+    fn process(&mut self, x: f32) -> (f32, f32) {
+        let d = [
+            self.lines[0][self.idx[0]],
+            self.lines[1][self.idx[1]],
+            self.lines[2][self.idx[2]],
+            self.lines[3][self.idx[3]],
+        ];
+        // Normalised 4×4 Hadamard (rows orthonormal after the ×0.5).
+        let h = [
+            (d[0] + d[1] + d[2] + d[3]) * 0.5,
+            (d[0] - d[1] + d[2] - d[3]) * 0.5,
+            (d[0] + d[1] - d[2] - d[3]) * 0.5,
+            (d[0] - d[1] - d[2] + d[3]) * 0.5,
+        ];
+        for ((line, idx), hv) in self.lines.iter_mut().zip(self.idx.iter_mut()).zip(h) {
+            line[*idx] = x + self.fb * hv;
+            *idx = (*idx + 1) % line.len();
+        }
+        // Spread the lines across the stereo field.
+        ((d[0] + d[2]) * 0.5, (d[1] + d[3]) * 0.5)
+    }
+}
+
 pub struct Drone {
     sr: f32,
     voices: Vec<Voice>,
@@ -162,12 +208,21 @@ pub struct Drone {
     root: f32,
     choir: [f32; 6],
     choir_swell: f32,
+    /// Weather `0..1` (E16×E9): precipitation intensity. Darkens + thickens the dirge (rain pulls
+    /// the murk down + leans on the drive) so storms feel heavier. `_s` smoothed (no zipper).
+    weather: f32,
+    weather_s: f32,
+    /// A small feedback-delay-network reverb (E16) — one shared stereo tail so the drone sits in a
+    /// space rather than bone-dry. Stable by construction (orthonormal mix × feedback < 1).
+    fdn: Fdn,
 }
 
 impl Drone {
     /// The lowest, heaviest roots we pick from (Hz) — sub-bass territory so it crushes.
     /// Roughly E1, F1, F♯1, G1, A1; the seed leans the choice low.
     const ROOTS: [f32; 5] = [41.20, 43.65, 46.25, 49.00, 55.00];
+    /// E16 voice cap: the most simultaneous oscillator voices (bounds per-sample cost).
+    const MAX_VOICES: usize = 8;
 
     pub fn new(seed: u32, sample_rate: u32) -> Drone {
         let sr = sample_rate as f32;
@@ -188,7 +243,7 @@ impl Drone {
             gain,
             pan,
         };
-        let voices = vec![
+        let mut voices = vec![
             // Weight: sub-octave + fundamental sines (centred).
             mk(root * 0.5, false, SUB_GAIN, 0.0, rng.range(0.0, 1.0)),
             mk(root, false, BODY_GAIN, 0.0, rng.range(0.0, 1.0)),
@@ -227,6 +282,10 @@ impl Drone {
             // Faint, dissonant ♭2 — the dread note. Centred and quiet.
             mk(flat2, true, FLAT2_GAIN, 0.0, rng.range(0.0, 1.0)),
         ];
+        // E16 voice cap: bound the polyphony so the synth's per-sample cost is fixed (the dirge is
+        // a fixed stack today; the cap keeps it that way as voices get added). Must keep the ♭2
+        // (index 7), so the cap is ≥ 8.
+        voices.truncate(Self::MAX_VOICES);
 
         Drone {
             sr,
@@ -264,6 +323,9 @@ impl Drone {
             root,
             choir: [0.1, 0.3, 0.5, 0.7, 0.2, 0.9],
             choir_swell: 0.0,
+            weather: 0.0,
+            weather_s: 0.0,
+            fdn: Fdn::new(sr),
         }
     }
 
@@ -283,6 +345,11 @@ impl Drone {
     /// internally, so callers can set it per-frame without zipper noise.
     pub fn set_intensity(&mut self, x: f32) {
         self.intensity = x.clamp(0.0, 1.0);
+    }
+    /// Weather amount, `0..1` (E16×E9): precipitation intensity. Darkens + thickens the dirge.
+    /// Smoothed internally.
+    pub fn set_weather(&mut self, x: f32) {
+        self.weather = x.clamp(0.0, 1.0);
     }
     /// Warp amount, `0..1` (E18): proximity to a max-wobble "warping" colossus. Adds heavier
     /// drive + a throbbing tremolo. Smoothed internally.
@@ -326,17 +393,24 @@ impl Drone {
         // Heaviness scales the drive; warp pushes it heavier still (more grit in warp zones);
         // ethereal guts it (a pristine pocket is almost clean — no doom grind).
         let pre = 0.42;
-        let drive =
-            self.base_drive * self.drive_mul * (1.0 + self.warp_s * 0.9) * (1.0 - eth * 0.8);
+        let drive = self.base_drive
+            * self.drive_mul
+            * (1.0 + self.warp_s * 0.9)
+            * (1.0 + self.weather_s * 0.4) // weather thickens the grit (E16); ~1-frame lag is fine
+            * (1.0 - eth * 0.8);
         let dl = (drive * l * pre).tanh();
         let dr = (drive * r * pre).tanh();
 
         // Reactive intensity (E16): smooth toward the target (~0.4 s) so flight changes glide in.
         self.intensity_s += (self.intensity - self.intensity_s) * 0.00006;
+        // Weather (E16×E9): smooth toward target (~0.4 s). Precip pulls the murk down (darker) and
+        // is folded into the drive below (heavier) — storms sound thicker.
+        self.weather_s += (self.weather - self.weather_s) * 0.00006;
         // Murk: scale the cutoff sweep (tone 0 → ×0.5 darker, 1 → ×2.5 brighter). Flight
         // intensity nudges the effective openness up, so faster/higher flight brightens the drone;
-        // ethereal throws it wide open (airy/bright, the murk lifts entirely).
-        let tone_eff = (self.tone + self.intensity_s * 0.35 + eth * 1.2).min(2.0);
+        // ethereal throws it wide open (airy/bright, the murk lifts entirely); weather darkens it.
+        let tone_eff = (self.tone + self.intensity_s * 0.35 + eth * 1.2 - self.weather_s * 0.3)
+            .clamp(0.0, 2.0);
         let tone_scale = 0.5 + tone_eff * 2.0;
         let cutoff = (self.cutoff_lfo.step(self.sr) * tone_scale).clamp(60.0, self.sr * 0.45);
         let amp = self.amp_lfo.step(self.sr);
@@ -398,7 +472,15 @@ impl Drone {
         // throbbing tremolo so warp zones pulse, unstable.
         let trem = 1.0 - self.warp_s * 0.5 * (0.5 + 0.5 * (self.trem_phase * TAU).sin());
         let g = self.master * amp * self.vol * (1.0 + 0.10 * self.intensity_s) * trem;
-        [(fl * g).clamp(-1.0, 1.0), (fr * g).clamp(-1.0, 1.0)]
+        let (mut ol, mut or) = (fl * g, fr * g);
+        // FDN reverb (E16): a fixed, subtle stereo tail so the drone sits in a space. Driven by a
+        // mono send (pre-clamp); stable by construction. A little more wet under ethereal/weather
+        // (the airy pad + the storm both want air), but always a minority of the signal.
+        let (wl, wr) = self.fdn.process((ol + or) * 0.5);
+        let wet = 0.18 + 0.12 * self.ethereal_s + 0.08 * self.weather_s;
+        ol += wl * wet;
+        or += wr * wet;
+        [ol.clamp(-1.0, 1.0), or.clamp(-1.0, 1.0)]
     }
 
     /// Fill an interleaved stereo buffer (`L, R, L, R, …`) — for live audio callbacks.
@@ -510,5 +592,54 @@ mod tests {
         // It should be a *strong* change, not a subtle nudge.
         assert!(diff > 1000.0, "ethereal barely changed the drone: {diff}");
         assert!(e_a > 0.0 && e_b > 0.0);
+    }
+
+    #[test]
+    fn voice_count_is_capped() {
+        // E16: the oscillator polyphony is bounded (fixed per-sample cost). Still keeps the ♭2
+        // (index 7), so next_frame's `i == 7` reference is valid.
+        let d = Drone::new(1337, 44_100);
+        assert!(d.voices.len() <= Drone::MAX_VOICES);
+        assert!(d.voices.len() >= 8, "lost the ♭2 dread voice");
+    }
+
+    #[test]
+    fn weather_darkens_and_thickens_without_clipping() {
+        // E16×E9: full precip audibly changes the drone (murk down, drive up) yet stays in range.
+        let mut a = Drone::new(13, 44_100);
+        let mut b = Drone::new(13, 44_100);
+        b.set_weather(1.0);
+        let (mut peak, mut diff) = (0.0f32, 0.0f32);
+        for _ in 0..44_100 {
+            let [la, _] = a.next_frame();
+            let [lb, rb] = b.next_frame();
+            assert!(lb.is_finite() && rb.is_finite());
+            peak = peak.max(lb.abs()).max(rb.abs());
+            diff += (la - lb).abs();
+        }
+        assert!(peak <= 1.0, "weather pushed past full scale: {peak}");
+        assert!(diff > 0.0, "weather had no audible effect");
+    }
+
+    #[test]
+    fn fdn_reverb_is_stable_and_bounded() {
+        // The FDN must not run away: orthonormal mix × feedback < 1 is contractive. Drive it with
+        // a loud sustained input, then silence, and confirm it stays finite + decays toward zero.
+        let mut f = Fdn::new(44_100.0);
+        let mut peak = 0.0f32;
+        for _ in 0..44_100 {
+            let (l, r) = f.process(1.0); // sustained full-scale send
+            assert!(l.is_finite() && r.is_finite());
+            peak = peak.max(l.abs()).max(r.abs());
+        }
+        // Bounded steady state (well clear of a blow-up), not unbounded growth.
+        assert!(peak < 8.0, "FDN steady state too hot / unstable: {peak}");
+        // Now go silent and let it ring out; the tail must decay toward zero.
+        let mut tail = 0.0f32;
+        for _ in 0..(44_100 * 4) {
+            let (l, r) = f.process(0.0);
+            tail = l.abs().max(r.abs());
+        }
+        assert!(tail < 1e-3, "FDN tail didn't decay (feedback ≥ 1?): {tail}");
     }
 }

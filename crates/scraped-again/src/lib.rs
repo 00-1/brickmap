@@ -2216,15 +2216,18 @@ impl ApplicationHandler<AppEvent> for App {
                 let speed_n = (speed / AUTO_FLY_SPEED).clamp(0.0, 1.0);
                 let alt_n = ((pos.y - 24.0) / 90.0).clamp(0.0, 1.0);
                 let intensity = (0.5 * speed_n + 0.5 * alt_n).clamp(0.0, 1.0);
+                // E16×E9: precipitation darkens + thickens the drone (storms sound heavier).
+                let weather_amt = self.weather.intensity();
                 #[cfg(not(target_arch = "wasm32"))]
                 if let Some(a) = &self.audio {
                     a.set_intensity(intensity);
+                    a.set_weather(weather_amt);
                 }
                 #[cfg(target_arch = "wasm32")]
                 controls::set_audio_intensity(intensity);
-                let _ = intensity; // used per-target above
-                                   // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
-                                   // camera) and re-upload its points each frame so they drift through the scene.
+                let _ = (intensity, weather_amt); // used per-target above (web weather term: TODO)
+                                                  // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
+                                                  // camera) and re-upload its points each frame so they drift through the scene.
                 self.creatures.update(dt, self.camera.position);
                 // How many motes drift is scaled by the biome at the camera (E10): misty/abyssal
                 // biomes swarm with them, barren ones are sparse. ~7 wisps at the baseline.

@@ -354,8 +354,14 @@ User-facing features, all rated *great fit* because they reuse machinery we alre
     state (speed + altitude, blended, clamped `0..1`) into `Drone::set_intensity`, which opens the
     filter cutoff and lifts the swell a touch (smoothed per-sample, no zipper). Plumbed on native
     (a lock-free atomic, read each audio block) and web (set each frame). Pure mapping + bound/
-    finite tested. *(Built blind — the modulation is conservative; the exact feel wants the human's
-    ear to tune.)* ⏳ Remaining: biome/weather terms, a voice cap, and one FDN reverb.
+    finite tested.
+  - ✅ **Weather term + voice cap + FDN reverb** — `Drone::set_weather` darkens (murk down) +
+    thickens (drive up) the dirge with **E9 precipitation** (fed from `weather.intensity()` on
+    native; smoothed); a **voice cap** (`MAX_VOICES`) bounds the oscillator polyphony (fixed
+    per-sample cost); and a 4-line **FDN reverb** (orthonormal Hadamard mix × feedback < 1 —
+    contractive, so stable) gives the drone a subtle stereo space, a touch wetter under
+    ethereal/weather. All **finite/bounded + decay tested**. *(Built blind — the exact feel
+    (reverb size, weather depth) wants the human's ear; the web weather param-bridge is a TODO.)*
 
 ### ✨ E17 — In-world text *(exploration)* ✅
 Render text **inside the 3D world**, cheaply, by reusing the bitmap-font HUD rasteriser + the
