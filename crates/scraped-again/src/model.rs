@@ -162,23 +162,10 @@ pub fn fallen_splats(
     color: [f32; 3],
     seed: u32,
 ) -> Vec<SplatInstance> {
-    let (sy, cy) = yaw.sin_cos();
-    // Topple: rotate −90° about X so the standing model lies on its back (y → z, z → −y).
-    let toppled = |p: Vec3| Vec3::new(p.x, p.z, -p.y);
-    // First pass: find the lowest toppled-scaled y so we can rest it on the ground.
-    let mut min_y = f32::MAX;
-    for &p in model_pts {
-        min_y = min_y.min(toppled(p).y * scale);
-    }
     let mut rng = Rng(seed | 1);
-    model_pts
-        .iter()
-        .map(|&p| {
-            let t = toppled(p) * scale;
-            // Yaw about +Y, drop onto the ground at `feet`.
-            let wx = t.x * cy - t.z * sy;
-            let wz = t.x * sy + t.z * cy;
-            let world = feet + Vec3::new(wx, t.y - min_y, wz);
+    fallen_world(model_pts, feet, scale, yaw)
+        .into_iter()
+        .map(|world| {
             let v = 0.85 + 0.15 * rng.unit();
             SplatInstance {
                 offset: [world.x, world.y, world.z],
@@ -187,6 +174,28 @@ pub fn fallen_splats(
                 sway: rng.unit() * std::f32::consts::TAU,
                 alpha: 1.0,
             }
+        })
+        .collect()
+}
+
+/// The shared **fallen-giant transform** (E18): topple a Y-up standing model onto its back
+/// (model +Y → world +Z), scale, yaw about +Y, and rest its lowest point at `feet`. Returns the
+/// world-space positions. Used by both the ethereal points ([`fallen_splats`]) and the solid
+/// voxelisation, so the two kinds of fallen human sit identically.
+pub fn fallen_world(model_pts: &[Vec3], feet: Vec3, scale: f32, yaw: f32) -> Vec<Vec3> {
+    let (sy, cy) = yaw.sin_cos();
+    let toppled = |p: Vec3| Vec3::new(p.x, p.z, -p.y);
+    let mut min_y = f32::MAX;
+    for &p in model_pts {
+        min_y = min_y.min(toppled(p).y * scale);
+    }
+    model_pts
+        .iter()
+        .map(|&p| {
+            let t = toppled(p) * scale;
+            let wx = t.x * cy - t.z * sy;
+            let wz = t.x * sy + t.z * cy;
+            feet + Vec3::new(wx, t.y - min_y, wz)
         })
         .collect()
 }

@@ -66,8 +66,13 @@ pub fn colossi_near(
                 yaw: (p % 6283) as f32 / 1000.0,
                 voxel: 1.15 + ((p >> 5) % 70) as f32 / 100.0, // ~95–155 world units across
                 seed: p | 1,
-                // Humans are always ethereal (the solid/explorable human is a later slice).
-                solid: !human && (p >> 12).is_multiple_of(3), // ~1 in 3 (non-human) solid
+                // Solid (explorable) vs ethereal (points): ~half of humans are solid/landable;
+                // ~1 in 3 of the tube-tech relics. The rest drift as ethereal point clouds.
+                solid: if human {
+                    (p >> 9).is_multiple_of(2)
+                } else {
+                    (p >> 12).is_multiple_of(3)
+                },
                 human,
             });
         }

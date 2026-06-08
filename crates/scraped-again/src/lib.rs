@@ -1115,9 +1115,21 @@ impl App {
                 break;
             }
             budget -= 1;
-            let entry = if p.human {
-                // E18: a fallen *human* giant — the baked CC0 figure, toppled + scaled to a
-                // colossus + dropped onto the terrain (ethereal points; reuses `fallen_splats`).
+            let entry = if p.human && p.solid {
+                // E18: a fallen *human* giant you can land on — the baked figure voxelised + meshed
+                // (a denser/smaller scale fills the shell). Pale metal, like the solid relics.
+                CachedRelic {
+                    points: Vec::new(),
+                    meshes: human_solid_instances(
+                        &self.human_points,
+                        p.pos,
+                        p.voxel * 22.0,
+                        p.yaw,
+                        world::BlockId(5),
+                    ),
+                }
+            } else if p.human {
+                // Ethereal fallen human — the baked figure as drift-through points (`fallen_splats`).
                 CachedRelic {
                     points: model::fallen_splats(
                         &self.human_points,
@@ -3333,14 +3345,47 @@ pub(crate) fn relic_chunk_instances(
     placement: relic::Placement,
     material: world::BlockId,
 ) -> Vec<ChunkInstance> {
-    use std::collections::HashMap;
-    let n = Section::SIZE as i32;
     let voxels = relic::relic_voxels(
         placement.pos,
         placement.voxel,
         placement.yaw,
         placement.seed,
     );
+    voxels_to_instances(voxels, material)
+}
+
+/// The **solid / explorable fallen-human** giant (E18): topple + scale + yaw the baked human
+/// points to world space ([`model::fallen_world`]), snap them onto a world voxel grid (a deduped
+/// surface shell), and greedy-mesh it like a solid relic. Renders + dissolves-with-distance on the
+/// same `structure_draws` path as the solid relics, so its quality matches theirs. *(Shell density
+/// / scale read as the chunky low-fi look; finer fill is the eye-gated tuning.)*
+fn human_solid_instances(
+    points: &[Vec3],
+    feet: Vec3,
+    scale: f32,
+    yaw: f32,
+    material: world::BlockId,
+) -> Vec<ChunkInstance> {
+    let mut set: std::collections::HashSet<(i32, i32, i32)> = std::collections::HashSet::new();
+    for w in model::fallen_world(points, feet, scale, yaw) {
+        set.insert((w.x.floor() as i32, w.y.floor() as i32, w.z.floor() as i32));
+    }
+    let voxels: Vec<glam::IVec3> = set
+        .into_iter()
+        .map(|(x, y, z)| glam::IVec3::new(x, y, z))
+        .collect();
+    voxels_to_instances(voxels, material)
+}
+
+/// Greedy-mesh a set of **world-space solid voxels** into drawable chunk instances (E18). Buckets
+/// into 32³ sections (multi-layer in y), meshes each with its body-internal neighbours so interior
+/// seams are culled. Shared by the solid tube-tech relics + the solid fallen-human giant.
+pub(crate) fn voxels_to_instances(
+    voxels: Vec<glam::IVec3>,
+    material: world::BlockId,
+) -> Vec<ChunkInstance> {
+    use std::collections::HashMap;
+    let n = Section::SIZE as i32;
     let mut sections: HashMap<ChunkCoord, Section> = HashMap::new();
     for v in voxels {
         let cc = (v.x.div_euclid(n), v.y.div_euclid(n), v.z.div_euclid(n));

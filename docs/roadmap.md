@@ -424,8 +424,12 @@ content kinds (pivot 2026-06):**
   (`model::decode_points`, round-trip tested). `colossi_near` now marks **~1 in 4** giants `human`
   (a fresh salt, so the tube-tech placements are undisturbed); they render as **ethereal points**
   via the verified `fallen_splats` path (toppled, bone-tinted, dropped on the terrain), through the
-  same `structure_draws`/points cache. ⏳ Next: the **solid/explorable** human (wire `voxelize` →
-  the `structure_draws` chunk path, like `relic_voxels` — visual, deferred); on-device look.
+  same `structure_draws`/points cache. ✅ **Solid / explorable human:** ~half the human giants are
+  now **solid** — the baked points are toppled/scaled (`model::fallen_world`), snapped to a world
+  voxel grid, and greedy-meshed via the shared `voxels_to_instances` (factored out of
+  `relic_chunk_instances`), so you can land on a fallen human; it dissolves-with-distance on the
+  same `structure_draws` path as the solid relics (consistent quality). *(Shell fill-density +
+  scale read as the chunky low-fi look; finer fill is on-device eye-tuning.)*
 - 🛠 **Solid / explorable kind, now live (built blind):** `relic::relic_voxels` →
   `relic_chunk_instances` greedy-meshes a relic into chunk instances; `gfx` draws them via a
   separate `structure_draws` list (terrain pipeline, out of the stream map). ~1 in 3 placed
