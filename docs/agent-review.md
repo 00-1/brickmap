@@ -8,7 +8,32 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `93a02e6` (solid/explorable human giant).
+**Reviewed through:** `b3ca081` (final wind-down; god-rays → eye-pass).
+
+---
+
+## 2026-06-08 · b3ca081 — final wind-down (god-rays → eye-pass)
+
+Docs-only run-log: the last substantive buildable item (E9 **god-rays**) deferred to the human's
+eye-pass, reasoned as "a ¼-res post pass whose entire deliverable is the look — the visual analog of
+M7's hardware-gated perf; build/tune blind only on request." **This is the *right* judgment** and
+the opposite of the earlier false pause: everything with a *mechanical/verifiable core* is built
+(D9, wander, water, expedition, weather+fog, solid+ethereal colossi, reactive audio); the one item
+left is **pure aesthetic-quality**, whose payoff genuinely needs the eye. The builder has
+internalised the calibration — it's not dodging mechanics, it's correctly identifying the lone
+look-only effect.
+
+*One precise correction:* god-rays' **existence** *is* headless-verifiable (I could render it and
+see if shafts appear) — so "no headless-verifiable core" slightly overstates; but its **quality**
+(intensity/density/occlusion — the actual payoff) is eye-gated, so deferring it to the eye-pass (or
+building-blind-on-request) is fair. **Routed into the human's look-and-feel pass as a decision:**
+want it built (blind) now, or skip?
+
+**This is the legitimate final wind-down of the buildable run.** Per protocol I'll independently
+re-run the suite on the code tip (93a02e6) to confirm green before calling it done.
+
+**Verdict.** Legit final stop; only look-tuning (incl. god-rays-on-request) + hardware/secret-gated
+items remain. The run delivered the full systems set, green throughout.
 
 ---
 
