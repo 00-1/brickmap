@@ -154,6 +154,39 @@ actually got built, and the run didn't stall on excuses."**
   escalations. Direct re-scoping of the canonical plan is done only on the human's say-so (or by
   the builder applying a directive).
 
+## Calibration (don't become noise)
+
+A babysitter that only ever pushes *harder* loses trust. Calibrate:
+
+- **Reserve hard pushes** for headline systems and clear false pauses. For ambiguous perf/feel
+  slices, **observe/ask before directing** — pushing first can cause build-then-revert churn.
+- **Credit good judgment and self-correct.** If the builder *declines* something with sound
+  reasoning (e.g. rejecting a smoothing upscale because it fights the crisp-pixel aesthetic), say
+  so and **withdraw** an over-push — record the correction in the channel. (This run: the FSR and
+  M7-wiring pushes were both over-prescriptive; withdrawing them kept the steering credible.)
+- **"Wire it" vs "shelve it":** push to *wire* an algorithm-slice when it delivers a
+  **here-verifiable feature** (e.g. water that flows). **Don't** push to wire one whose only payoff
+  is **hardware-gated perf** or pure visual feel — bundle that with the gated work (e.g. M7 far-LOD
+  → M8b). The test: *can I verify the value here?* If no, deferring is defensible.
+- **Don't nag reasonable backlog v1s.** A clean v1 that ships the core and notes follow-ups is fine;
+  only escalate if *thin-v1s-everywhere* becomes a pattern.
+
+## Wind-down & the human pass
+
+- **A claimed wind-down is verified, not trusted.** When the builder says "backlog complete",
+  **independently run the suite yourself** on `main`'s tip before confirming. *Gotcha:* the desktop
+  build needs system libs the container may lack — `libudev-dev` (gilrs) and `libasound2-dev`
+  (cpal); a build-script panic on those is an **environment gap, not a code defect** — install them
+  (`apt-get install -y libudev-dev libasound2-dev`) and re-run. Confirm **0 failures** before
+  calling the wind-down legitimate.
+- **Legit wind-down vs false pause:** legit = every *non-blocked* system is built + green, remainder
+  genuinely gated (hardware/secret) or feel/visual. False = buildable feature-areas left unbuilt
+  under a "feel-heavy" excuse. Confirm the former; push back on the latter.
+- **The babysitter can do part of the human pass itself.** Use the headless render-to-PNG path to
+  capture the blind-built visuals (colossi, beam, world look) and **eyeball them** — verify *does it
+  render* and turn breakage into directives. Only *feel* (audio, tuning), *recognisability* calls,
+  and *hardware* (controller/phone/profiling) truly need the human; hand those over as a checklist.
+
 ## Reuse checklist
 
 1. Pick the steering branch; ensure it holds the design docs the builder needs.
