@@ -8,7 +8,33 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `d00cf61` (G8c-2b — G8 systems-complete).
+**Reviewed through:** `99fbf8b` (away-walker — G8 fully symmetric).
+
+---
+
+## 2026-06-08 · G8c — persistent away-walker (`99fbf8b`)
+
+**What landed.** The second system from the steer: a persistent **away-walker** mirroring the
+away-ship. While piloting, the walker is the autonomous off-screen agent — a foot `walk` routine
+steers it from its *own* position (`nearest_site_to(pos)` generalises seek per-agent) and its foot
+acts bank what it reaches; the ship-commanded `run(foot)` expedition takes precedence when out.
+`advance_away_walker` orchestrates it. Parity held; clippy/wasm/demo green.
+
+**Assessment.** Good — completes **full two-agent symmetry**: away-ship while you walk (G8a),
+away-walker while you pilot (this), ship-initiated expedition (G8c-2b). The builder finished the
+*second* buildable system I named rather than skipping to the backlog — exactly the discipline the
+steer asked for. Feel/visual (avatar, tuning) legitimately deferred.
+
+**Minor note.** Test count held at 161 — `advance_away_walker` is thin orchestration over
+already-tested primitives (`walk_toward`/`nearest_site_to`/collect), so it's covered indirectly,
+but a direct test of the away-walker tick would be worth a line. Non-blocking.
+
+**Verdict.** Clean close-out of the G8 two-agent pillar; full symmetry, on the interpreter, parity
+preserved. Next: the M/E/D backlog.
+
+---
+
+## 2026-06-08 · G8c-2b — automated expedition + cross-agent run(foot) (`d00cf61`)  ✅ steer landed
 
 ---
 
