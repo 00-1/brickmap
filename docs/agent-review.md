@@ -8,7 +8,18 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `a5f316f` (autopilot wander fix).
+**Reviewed through:** `d87c3b1` (E16 web audio bridge).
+
+---
+
+## 2026-06-08 · E16 — web weather→audio bridge (`d87c3b1`)
+
+Trivial, clean: `controls::set_audio_weather` mirrors `set_audio_intensity`, driving the wasm-held
+`Drone` each frame so the web dirge darkens in rain like native. Closes the noted E16 platform-
+parity gap (a Checklist-2 buildable follow-up). 16 lines, mechanical, green. **No notes** — exactly
+the kind of small buildable follow-up that should land. Builder is working through the Checklist-2
+breadth (per directive), not pausing. Remaining: E18 solid-human placement+bake, E9 v2 fog/god-rays/
+water.
 
 ---
 
