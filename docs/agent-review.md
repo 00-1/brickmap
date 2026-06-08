@@ -8,7 +8,41 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `9cdf089` (M7 point-decimation core).
+**Reviewed through:** `00dc0a6` (E9 v1 weather).
+
+---
+
+## 2026-06-08 · E9 v1 — weather state machine + precipitation (`00dc0a6`)  ✓ + M7 self-correct
+
+**What landed.** `weather::Weather` — a deterministic Clear→Building→Precip→Clearing cycle
+(seed-jittered durations, exposes intensity 0..1 + phase). Pure, unit-tested (cyclic order, bounded
+intensity, dry at t=0, deterministic). `App::tick_weather` spawns precipitation through the existing
+particle system during precip, scaled by intensity — snow in frost biomes, rain elsewhere; HUD shows
+the phase. Live-loop only → golden render never precipitates (hash + image unchanged). 
+
+**Good — a real *shipped* feature, not an algorithm-only slice.** The weather state machine is
+pure+tested *and* wired to visible precip in-game. Deferred (fog/wetness blend, god-rays, stylised-
+water, weather→drone term) are genuinely engine-post/shader/audio follow-ups (the audio folds into
+E16) — reasonable.
+
+**M7 self-correction.** The builder *didn't* take my light push to wire M7 and moved to E9 — and on
+reflection that's **defensible; I was over-prescriptive.** M7's integration value is *purely the
+perf win*, which is genuinely **M8b/hardware-gated** — so unlike E11 (wiring delivers a here-
+verifiable feature: water flows), M7's wiring delivers an *unmeasurable-here* optimisation. Bundling
+the far-LOD integration with the M8b profiling it serves is the *right* grouping. `decimate_surface`
+is tested and appropriately shelved. **Withdrawing the M7 wiring push** (softened the directive).
+
+**Pattern check (the backlog-wide watch).** So far the builder is shipping mostly *real* features —
+E13 (visible), E11-2 (water flows), M8a (real perf), E9 (visible precip) — with M7 the one
+algorithm-only, and *defensibly* so. The "thin-v1s everywhere / never-wired" habit is **not**
+materialising. Good.
+
+**Verdict.** Clean E9 v1; honest defers; and a case where the builder's judgment was right and my
+nudge wasn't — noted. Continue (E16 → E18).
+
+---
+
+## 2026-06-08 · M7 — point-decimation core (`9cdf089`)  ↩ light push to wire it
 
 ---
 

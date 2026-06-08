@@ -72,12 +72,12 @@ systems**; only the *feel-tuning* waits for end-of-run play. Build them. Don't s
    systems — testable (finite/bounded), tune the *sound* later.
 6. **E18 — remainder** (solid/explorable colossi follow-ups).
 
-**Note (M7, after `9cdf089`):** `decimate_surface` is built + tested — good. But **wire the M7
-far-LOD** as a **default-off, headless-verifiable** system (per-chunk point buffer + mesh
-suppressed past a distance), the same way E11-2 wired the water (toggle-gated, golden-safe). The
-*system* (distant chunks drawn as points) is **not** hardware-gated — only the **perf measurement**
-(M8b) and the **crossfade feel** are. Don't defer the whole integration; defer only those two. Keep
-"wire it, don't leave a dead tested function" as the rule for algorithm slices (E11, M7, …).
+**Note (M7) — WITHDRAWN.** I'd pushed to wire the M7 far-LOD now; on reflection that's
+over-prescriptive. M7's integration value is *purely the perf win*, which is **M8b/hardware-gated**
+— so **bundle the M7 far-LOD wiring with M8b** (when the reference hardware is available to tune +
+measure it). `decimate_surface` is tested + appropriately shelved. *(Distinction worth keeping:
+"wire it" still applies to slices that deliver a **here-verifiable feature** — e.g. E11's water;
+M7's only payoff is unmeasurable-here perf, so it's the exception, not the rule.)*
 
 **Only D5 + M8b/D7/D8/N1 are real skips** (browser/hardware/secrets — noted, fine). **Do NOT pause
 again** because something is "feel-heavy" — build the system, record the tuning note, keep going.
