@@ -120,6 +120,9 @@ struct App {
     sand_timer: f32,
     /// E11: water-seed accumulator (water seeds slower than sand — it pools).
     water_timer: f32,
+    /// M8a: dynamic-resolution extra internal-res divisor (added to the art `pixel_scale`). 0 on
+    /// capable hardware; rises under frame-time pressure so weak GPUs hold their rate.
+    dyn_extra: u32,
     /// Cinematic auto-fly / **autopilot**: on by default so the build is watchable with no input
     /// (mobile / hands-off). Manual input switches it off; `F` / pad A toggles it. In `Walk` mode
     /// it's ignored (you're on foot).
@@ -2340,7 +2343,18 @@ impl ApplicationHandler<AppEvent> for App {
                             self.palette_on,
                         );
                     }
-                    state.set_pixel_scale(self.pixel_scale);
+                    // M8a: dynamic resolution — when frames run over budget, drop the internal
+                    // render resolution (a larger divisor on top of the art-directed `pixel_scale`)
+                    // so weak hardware holds frame-rate; recovers toward the base when fast. Only
+                    // ever makes the image *chunkier* than the art base (on-thesis), never sharper.
+                    // On capable hardware `dyn_extra` stays 0 → byte-identical to before.
+                    self.dyn_extra = dyn_resolution_step(
+                        self.dyn_extra,
+                        self.frame_ms_ema,
+                        DYN_TARGET_MS,
+                        DYN_MAX_EXTRA,
+                    );
+                    state.set_pixel_scale(self.pixel_scale + self.dyn_extra);
                     // Survey-beam (G2): feed this frame's ribbon to the engine's post-palette
                     // overlay (empty when no beam is up).
                     state.set_overlay(&overlay_verts);
@@ -2406,11 +2420,15 @@ impl ApplicationHandler<AppEvent> for App {
                             0.0
                         };
                         let meshing = self.loader.pending_count();
-                        let meshing = if meshing > 0 {
+                        let mut meshing = if meshing > 0 {
                             format!(" · meshing {meshing}")
                         } else {
                             String::new()
                         };
+                        // M8a: surface dynamic-resolution when it's engaged (chunkier under load).
+                        if self.dyn_extra > 0 {
+                            meshing.push_str(&format!(" · dynres +{}", self.dyn_extra));
+                        }
                         // In biome mode, show the (blended) biome name; else the manual palette.
                         let pal = if self.biome_mode {
                             format!(" · biome {}", self.biome_label)
@@ -2694,6 +2712,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         sim_timer: 0.0,
         sand_timer: 0.0,
         water_timer: 0.0,
+        dyn_extra: 0,
         auto_fly: true,
         auto_fly_angle: 0.0,
         auto_fly_t: 0.0,
@@ -2910,6 +2929,23 @@ const SIM_TICK: f32 = 0.05;
 const SAND_INTERVAL: f32 = 0.14;
 /// How often a water clump is dropped (E11) — slower than sand: water pools, so less is more.
 const WATER_INTERVAL: f32 = 0.55;
+/// M8a dynamic resolution: the frame-time budget (ms) the controller holds, and the most extra
+/// internal-res divisor steps it may add under load. Conservative target (~30 fps) so it only
+/// engages when genuinely slow; capable hardware never leaves the art base. Tunable.
+const DYN_TARGET_MS: f32 = 33.0;
+const DYN_MAX_EXTRA: u32 = 3;
+
+/// M8a: one dynamic-resolution control step. Over budget (with margin) → coarsen one step; well
+/// under → recover one step; else hold (hysteresis avoids oscillation). Pure + unit-testable.
+fn dyn_resolution_step(extra: u32, frame_ms: f32, target_ms: f32, max_extra: u32) -> u32 {
+    if frame_ms > target_ms * 1.15 && extra < max_extra {
+        extra + 1
+    } else if frame_ms < target_ms * 0.7 && extra > 0 {
+        extra - 1
+    } else {
+        extra
+    }
+}
 /// Max sand sections re-meshed per frame (synchronous; bounds the frame cost of a wide
 /// sandfall — leftovers settle next frame).
 const SAND_REMESH_BUDGET: usize = 3;
@@ -3397,6 +3433,18 @@ mod tests {
             0.2,
         );
         assert!(angle.abs() > 0.05, "circle should turn steadily: {angle}");
+    }
+
+    #[test]
+    fn dyn_resolution_coarsens_under_load_and_recovers() {
+        // Over budget → step up (chunkier); clamped at max.
+        assert_eq!(dyn_resolution_step(0, 50.0, 33.0, 3), 1);
+        assert_eq!(dyn_resolution_step(3, 50.0, 33.0, 3), 3); // clamped
+                                                              // Well under budget → step back down toward the base; clamped at 0.
+        assert_eq!(dyn_resolution_step(2, 10.0, 33.0, 3), 1);
+        assert_eq!(dyn_resolution_step(0, 10.0, 33.0, 3), 0); // clamped
+                                                              // In the hysteresis band → hold (no oscillation).
+        assert_eq!(dyn_resolution_step(1, 33.0, 33.0, 3), 1);
     }
 
     #[test]

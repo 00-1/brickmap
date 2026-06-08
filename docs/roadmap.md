@@ -506,6 +506,14 @@ wire the lighting data path, record real numbers. *(Skip: depth pre-pass, Hi-Z �
   section cache so each section is built once, not 5× as a neighbour, and **(ii)** a per-frame
   **time budget** on inline meshing so a ring spreads over frames instead of one freeze. (Native
   meshes off-thread already.)
+- **Landed (a, dynamic resolution):** a frame-time-driven internal-resolution controller —
+  `dyn_resolution_step` (pure + tested, with hysteresis) raises an extra divisor on top of the
+  art-directed `pixel_scale` when frames run over a ~30 fps budget, recovering toward the base when
+  fast; it only ever makes the image **chunkier** (on-thesis), never sharper, and stays at `+0` on
+  capable hardware (byte-identical to before). Shown on the HUD (`dynres +N`). Lives in the live
+  app loop only — the headless/golden path (`headless::capture_view`) is untouched. *(FSR1/EASU
+  smoothing upscale is **not** pursued — it fights the deliberate crisp pixel-art upscale; the
+  nearest-present is intentional. Further vertex quant/quad-expansion deferred — golden-byte risk.)*
 - **Blocked (b):** profiling needs the reference iGPU + phone to measure — logged in
   `docs/unattended-questions.md` for when the hardware's available.
 
