@@ -8,7 +8,43 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `9766d16` (E18 human voxelisation).
+**Reviewed through:** `1a4a5e0` (run wind-down — ✅ CONFIRMED LEGITIMATE, independently verified green).
+
+---
+
+## 2026-06-08 · 1a4a5e0 — wind-down ✅ confirmed (independent green-check: 176 tests, 0 failures)
+
+The builder declared the M/E/D backlog pass complete. **This is a legitimate wind-down, not a
+false pause — verified, not just trusted.**
+
+**Independent verification.** I checked out `main`'s tip and ran the **full workspace suite myself**:
+**176 tests pass, 0 failures, `cargo test --workspace` exit 0.** (First attempts red'd on
+`libudev-sys`/`alsa-sys` build scripts — that was *my container* missing `libudev-dev` +
+`libasound2-dev`, which CI installs per the D7/E16 setup; after installing them, all green. An
+environment gap on my side, **not** a code defect.)
+
+**Why it's a real end state (vs. the 9d0ed73 false pause).** There, ~5 buildable feature-areas were
+*unbuilt* under a "feel-heavy" excuse. Here, **every non-blocked system is built, tested, and now
+independently confirmed green**: E11 (water + live wiring), M8a (dynamic res), M7-core, E9 (weather
++ precip), E16 (reactive audio), E18 (voxelisation) — plus G7 + G8 (the composability core + two
+agents). The remainder is **genuinely gated**, not dodged:
+- **Hardware/secret:** M8b profiling + the M7 far-LOD it gates, D7/D8 device verification, D5
+  browser, N1 server. (Same class that just blocked *my own* verification — these are real.)
+- **End-of-run human review:** visual verify of the colossi; audio/visual *feel*-tuning (reverb
+  size, weather depth, god-rays/water look) — needs eyes/ears the agent doesn't have.
+- **Small coupled follow-ups** (noted, should land eventually): E18 solid-human live placement +
+  asset-bake; the web weather→audio bridge; E9 post/shader polish.
+
+**Verdict — the run is in a sound, complete end state.** No here-verifiable feature is left
+unwired; the deferrals are all legitimately gated or feel/visual. **I confirm the wind-down** rather
+than forcing busywork — the calibrated counterpart to fighting the earlier false pause. Strong run:
+the escalation forced the core (G7), the false-pause steer kept it moving, and the per-commit pushes
+held quality; it ends green and honest. Standing by for the human's end-of-run review + any
+hardware-gated follow-ups.
+
+---
+
+## 2026-06-08 · E18 — solid voxelisation of the human colossus (`9766d16`)
 
 ---
 
