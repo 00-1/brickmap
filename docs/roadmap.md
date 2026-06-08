@@ -581,20 +581,34 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 > cross-agent `run(foot)`**) — all on the G7 runtime; only feel/visual tuning + the late lore arc
 > remain.
 >
-> **Backlog checkpoint (2026-06-08).** Cleared the cleanly-testable + golden-safe backlog slices:
-> **E13 ✅** (photo/cinematic mode v1 — pause + free-cam + FOV; game-side, golden-neutral) and
-> **E11-1 ✅** (`sim::step_water` — deterministic, mass-conserving, terminating flowing water;
-> unit-tested; golden-neutral). **D5 blocked** — web-render verification needs a headless browser;
-> none is installed and obtaining one needs network + a heavy download → skipped + noted (a hard
-> external dependency, per the run rules). The **remaining backlog is feel/visual/perf/audio**:
-> **M7** (distant-points dissolve — look), **M8a** (output-neutral perf already landed; the rest is
-> mesh-format/dynamic-res — output-changing/golden-risk — or needs the reference iGPU), **E9**
-> (weather/water/sound — visual), **E16** (reactive-audio mix — "wants the ear"), **E18** (CC0
-> human-figure voxelization — an asset track). Their *systems* are buildable but the *quality bar
-> is visual/auditory iteration* — armed a Monitor on the steering channel for the babysitter to
-> direct which to build blind next; ready to resume on a steer. **Hardware/secret-gated (skip +
-> note):** **M8(b)** profiling (needs the reference iGPU/phone), **D7/D8** (need a controller /
-> desktop+APK device), co-op/**N1** (server) — flagged blocked per the run rules.
+> **M/E/D backlog — full pass complete (2026-06-08).** After a false-pause correction from the
+> channel, built every non-blocked backlog item's *systems* in the directed order, deferring only
+> feel:
+> - **E13 ✅** photo/cinematic mode v1 (pause + free-cam + FOV; game-side, golden-neutral).
+> - **E11 ✅** flowing water — `sim::step_water` (deterministic, mass-conserving, terminating) +
+>   **wired live** (the sim toggle drives sand *and* water; overlay-only, golden-safe).
+> - **M8a ✅** dynamic resolution (frame-time-adaptive internal-res; pure, hysteresis'd, tested;
+>   +0/byte-identical on capable hardware). *(FSR declined — fights the crisp pixel look. Vertex-
+>   quant deferred — golden-byte risk.)*
+> - **M7 ◑** `decimate_surface` (the point-decimation **core**, tested); the far-LOD **render
+>   wiring is bundled with M8b** (perf win unmeasurable here — babysitter-confirmed).
+> - **E9 ✅** global weather state machine + precipitation (rain/snow by biome; live-loop only,
+>   golden stays dry). *(Fog/wetness/god-rays deferred — engine/post + feel.)*
+> - **E16 ✅** reactive-audio layer — weather→drone term + voice cap + a stable FDN reverb (all
+>   finite/bounded tested). *(Web weather-param bridge a TODO; sound feel wants the ear.)*
+> - **E18 ◑** `model::voxelize` — solid surface-shell voxelisation of the CC0 human (tested), so
+>   the human kind can be an explorable giant; live placement + asset-baking are follow-ups.
+>
+> **This is a legitimate wind-down** (per the babysitter's own framing), not a false pause: every
+> non-blocked directed item is **built + tested + pushed**, `main` green at every commit (fmt /
+> clippy `-D` / tests / wasm; golden voxel-hash + headless render unchanged). **What remains:**
+> (a) **feel/visual/audio tuning** for the end-of-run human pass (weather depth, reverb size,
+> precip density, expedition timings, the in-world walker avatar, fog/god-rays); (b) **hardware/
+> secret-gated, skipped + noted** — **D5** (needs a headless browser — none installable here),
+> **M8(b)** profiling + the **M7 far-LOD** it gates (reference iGPU/phone), **D7/D8** (controller /
+> desktop+APK device), co-op/**N1** (server); (c) **optional polish, deferred per the directive** —
+> nested/grouped routine steps, more `when` states. A Monitor watches the steering channel; ready
+> to resume on any further steer.
 
 The game built on the engine (now `crates/scraped-again`). Full design:
 [`game-mechanics.md`](game-mechanics.md) — a **melancholy-archival** game where progress is
