@@ -538,10 +538,12 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 > a no-typing **free-form editor**, `when`/`repeat` on the interpreter, `scan(item)`, and
 > auto-collect that bites at cruise altitude). The old overloaded "G7+" is re-scoped to **G8+**.
 > `main` is green at every commit (fmt / clippy `-D` / tests / wasm; golden voxel-hash +
-> headless render unchanged; engine↔game boundary CI-checked). **G8 in progress:** **G8a ✅**
-> (autonomous away-ship + `hail`) and **G8b ✅** (per-agent ship/foot routine library) landed on
-> the G7 runtime; **G8c ⏳** (foot auto-walk + the expedition + cross-agent meta) remains. **Still
-> outstanding** after that: the engine/tooling backlog **M7 🛠 · E9 ⏳ · E11 ⏳ · D5 ⏳** and the
+> headless render unchanged; engine↔game boundary CI-checked). **G8 systems complete:** **G8a ✅**
+> (autonomous away-ship + `hail`), **G8b ✅** (per-agent ship/foot routine library), **G8c ✅**
+> (the `on-arrive` trigger, foot `walk` nav + on-foot auto-walk, and the **automated expedition +
+> cross-agent `run(foot)`**) — all on the G7 runtime; only feel/visual tuning + the late lore arc
+> remain. **Now picking up** the engine/tooling backlog **M7 🛠 · M8a 🛠 · E9 ⏳ · E11 ⏳ · E13 ⏳ ·
+> E16 🛠 · E18 🛠 · D5 ⏳** and the
 > **device/hardware-gated** items I can't verify here — **M8(b)** profiling (needs the reference
 > iGPU/phone), **D7/D8** (need a controller / desktop+APK device to verify runtime) — flagged
 > blocked per the run rules.
@@ -643,9 +645,9 @@ parameterised (`scan(item)`).
   routines round-trip through `co=`. **Auto-collect now bites at cruise altitude** (a generous
   nearby reach for the hands-off path). 150 tests; golden voxel-hash + headless render unchanged.
 
-### ✨ G8 — Two agents, the expedition & the arc ◑ &nbsp;→ [`milestones/G8-two-agents.md`](milestones/G8-two-agents.md)
-**Independent simultaneous agents** on the G7 runtime + the **hail**, then the expedition + the
-arc. Built in slices.
+### ✨ G8 — Two agents, the expedition & the arc ✅ (systems) &nbsp;→ [`milestones/G8-two-agents.md`](milestones/G8-two-agents.md)
+**Independent simultaneous agents** on the G7 runtime + the **hail** + the **automated
+expedition**. Built in slices; systems complete, feel/visual tuning + the late lore arc remain.
 - **G8a ✅ — the ship as an autonomous agent + the hail.** On foot, the cruiser **flies its own
   ship routine** (drift/seek/circle under the G7 interpreter) and **auto-scans** the world it
   passes (filling the map), instead of sitting parked — two agents working at once. A shared
@@ -657,15 +659,14 @@ arc. Built in slices.
   collect/decode/spend/hail); `tick(agent,…)`/`on_scan_acts(agent)` run each agent's routines. On
   foot the walker is a second agent (its shared routines run as you explore); **Tab** flips a
   routine's agent; agent persists in `co=`. 156 tests; golden voxel-hash + headless unchanged.
-- **G8c ◑ — the expedition + cross-agent meta.** **G8c-1 ✅** the `on-arrive` trigger (fires once
-  when the ship reaches the site it's heading to) — composable + persisted, so `seek → on-arrive →
-  decode/hail` works (the expedition skeleton). **G8c-2a ✅** foot `walk(uncollected)` nav +
-  on-foot auto-walk to known sites (manual input wins) — with `on-arrive → collect` it's the
-  on-foot auto-collection loop. **G8c-2b ⏳** the off-screen expedition (a second *persistent*
-  walker that auto-walks + banks while you pilot; `goto → land → run(foot) → return`; cross-agent
-  run) — needs a board/exit flow change, flagged for end-of-run play-iteration. Then decipherment
-  fluency, the late **Concordance/
-  Synthesis** arc, the Resonance/pristine branch, and co-op shared archive (N1).
+- **G8c ✅ (systems) — the expedition + cross-agent meta.** **G8c-1 ✅** the `on-arrive` trigger.
+  **G8c-2a ✅** foot `walk(uncollected)` nav + on-foot auto-walk. **G8c-2b ✅** the **automated
+  expedition + cross-agent `run(foot)`**: a rare-gated ship block deploys the walker — autopiloted
+  ship reaches a site, holds, the walker disembarks → collects the ground-level find → returns →
+  ship cruises on (a pure, tested phase machine in `expedition.rs`; HUD shows the phase).
+  Feel-tuning (speeds/radii/dwell/gate) + an in-world walker avatar are noted follow-ups.
+- **Still ahead (the arc) ⏳:** decipherment fluency, the late **Concordance/Synthesis** arc, the
+  Resonance/pristine branch, and co-op shared archive (N1).
 
 ## Dev tooling & process (D-series)
 

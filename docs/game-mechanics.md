@@ -471,9 +471,11 @@ survive, reframed as the console + composed routines + comprehension unlocks (G4
    **G8a ✅** — the ship flies its own routine + auto-scans while you walk (two agents at once); a
    `hail` block recalls it. **G8b ✅** — per-agent routine library: routines are ship/foot, the
    editor's vocabulary is agent-scoped (+ shared blocks), the interpreter ticks per agent. **G8c
-   ⏳** — foot auto-walk + the expedition choreography (`goto → land → run(foot) → return`) +
-   cross-agent meta; then decipherment fluency, the late **Concordance/Synthesis**,
-   Resonance/pristine, co-op (N1).
+   ✅ (systems)** — the `on-arrive` trigger, foot `walk` nav + on-foot auto-walk, and the
+   **automated expedition**: a rare-gated cross-agent `run(foot)` deploys the walker (ship reaches
+   a site → holds → walker disembarks → collects → returns → ship flies on; a pure tested phase
+   machine). Feel/visual tuning + the late lore arc (decipherment fluency, **Concordance/
+   Synthesis**, Resonance/pristine, co-op N1) remain.
 
 ## 14. Open items
 

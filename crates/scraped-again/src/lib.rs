@@ -40,6 +40,8 @@ pub mod beam;
 pub mod scan;
 // The operations console (G4): the game's actions as clickable blocks + given routines.
 pub mod console;
+// The automated expedition (G8c): the cross-agent deploy→harvest→return phase machine.
+pub mod expedition;
 // Decipherment lexicon (G6): a seeded grammar that renders a comprehended script as words.
 pub mod lexicon;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
@@ -132,6 +134,11 @@ struct App {
     ship_t: f32,
     ship_angle: f32,
     ship_scan_timer: f32,
+    /// G8c: the **automated expedition** — a `run(foot)` ship step deploys the walker to collect.
+    expedition: expedition::Expedition,
+    /// The deployed walker's world position + the site it's collecting (while an expedition runs).
+    walker_pos: Vec3,
+    expedition_target: Option<Vec3>,
     /// Movement mode (E19): piloting the cruiser (fly — autopilot or manual) vs walking on foot.
     mode: Mode,
     /// The cruiser's world position: tracks the camera while piloting; where it's parked once you
@@ -790,6 +797,7 @@ impl App {
             console::Block::Drift => self.auto_fly = true, // (re)engage the wander
             console::Block::Decode => self.decode_action(),
             console::Block::Hail => self.hail_ship(), // G8a: recall the autonomous ship
+            console::Block::RunFoot => self.start_expedition(), // G8c: deploy the walker
             other => log::info!("block {}: not available yet", other.label()),
         }
     }
@@ -1157,6 +1165,79 @@ impl App {
         self.cruiser_pos = drop;
         self.ship_angle = (p.z - drop.z).atan2(p.x - drop.x);
         log::info!("hail: the cruiser returns to you");
+    }
+
+    /// Collect the nearest known site within reach of an arbitrary `origin` (the deployed walker
+    /// during an expedition). Banks through the same G1 event seam. (G8c)
+    fn collect_nearest_to(&mut self, origin: Vec3) {
+        const REACH: f32 = 18.0; // close, on-foot reach
+        let mut best = REACH * REACH;
+        let mut best_i: Option<usize> = None;
+        for (i, c) in self.collectible.iter().enumerate() {
+            let d2 = (Vec3::from(c.pos) - origin).length_squared();
+            if d2 <= best {
+                best = d2;
+                best_i = Some(i);
+            }
+        }
+        if let Some(idx) = best_i {
+            self.collect_index(idx);
+        }
+    }
+
+    /// G8c: kick off an automated expedition (a ship `run(foot)` step / manual click) — deploy the
+    /// walker from the ship to the nearest known site. Only while piloting (on foot you *are* the
+    /// walker); needs a known site and no expedition already running.
+    fn start_expedition(&mut self) {
+        if self.mode != Mode::Pilot || self.expedition.active() {
+            return;
+        }
+        let Some(target) = self.seek_target() else {
+            log::info!("run(foot): no known site to collect");
+            return;
+        };
+        self.expedition_target = Some(target);
+        self.walker_pos = self.ship_pos();
+        self.expedition.start();
+        log::info!("run(foot): deploying the walker");
+    }
+
+    /// G8c: advance the **automated expedition** while piloting — the `run(foot)` cross-agent step
+    /// deploys the walker, which walks out to the target site, collects, and returns to the ship
+    /// (the ship holds at the site meanwhile; see the autopilot arm). The phase machine
+    /// ([`expedition`]) is pure + tested; this drives the walker's position + the harvest collect.
+    /// *(Feel-tuning — walk speed, the arrival/board radii, the dwell — is noted for end-of-run.)*
+    fn advance_expedition(&mut self, dt: f32) {
+        if !self.expedition.active() {
+            return;
+        }
+        const ARRIVE: f32 = 4.0; // walker "at the site"
+        const BOARD: f32 = 3.0; // walker "back at the ship"
+        let ship = self.ship_pos();
+        let target = self.expedition_target.unwrap_or(ship);
+        // Move the walker per phase, snapping it to the ground it's crossing.
+        let goal = match self.expedition.phase {
+            expedition::Phase::Deploy => Some(target),
+            expedition::Phase::Return => Some(ship),
+            _ => None,
+        };
+        if let Some(goal) = goal {
+            self.walker_pos = walk_toward(self.walker_pos, goal, WALK_SPEED, dt);
+            let g = worldgen::height(
+                self.walker_pos.x.floor() as i32,
+                self.walker_pos.z.floor() as i32,
+                self.seed,
+            ) as f32;
+            self.walker_pos.y = g + player::EYE;
+        }
+        let at_site = (self.walker_pos - target).with_y(0.0).length() < ARRIVE;
+        let home = (self.walker_pos - ship).with_y(0.0).length() < BOARD;
+        let prev = self.expedition.phase;
+        let now = self.expedition.advance(at_site, home, dt);
+        // On entering Harvest, the walker collects the ground-level find the ship couldn't reach.
+        if prev != expedition::Phase::Harvest && now == expedition::Phase::Harvest {
+            self.collect_nearest_to(self.walker_pos);
+        }
     }
 
     /// Record a streamed-in chunk on the explored map: store its biome's representative colour at
@@ -1846,6 +1927,7 @@ impl ApplicationHandler<AppEvent> for App {
                         console::Block::Decode => self.decode_action(),
                         console::Block::Collect => self.dispatch_collect(act.filter),
                         console::Block::Hail => self.hail_ship(),
+                        console::Block::RunFoot => self.start_expedition(), // G8c cross-agent
                         // A `when`-fired nav block engages the autopilot.
                         b if b.is_nav() => self.auto_fly = true,
                         _ => {}
@@ -1878,8 +1960,11 @@ impl ApplicationHandler<AppEvent> for App {
                 if self.nav_intent.is_none() {
                     self.auto_fly = false;
                 }
+                // G8c: advance the automated expedition (the ship holds while the walker works).
+                self.advance_expedition(dt);
                 match self.mode {
-                    Mode::Pilot if self.auto_fly => {
+                    // The ship hovers in place while a `run(foot)` expedition is out.
+                    Mode::Pilot if self.auto_fly && !self.expedition.active() => {
                         // Autopilot — cinematic travel that **wanders to new places** (not a
                         // circle): a low-frequency, mean-zero turn rate meanders the heading in
                         // long S-curves while always cruising onward over fresh terrain. The
@@ -2242,12 +2327,18 @@ impl ApplicationHandler<AppEvent> for App {
                             self.toggles.off_summary()
                         };
                         // Movement mode (E19): piloting (autopilot/manual) or walking.
-                        let mode = match self.mode {
+                        let mut mode = match self.mode {
                             Mode::Pilot if self.auto_fly => " · cruiser:auto [E exit when low]",
                             Mode::Pilot => " · cruiser:manual [E exit when low]",
                             Mode::Walk if self.ride_t.is_some() => " · riding the beam",
                             Mode::Walk => " · walking [E enter · H hail · click: survey-beam]",
-                        };
+                        }
+                        .to_string();
+                        // G8c: surface the automated expedition's phase when one is running.
+                        if let Some(exp) = self.expedition.label() {
+                            mode.push_str(" · ");
+                            mode.push_str(exp);
+                        }
                         // When the map is open, the HUD becomes its key + coordinates (crosshair
                         // centre + your position), instead of the perf line.
                         let hud = if let Some(console) = &console_view {
@@ -2492,6 +2583,9 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         ship_t: 0.0,
         ship_angle: 0.0,
         ship_scan_timer: 0.0,
+        expedition: expedition::Expedition::default(),
+        walker_pos: pos,
+        expedition_target: None,
         mode: Mode::Pilot, // start in the cruiser, on autopilot (the watchable default)
         cruiser_pos: pos,
         walker: player::Walker::default(),

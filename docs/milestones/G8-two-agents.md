@@ -1,10 +1,12 @@
 # G8 — Two agents, run independently (+ the hail), then the expedition
 
-> **Status: building (2026-06-08), in slices.** This is the old overloaded "G7+" catch-all,
-> re-scoped after G7 landed the routine runtime. Per [`../game-system.md`](../game-system.md) §7
-> and the babysitter's standing note that G8 must **not** be swallowed whole, it is built in
-> tractable, independently-green slices. The runtime ([`G7-routine-runtime.md`](G7-routine-runtime.md))
-> is the substrate; G8 makes it span **two simultaneous agents**.
+> **Status: ✅ systems complete (2026-06-08); feel/visual tuning noted for end-of-run.** Built in
+> tractable, independently-green slices (G8a → G8b → G8c-1 → G8c-2a → G8c-2b) on the G7 runtime.
+> All four pillar pieces are in: the **autonomous away-ship + hail** (8a), the **per-agent
+> ship/foot routine library** (8b), the **`on-arrive` trigger** (8c-1), **foot `walk` nav +
+> on-foot auto-walk** (8c-2a), and the **automated expedition + cross-agent `run(foot)`** (8c-2b).
+> Remaining = feel-tuning (speeds/radii/timers/gating) + the in-world walker avatar (visual
+> polish) — flagged for the human's end-of-run pass.
 
 ## The pillar (game-system §7)
 
@@ -49,7 +51,7 @@ flies on*).
 - **Deferred to G8c:** foot **nav** (auto-walk / pathing) — the walker doesn't yet steer itself;
   foot routines currently contribute their *shared* acts + on-scan collect while you move.
 
-### G8c — the expedition + cross-agent meta  ◑ (in progress)
+### G8c — the expedition + cross-agent meta  ✅ (systems complete; feel/visual tuning noted)
 The choreography (`goto(site) → land → run(foot: collect) → return → fly on`), `on-arrive`
 triggers, and cross-agent meta (a ship routine that runs the walker's routine) — the rare-stratum-
 gated deep end (game-system §7 ceiling, §11 Tier 3).
@@ -65,12 +67,20 @@ gated deep end (game-system §7 ceiling, §11 Tier 3).
   a continuous foot `collect`), this is the **on-foot auto-collection loop** you compose — the
   walker gets the ground-level finds the high-cruising ship misses. Pure `walk_toward` step is
   unit-tested; `walk` is foot-scoped + persisted.
-- **G8c-2b ⏳ — the off-screen expedition + cross-agent meta.** A **second *persistent* walker
-  entity** that auto-walks + banks **while you pilot** (the away-walker, mirroring G8a's
-  away-ship), the disembark/return choreography, and cross-agent `run(foot: …)`. This needs a
-  change to the board/exit movement flow (the walker persists where you left it and tours on its
-  own), so its payoff hinges on play-feel — flagged for end-of-run human iteration (the testable
-  skeleton — on-arrive, foot nav, per-agent ticks — is in place).
+- **G8c-2b ✅ — the automated expedition + cross-agent `run(foot)`.** A rare-(Relics-)gated **ship**
+  block `run(foot)` deploys the walker on a collection excursion: the autopiloted ship reaches a
+  site (`seek` + `on-arrive → run(foot)`), **holds**, the walker **disembarks** and walks to the
+  site, **collects** the ground-level find the cruising ship couldn't reach, **returns**, and the
+  ship cruises on. The choreography is a pure, unit-tested **phase state machine**
+  ([`expedition.rs`]: Deploy → Harvest → Return); the app drives the walker's position + the
+  harvest collect + the ship hold, and the HUD surfaces the phase. So the full
+  *fly → land → collect → return → fly on* loop runs — the headline G8 payoff, composed from the
+  block system (cross-agent meta = a ship routine running the walker's work).
+  - **Feel-tuning noted for end-of-run** (per the run rules — systems built + tested, numbers to
+    taste): walk speed (`WALK_SPEED`), the arrival/board radii + harvest dwell
+    (`expedition::HARVEST_TIME`), and the rarity gate. **Visual:** the deployed walker isn't yet
+    drawn as an in-world avatar (it's tracked + shown via the HUD phase line); a walker avatar /
+    map marker is a visual-polish follow-up.
 
 ## G8a — design sketch
 

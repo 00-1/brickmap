@@ -107,6 +107,7 @@ pub enum Block {
     Circle,         // loiter / orbit the current area (ship nav)
     Walk,           // on foot, walk to the nearest known site (foot nav — G8c)
     Hail,           // recall the autonomous/parked ship to the walker (G8a — foot/shared)
+    RunFoot,        // cross-agent: deploy the walker to collect on foot (G8c — the expedition)
 }
 
 impl Block {
@@ -125,6 +126,7 @@ impl Block {
             Block::Circle => "circle",
             Block::Walk => "walk(uncollected)",
             Block::Hail => "hail",
+            Block::RunFoot => "run(foot)",
         }
     }
 
@@ -133,7 +135,10 @@ impl Block {
     pub fn required(self) -> Option<Stratum> {
         match self {
             Block::Seek | Block::Circle | Block::Goto => Some(Stratum::Schematics),
-            _ => None, // scan/collect/fire-beam/decode/drift/spend are starters
+            // The cross-agent expedition is deep meta — gated on a rare stratum (game-system §11
+            // Tier 3).
+            Block::RunFoot => Some(Stratum::Relics),
+            _ => None, // scan/collect/fire-beam/decode/drift/spend/walk/hail are starters
         }
     }
 
@@ -155,9 +160,12 @@ impl Block {
     /// are shared (game-system §7).
     pub fn agent(self) -> Option<Agent> {
         match self {
-            Block::Scan(_) | Block::Drift | Block::Seek | Block::Circle | Block::Goto => {
-                Some(Agent::Ship)
-            }
+            Block::Scan(_)
+            | Block::Drift
+            | Block::Seek
+            | Block::Circle
+            | Block::Goto
+            | Block::RunFoot => Some(Agent::Ship),
             Block::FireBeam | Block::Walk => Some(Agent::Foot),
             Block::Collect | Block::Decode | Block::Spend | Block::Hail => None, // shared
         }
@@ -437,6 +445,7 @@ impl Console {
             Step::Do(Block::Goto),
             Step::Do(Block::Spend),
             Step::Do(Block::Hail),
+            Step::Do(Block::RunFoot),
             Step::Match(MatchField::Rare),
             Step::Repeat(2),
         ];
@@ -744,6 +753,7 @@ impl Console {
             Step::Do(Block::Circle) => "o".into(),
             Step::Do(Block::Walk) => "W".into(),
             Step::Do(Block::Hail) => "H".into(),
+            Step::Do(Block::RunFoot) => "R".into(),
             Step::Match(MatchField::Rare) => "m".into(),
             Step::Repeat(n) => format!("r{n}"),
         }
@@ -765,6 +775,7 @@ impl Console {
                 'o' => Step::Do(Block::Circle),
                 'W' => Step::Do(Block::Walk),
                 'H' => Step::Do(Block::Hail),
+                'R' => Step::Do(Block::RunFoot),
                 'm' => Step::Match(MatchField::Rare),
                 'r' => {
                     let mut num = String::new();
@@ -1257,6 +1268,27 @@ mod tests {
         let mut back = Console::default();
         back.restore(&c.encode());
         assert_eq!(back.routines, c.routines);
+    }
+
+    #[test]
+    fn run_foot_is_a_rare_gated_ship_block() {
+        // G8c: the cross-agent `run(foot)` is a ship block, gated on the rare Relics stratum, and
+        // round-trips through `co=`.
+        let mut c = Console::default();
+        assert_eq!(Block::RunFoot.agent(), Some(Agent::Ship));
+        assert_eq!(Block::RunFoot.required(), Some(Stratum::Relics));
+        assert!(!c.is_unlocked(Block::RunFoot)); // locked until Relics decoded
+        assert!(!c
+            .vocabulary(Agent::Ship)
+            .contains(&Step::Do(Block::RunFoot)));
+        c.unlocked.insert(Stratum::Relics);
+        assert!(c
+            .vocabulary(Agent::Ship)
+            .contains(&Step::Do(Block::RunFoot)));
+        c.routines[2].body = vec![Step::Do(Block::RunFoot)];
+        let mut back = Console::default();
+        back.restore(&c.encode());
+        assert_eq!(back.routines[2].body, vec![Step::Do(Block::RunFoot)]);
     }
 
     #[test]
