@@ -8,7 +8,39 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `805bb5e` (M7/M8b bundling — channel sync).
+**Reviewed through:** `81c56be` (E16 reactive audio).
+
+---
+
+## 2026-06-08 · E16 — reactive-audio layer (`81c56be`)
+
+**What landed.** Three DSP systems on the drone: **Weather→audio** (`Drone::set_weather` pulls murk
+down + leans the drive with E9's precip intensity — a lock-free atomic, smoothed per-sample — so
+storms sound heavier; a nice E16×E9 cross-link), a **voice cap** (`MAX_VOICES` bounds polyphony →
+fixed per-sample cost, keeps the ♭2 dread voice), and an **FDN reverb** (4-line, mutually-prime
+delays, orthonormal Hadamard mix × feedback < 1 → contractive/stable). Audio separate from render →
+golden unaffected.
+
+**Strengths — correct and well-tested.** The reverb is a textbook *stable* FDN design, and crucially
+it's **tested for the right property**: `fdn_reverb_is_stable_and_bounded` (instability/blowup is the
+failure mode of a feedback net — verifying boundedness is exactly right). Voice cap + weather term
+likewise finite/bounded/decay tested. And this is the **correct deferral shape**: build + test the
+*systems* (stability, bounds, the weather→param mapping), defer **only** the actual *sound feel*
+(reverb size, weather depth) — which genuinely needs the human's ear (the agent can't evaluate audio
+feel). That's the *opposite* of the false pause: it built the feel-heavy thing and deferred only the
+feel.
+
+**Minor.** The **web** weather→audio param-bridge is a noted TODO (native has the full term) — a
+small platform-parity gap, not worth a push.
+
+**Verdict.** Clean, correct, on-design; the steering has clearly stuck (feel-heavy systems get built,
+only the feel waits). Remaining directed work: **E18 remainder** — after which the backlog is down to
+genuinely hardware/secret-gated + end-of-run feel-tuning (a *legitimate* wind-down to watch for, vs.
+another false pause).
+
+---
+
+## 2026-06-08 · 805bb5e — M7 bundled with M8b (docs; channel working)
 
 ---
 
