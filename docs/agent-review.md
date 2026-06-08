@@ -8,7 +8,52 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `df6a944` (run checkpoint).
+**Reviewed through:** `04ba341` (G7).
+
+---
+
+## 2026-06-08 · G7 — routine runtime & free-form editor (`04ba341`)  ✅ ESCALATION RESOLVED
+
+**What landed.** `console.rs` rewritten: `Routine { trigger, body: Vec<Step> }` run by a real
+**interpreter** (`Console::tick` / `on_scan_acts` emit nav/scan/collect **intents** the app
+applies). `Trigger` = `Continuous` / `OnScan` / `When(cond)` (rising-edge); `Step` = `Do(Block)`
+with `Match`/`Repeat` prefix modifiers. A **no-typing free-form editor**: create/delete routines,
+insert/remove/reorder/param steps, cycle step & trigger, nudge when-threshold / repeat-count;
+locked blocks can't be inserted. `Scan` parameterised (`ScanItem::Shards`). Authored routines
+round-trip through `co=`. Auto-collect now uses a generous nearby reach so the hands-off loop
+harvests at cruise. 150 tests (14 in console.rs), clippy clean, wasm, boundary intact; golden
+voxel-hash + headless render unchanged. Roadmap re-scoped (G7 ✅; old G7+ → G8+).
+
+**This clears every item I escalated.** Verified directly:
+- The accessor hacks (`drift_enabled`/`survey_enabled`/`survey_autocollects`/`nav_block`/`filter`)
+  are **deleted** (grep-confirmed gone from console.rs *and* lib.rs); behaviour is now driven by
+  **interpreter intents** (`lib.rs` `.tick(...)` → nav/scan/collect).
+- **No per-name special-casing** (`== "drift"`/`"survey"` gone); the givens are **plain data**
+  instances (test `given_routines_are_plain_data` + `interpreter_runs_the_givens`).
+- A genuine **editor** (test `create_insert_remove_reorder`), **`when` rising-edge** (test
+  `when_fires_once_on_the_rising_edge`), **`repeat`** (test `repeat_multiplies_the_next_do`),
+  **persistence** (test `routines_round_trip_through_co_segment`).
+- It also fixed a **prior critique**: auto-collect was inert at altitude (G4/G6) — now reach-based.
+
+**Strengths.** A comprehensive, well-tested delivery that hits the **full non-negotiable bar** in
+one milestone, *and* mopped up an old critique. Honest as-built note. This is exactly the work
+deferred at G4–G6 — the escalation + forcing brief worked.
+
+**Minor notes (not blocking).**
+- The body is **linear with prefix modifiers** (`Match`/`Repeat` affect following/next steps),
+  not nested (`If(cond, [..])` / `Repeat(n, [..])`). A reasonable, documented v1 — simpler editor,
+  no nesting UI — but **grouped/nested composition** (repeat a sub-sequence, nested conditions)
+  will likely be wanted later; note it for when routines get ambitious.
+- `When(cond)` currently has a single state (`data` = strata total). The `Cond`/`state.label()`
+  shape is built to extend (shards/buffer/range) — fine for v1; flag for G8+/tuning.
+
+**Verdict.** **Excellent — the run's structural core is now real.** The composability pillar that
+was vaporware through G4–G6 is built, tested, and behaviour-preserving. Escalation **closed.** The
+trajectory concern is lifted; back to per-commit review for G8 (two agents, on this runtime).
+
+---
+
+## 2026-06-07 · df6a944 — unattended-run checkpoint (docs only)
 
 ---
 

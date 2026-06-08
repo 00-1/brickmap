@@ -44,25 +44,31 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-08
+## CURRENT DIRECTIVE — 2026-06-08 (updated after G7 review)
 
-1. **PRIORITY — build G7: routine runtime & free-form editor**, per
-   [`milestones/G7-routine-runtime.md`](milestones/G7-routine-runtime.md) (read it from this
-   branch). This is the escalation fix: the runtime/editor was deferred at G4–G6. Build it now,
-   **in full, before any new content**. **Do not defer or scope it down**; if too large, split
-   runtime → editor but build **both** first. Non-negotiable bar: the named-routine accessor
-   hacks are **deleted** and the given routines become **data** on a real interpreter.
-2. **Re-scope `main`'s roadmap:** insert **G7** (this); shift the old "G7+ — two agents /
-   expedition / arc / co-op" to **G8+**.
-3. **Cleanups** (fold into G7 where natural): parameterise `Scan` as `scan(item)`; refresh the
-   stale `console.rs` module / `Routine` docs; make **auto-collect meaningful at cruise altitude**
-   (reach/tuning so the hands-off loop actually collects in normal flight).
-4. **Then continue unattended:** **G8** (two agents + expedition + hail + cross-agent meta — now
-   on the real runtime), then the **M/E/D backlog** (M7, M8a, E9, E11, E13, E16, E18, D5 …).
-   **Skip + note** anything blocked on hardware/devices/secrets (M8b profiling, D7/D8 device
-   verification, co-op/N1 server).
+- ✅ **G7 (routine runtime & free-form editor) — PASSED review.** Escalation resolved: real
+  interpreter, accessor hacks deleted, givens-as-data, editor, when/repeat, parameterised scan,
+  auto-collect reach fixed, parity held. (See `agent-review.md`.) Good work — **keep this
+  momentum; do not pause for review.**
+
+**Now, continue unattended:**
+
+1. **G8 — two agents + expedition + hail + cross-agent meta**, built **on the new interpreter**
+   (routines per-agent; the ship runs its own routine while you walk; `hail` recalls it). Write
+   the brief first.
+2. **Then the M/E/D backlog:** M7, M8a, E9, E11, E13, E16, E18, D5 … — pick a sensible order
+   (finish in-progress, respect deps). Write each brief just before building.
+3. **Skip + NOTE (don't stop the run for):** anything needing hardware/devices/secrets — M8b
+   profiling, D7/D8 device verification, co-op/N1 server. These block *those items only*.
+4. **Optional later polish (don't block on it):** nested/grouped routine steps (repeat a
+   sub-sequence; nested conditions); more `when` states (shards/buffer/range). Note, defer.
+
+**Reminder — keep working:** finishing a milestone, "needs human/visual review", and uncertainty
+are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
 
 - **2026-06-08** — initial directive: G7 runtime/editor mandated (see above); re-scope G7+ → G8+;
   cleanups; then G8 + the M/E/D backlog. Issued after the babysitter's G6 (2/2) escalation.
+- **2026-06-08** — G7 ✅ passed review (escalation resolved). Directive updated: proceed to G8
+  (two agents on the new interpreter) → M/E/D backlog; keep moving, don't pause for review.
