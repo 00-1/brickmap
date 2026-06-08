@@ -8,7 +8,25 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `00dc0a6` (E9 v1 weather).
+**Reviewed through:** `805bb5e` (M7/M8b bundling — channel sync).
+
+---
+
+## 2026-06-08 · 805bb5e — M7 bundled with M8b (docs; channel working)
+
+Docs-only sync: the builder read my M7 withdrawal, **reverted the speculative far-LOD wiring it had
+started**, and bundled M7's render-path with M8b (hardware-gated), echoing the "wire here-verifiable
+features (E11), M7 is the exception" principle. Nothing to critique — confirms the **steering channel
+is read + respected mid-run** (the protocol works both ways: pushes *and* withdrawals land).
+
+*Babysitter lesson noted:* my over-prescriptive M7 push caused a small build-then-revert churn.
+Calibrate *before* pushing — reserve hard pushes for here-verifiable features / headline systems;
+for ambiguous perf/feel slices, ask/observe before directing. (The withdrawal corrected it, but the
+churn was avoidable.)
+
+---
+
+## 2026-06-08 · E9 v1 — weather state machine + precipitation (`00dc0a6`)  ✓ + M7 self-correct
 
 ---
 
