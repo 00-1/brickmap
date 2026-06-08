@@ -17,11 +17,32 @@ milestone briefs; **this branch is the steering channel.** Pair with
   **CURRENT DIRECTIVE**; address escalations.
 - **Do not merge this branch into `main`.** Just *read* it. Apply any roadmap re-scope to
   `main` yourself. You may copy a milestone brief from here onto `main` to build it.
-- **When you pause / go idle:** arm a **Monitor** watching `origin/claude/core-mechanics-planning-0TpOA`
-  for new commits (the babysitter posting more work), e.g. poll `git ls-remote origin
-  claude/core-mechanics-planning-0TpOA` and emit when the tip changes. On a change, re-read this
-  file and **resume**. Only truly stop when this channel says "no further work" or you're
-  hard-blocked.
+
+### KEEP WORKING — do not falsely pause or defer (read this twice)
+
+Your default is to **keep building the next milestone**. Pausing and deferring are the main
+risks; resist both.
+
+- **Deferred human review is NOT a blocker.** The human reviews everything **at the end** of the
+  run. "I can't see/verify the visual result", "this needs the human to look", "I'd like sign-off
+  before continuing" — **none of these stop you.** Build it (using the headless render + tests to
+  sanity-check what you can), **record the assumption / what needs a human eye**, and **move on to
+  the next milestone.** Visual polish gets reviewed in a batch later, not by halting the run.
+- **Finishing a milestone is not a reason to pause.** Chain straight into the next one.
+- **Uncertainty is not a blocker.** Make the best-judgment call, record it, continue.
+- **A big milestone is not a blocker.** Split it (e.g. runtime → editor) and keep building.
+- **The ONLY real blockers:** a missing secret/credential you cannot obtain; reference hardware/a
+  physical device you cannot access (e.g. M8b profiling, an APK install); a hard external
+  dependency; or something destructive/irreversible. For these: **skip and NOTE them, then keep
+  going** with everything that *isn't* blocked. Do not stop the run for a blocker that only blocks
+  *one* item.
+- **You only truly stop when every non-blocked milestone is done**, or this channel says "no
+  further work."
+- **When you do pause** (only for the above), **push a checkpoint commit to `main` stating exactly
+  why** — so the babysitter sees it and can **override** if the "blocker" isn't real (it will post
+  a directive telling you to resume; your steering-branch watcher picks it up). Then arm a
+  **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
+  change), and **resume** when this file changes.
 
 ## CURRENT DIRECTIVE — 2026-06-08
 

@@ -17,10 +17,11 @@ can reuse it.
 - **Builder** — executes milestones on the canonical branch (`main`), fully unattended:
   trunk-based small commits, green at every step, records assumptions, halts only when blocked or
   done. Owns code + roadmap + built milestone briefs.
-- **Babysitter** — does **not** write feature code. It reviews every builder commit critically,
-  logs findings, and **steers** via a separate branch. It holds milestones to their acceptance
-  bar and **escalates planning problems to the human**. Critical where criticism is due; credits
-  honesty and good calls.
+- **Babysitter** — does **not** write feature code. It has **two** primary jobs: (1) review every
+  builder commit critically (quality/architecture), and (2) **keep work moving** — the builder is
+  prone to pausing and deferring, so the babysitter actively pushes it to keep building. It steers
+  via a separate branch, holds milestones to their acceptance bar, and **escalates planning
+  problems to the human**. Critical where criticism is due; credits honesty and good calls.
 
 ## Branch topology
 
@@ -114,6 +115,33 @@ commits make "before every commit" a natural, cheap checkpoint.
   after milestone into an overloaded finale. Name that pattern early and **escalate**.
 - **Escalate to the human** when the fix is a re-scope/re-prioritisation (their call), and when
   asked, force it with a dedicated brief + non-negotiable acceptance criteria.
+
+## Keeping work moving (the babysitter's other primary job)
+
+Builders are **strongly biased toward pausing and deferring** — they ship clean per-commit work,
+then stop on flimsy "blockers" or wrap up after a milestone. A core babysitter job is to **keep
+the run going**:
+
+- **Most "blockers" are false.** The big one: *"I can't see the visual result / this needs human
+  review."* **Human review happens at the end of the run — it is never a reason to stop building
+  further milestones.** When the builder pauses for this, post a directive: *not a blocker —
+  record what needs a human eye and continue to the next milestone.*
+- **Other false blockers to push back on:** "the milestone is large" (split it, keep going),
+  "I'm uncertain about a design choice" (best-judgment call + record it), "I finished a milestone"
+  (chain into the next — finishing is not a stopping point).
+- **Real blockers** (skip + note, but **do not stop the whole run** — keep building everything
+  *not* blocked): a secret/credential it can't obtain; reference hardware / a physical device it
+  can't access; a hard external dependency; something destructive/irreversible.
+- **The builder must announce a pause with a checkpoint commit to `main` stating why** — that's
+  the babysitter's signal. On seeing it: **judge the reason.** If it's a false blocker, **override
+  via the channel** (a directive: "resume, that's not a blocker, continue with G_n+1"); the
+  builder's steering-branch watcher picks it up and resumes. Only a *real* blocker on *everything
+  remaining* justifies an actual stop.
+- **Watch for silent slow-down too:** clean commits that keep deferring the load-bearing core
+  (see "Reviewing well") are a softer form of not-getting-the-real-work-done — escalate those.
+
+The babysitter's win condition is **not** "every commit was good"; it's **"the hard, real work
+actually got built, and the run didn't stall on excuses."**
 
 ## Mechanics & limitations
 
