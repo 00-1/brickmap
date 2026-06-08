@@ -80,6 +80,7 @@ pub enum Block {
     Drift,          // aimless cinematic wander — the default autopilot
     Seek,           // head to the nearest known-uncollected site (nav)
     Circle,         // loiter / orbit the current area (nav)
+    Hail,           // recall the autonomous/parked ship to the walker (G8a — foot/shared)
 }
 
 impl Block {
@@ -96,6 +97,7 @@ impl Block {
             Block::Drift => "drift",
             Block::Seek => "seek(uncollected)",
             Block::Circle => "circle",
+            Block::Hail => "hail",
         }
     }
 
@@ -340,6 +342,7 @@ impl Console {
             Step::Do(Block::Circle),
             Step::Do(Block::Goto),
             Step::Do(Block::Spend),
+            Step::Do(Block::Hail),
             Step::Match(MatchField::Rare),
             Step::Repeat(2),
         ];
@@ -625,6 +628,7 @@ impl Console {
             Step::Do(Block::Drift) => "d".into(),
             Step::Do(Block::Seek) => "k".into(),
             Step::Do(Block::Circle) => "o".into(),
+            Step::Do(Block::Hail) => "H".into(),
             Step::Match(MatchField::Rare) => "m".into(),
             Step::Repeat(n) => format!("r{n}"),
         }
@@ -644,6 +648,7 @@ impl Console {
                 'd' => Step::Do(Block::Drift),
                 'k' => Step::Do(Block::Seek),
                 'o' => Step::Do(Block::Circle),
+                'H' => Step::Do(Block::Hail),
                 'm' => Step::Match(MatchField::Rare),
                 'r' => {
                     let mut num = String::new();
@@ -1046,6 +1051,19 @@ mod tests {
         let vocab = c.vocabulary();
         assert!(vocab.contains(&Step::Do(Block::Seek)));
         assert!(vocab.contains(&Step::Match(MatchField::Rare)));
+    }
+
+    #[test]
+    fn hail_block_is_a_starter_in_vocab_and_round_trips() {
+        // G8a: `hail` is a shared starter block (no comprehension gate), insertable, and persists.
+        let c = Console::default();
+        assert!(c.is_unlocked(Block::Hail));
+        assert!(c.vocabulary().contains(&Step::Do(Block::Hail)));
+        let mut c = Console::default();
+        c.routines[2].body = vec![Step::Do(Block::Hail)];
+        let mut back = Console::default();
+        back.restore(&c.encode());
+        assert_eq!(back.routines[2].body, vec![Step::Do(Block::Hail)]);
     }
 
     #[test]

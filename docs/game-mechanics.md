@@ -466,10 +466,12 @@ survive, reframed as the console + composed routines + comprehension unlocks (G4
    **composability core**: a real `Routine { trigger, body }` model run by an **interpreter**
    (the named-accessor hacks deleted; the givens are plain data), a no-typing **free-form editor**
    (create/delete/insert/remove/reorder/param), `when`/`repeat` on the interpreter, `scan(item)`.
-8. **⏳ G8+ — Two agents, the expedition & the arc.** Walking branch (Descent/Hull interiors) +
-   **independent simultaneous agents** (now on the real runtime) + the **hail** + cross-agent meta
-   (automate an expedition); then decipherment fluency, the late **Concordance/Synthesis**,
-   Resonance/pristine, co-op shared archive (N1).
+8. **◑ G8 — Two agents, the expedition & the arc** ([brief](milestones/G8-two-agents.md)). On the
+   G7 runtime: **independent simultaneous agents** + the **hail**, then the expedition + the arc.
+   **G8a ✅** — the ship flies its own routine + auto-scans while you walk (two agents at once); a
+   `hail` block recalls it. **G8b/c ⏳** — per-agent routine library (ship/foot/shared); then the
+   expedition choreography (`goto → land → run(foot) → return`) + cross-agent meta; then
+   decipherment fluency, the late **Concordance/Synthesis**, Resonance/pristine, co-op (N1).
 
 ## 14. Open items
 

@@ -127,6 +127,11 @@ struct App {
     nav_intent: Option<console::Block>,
     /// G7: a continuous routine asked to scan this frame (the app throttles it to `scan::INTERVAL`).
     scan_wanted: bool,
+    /// G8a: the **autonomous ship**'s own heading clock + heading + scan cadence, used while you're
+    /// on foot and the cruiser flies its routine independently (separate from the camera's).
+    ship_t: f32,
+    ship_angle: f32,
+    ship_scan_timer: f32,
     /// Movement mode (E19): piloting the cruiser (fly — autopilot or manual) vs walking on foot.
     mode: Mode,
     /// The cruiser's world position: tracks the camera while piloting; where it's parked once you
@@ -619,13 +624,19 @@ impl App {
         self.scan_pulse();
     }
 
-    /// One scan pulse (`scan(shards)` block): mark uncollected sites ahead **known** (the map
-    /// opportunity surface) + fire cool flicks; if the `survey` routine wires `on-scan → collect`
-    /// it then auto-collects (G4). Reused by the routine tick and a manual `scan` block click.
+    /// One scan pulse (`scan(shards)` block) from the player's vantage. Reused by the piloted
+    /// routine tick and a manual `scan` click.
     fn scan_pulse(&mut self) {
+        self.scan_from(self.camera.position, self.camera.forward(), true);
+    }
+
+    /// One scan pulse from an arbitrary **vantage** (`origin` + `forward`): mark uncollected sites
+    /// in the forward cone **known** (the map opportunity surface) + fire cool flicks. When
+    /// `do_on_scan` is set (the player's own ship), the interpreter's `on-scan` routines run
+    /// (typically a collect); the **autonomous away-ship** passes `false` — it scans (fills the
+    /// map) but doesn't bank (a cheap off-screen agent, game-system §7). (G8a)
+    fn scan_from(&mut self, cam: Vec3, fwd: Vec3, do_on_scan: bool) {
         let now = self.time;
-        let cam = self.camera.position;
-        let fwd = self.camera.forward();
         // Gather candidates ahead (immutable borrow), then mark them known (mutable) — keeping
         // only the newly-known ones for flicks/map.
         let candidates: Vec<(u64, [f32; 3])> = self
@@ -659,10 +670,10 @@ impl App {
                 });
             }
         }
-        // on-scan → the interpreter's on-scan routines (G7): typically a (filtered) collect. The
-        // collect is the same G1 path as a manual `T`, so at altitude it harvests ~nothing (sites
-        // sit below the aim ray's reach) — net behaviour ≈ today's; it bites when you scan/fly low.
-        if found {
+        // on-scan → the interpreter's on-scan routines (G7): typically a (filtered) collect.
+        // Skipped for the autonomous away-ship (it fills the map but doesn't bank). The collect is
+        // the generous nearby auto-collect, so the hands-off loop bites at cruise altitude (G7).
+        if found && do_on_scan {
             for act in self.console.on_scan_acts() {
                 match act.block {
                     console::Block::Collect => self.dispatch_collect(act.filter),
@@ -770,6 +781,7 @@ impl App {
             console::Block::FireBeam => self.cast_beam(),
             console::Block::Drift => self.auto_fly = true, // (re)engage the wander
             console::Block::Decode => self.decode_action(),
+            console::Block::Hail => self.hail_ship(), // G8a: recall the autonomous ship
             other => log::info!("block {}: not available yet", other.label()),
         }
     }
@@ -1063,6 +1075,57 @@ impl App {
                 }
             }
         }
+    }
+
+    /// G8a: fly the **autonomous ship** while you're on foot. The cruiser runs its own ship
+    /// routine independently — advancing `cruiser_pos` under the same nav intent the piloted
+    /// autopilot uses (drift wander / seek nearest known site / circle), tracking cruise height —
+    /// and **auto-scans** the world it passes (filling the map opportunity surface) when the
+    /// `survey` routine is enabled. It does **not** bank (a cheap off-screen agent, game-system §7).
+    /// Two agents working at once: the ship surveys ahead while you collect on foot.
+    fn fly_autonomous_ship(&mut self, dt: f32) {
+        // A continuous nav routine governs whether the ship flies itself; without one it stays put.
+        if self.nav_intent.is_none() {
+            return;
+        }
+        self.ship_t += dt;
+        // Same steering math as the piloted autopilot, on the ship's own clock/heading.
+        let (pos, angle) = autopilot_step(
+            self.cruiser_pos,
+            self.ship_angle,
+            self.ship_t,
+            self.nav_intent,
+            self.seek_target(),
+            self.seed,
+            dt,
+        );
+        self.ship_angle = angle;
+        self.cruiser_pos = pos;
+        // Away-scan: the ship surveys the cone ahead of itself, filling the map (no collect).
+        if self.scan_wanted {
+            self.ship_scan_timer += dt;
+            if self.ship_scan_timer >= scan::INTERVAL {
+                self.ship_scan_timer = 0.0;
+                let dir = Vec3::new(angle.cos(), 0.0, angle.sin());
+                self.scan_from(self.cruiser_pos, dir, false);
+            }
+        }
+    }
+
+    /// G8a: **hail** — recall the autonomous/parked ship to the walker (the counterpart to the
+    /// survey-beam's *board*, for when the ship has wandered off). It re-homes near you and resets
+    /// its heading toward you, so you can re-board. Wireable into a foot routine (G8b/c).
+    fn hail_ship(&mut self) {
+        if self.mode != Mode::Walk {
+            return;
+        }
+        let p = self.camera.position;
+        let ground = worldgen::height(p.x.floor() as i32, p.z.floor() as i32, self.seed) as f32;
+        // Set down a short step from the walker, parked just above the ground (board range).
+        let drop = Vec3::new(p.x + 3.0, ground + 2.0, p.z);
+        self.cruiser_pos = drop;
+        self.ship_angle = (p.z - drop.z).atan2(p.x - drop.x);
+        log::info!("hail: the cruiser returns to you");
     }
 
     /// Record a streamed-in chunk on the explored map: store its biome's representative colour at
@@ -1647,6 +1710,8 @@ impl ApplicationHandler<AppEvent> for App {
                         self.toggle_cruiser(); // enter/exit the cruiser
                     } else if code == KeyCode::KeyT && pressed {
                         self.collect_aimed(); // G1: collect the aimed inscription
+                    } else if code == KeyCode::KeyH && pressed {
+                        self.hail_ship(); // G8a: recall the autonomous ship (on foot)
                     } else if code == KeyCode::KeyJ && pressed {
                         self.codex_open = !self.codex_open; // G1: codex list overlay
                     } else if pressed && self.handle_seed_key(code) {
@@ -1749,6 +1814,7 @@ impl ApplicationHandler<AppEvent> for App {
                         console::Block::FireBeam => self.cast_beam(),
                         console::Block::Decode => self.decode_action(),
                         console::Block::Collect => self.dispatch_collect(act.filter),
+                        console::Block::Hail => self.hail_ship(),
                         // A `when`-fired nav block engages the autopilot.
                         b if b.is_nav() => self.auto_fly = true,
                         _ => {}
@@ -1763,41 +1829,20 @@ impl ApplicationHandler<AppEvent> for App {
                     Mode::Pilot if self.auto_fly => {
                         // Autopilot — cinematic travel that **wanders to new places** (not a
                         // circle): a low-frequency, mean-zero turn rate meanders the heading in
-                        // long S-curves while always cruising onward over fresh terrain.
+                        // long S-curves while always cruising onward over fresh terrain. The
+                        // steering math is shared with the autonomous away-ship (G8a).
                         self.auto_fly_t += dt;
-                        // G5/G7: the nav block steers the heading — `seek` toward the nearest
-                        // known-uncollected site, `circle` loiters, `drift` wanders (default).
-                        let wander = (self.auto_fly_t * 0.06).sin() * 0.28
-                            + (self.auto_fly_t * 0.017 + 1.3).sin() * 0.14;
-                        let turn = match self.nav_intent {
-                            Some(console::Block::Seek) => match self.seek_target() {
-                                Some(t) => {
-                                    let want = (t.z - self.camera.position.z)
-                                        .atan2(t.x - self.camera.position.x);
-                                    let mut d = want - self.auto_fly_angle;
-                                    while d > std::f32::consts::PI {
-                                        d -= std::f32::consts::TAU;
-                                    }
-                                    while d < -std::f32::consts::PI {
-                                        d += std::f32::consts::TAU;
-                                    }
-                                    (d * 2.0).clamp(-1.5, 1.5)
-                                }
-                                None => wander, // nothing known yet → wander until the scan finds one
-                            },
-                            Some(console::Block::Circle) => 0.5, // steady turn = loiter/orbit
-                            _ => wander,
-                        };
-                        self.auto_fly_angle += turn * dt;
-                        let yaw = self.auto_fly_angle;
-                        let dir = Vec3::new(yaw.cos(), 0.0, yaw.sin());
-                        let mut pos = self.camera.position + dir * (AUTO_FLY_SPEED * dt);
-                        let ground =
-                            worldgen::height(pos.x.floor() as i32, pos.z.floor() as i32, self.seed)
-                                as f32;
-                        let target_y = ground + CRUISE_HEIGHT;
-                        pos.y += (target_y - pos.y) * (dt * 1.2).min(1.0);
-                        self.camera = Camera::new(pos, yaw, AUTO_FLY_PITCH);
+                        let (pos, angle) = autopilot_step(
+                            self.camera.position,
+                            self.auto_fly_angle,
+                            self.auto_fly_t,
+                            self.nav_intent,
+                            self.seek_target(),
+                            self.seed,
+                            dt,
+                        );
+                        self.auto_fly_angle = angle;
+                        self.camera = Camera::new(pos, angle, AUTO_FLY_PITCH);
                     }
                     Mode::Pilot => {
                         // Manual flight (free 6-DOF).
@@ -1835,9 +1880,12 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                 }
-                // While piloting, the cruiser is wherever you are (you're in it).
+                // While piloting, the cruiser is wherever you are (you're in it). On foot, the
+                // cruiser is an **autonomous agent**: it flies its own ship routine (G8a).
                 if self.mode == Mode::Pilot {
                     self.cruiser_pos = self.camera.position;
+                } else {
+                    self.fly_autonomous_ship(dt);
                 }
                 // Stream chunks in/out around the (possibly moved) camera.
                 self.stream();
@@ -2134,7 +2182,7 @@ impl ApplicationHandler<AppEvent> for App {
                             Mode::Pilot if self.auto_fly => " · cruiser:auto [E exit when low]",
                             Mode::Pilot => " · cruiser:manual [E exit when low]",
                             Mode::Walk if self.ride_t.is_some() => " · riding the beam",
-                            Mode::Walk => " · walking [E enter · click: survey-beam]",
+                            Mode::Walk => " · walking [E enter · H hail · click: survey-beam]",
                         };
                         // When the map is open, the HUD becomes its key + coordinates (crosshair
                         // centre + your position), instead of the perf line.
@@ -2273,6 +2321,48 @@ fn run_event_loop(event_loop: EventLoop<AppEvent>) {
     event_loop.run_app(&mut app).expect("event loop error");
 }
 
+/// G8a: one autopilot integration step — advance `(pos, angle)` by the nav intent (drift wander /
+/// seek the given `seek_target` / circle), then track cruise height over terrain. Pure (terrain via
+/// the seeded `worldgen::height`), so it's shared by the piloted autopilot **and** the autonomous
+/// away-ship, and is unit-testable without a GPU. Returns the new `(pos, angle)`.
+fn autopilot_step(
+    pos: Vec3,
+    angle: f32,
+    t: f32,
+    nav: Option<console::Block>,
+    seek_target: Option<Vec3>,
+    seed: u32,
+    dt: f32,
+) -> (Vec3, f32) {
+    // A low-frequency, mean-zero turn rate meanders the heading in long S-curves (not a circle).
+    let wander = (t * 0.06).sin() * 0.28 + (t * 0.017 + 1.3).sin() * 0.14;
+    let turn = match nav {
+        Some(console::Block::Seek) => match seek_target {
+            Some(tg) => {
+                let want = (tg.z - pos.z).atan2(tg.x - pos.x);
+                let mut d = want - angle;
+                while d > std::f32::consts::PI {
+                    d -= std::f32::consts::TAU;
+                }
+                while d < -std::f32::consts::PI {
+                    d += std::f32::consts::TAU;
+                }
+                (d * 2.0).clamp(-1.5, 1.5)
+            }
+            None => wander, // nothing known yet → wander until the scan finds one
+        },
+        Some(console::Block::Circle) => 0.5, // steady turn = loiter/orbit
+        _ => wander,
+    };
+    let angle = angle + turn * dt;
+    let dir = Vec3::new(angle.cos(), 0.0, angle.sin());
+    let mut pos = pos + dir * (AUTO_FLY_SPEED * dt);
+    let ground = worldgen::height(pos.x.floor() as i32, pos.z.floor() as i32, seed) as f32;
+    let target_y = ground + CRUISE_HEIGHT;
+    pos.y += (target_y - pos.y) * (dt * 1.2).min(1.0);
+    (pos, angle)
+}
+
 /// Set up the world/view + `App`. Shared by the desktop/web entry (`run`) and the Android
 /// entry (`android_main`, which then drives the loop itself).
 fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
@@ -2322,6 +2412,9 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         auto_fly_t: 0.0,
         nav_intent: Some(console::Block::Drift),
         scan_wanted: true,
+        ship_t: 0.0,
+        ship_angle: 0.0,
+        ship_scan_timer: 0.0,
         mode: Mode::Pilot, // start in the cruiser, on autopilot (the watchable default)
         cruiser_pos: pos,
         walker: player::Walker::default(),
@@ -2957,6 +3050,58 @@ pub mod controls {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn autopilot_step_advances_and_tracks_height() {
+        // G8a: a drift step moves the ship forward (~AUTO_FLY_SPEED·dt horizontally) and pulls it
+        // toward cruise height. Shared by the piloted autopilot + the autonomous away-ship.
+        let start = Vec3::new(0.0, 200.0, 0.0);
+        let (pos, _angle) =
+            autopilot_step(start, 0.0, 0.0, Some(console::Block::Drift), None, 7, 0.1);
+        let horiz = ((pos.x - start.x).powi(2) + (pos.z - start.z).powi(2)).sqrt();
+        assert!(horiz > 1.0, "ship should travel horizontally: {horiz}");
+        assert!(
+            pos.y < start.y,
+            "should descend toward cruise height from way up high"
+        );
+    }
+
+    #[test]
+    fn autopilot_seek_turns_toward_the_target() {
+        // With a known site off to one side, `seek` should steer the heading toward it (the new
+        // angle points more at the target than the old one did).
+        let pos = Vec3::new(0.0, 50.0, 0.0);
+        let target = Vec3::new(100.0, 50.0, 100.0); // bearing ≈ +45°
+        let want = (target.z - pos.z).atan2(target.x - pos.x);
+        let (_p, angle) = autopilot_step(
+            pos,
+            0.0,
+            0.0,
+            Some(console::Block::Seek),
+            Some(target),
+            7,
+            0.1,
+        );
+        assert!(
+            (angle - want).abs() < (0.0_f32 - want).abs(),
+            "seek should reduce the heading error toward the target"
+        );
+    }
+
+    #[test]
+    fn autopilot_circle_keeps_turning() {
+        // `circle` is a steady non-zero turn rate (loiter), unlike drift's mean-zero wander.
+        let (_p, angle) = autopilot_step(
+            Vec3::ZERO,
+            0.0,
+            0.0,
+            Some(console::Block::Circle),
+            None,
+            7,
+            0.2,
+        );
+        assert!(angle.abs() > 0.05, "circle should turn steadily: {angle}");
+    }
 
     #[test]
     #[ignore = "timing probe, run explicitly with --ignored --nocapture"]

@@ -537,10 +537,11 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 > composability core: a **real routine model + interpreter** replacing the named-accessor hacks,
 > a no-typing **free-form editor**, `when`/`repeat` on the interpreter, `scan(item)`, and
 > auto-collect that bites at cruise altitude). The old overloaded "G7+" is re-scoped to **G8+**.
-> `main` is green at every commit (fmt / clippy `-D` / 150 tests / wasm; golden voxel-hash +
-> headless render unchanged; engine↔game boundary CI-checked). **Still outstanding** (next picks,
-> roughly in order): **G8** (two simultaneous agents + hail + walking/foot-collision interiors +
-> the Concordance arc), then the engine/tooling backlog **M7 🛠 · E9 ⏳ · E11 ⏳ · D5 ⏳** and the
+> `main` is green at every commit (fmt / clippy `-D` / tests / wasm; golden voxel-hash +
+> headless render unchanged; engine↔game boundary CI-checked). **G8 in progress:** **G8a ✅**
+> (the ship is an autonomous agent while you walk + the `hail` recall) landed on the G7 runtime;
+> G8b (per-agent routine library) + G8c (the expedition + cross-agent meta) remain. **Still
+> outstanding** after that: the engine/tooling backlog **M7 🛠 · E9 ⏳ · E11 ⏳ · D5 ⏳** and the
 > **device/hardware-gated** items I can't verify here — **M8(b)** profiling (needs the reference
 > iGPU/phone), **D7/D8** (need a controller / desktop+APK device to verify runtime) — flagged
 > blocked per the run rules.
@@ -642,11 +643,19 @@ parameterised (`scan(item)`).
   routines round-trip through `co=`. **Auto-collect now bites at cruise altitude** (a generous
   nearby reach for the hands-off path). 150 tests; golden voxel-hash + headless render unchanged.
 
-### ✨ G8+ — Two agents, the expedition & the arc ⏳
-The walking branch (Descent/Hull foot-collision interiors) + **independent simultaneous agents**
-(now on the real runtime) + the **hail** + cross-agent meta (automate a whole expedition); then
-decipherment fluency, the late **Concordance/Synthesis** lore arc, the Resonance/pristine branch,
-and co-op shared archive (N1). Fleshed into briefs when reached.
+### ✨ G8 — Two agents, the expedition & the arc ◑ &nbsp;→ [`milestones/G8-two-agents.md`](milestones/G8-two-agents.md)
+**Independent simultaneous agents** on the G7 runtime + the **hail**, then the expedition + the
+arc. Built in slices.
+- **G8a ✅ — the ship as an autonomous agent + the hail.** On foot, the cruiser **flies its own
+  ship routine** (drift/seek/circle under the G7 interpreter) and **auto-scans** the world it
+  passes (filling the map), instead of sitting parked — two agents working at once. A shared
+  **`hail`** block (`H` on foot) recalls the autonomous ship. Piloted autopilot + away-ship share
+  one pure `autopilot_step`; `scan_pulse` generalised to scan from any vantage. 78 game-crate
+  tests; golden voxel-hash + headless render unchanged.
+- **G8b ⏳ — per-agent routine library** (ship / foot / shared scoping; foot blocks first-class).
+- **G8c ⏳ — the expedition + cross-agent meta** (`goto → land → run(foot) → return`, `on-arrive`,
+  cross-agent run; rare-stratum-gated). Then decipherment fluency, the late **Concordance/
+  Synthesis** arc, the Resonance/pristine branch, and co-op shared archive (N1).
 
 ## Dev tooling & process (D-series)
 
