@@ -8,7 +8,34 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `d373d3a` (G8a).
+**Reviewed through:** `eff8a82` (G8b).
+
+---
+
+## 2026-06-08 · G8b — per-agent routine library (`eff8a82`)  ✓ watch-item satisfied
+
+**What landed.** Routines are now genuinely **per-agent**: `enum Agent { Ship, Foot }` on each
+`Routine`; `Block::agent()` classifies (ship: scan/nav/goto · foot: survey-beam · shared:
+collect/decode/spend/hail + match/repeat). The editor's insertable `vocabulary(agent)` is scoped
+by agent + shared; `Tab` flips a routine's agent; the agent tag shows + persists in `co=`.
+`tick(agent, data)` / `on_scan_acts(agent)` run **only that agent's routines**, and the app ticks
+**Ship** for the cruiser *and* **Foot** for the walker separately — so a foot routine runs as a
+genuine second agent (e.g. a continuous `collect` harvests as you explore; `when … → decode`).
+Givens stay ship routines → piloted parity. 156 tests, clippy/wasm/demo green; golden hash unchanged.
+
+**Assessment.** This **satisfies the G8a watch-item** — verified directly: agent-scoped `tick`
+(`if r.agent != agent { skip }`), agent-scoped `vocabulary`, and the app ticking Ship vs Foot on
+separate lines (lib.rs 1816/1834). Tests `agent_scopes_which_routines_tick` +
+`vocabulary_is_scoped_by_agent` back it. The two agents now each run their **own** routines on the
+shared interpreter — the real "two agents" payoff, not shared-intent reuse. Clean, honest slice;
+foot nav/pathing transparently held for G8c.
+
+**Verdict.** On-design, well-tested, parity-preserving. No concerns — the run continues to deliver
+real structural work on the G7 runtime. Next: G8c (expedition choreography + foot nav).
+
+---
+
+## 2026-06-08 · G8a — autonomous away-ship + hail (`d373d3a`)
 
 ---
 
