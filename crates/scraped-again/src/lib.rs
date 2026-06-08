@@ -44,6 +44,8 @@ pub mod console;
 pub mod expedition;
 // Global weather (E9): a seeded Clear→Building→Precip→Clearing cycle driving precipitation.
 pub mod weather;
+// Touch controls (D9): the phone overlay layout + the pure touch→action mapping.
+pub mod touch;
 // Decipherment lexicon (G6): a seeded grammar that renders a comprehended script as words.
 pub mod lexicon;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
@@ -247,6 +249,11 @@ struct App {
     map_anim: f32,
     /// Gamepad/controller input (D7). Polled each frame; feeds analog move + look.
     pad: gamepad::Pad,
+    /// Touch controls (D9): active (held) touches by finger id → normalised pos, the on-screen
+    /// layout, and whether any touch has been seen (so the overlay only shows on touch devices).
+    touches: std::collections::HashMap<u64, (f32, f32)>,
+    touch_layout: touch::Layout,
+    touch_seen: bool,
     /// cpal doom-drone output (E16). `None` if no audio device. Desktop + Android.
     #[cfg(not(target_arch = "wasm32"))]
     audio: Option<audio_native::AudioEngine>,
@@ -815,6 +822,159 @@ impl App {
             console::Block::Hail => self.hail_ship(), // G8a: recall the autonomous ship
             console::Block::RunFoot => self.start_expedition(), // G8c: deploy the walker
             other => log::info!("block {}: not available yet", other.label()),
+        }
+    }
+
+    /// D9: which touch context the buttons + view-tap reinterpret under (menu > walk > flight).
+    fn touch_ctx(&self) -> touch::Ctx {
+        if self.console.open || self.map_view || self.codex_open {
+            touch::Ctx::Menu
+        } else if self.mode == Mode::Walk {
+            touch::Ctx::Walk
+        } else {
+            touch::Ctx::Flight
+        }
+    }
+
+    /// D9: route one normalised touch sample through the pure mapping. Buttons fire on touch-down
+    /// (rising edge); sliders + view touches are tracked, and a view touch that lands fires its
+    /// action (beam / menu hit-test) on touch-up.
+    fn handle_touch(&mut self, tp: brickmap::touch::TouchPoint) {
+        use brickmap::touch::TouchPhase as P;
+        self.touch_seen = true;
+        let region = self.touch_layout.classify(tp.x, tp.y);
+        let ctx = self.touch_ctx();
+        match tp.phase {
+            P::Start => {
+                if let Some(act) = self.touch_layout.button_tap(region, ctx) {
+                    self.dispatch_tap(act); // a button: act immediately
+                } else {
+                    self.touches.insert(tp.id, (tp.x, tp.y)); // slider / view: track it
+                }
+            }
+            P::Move => {
+                if let Some(p) = self.touches.get_mut(&tp.id) {
+                    *p = (tp.x, tp.y);
+                }
+            }
+            P::End | P::Cancel => {
+                if let Some((sx, sy)) = self.touches.remove(&tp.id) {
+                    // A tap that began + ended in the view → fire the view action.
+                    let began = self.touch_layout.classify(sx, sy);
+                    if tp.phase == P::End
+                        && began == touch::Region::View
+                        && region == touch::Region::View
+                    {
+                        let act = self.touch_layout.view_tap(ctx, tp.x, tp.y);
+                        self.dispatch_tap(act);
+                    }
+                }
+            }
+        }
+    }
+
+    /// D9: dispatch a discrete touch action onto the **existing** control paths (no new logic).
+    fn dispatch_tap(&mut self, act: touch::Tap) {
+        match act {
+            touch::Tap::Cruise => self.auto_fly = !self.auto_fly, // A: like the pad's A / `F`
+            touch::Tap::Board => self.touch_board(),              // B: board / land&exit / hail
+            touch::Tap::Console => {
+                self.sync_console_unlock();
+                self.console.open = !self.console.open;
+            }
+            touch::Tap::Map => self.toggle_map(),
+            touch::Tap::Back => {
+                self.console.open = false;
+                if self.map_view {
+                    self.toggle_map();
+                }
+                self.codex_open = false;
+            }
+            touch::Tap::Beam => self.cast_beam(),
+            touch::Tap::MenuTap(_x, y) => {
+                // Tap a console row to run/toggle it (Home view). Mapping y→row is approximate —
+                // precise tap targeting is the deferred on-device feel-tuning.
+                if self.console.open && matches!(self.console.view, console::View::Home) {
+                    self.sync_console_unlock();
+                    let rows = self.console.home_rows().max(1);
+                    self.console.cursor = ((y * rows as f32) as usize).min(rows - 1);
+                    self.console_confirm();
+                }
+            }
+        }
+    }
+
+    /// D9 `B`: board the parked ship if you're next to it, recall it (`hail`) if it's away (on
+    /// foot); land & exit while piloting. Reuses the existing enter/exit + hail paths.
+    fn touch_board(&mut self) {
+        if self.mode == Mode::Walk {
+            let near = (self.camera.position - self.cruiser_pos)
+                .with_y(0.0)
+                .length()
+                <= CRUISER_ENTER_DIST;
+            if near {
+                self.toggle_cruiser();
+            } else {
+                self.hail_ship();
+            }
+        } else {
+            self.toggle_cruiser();
+        }
+    }
+
+    /// D9: the current (left, right) slider values from the held touches (for the HUD overlay).
+    fn touch_slider_vals(&self) -> (f32, f32) {
+        let (mut left, mut right) = (0.0f32, 0.0f32);
+        for &(x, y) in self.touches.values() {
+            match self.touch_layout.classify(x, y) {
+                touch::Region::LeftSlider => {
+                    left = self
+                        .touch_layout
+                        .slider_value(touch::Region::LeftSlider, y)
+                        .unwrap_or(0.0)
+                }
+                touch::Region::RightSlider => {
+                    right = self
+                        .touch_layout
+                        .slider_value(touch::Region::RightSlider, y)
+                        .unwrap_or(0.0)
+                }
+                _ => {}
+            }
+        }
+        (left, right)
+    }
+
+    /// D9: per-frame — drive steering + altitude/forward from the held slider touches, onto the
+    /// same `CameraController` the keys/pad use. Touching a slider yields the autopilot (like
+    /// WASD/stick). Called each frame from the update loop.
+    fn apply_touch(&mut self) {
+        let (mut steer, mut vert) = (0.0f32, 0.0f32);
+        for &(x, y) in self.touches.values() {
+            match self.touch_layout.classify(x, y) {
+                touch::Region::RightSlider => {
+                    steer = self
+                        .touch_layout
+                        .slider_value(touch::Region::RightSlider, y)
+                        .unwrap_or(0.0);
+                }
+                touch::Region::LeftSlider => {
+                    vert = self
+                        .touch_layout
+                        .slider_value(touch::Region::LeftSlider, y)
+                        .unwrap_or(0.0);
+                }
+                _ => {}
+            }
+        }
+        if steer == 0.0 && vert == 0.0 {
+            return;
+        }
+        self.auto_fly = false; // a slider yields the autopilot
+        self.controller.add_look(steer * TOUCH_TURN, 0.0); // right slider = yaw
+        match self.mode {
+            Mode::Walk => self.controller.add_move(0.0, 0.0, vert), // left slider = forward/back
+            _ => self.controller.add_move(0.0, vert, 0.0),          // left slider = climb/descend
         }
     }
 
@@ -1936,6 +2096,32 @@ impl ApplicationHandler<AppEvent> for App {
                     state.window().request_redraw();
                 }
             }
+            // D9: phone touch. Normalise to 0..1 against the surface, then route through the pure
+            // touch mapping. Slider touches are tracked (applied per-frame); button/view taps fire
+            // here (rising-edge on down for buttons, on up for a view tap).
+            WindowEvent::Touch(t) => {
+                if let Some(state) = self.state.as_ref() {
+                    let sz = state.window().inner_size();
+                    let phase = match t.phase {
+                        winit::event::TouchPhase::Started => brickmap::touch::TouchPhase::Start,
+                        winit::event::TouchPhase::Moved => brickmap::touch::TouchPhase::Move,
+                        winit::event::TouchPhase::Ended => brickmap::touch::TouchPhase::End,
+                        winit::event::TouchPhase::Cancelled => brickmap::touch::TouchPhase::Cancel,
+                    };
+                    let tp = brickmap::touch::TouchPoint::new(
+                        t.id,
+                        phase,
+                        t.location.x as f32,
+                        t.location.y as f32,
+                        sz.width as f32,
+                        sz.height as f32,
+                    );
+                    self.handle_touch(tp);
+                    if let Some(s) = self.state.as_ref() {
+                        s.window().request_redraw();
+                    }
+                }
+            }
             WindowEvent::KeyboardInput { event: key, .. } => {
                 if let PhysicalKey::Code(code) = key.physical_key {
                     let pressed = key.state.is_pressed();
@@ -2059,6 +2245,9 @@ impl ApplicationHandler<AppEvent> for App {
                         pad.look_y * gamepad::LOOK_SPEED,
                     );
                 }
+                // D9: phone touch — held sliders steer + climb/forward (onto the same controller),
+                // applied after the pad so either input source works.
+                self.apply_touch();
 
                 // E13: photo mode pauses the world — run a free-cam only (`real_dt`), skipping the
                 // interpreter + movement entirely so nothing sim-side advances while you frame a shot.
@@ -2238,6 +2427,11 @@ impl ApplicationHandler<AppEvent> for App {
                 // inside it (hidden). Drawn over the palette in true colour (gfx).
                 let ship_shown = self.mode == Mode::Walk;
                 let ship_pos = self.cruiser_pos;
+                // D9: precompute the touch overlay line before the mutable `state` borrow below.
+                let touch_overlay = self.touch_seen.then(|| {
+                    let (lv, rv) = self.touch_slider_vals();
+                    self.touch_layout.overlay(lv, rv, self.touch_ctx())
+                });
                 if let Some(state) = self.state.as_mut() {
                     state.set_creature_points(&self.creatures.points_n(wisp_n));
                     state.set_ship(ship_shown, ship_pos, 0.0);
@@ -2561,6 +2755,13 @@ impl ApplicationHandler<AppEvent> for App {
                                 strata_line,
                             )
                         };
+                        // D9: once a touch device is in use, append the on-screen control overlay
+                        // (sliders + buttons) to the HUD/text path. (Edge-strip placement + dimming
+                        // is the deferred on-device visual; this is the headless-renderable v1.)
+                        let hud = match &touch_overlay {
+                            Some(o) => format!("{hud}\n{o}"),
+                            None => hud,
+                        };
                         // In-engine text overlay on every platform (no DOM HUD).
                         state.set_hud(&hud);
                         #[cfg(not(target_arch = "wasm32"))]
@@ -2840,6 +3041,9 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         map_dims: (0, 0),
         map_anim: 0.0,
         pad: gamepad::Pad::new(),
+        touches: std::collections::HashMap::new(),
+        touch_layout: touch::Layout::default(),
+        touch_seen: false,
         // Start the drone on the world seed so the dirge matches the world (desktop + Android;
         // a no-op None if there's no audio device). Web starts audio from the page on first tap.
         #[cfg(not(target_arch = "wasm32"))]
@@ -3024,6 +3228,9 @@ const CRUISE_HEIGHT: f32 = 22.0;
 /// (so you have to land first); you re-enter when on foot within this horizontal distance.
 const CRUISER_EXIT_ALT: f32 = 9.0;
 const CRUISER_ENTER_DIST: f32 = 11.0;
+/// D9: touch right-slider → yaw look-delta scale (per-frame; full deflection ≈ a brisk turn).
+/// A pinned v1 default — on-device sensitivity is the deferred human feel-tuning.
+const TOUCH_TURN: f32 = 7.0;
 /// Auto-fly cruise speed (world units/second).
 const AUTO_FLY_SPEED: f32 = 26.0;
 /// Downward tilt of the auto-fly camera (radians).

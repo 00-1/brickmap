@@ -15,7 +15,7 @@ pub use {bm_core, bm_mesh, bm_platform, bm_render, bm_scene, bm_world};
 
 // …and their modules under the conventional short paths (`brickmap::world`, etc.).
 pub use bm_mesh::{mesh, visibility};
-pub use bm_platform::gamepad;
+pub use bm_platform::{gamepad, touch};
 pub use bm_render::{
     foliage, gfx, hud, map, overlay, palette, particles, post, ship, text, textures,
 };

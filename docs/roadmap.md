@@ -833,6 +833,22 @@ sibling to the D4 Android APK. The native binary already builds; this is the
   `.exe` runs**. Workflow lands; first artifacts produced via a manual dispatch.
 - **Fit:** straightforward CI packaging (much simpler than D4 — no NDK/entry shim).
 
+### D9 — Touch controls (phone) ◑ &nbsp;→ [`milestones/D9-touch-controls.md`](milestones/D9-touch-controls.md)
+A native **touchscreen UI** (sibling to D7's pad): two edge **sliders** (steer + altitude/forward),
+four **buttons** (`1` console · `2` map · `A` cruise · `B` board/exit/hail), and **tap-the-view =
+cast the survey-beam** (the universal verb) — exploiting the autopilot-first + tap-native design.
+- **Engine:** `bm-platform::touch` surfaces generic normalised touch points (`TouchPoint`/
+  `TouchPhase`, pixel→`0..1`, unit-tested) — content-agnostic, like `PadInput`.
+- **Game:** `scraped-again::touch` — the overlay `Layout` + a **pure, unit-tested touch→action
+  mapping** (`classify`/`slider_value`/`button_tap`/`view_tap`, modal over flight/walk/menu); the
+  app routes it onto the *existing* `CameraController`/mode/console paths (a new input source, no
+  new control logic). Held sliders steer + climb/forward (yielding the autopilot); buttons fire on
+  down; a view-tap casts the beam; a menu-tap hit-tests the console. A compact slider+button
+  overlay shows on the HUD/text path once a touch is seen.
+- **Built + tested; golden unchanged** (overlay shows only after a touch; engine type generic).
+  **Deferred (device-gated human feel):** slider sensitivity, button size/placement, per-pixel tap
+  targeting, the edge-strip visual + dimming — needs a real phone.
+
 ## Big future directions (beyond the ladder)
 
 Major scope shifts we want to move *toward* — planned at the skeleton level, de-risked by

@@ -9,3 +9,4 @@
 pub use bm_core;
 
 pub mod gamepad;
+pub mod touch;
