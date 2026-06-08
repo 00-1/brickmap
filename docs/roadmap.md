@@ -881,7 +881,19 @@ cast the survey-beam** (the universal verb) — exploiting the autopilot-first +
   overlay shows on the HUD/text path once a touch is seen.
 - **Built + tested; golden unchanged** (overlay shows only after a touch; engine type generic).
   **Deferred (device-gated human feel):** slider sensitivity, button size/placement, per-pixel tap
-  targeting, the edge-strip visual + dimming — needs a real phone.
+  targeting — needs a real phone.
+
+### D10 — Touch control overlay (visible sliders + buttons) ◑ &nbsp;→ [`milestones/D10-touch-overlay.md`](milestones/D10-touch-overlay.md)
+Make the D9 controls **visible** (the playtest gap — the mapping worked but the controls were an
+invisible HUD text line). A new **generic filled-rect HUD primitive** in `bm-render`
+(`hud::RectOverlay` + `UiRect` — `0..1` screen + rgba, alpha-blended; no game concept) draws the
+overlay; the game's `touch::Layout::overlay_rects` composes it from the **same `Layout` rects used
+for hit-testing** (slider tracks + value-tracking handles, four buttons with a press highlight), so
+visual == hit-zone by construction. Shown after the first touch; context labels ride the HUD line.
+- **Built + tested** (geometry-matches-hit-zones unit test; `SCRAPED_TOUCH=1` headless A/B renders
+  the overlay, byte-differs from clean); golden unchanged (touch-gated; A/B opt-in); boundary intact.
+- **Deferred (eye-tuning):** colour/opacity/size/placement; per-button glyph labels on the rects
+  (positioned text — a polish; the HUD line names them for now).
 
 ## Big future directions (beyond the ladder)
 

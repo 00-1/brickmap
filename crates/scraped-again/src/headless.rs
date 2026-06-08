@@ -722,6 +722,17 @@ pub fn capture_view(
         ov.draw(&mut encoder, &depth_view);
         ov.composite(&mut encoder, &target_view);
     }
+    // D10 A/B (opt-in via `SCRAPED_TOUCH`): draw the touch-control overlay — the same generic
+    // `RectOverlay` + `touch::Layout::overlay_rects` the live app uses — so a headless screenshot
+    // verifies the visible sliders/buttons render. Off by default → standard/CI renders unchanged.
+    if std::env::var("SCRAPED_TOUCH").is_ok() {
+        let layout = crate::touch::Layout::default();
+        // A sample state: left slider up, right centred, the `A` button pressed.
+        let rects = layout.overlay_rects(0.6, 0.0, Some(crate::touch::Region::BtnA));
+        let mut ui = crate::hud::RectOverlay::new(&device, COLOR_FORMAT);
+        ui.set_rects(&device, &queue, &rects);
+        ui.draw(&mut encoder, &target_view);
+    }
     // In-engine HUD overlay — same code path as the live app, so the hero shot verifies it.
     let mut hud = crate::hud::HudOverlay::new(&device, COLOR_FORMAT);
     hud.set_text(

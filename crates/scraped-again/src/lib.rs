@@ -257,6 +257,9 @@ struct App {
     touches: std::collections::HashMap<u64, (f32, f32)>,
     touch_layout: touch::Layout,
     touch_seen: bool,
+    /// D10: the most-recently-pressed button + the `self.time` it was pressed, for a brief press
+    /// highlight in the on-screen overlay.
+    touch_pressed: Option<(touch::Region, f32)>,
     /// cpal doom-drone output (E16). `None` if no audio device. Desktop + Android.
     #[cfg(not(target_arch = "wasm32"))]
     audio: Option<audio_native::AudioEngine>,
@@ -850,6 +853,7 @@ impl App {
         match tp.phase {
             P::Start => {
                 if let Some(act) = self.touch_layout.button_tap(region, ctx) {
+                    self.touch_pressed = Some((region, self.time)); // D10: brief press highlight
                     self.dispatch_tap(act); // a button: act immediately
                 } else {
                     self.touches.insert(tp.id, (tp.x, tp.y)); // slider / view: track it
@@ -2464,6 +2468,18 @@ impl ApplicationHandler<AppEvent> for App {
                     let (lv, rv) = self.touch_slider_vals();
                     self.touch_layout.overlay(lv, rv, self.touch_ctx())
                 });
+                // D10: precompute the visible overlay rects (empty unless a touch device is in use).
+                let touch_rects: Vec<brickmap::hud::UiRect> = if self.touch_seen {
+                    let (lv, rv) = self.touch_slider_vals();
+                    // A pressed button stays highlighted for ~0.18 s after the tap.
+                    let pressed = self
+                        .touch_pressed
+                        .filter(|(_, t)| self.time - t < 0.18)
+                        .map(|(r, _)| r);
+                    self.touch_layout.overlay_rects(lv, rv, pressed)
+                } else {
+                    Vec::new()
+                };
                 if let Some(state) = self.state.as_mut() {
                     state.set_creature_points(&self.creatures.points_n(wisp_n));
                     state.set_ship(ship_shown, ship_pos, 0.0);
@@ -2795,6 +2811,8 @@ impl ApplicationHandler<AppEvent> for App {
                             Some(o) => format!("{hud}\n{o}"),
                             None => hud,
                         };
+                        // D10: the visible touch-control overlay (rects from `touch::Layout`).
+                        state.set_ui_rects(&touch_rects);
                         // In-engine text overlay on every platform (no DOM HUD).
                         state.set_hud(&hud);
                         #[cfg(not(target_arch = "wasm32"))]
@@ -3085,6 +3103,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         touches: std::collections::HashMap::new(),
         touch_layout: touch::Layout::default(),
         touch_seen: false,
+        touch_pressed: None,
         // Start the drone on the world seed so the dirge matches the world (desktop + Android;
         // a no-op None if there's no audio device). Web starts audio from the page on first tap.
         #[cfg(not(target_arch = "wasm32"))]

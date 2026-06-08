@@ -312,6 +312,153 @@ impl HudOverlay {
     }
 }
 
+/// A flat-colour screen rectangle for the [`RectOverlay`] — position in **`0..1` screen space**
+/// (`x` left→right, `y` top→bottom) + an RGBA colour (alpha-blended). Generic: no game concept.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct UiRect {
+    pub x0: f32,
+    pub y0: f32,
+    pub x1: f32,
+    pub y1: f32,
+    pub color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct RectVert {
+    pos: [f32; 2],
+    color: [f32; 4],
+}
+
+/// A generic **filled-rect** screen overlay (D10): draws a list of flat-colour, alpha-blended
+/// quads over the finished frame. Engine-generic — the caller (e.g. the game's touch overlay)
+/// supplies the rects; this knows nothing about what they mean. Sibling to [`HudOverlay`].
+pub struct RectOverlay {
+    pipeline: wgpu::RenderPipeline,
+    vbuf: wgpu::Buffer,
+    cap: usize, // capacity in vertices
+    count: u32,
+}
+
+impl RectOverlay {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> RectOverlay {
+        let shader = device.create_shader_module(wgpu::include_wgsl!("hud_rect.wgsl"));
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("hud-rect-layout"),
+            bind_group_layouts: &[],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("hud-rect-pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<RectVert>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4],
+                }],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let cap = 6 * 32; // room for ~32 rects before a grow
+        let vbuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("hud-rect-vbuf"),
+            size: (cap * std::mem::size_of::<RectVert>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        RectOverlay {
+            pipeline,
+            vbuf,
+            cap,
+            count: 0,
+        }
+    }
+
+    /// Upload the rects to draw this frame (empty = nothing). `0..1` screen → NDC, two triangles
+    /// each. Grows the vertex buffer if needed.
+    pub fn set_rects(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, rects: &[UiRect]) {
+        let mut verts: Vec<RectVert> = Vec::with_capacity(rects.len() * 6);
+        // 0..1 screen (y down) → NDC (y up).
+        let ndc = |x: f32, y: f32| [x * 2.0 - 1.0, 1.0 - y * 2.0];
+        for r in rects {
+            let (a, b, c, d) = (
+                ndc(r.x0, r.y0),
+                ndc(r.x1, r.y0),
+                ndc(r.x1, r.y1),
+                ndc(r.x0, r.y1),
+            );
+            for p in [a, b, c, a, c, d] {
+                verts.push(RectVert {
+                    pos: p,
+                    color: r.color,
+                });
+            }
+        }
+        self.count = verts.len() as u32;
+        if verts.is_empty() {
+            return;
+        }
+        if verts.len() > self.cap {
+            self.cap = verts.len().next_power_of_two();
+            self.vbuf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("hud-rect-vbuf"),
+                size: (self.cap * std::mem::size_of::<RectVert>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        queue.write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&verts));
+    }
+
+    /// Draw the rects onto `view` (loading, so they composite under the HUD text + over the frame).
+    pub fn draw(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
+        if self.count == 0 {
+            return;
+        }
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("hud-rect-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_vertex_buffer(0, self.vbuf.slice(..));
+        pass.draw(0..self.count, 0..1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

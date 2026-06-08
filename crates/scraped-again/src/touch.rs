@@ -9,6 +9,12 @@
 //! Everything here is **pure + unit-tested** (no screen). On-device *feel*-tuning — slider
 //! sensitivity, exact button size/placement, per-pixel tap targeting — is the device-gated human
 //! follow-up (per the brief); the layout rects + sensitivities below are the pinned v1 defaults.
+//!
+//! D10 adds the **visible** overlay: [`Layout::overlay_rects`] turns these same `Layout` rects into
+//! the engine's generic filled-rect HUD primitive ([`brickmap::hud::UiRect`]) — so the drawn
+//! controls and the hit-zones share one source of truth and can't drift.
+
+use crate::hud::UiRect;
 
 /// A normalised rectangle (all in `0..=1`, `y` top→bottom).
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -179,6 +185,52 @@ impl Layout {
         }
     }
 
+    /// Build the **visible overlay rects** (D10) for the renderer's generic filled-rect HUD, derived
+    /// **from the same `Layout` rects used for hit-testing** (so the visual can't drift from the
+    /// hit-zones). Per slider: a dimmed track + a brighter **handle** at its value (`left`/`right` ∈
+    /// `[-1,1]`, top = `+1`). Per button: a dim rect, **brightened** if it's the `pressed` one.
+    /// Pure → headless-renderable + unit-testable. (Colours/opacity are the deferred eye-tuning.)
+    pub fn overlay_rects(&self, left: f32, right: f32, pressed: Option<Region>) -> Vec<UiRect> {
+        const TRACK: [f32; 4] = [0.55, 0.62, 0.72, 0.16]; // dim cool, translucent
+        const HANDLE: [f32; 4] = [0.85, 0.90, 1.0, 0.5];
+        const BTN: [f32; 4] = [0.55, 0.62, 0.72, 0.22];
+        const BTN_ON: [f32; 4] = [0.92, 0.96, 1.0, 0.55];
+        let rect = |r: Rect, c: [f32; 4]| UiRect {
+            x0: r.x,
+            y0: r.y,
+            x1: r.x + r.w,
+            y1: r.y + r.h,
+            color: c,
+        };
+        let mut out = Vec::with_capacity(8);
+        for (sr, v) in [(self.left_slider, left), (self.right_slider, right)] {
+            out.push(rect(sr, TRACK));
+            // Handle: top for +1, bottom for -1.
+            let frac = (1.0 - (v.clamp(-1.0, 1.0) + 1.0) * 0.5).clamp(0.0, 1.0);
+            let hh = sr.h * 0.08;
+            let cy = (sr.y + frac * sr.h).min(sr.y + sr.h - hh);
+            out.push(rect(
+                Rect {
+                    x: sr.x,
+                    y: cy,
+                    w: sr.w,
+                    h: hh,
+                },
+                HANDLE,
+            ));
+        }
+        for (br, region) in [
+            (self.btn1, Region::Btn1),
+            (self.btn2, Region::Btn2),
+            (self.btn_a, Region::BtnA),
+            (self.btn_b, Region::BtnB),
+        ] {
+            let c = if pressed == Some(region) { BTN_ON } else { BTN };
+            out.push(rect(br, c));
+        }
+        out
+    }
+
     /// A compact text depiction of the on-screen controls for the HUD/text path (the v1 overlay —
     /// the precise edge-strip placement + dimming is the deferred on-device visual). Shows each
     /// slider as a 5-cell bar with a `●` at its current value (`left`/`right` ∈ `[-1,1]`), and the
@@ -267,6 +319,35 @@ mod tests {
         assert_eq!(l.view_tap(Ctx::Flight, 0.5, 0.5), Tap::Beam);
         assert_eq!(l.view_tap(Ctx::Walk, 0.3, 0.7), Tap::Beam);
         assert_eq!(l.view_tap(Ctx::Menu, 0.4, 0.6), Tap::MenuTap(0.4, 0.6));
+    }
+
+    #[test]
+    fn overlay_rects_derive_from_layout_hit_zones() {
+        // D10: the drawn rects come from the SAME Layout rects used for hit-testing, so the
+        // visual == the hit-zone. 2 sliders (track + handle) + 4 buttons = 10 rects.
+        let l = Layout::default();
+        let rects = l.overlay_rects(0.0, 0.0, None);
+        assert_eq!(rects.len(), 8); // 2 sliders × {track, handle} + 4 buttons
+                                    // The first rect is the left-slider track — exactly the left_slider region.
+        let track = rects[0];
+        let s = l.left_slider;
+        assert!((track.x0 - s.x).abs() < 1e-6 && (track.y0 - s.y).abs() < 1e-6);
+        assert!((track.x1 - (s.x + s.w)).abs() < 1e-6 && (track.y1 - (s.y + s.h)).abs() < 1e-6);
+        // A button rect matches its layout region (btn1 is rect index 4: 2 sliders × 2).
+        let b1 = rects[4];
+        assert!((b1.x0 - l.btn1.x).abs() < 1e-6 && (b1.y0 - l.btn1.y).abs() < 1e-6);
+        // The handle sits inside its track; +1 → near the top, -1 → near the bottom.
+        let top = l.overlay_rects(1.0, 0.0, None)[1]; // left handle at +1
+        let bot = l.overlay_rects(-1.0, 0.0, None)[1]; // left handle at -1
+        assert!(top.y0 < bot.y0, "handle moves down as value decreases");
+        assert!(
+            top.y0 >= s.y - 1e-6 && bot.y1 <= s.y + s.h + 1e-6,
+            "handle stays in the track"
+        );
+        // A pressed button is brighter (higher alpha) than an unpressed one.
+        let pressed = l.overlay_rects(0.0, 0.0, Some(Region::BtnA));
+        let idx_a = 6; // 2 sliders×2 + btn1 + btn2
+        assert!(pressed[idx_a].color[3] > rects[idx_a].color[3]);
     }
 
     #[test]

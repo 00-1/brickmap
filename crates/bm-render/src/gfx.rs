@@ -344,6 +344,9 @@ pub struct State {
     start: web_time::Instant,
     /// In-engine text overlay (HUD), drawn the same way on every platform.
     hud: crate::hud::HudOverlay,
+    /// D10: the touch-control overlay (generic filled rects; the game composes them from its
+    /// `touch::Layout`). Drawn under the HUD text.
+    ui_rects: crate::hud::RectOverlay,
     /// In-world text (E17): seed-placed glowing inscriptions, drawn as camera-facing billboards
     /// inside the scene pass. Rebuilt by the app when the in-range set changes.
     text: crate::text::WorldText,
@@ -646,6 +649,7 @@ impl State {
         let scene_view = create_scene_view(&device, config.format, iw, ih);
         let bloom = Bloom::new(&device, config.format, iw, ih);
         let hud = crate::hud::HudOverlay::new(&device, config.format);
+        let ui_rects = crate::hud::RectOverlay::new(&device, config.format);
         let text = crate::text::WorldText::new(&device, config.format, DEPTH_FORMAT, &globals_bgl);
         let map = crate::map::MapView::new(&device, config.format);
         let ship = crate::ship::ShipRenderer::new(&device, config.format, DEPTH_FORMAT);
@@ -709,6 +713,7 @@ impl State {
             last_stats: DrawStats::default(),
             start: web_time::Instant::now(),
             hud,
+            ui_rects,
             text,
             map,
             map_active: false,
@@ -725,6 +730,12 @@ impl State {
     /// Update the in-engine text overlay (HUD), drawn each frame over the finished image.
     /// Word-wraps to the current surface width (at the HUD's font scale) so long status + biome
     /// lines break at the screen edge instead of running off it.
+    /// D10: set the touch-control overlay rects for this frame (empty clears it). Generic filled
+    /// rects in `0..1` screen space; the game composes them from its `touch::Layout`.
+    pub fn set_ui_rects(&mut self, rects: &[crate::hud::UiRect]) {
+        self.ui_rects.set_rects(&self.device, &self.queue, rects);
+    }
+
     pub fn set_hud(&mut self, text: &str) {
         let scale = (self.config.height / 360).max(2);
         let max_cols = ((self.config.width.saturating_sub(16)) / (8 * scale)).max(12) as usize;
@@ -1298,6 +1309,8 @@ impl State {
             self.map.draw(&mut encoder, &view);
         }
 
+        // D10: the touch-control overlay rects (sliders/buttons), under the HUD text.
+        self.ui_rects.draw(&mut encoder, &view);
         // In-engine text overlay (HUD), composited last — identical on every platform.
         self.hud.draw(
             &self.queue,
