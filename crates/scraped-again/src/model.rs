@@ -90,6 +90,35 @@ pub fn surface_points(mesh: &Mesh, target: usize, seed: u32) -> Vec<Vec3> {
     out
 }
 
+/// **Solid voxelisation (E18):** snap a dense surface sampling of `mesh` onto a `res³`-ish grid
+/// (the model's longest axis spans ~`res` cells), yielding the **solid surface-shell voxels** as
+/// local grid coords `[x,y,z]` (deduplicated, model-space orientation). A shell, not a filled
+/// interior — which is what an *explorable* giant wants (you walk its surfaces / into its hollows),
+/// and it matches how the tube-tech relics voxelise. Deterministic in `seed`. The caller toples /
+/// scales / greedy-meshes it into chunk instances (like the relics' solid path).
+pub fn voxelize(mesh: &Mesh, res: u32, seed: u32) -> Vec<[i32; 3]> {
+    let res = res.max(1);
+    // Model bounds → a uniform scale that maps the longest axis to `res` cells.
+    let (mut lo, mut hi) = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
+    for v in &mesh.verts {
+        lo = lo.min(*v);
+        hi = hi.max(*v);
+    }
+    let span = (hi - lo).max_element().max(1e-6);
+    let cell = span / res as f32;
+    // Oversample so the shell has no pinholes: ~a few samples per surface cell. Surface area
+    // scales with span², so target ∝ (res)² with a density factor.
+    let target = (res as usize * res as usize * 6).max(256);
+    let mut set = std::collections::HashSet::new();
+    for p in surface_points(mesh, target, seed) {
+        let g = (p - lo) / cell;
+        set.insert([g.x.floor() as i32, g.y.floor() as i32, g.z.floor() as i32]);
+    }
+    let mut out: Vec<[i32; 3]> = set.into_iter().collect();
+    out.sort_unstable(); // deterministic order (the sampler is seeded, the set isn't ordered)
+    out
+}
+
 /// Lay a Y-up standing model down on the ground and place it as a giant point cloud: topple it
 /// onto its back (model +Y → world +Z), scale by `scale`, yaw about +Y, rest its lowest point
 /// at `feet`, and tint `color`. Reuses the splat billboard path (ethereal, drift-through).
@@ -157,6 +186,31 @@ mod tests {
         assert!(p.iter().all(|q| q.z.abs() < 1e-4
             && (-0.01..=1.01).contains(&q.x)
             && (-0.01..=1.01).contains(&q.y)));
+    }
+
+    #[test]
+    fn voxelize_fills_a_grid_deterministically() {
+        // A bigger planar quad voxelises into a flat slab of cells on one grid plane (z = 0),
+        // spanning ~res cells in x/y. Deterministic + bounded.
+        let big = "v 0 0 0\nv 8 0 0\nv 8 8 0\nv 0 8 0\nf 1 2 3 4\n";
+        let m = load_obj(big);
+        let a = voxelize(&m, 16, 3);
+        let b = voxelize(&m, 16, 3);
+        assert_eq!(a, b, "voxelisation is deterministic in seed");
+        assert!(!a.is_empty());
+        // All cells on the single z-plane, within the [0,res] grid extent.
+        assert!(a.iter().all(|c| c[2] == 0));
+        let (mut maxx, mut maxy) = (0, 0);
+        for c in &a {
+            assert!(c[0] >= 0 && c[1] >= 0);
+            maxx = maxx.max(c[0]);
+            maxy = maxy.max(c[1]);
+        }
+        assert!(
+            maxx >= 8 && maxy >= 8,
+            "should span the grid ({maxx},{maxy})"
+        );
+        assert!(maxx <= 16 && maxy <= 16, "within the resolution");
     }
 
     #[test]

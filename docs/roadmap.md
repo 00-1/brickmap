@@ -408,8 +408,12 @@ content kinds (pivot 2026-06):**
   (`assets/base-human.obj`, MakeHuman, 19k verts → ~37k tris), area-samples its surface to a
   point cloud, and topples + scales it to a giant lying on the terrain — rendered through the
   splat pipeline like the relics. Verified headless: a recognisable human point-figure. Tested
-  (OBJ parse, sample count/bounds, rests-on-ground). ⏳ Next: solid voxelisation of the mesh +
-  live placement; baking a compact asset (so it needn't ship the raw OBJ to the web).
+  (OBJ parse, sample count/bounds, rests-on-ground). ✅ **Solid voxelisation:** `model::voxelize`
+  snaps a dense surface sampling onto a `res`-grid → the human's **solid surface-shell voxels**
+  (local coords, deduped, deterministic; unit-tested for determinism/bounds/extent), so the
+  human kind can be greedy-meshed into an **explorable** giant like the solid relics. ⏳ Next:
+  **live placement** of the solid human (wire `voxelize` → the `structure_draws` chunk path, like
+  `relic_voxels`) + baking a compact asset (so the web build needn't ship the raw 19k-vert OBJ).
 - 🛠 **Solid / explorable kind, now live (built blind):** `relic::relic_voxels` →
   `relic_chunk_instances` greedy-meshes a relic into chunk instances; `gfx` draws them via a
   separate `structure_draws` list (terrain pipeline, out of the stream map). ~1 in 3 placed
