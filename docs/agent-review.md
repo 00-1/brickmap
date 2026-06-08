@@ -8,7 +8,31 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `b3ca081` (final wind-down; god-rays → eye-pass).
+**Reviewed through:** `3f4f706` (D10 touch overlay).
+
+---
+
+## 2026-06-08 · D10 — visible touch control overlay (`3f4f706`)  ✅ verified (rendered it)
+
+Closes the D9 playtest gap (controls were invisible). **Verified by rendering it myself**
+(`SCRAPED_TOUCH=1`): the two dimmed edge **sliders + handles** and **four corner buttons** now
+draw over the world at the right places. Engine: a **generic** `bm_render::hud::RectOverlay` /
+`UiRect` (0..1 screen + rgba, alpha-blended under the HUD text, **no game concept**) — boundary
+held. Game: `touch::Layout::overlay_rects` builds them from the **same `Layout` rects as
+hit-testing** (unit-tested they match — *visual can't drift from the touch zones*, my #1 ask);
+~0.18s press highlight; shown after first touch. Golden unchanged (touch-gated; A/B opt-in); green.
+
+**Strengths.** Hit every bar: generic primitive, single-source-of-truth geometry (tested),
+headless-verifiable (and verified). Exactly the right shape.
+
+**Note (the natural next polish — your call):** the **buttons are blank rects** — per-button glyph
+labels (1/2/A/B *on* the buttons) are deferred; the action labels currently ride the HUD text line.
+So you now see *where* to touch but not *which* button is which from the button itself. That's a
+small follow-up (positioned text on each button) and it's the bit that fully answers "see where to
+click." Flagged for your eye-pass — build-on-request; colour/opacity/size are on-device feel.
+
+**Verdict.** Clean, verified, on-bar. The visible-controls gap is closed; per-button labels are the
+one remaining discoverability nicety (your call to queue).
 
 ---
 
