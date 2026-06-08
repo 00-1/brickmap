@@ -360,8 +360,9 @@ User-facing features, all rated *great fit* because they reuse machinery we alre
     native; smoothed); a **voice cap** (`MAX_VOICES`) bounds the oscillator polyphony (fixed
     per-sample cost); and a 4-line **FDN reverb** (orthonormal Hadamard mix × feedback < 1 —
     contractive, so stable) gives the drone a subtle stereo space, a touch wetter under
-    ethereal/weather. All **finite/bounded + decay tested**. *(Built blind — the exact feel
-    (reverb size, weather depth) wants the human's ear; the web weather param-bridge is a TODO.)*
+    ethereal/weather. All **finite/bounded + decay tested**. The weather→drone term is wired on
+    **both** native (atomic) **and web** (`controls::set_audio_weather`, set each frame — platform
+    parity). *(Built blind — the exact feel (reverb size, weather depth) wants the human's ear.)*
 
 ### ✨ E17 — In-world text *(exploration)* ✅
 Render text **inside the 3D world**, cheaply, by reusing the bitmap-font HUD rasteriser + the
@@ -601,8 +602,8 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 >   wiring is bundled with M8b** (perf win unmeasurable here — babysitter-confirmed).
 > - **E9 ✅** global weather state machine + precipitation (rain/snow by biome; live-loop only,
 >   golden stays dry). *(Fog/wetness/god-rays deferred — engine/post + feel.)*
-> - **E16 ✅** reactive-audio layer — weather→drone term + voice cap + a stable FDN reverb (all
->   finite/bounded tested). *(Web weather-param bridge a TODO; sound feel wants the ear.)*
+> - **E16 ✅** reactive-audio layer — weather→drone term (native + web) + voice cap + a stable FDN
+>   reverb (all finite/bounded tested). *(Sound feel wants the ear.)*
 > - **E18 ◑** `model::voxelize` — solid surface-shell voxelisation of the CC0 human (tested), so
 >   the human kind can be an explorable giant; live placement + asset-baking are follow-ups.
 >

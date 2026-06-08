@@ -2413,8 +2413,11 @@ impl ApplicationHandler<AppEvent> for App {
                     a.set_weather(weather_amt);
                 }
                 #[cfg(target_arch = "wasm32")]
-                controls::set_audio_intensity(intensity);
-                let _ = (intensity, weather_amt); // used per-target above (web weather term: TODO)
+                {
+                    controls::set_audio_intensity(intensity);
+                    controls::set_audio_weather(weather_amt); // E16×E9 web parity
+                }
+                let _ = (intensity, weather_amt); // used per-target above
                                                   // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
                                                   // camera) and re-upload its points each frame so they drift through the scene.
                 self.creatures.update(dt, self.camera.position);
@@ -3510,6 +3513,15 @@ pub mod controls {
         AUDIO.with(|a| {
             if let Some(d) = a.borrow_mut().as_mut() {
                 d.set_intensity(x);
+            }
+        });
+    }
+
+    /// Weather (E16×E9), driven each frame: precipitation intensity → darker, thicker drone.
+    pub(crate) fn set_audio_weather(x: f32) {
+        AUDIO.with(|a| {
+            if let Some(d) = a.borrow_mut().as_mut() {
+                d.set_weather(x);
             }
         });
     }
