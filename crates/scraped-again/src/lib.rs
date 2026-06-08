@@ -134,6 +134,10 @@ struct App {
     ship_t: f32,
     ship_angle: f32,
     ship_scan_timer: f32,
+    /// E13: cinematic **photo mode** — pause the world + free-cam + FOV zoom. `saved` holds the
+    /// camera (with its FOV) to restore on exit.
+    photo_active: bool,
+    photo_saved: Option<Camera>,
     /// G8c: the **automated expedition** — a `run(foot)` ship step deploys the walker to collect.
     expedition: expedition::Expedition,
     /// The deployed walker's world position + the site it's collecting (while an expedition runs).
@@ -1096,6 +1100,23 @@ impl App {
         }
     }
 
+    /// E13: toggle cinematic **photo mode** — entering saves the live camera + pauses the world;
+    /// leaving restores the camera (with its FOV). Free-cam + FOV are handled in the update loop.
+    fn toggle_photo(&mut self) {
+        if self.photo_active {
+            if let Some(cam) = self.photo_saved.take() {
+                self.camera = cam; // restore the exact pre-photo shot
+            }
+            self.photo_active = false;
+            log::info!("photo mode: off");
+        } else {
+            self.photo_saved = Some(self.camera);
+            self.photo_active = true;
+            self.set_capture(true); // grab the pointer for free-look
+            log::info!("photo mode: on (paused · free-cam · -/= zoom)");
+        }
+    }
+
     /// The ship's effective world position: the camera while piloting, else the parked/autonomous
     /// cruiser. Used for arrival detection (G8c).
     fn ship_pos(&self) -> Vec3 {
@@ -1856,6 +1877,15 @@ impl ApplicationHandler<AppEvent> for App {
                         self.collect_aimed(); // G1: collect the aimed inscription
                     } else if code == KeyCode::KeyH && pressed {
                         self.hail_ship(); // G8a: recall the autonomous ship (on foot)
+                    } else if code == KeyCode::KeyK && pressed {
+                        self.toggle_photo(); // E13: cinematic photo mode (pause + free-cam + zoom)
+                    } else if self.photo_active
+                        && pressed
+                        && matches!(code, KeyCode::Minus | KeyCode::Equal)
+                    {
+                        // E13: zoom (FOV) while in photo mode.
+                        let d = if code == KeyCode::Minus { 4.0 } else { -4.0 };
+                        self.camera.fov_y = adjust_fov(self.camera.fov_y, d);
                     } else if code == KeyCode::KeyJ && pressed {
                         self.codex_open = !self.codex_open; // G1: codex list overlay
                     } else if pressed && self.handle_seed_key(code) {
@@ -1898,11 +1928,15 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Focused(false) => self.set_capture(false),
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
-                let dt = self
+                let real_dt = self
                     .last_frame
                     .map(|t| (now - t).as_secs_f32().min(0.1))
                     .unwrap_or(0.0);
                 self.last_frame = Some(now);
+                // E13: photo mode **pauses** the living world — every time-driven system advances
+                // on this `dt`, so zeroing it freezes sim/autopilot/expedition/animation while the
+                // free-cam (driven below on `real_dt`) + streaming + rendering keep running.
+                let dt = if self.photo_active { 0.0 } else { real_dt };
 
                 // Gamepad (D7): poll the pad and feed analog move + look. The A button
                 // toggles auto-fly; any stick/look input yields auto-fly to manual (like
@@ -1945,132 +1979,138 @@ impl ApplicationHandler<AppEvent> for App {
                     );
                 }
 
-                // G7/G8b: run one interpreter tick per agent. The **ship** agent's intents replace
-                // the old named-accessor hacks: `nav` steers the autopilot, `scan` gates the
-                // auto-scan, one-shot acts (continuous non-nav + `when`-edge fires) dispatch now.
-                let data = self.progress.strata.total().min(u32::MAX as u64) as u32;
-                let arrived = self.ship_arrived();
-                let tick = self.console.tick(console::Agent::Ship, data, arrived);
-                self.nav_intent = tick.nav;
-                self.scan_wanted = tick.scan;
-                for act in tick.acts {
-                    match act.block {
-                        console::Block::FireBeam => self.cast_beam(),
-                        console::Block::Decode => self.decode_action(),
-                        console::Block::Collect => self.dispatch_collect(act.filter),
-                        console::Block::Hail => self.hail_ship(),
-                        console::Block::RunFoot => self.start_expedition(), // G8c cross-agent
-                        // A `when`-fired nav block engages the autopilot.
-                        b if b.is_nav() => self.auto_fly = true,
-                        _ => {}
-                    }
-                }
-                // G8b/G8c: on foot, the walker is a **second agent** — its routines run
-                // simultaneously. The foot `walk` nav steers the walker toward known sites
-                // (applied in the Walk movement arm below); shared acts fire (a continuous
-                // `collect` harvests as you explore; `when … → decode`/`hail`; `on-arrive` when
-                // the walker reaches the site it's heading to).
-                let mut foot_nav = None;
-                if self.mode == Mode::Walk {
-                    let walker_arrived = self.arrived_at(self.camera.position);
-                    let foot = self
-                        .console
-                        .tick(console::Agent::Foot, data, walker_arrived);
-                    foot_nav = foot.nav;
-                    for act in foot.acts {
+                // E13: photo mode pauses the world — run a free-cam only (`real_dt`), skipping the
+                // interpreter + movement entirely so nothing sim-side advances while you frame a shot.
+                if self.photo_active {
+                    self.controller.update(&mut self.camera, real_dt);
+                } else {
+                    // G7/G8b: run one interpreter tick per agent. The **ship** agent's intents replace
+                    // the old named-accessor hacks: `nav` steers the autopilot, `scan` gates the
+                    // auto-scan, one-shot acts (continuous non-nav + `when`-edge fires) dispatch now.
+                    let data = self.progress.strata.total().min(u32::MAX as u64) as u32;
+                    let arrived = self.ship_arrived();
+                    let tick = self.console.tick(console::Agent::Ship, data, arrived);
+                    self.nav_intent = tick.nav;
+                    self.scan_wanted = tick.scan;
+                    for act in tick.acts {
                         match act.block {
-                            console::Block::Collect => self.dispatch_collect(act.filter),
-                            console::Block::Decode => self.decode_action(),
-                            console::Block::Hail => self.hail_ship(),
                             console::Block::FireBeam => self.cast_beam(),
+                            console::Block::Decode => self.decode_action(),
+                            console::Block::Collect => self.dispatch_collect(act.filter),
+                            console::Block::Hail => self.hail_ship(),
+                            console::Block::RunFoot => self.start_expedition(), // G8c cross-agent
+                            // A `when`-fired nav block engages the autopilot.
+                            b if b.is_nav() => self.auto_fly = true,
                             _ => {}
                         }
                     }
-                }
-                // A continuous nav routine governs the autopilot wander; without one, drift is off
-                // (you keep manual control) — re-enabling a nav routine re-engages it (in console_confirm).
-                if self.nav_intent.is_none() {
-                    self.auto_fly = false;
-                }
-                // G8c: while piloting, the walker is the autonomous **away-agent** (mirror of the
-                // away-ship): a ship `run(foot)` expedition drives it if one is out, else its own
-                // foot routine does (the persistent away-walker).
-                if self.mode == Mode::Pilot {
-                    if self.expedition.active() {
-                        self.advance_expedition(dt);
-                    } else {
-                        self.advance_away_walker(dt, data);
-                    }
-                }
-                match self.mode {
-                    // The ship hovers in place while a `run(foot)` expedition is out.
-                    Mode::Pilot if self.auto_fly && !self.expedition.active() => {
-                        // Autopilot — cinematic travel that **wanders to new places** (not a
-                        // circle): a low-frequency, mean-zero turn rate meanders the heading in
-                        // long S-curves while always cruising onward over fresh terrain. The
-                        // steering math is shared with the autonomous away-ship (G8a).
-                        self.auto_fly_t += dt;
-                        let (pos, angle) = autopilot_step(
-                            self.camera.position,
-                            self.auto_fly_angle,
-                            self.auto_fly_t,
-                            self.nav_intent,
-                            self.seek_target(),
-                            self.seed,
-                            dt,
-                        );
-                        self.auto_fly_angle = angle;
-                        self.camera = Camera::new(pos, angle, AUTO_FLY_PITCH);
-                    }
-                    Mode::Pilot => {
-                        // Manual flight (free 6-DOF).
-                        self.controller.update(&mut self.camera, dt);
-                    }
-                    Mode::Walk => {
-                        // The controller drives the look + the *wanted* free-fly delta.
-                        let prev = self.camera.position;
-                        self.controller.update(&mut self.camera, dt);
-                        let mut wanted = self.camera.position;
-                        // G8c: a foot `walk` routine **auto-walks** the walker toward the nearest
-                        // known site — but only when you're not steering yourself (manual input
-                        // always wins). Combined with `on-arrive → collect`, this is the on-foot
-                        // auto-collection loop you compose.
-                        let moved = (wanted - prev).with_y(0.0).length() > 1e-4;
-                        if !moved && foot_nav == Some(console::Block::Walk) {
-                            if let Some(target) = self.seek_target() {
-                                wanted = walk_toward(prev, target, WALK_SPEED, dt);
-                                self.camera.position = wanted;
+                    // G8b/G8c: on foot, the walker is a **second agent** — its routines run
+                    // simultaneously. The foot `walk` nav steers the walker toward known sites
+                    // (applied in the Walk movement arm below); shared acts fire (a continuous
+                    // `collect` harvests as you explore; `when … → decode`/`hail`; `on-arrive` when
+                    // the walker reaches the site it's heading to).
+                    let mut foot_nav = None;
+                    if self.mode == Mode::Walk {
+                        let walker_arrived = self.arrived_at(self.camera.position);
+                        let foot = self
+                            .console
+                            .tick(console::Agent::Foot, data, walker_arrived);
+                        foot_nav = foot.nav;
+                        for act in foot.acts {
+                            match act.block {
+                                console::Block::Collect => self.dispatch_collect(act.filter),
+                                console::Block::Decode => self.decode_action(),
+                                console::Block::Hail => self.hail_ship(),
+                                console::Block::FireBeam => self.cast_beam(),
+                                _ => {}
                             }
                         }
-                        // Riding the survey-beam (G2): if attached to a live beam, the wanted
-                        // movement projected onto the beam axis slides you along the rail (1-DoF,
-                        // any angle). Reaching the far end detaches; expiry drops you (gravity).
-                        let riding = self
-                            .ride_t
-                            .zip(self.beam)
-                            .filter(|(_, b)| !b.dead(self.time));
-                        if let Some((t, b)) = riding {
-                            let seg = b.b - b.a;
-                            let len = seg.length().max(1e-3);
-                            let along = (wanted - prev).dot(seg / len) / len;
-                            let nt = (t + along).clamp(0.0, 1.0);
-                            self.camera.position = b.a.lerp(b.b, nt);
-                            self.ride_t = (nt < 1.0).then_some(nt); // arrive → detach
+                    }
+                    // A continuous nav routine governs the autopilot wander; without one, drift is off
+                    // (you keep manual control) — re-enabling a nav routine re-engages it (in console_confirm).
+                    if self.nav_intent.is_none() {
+                        self.auto_fly = false;
+                    }
+                    // G8c: while piloting, the walker is the autonomous **away-agent** (mirror of the
+                    // away-ship): a ship `run(foot)` expedition drives it if one is out, else its own
+                    // foot routine does (the persistent away-walker).
+                    if self.mode == Mode::Pilot {
+                        if self.expedition.active() {
+                            self.advance_expedition(dt);
                         } else {
-                            // Not riding (no beam / expired): a voxel-collided walk (gravity +
-                            // animated auto-step) — so you can descend into cave-mouths, and you
-                            // *drop* when the rail fades out from under you.
-                            self.ride_t = None;
-                            let seed = self.seed;
-                            self.camera.position =
-                                self.walker.constrain(prev, wanted, dt, |x, y, z| {
-                                    worldgen::solid_at(x, y, z, seed)
-                                });
+                            self.advance_away_walker(dt, data);
                         }
                     }
-                }
-                // While piloting, the cruiser is wherever you are (you're in it). On foot, the
-                // cruiser is an **autonomous agent**: it flies its own ship routine (G8a).
+                    match self.mode {
+                        // The ship hovers in place while a `run(foot)` expedition is out.
+                        Mode::Pilot if self.auto_fly && !self.expedition.active() => {
+                            // Autopilot — cinematic travel that **wanders to new places** (not a
+                            // circle): a low-frequency, mean-zero turn rate meanders the heading in
+                            // long S-curves while always cruising onward over fresh terrain. The
+                            // steering math is shared with the autonomous away-ship (G8a).
+                            self.auto_fly_t += dt;
+                            let (pos, angle) = autopilot_step(
+                                self.camera.position,
+                                self.auto_fly_angle,
+                                self.auto_fly_t,
+                                self.nav_intent,
+                                self.seek_target(),
+                                self.seed,
+                                dt,
+                            );
+                            self.auto_fly_angle = angle;
+                            self.camera = Camera::new(pos, angle, AUTO_FLY_PITCH);
+                        }
+                        Mode::Pilot => {
+                            // Manual flight (free 6-DOF).
+                            self.controller.update(&mut self.camera, dt);
+                        }
+                        Mode::Walk => {
+                            // The controller drives the look + the *wanted* free-fly delta.
+                            let prev = self.camera.position;
+                            self.controller.update(&mut self.camera, dt);
+                            let mut wanted = self.camera.position;
+                            // G8c: a foot `walk` routine **auto-walks** the walker toward the nearest
+                            // known site — but only when you're not steering yourself (manual input
+                            // always wins). Combined with `on-arrive → collect`, this is the on-foot
+                            // auto-collection loop you compose.
+                            let moved = (wanted - prev).with_y(0.0).length() > 1e-4;
+                            if !moved && foot_nav == Some(console::Block::Walk) {
+                                if let Some(target) = self.seek_target() {
+                                    wanted = walk_toward(prev, target, WALK_SPEED, dt);
+                                    self.camera.position = wanted;
+                                }
+                            }
+                            // Riding the survey-beam (G2): if attached to a live beam, the wanted
+                            // movement projected onto the beam axis slides you along the rail (1-DoF,
+                            // any angle). Reaching the far end detaches; expiry drops you (gravity).
+                            let riding = self
+                                .ride_t
+                                .zip(self.beam)
+                                .filter(|(_, b)| !b.dead(self.time));
+                            if let Some((t, b)) = riding {
+                                let seg = b.b - b.a;
+                                let len = seg.length().max(1e-3);
+                                let along = (wanted - prev).dot(seg / len) / len;
+                                let nt = (t + along).clamp(0.0, 1.0);
+                                self.camera.position = b.a.lerp(b.b, nt);
+                                self.ride_t = (nt < 1.0).then_some(nt); // arrive → detach
+                            } else {
+                                // Not riding (no beam / expired): a voxel-collided walk (gravity +
+                                // animated auto-step) — so you can descend into cave-mouths, and you
+                                // *drop* when the rail fades out from under you.
+                                self.ride_t = None;
+                                let seed = self.seed;
+                                self.camera.position =
+                                    self.walker.constrain(prev, wanted, dt, |x, y, z| {
+                                        worldgen::solid_at(x, y, z, seed)
+                                    });
+                            }
+                        }
+                    }
+                } // end !photo_active (E13)
+                  // While piloting, the cruiser is wherever you are (you're in it). On foot, the
+                  // cruiser is an **autonomous agent**: it flies its own ship routine (G8a).
                 if self.mode == Mode::Pilot {
                     self.cruiser_pos = self.camera.position;
                 } else {
@@ -2379,6 +2419,13 @@ impl ApplicationHandler<AppEvent> for App {
                             mode.push_str(" · ");
                             mode.push_str(exp);
                         }
+                        // E13: photo mode readout (paused · free-cam · FOV).
+                        if self.photo_active {
+                            mode = format!(
+                                " · PHOTO {:.0}° [WASD/look · -/= zoom · K exit]",
+                                self.camera.fov_y.to_degrees()
+                            );
+                        }
                         // When the map is open, the HUD becomes its key + coordinates (crosshair
                         // centre + your position), instead of the perf line.
                         let hud = if let Some(console) = &console_view {
@@ -2558,6 +2605,14 @@ fn autopilot_step(
     (pos, angle)
 }
 
+/// E13: adjust a vertical FOV (radians) by `delta_deg` degrees, clamped to a sane photo range
+/// (20°–100°). Pure + unit-testable.
+fn adjust_fov(fov_rad: f32, delta_deg: f32) -> f32 {
+    (fov_rad.to_degrees() + delta_deg)
+        .clamp(20.0, 100.0)
+        .to_radians()
+}
+
 /// G8c: a foot auto-walk step — a horizontal wanted-position toward `target` at `speed`. The
 /// caller feeds this through the walker's voxel-collision constrain (gravity / auto-step), so
 /// this only sets the horizontal intent. Pure + unit-testable.
@@ -2623,6 +2678,8 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         ship_t: 0.0,
         ship_angle: 0.0,
         ship_scan_timer: 0.0,
+        photo_active: false,
+        photo_saved: None,
         expedition: expedition::Expedition::default(),
         walker_pos: pos,
         expedition_target: None,
@@ -3314,6 +3371,17 @@ mod tests {
             0.2,
         );
         assert!(angle.abs() > 0.05, "circle should turn steadily: {angle}");
+    }
+
+    #[test]
+    fn adjust_fov_steps_and_clamps() {
+        // E13: stepping changes the FOV by the given degrees; it clamps to the 20°–100° range.
+        let base = 60f32.to_radians();
+        let wider = adjust_fov(base, 10.0);
+        assert!((wider.to_degrees() - 70.0).abs() < 1e-3);
+        // Clamp at both ends.
+        assert!((adjust_fov(base, -999.0).to_degrees() - 20.0).abs() < 1e-3);
+        assert!((adjust_fov(base, 999.0).to_degrees() - 100.0).abs() < 1e-3);
     }
 
     #[test]

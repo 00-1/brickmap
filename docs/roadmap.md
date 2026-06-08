@@ -309,9 +309,13 @@ User-facing features, all rated *great fit* because they reuse machinery we alre
   `#s=…&…`, web + native); seed input / 🎲 random / 📅 seed-of-the-day / copy-link / copy-seed;
   restore on load; seed on the HUD. Golden voxel-hash test guards same-target determinism;
   cross-target (wasm-in-CI) check + the worldgen-versioning policy noted in the brief.
-- **✨ E13 — Photo / cinematic mode** — pause + free-cam + FOV/roll/exposure, vignette/
-  letterbox/hide-HUD, in-app screenshot (reuse the headless RTT path), Catmull-Rom camera
-  paths (→ deterministic headless flythroughs/clips); photo-mode-only DoF.
+- **✨ E13 — Photo / cinematic mode** ◑ &nbsp;→ [`milestones/E13-photo-mode.md`](milestones/E13-photo-mode.md)
+  — **Landed (v1, game-side):** `K` toggles a cinematic mode that **pauses** the world (one
+  `dt → 0` lever), detaches a **free 6-DOF camera** (real frame-time), and **zooms** (`-`/`=`
+  FOV), restoring the prior shot on exit; HUD `PHOTO <fov>°`. Golden render untouched (off by
+  default). **Deferred (engine-side):** roll/exposure/vignette/letterbox/hide-HUD, in-app
+  screenshot (reuse the headless RTT path), Catmull-Rom camera paths (→ deterministic headless
+  flythroughs/clips), photo-mode-only DoF.
 - **✨ E14 — Creative / voxel editing** 🛠 — **command/event seam landed** (`edit::Edit` +
   `apply`, the multiplayer-untangle prep): DDA voxel pick ✅, place/break over the overlay
   via the sand dirty→re-mesh path ✅, undo log (inverse edits) ✅, native V/B/U keys ✅.
