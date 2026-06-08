@@ -51,27 +51,27 @@ risks; resist both.
   auto-collect reach fixed, parity held. (See `agent-review.md`.) Good work — **keep this
   momentum; do not pause for review.**
 
-### ⚠ STEER (2026-06-08, after G8c-1) — build the expedition, don't defer it to "end-of-run"
+### ⚠ STEER (2026-06-08, after G8c-2a) — build the expedition *systems*; only the *feel* waits
 
-G8a ✅, G8b ✅, G8c-1 ✅ (on-arrive trigger) are good. **But do NOT park G8c-2.** You flagged the
-full expedition (second persistent walker entity, foot auto-walk/path, disembark/return, cross-
-agent `run(foot:…)`) for "end-of-run play-iteration." **That's a misread of the run rules.** Those
-are **buildable, testable systems** — build them **now**, as the next slice:
+G8a ✅, G8b ✅, G8c-1 ✅, **G8c-2a ✅** (foot `walk` nav — good, that took the steer). Foot nav is
+done. **The remaining G8c-2b still bundles buildable systems into the "end-of-run" defer — split
+them:**
 
-- a tracked **second walker entity** that auto-walks off-screen (mirror the autonomous ship);
-- **foot nav** (`walk`/`path`) on the interpreter;
-- the **disembark / return** choreography (a state machine — unit-testable);
-- cross-agent **`run(foot:…)`** (a ship routine running the walker's routine).
+- **BUILD NOW (testable systems, not feel-gated):**
+  - the **persistent away-walker entity** — a straight mirror of the autonomous ship you already
+    built (a tracked off-screen walker that moves while you pilot);
+  - cross-agent **`run(foot:…)`** — a ship routine running the walker's routine. **This is the
+    §11 Tier-3 headline:** the automated expedition (ship → land → walker runs a foot routine →
+    return → fly on). It's a pure interpreter feature — unit-testable.
+- **Defer ONLY (feel):** the **board/exit transition flow** *tuning* — how disembark/return feels.
+  Record the tuning notes; do not let it hold back the systems above.
 
-"Needs a human eye" applies ONLY to the **feel-tuning** (speeds, radii, timing) — build the
-systems, **record the tuning notes**, keep moving. Do **not** skip G8c-2 to the M/E/D backlog;
-the automated expedition is the headline G8 payoff and it must be built before G8 is "done".
+Build these next, before the M/E/D backlog. Then G8 is genuinely done.
 
 **Now, continue unattended:**
 
-1. **G8c-2 — the expedition systems (next, before anything else):** the second persistent walker
-   entity, foot nav, disembark/return choreography, cross-agent `run(foot:…)` — built + tested
-   now, feel-tuning noted for end-of-run. This completes G8.
+1. **G8c-2b systems (next, before anything else):** the away-walker entity + cross-agent
+   `run(foot:…)` — built + tested now; board/exit *feel* noted for end-of-run. Completes G8.
 2. **Then the M/E/D backlog:** M7, M8a, E9, E11, E13, E16, E18, D5 … — pick a sensible order
    (finish in-progress, respect deps). Write each brief just before building.
 3. **Skip + NOTE (don't stop the run for):** anything needing hardware/devices/secrets — M8b

@@ -8,7 +8,40 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `25d2103` (G8c-1).
+**Reviewed through:** `500c3b1` (G8c-2a).
+
+---
+
+## 2026-06-08 · G8c-2a — foot walk nav + auto-walk (`500c3b1`)  ↩ steer partly taken
+
+**What landed.** A foot nav block `Block::Walk` (`walk(uncollected)`, the foot analog of the
+ship's `seek`): on foot, a `walk` routine auto-walks the walker toward the nearest known site
+when you're not steering (manual always wins), through the existing voxel-collision walk. With
+G8c-1's `on-arrive → collect`, that's a composable on-foot auto-harvest loop. Pure `walk_toward`
+unit-tested; 158 tests, parity held.
+
+**Good — the steer was taken (in part).** This *is* a real, testable system (foot nav), built in
+response to the G8c-1 push — not parked. Credit it.
+
+**But still bundling buildable systems into the "end-of-run" defer.** G8c-2b now holds "a
+persistent away-walker that banks while you pilot" **and** cross-agent `run(foot:…)` — flagged for
+end-of-run because it "changes the board/exit flow." Two of those are **buildable, testable
+systems**: the **away-walker entity** is a straight mirror of the already-built autonomous ship,
+and **`run(foot:…)`** (a ship routine running the walker's routine) is a **pure interpreter
+feature** — *and it's the §11 Tier-3 headline*: the automated expedition (ship → land → walker
+runs a foot routine → return → fly on). Only the **board/exit transition *feel*** genuinely needs
+play. Don't let "changes the board/exit flow" defer the marquee feature.
+
+**Steered (builder-directives):** build G8c-2b's **systems** next — the persistent away-walker
+entity + cross-agent `run(foot:…)`, tested; defer **only** the board/exit-flow feel-tuning.
+
+**Verdict.** Genuine progress and a real response to steering — but the headline expedition
+automation is still being held back behind a feel caveat it doesn't fully need. One more precise
+push to land the systems; then G8 is actually done.
+
+---
+
+## 2026-06-08 · G8c-1 — on-arrive trigger (`25d2103`)  ⚠ DEFERRAL — steered
 
 ---
 
