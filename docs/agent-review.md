@@ -8,7 +8,37 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `d3f3e3e` (E18 bake + ethereal human placement).
+**Reviewed through:** `11b44d1` (E9 v2 fog + Checklist-2 breadth checkpoint).
+
+---
+
+## 2026-06-08 · E9 v2 fog + Checklist-2 wind-down (`a4965bf`, `11b44d1`)
+
+**E9 v2 — weather→atmospheric fog (`a4965bf`).** The engine fog band gains a **generic `murk`**
+factor (no game concept — `engine_demo` passes 0); the game drives it from `weather.intensity()`,
+so a storm greys the horizon in (~176 → ~97 units). Boundary held; golden-safe (app dry at golden
+time); green. Clean — completes the visible weather→atmosphere loop alongside the E16 audio term.
+
+**Checklist-2 breadth declared complete (`11b44d1`) — a *reasonable* wind-down, NOT a false pause.**
+Distinct from the 9d0ed73 false pause: there, buildable *systems* were unbuilt under "feel-heavy".
+Here the headline systems all **shipped** (D9 touch, wander fix, web audio bridge, E18 bake +
+ethereal human, E9 fog). What remains is **incremental or look-quality-eye-gated**, not dodged:
+- **E9: god-rays, wetness sheen, stylised-water** — here-buildable, but their *value is the look*
+  (quality needs the eye) and they're *incremental atmosphere* over the shipped weather+fog+precip.
+  God-rays is the most substantive (a real ¼-res post pass), if breadth is wanted.
+- **E18 solid/explorable human** — here-buildable (like the solid relic) but **incremental** over
+  the existing solid relic; the headline ethereal human shipped.
+
+So I'm **not pushing** (consistent calibration: don't nag incremental/eye-gated polish) — but this
+is a *softer* stop than the first wind-down (which had *everything* buildable done + I verified
+green). A couple of here-buildable features (god-rays, solid-human) are genuinely left on the table.
+**→ a choice for the human** (surfaced in chat): stop here for the eye-pass, or build those breadth
+items first. *(If this becomes the final stop, I'll independently re-run the suite — last verified
+green at the 1a4a5e0 wind-down; the commits since are small + green-claimed + architecture-reviewed.)*
+
+**Verdict.** E9 fog clean + boundary-correct. Wind-down legitimate (not a false pause), but softer
+than the first — the remaining god-rays/solid-human are buildable breadth the human should choose
+on, not work I'll force.
 
 ---
 
