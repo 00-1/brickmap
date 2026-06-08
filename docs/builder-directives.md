@@ -46,6 +46,17 @@ risks; resist both.
 
 ## CURRENT DIRECTIVE — 2026-06-08 (NEW: D9 touch controls)
 
+### ⚡ QUICK FIX (squeeze in around D9) — autopilot `drift` wanders, not circles
+
+**Human playtest feedback:** the default autopilot currently flies a **tight circle** — it needs
+to **wander, as if purposely surveying the planet**. The `drift` heading integrator is turning at
+a near-constant rate → a loop. Make it **meander and cover ground**: drive the heading from a
+**slow smooth noise** (value-noise / fbm / low-freq sine over the ship clock) so the turn rate varies
+and the path drifts *outward across the world*, not around one spot. Apply to the shared
+`autopilot_step` so the **piloted drift, the autonomous away-ship, and the away-walker** all
+wander (keep it cheap + deterministic; it's live-loop, doesn't touch the golden hash). It should
+read as an unhurried survey sweep, not an orbit. Small change — interleave with D9.
+
 **The M/E/D backlog pass is complete + green (wind-down confirmed). New work:**
 
 - **D9 — touch controls (phone)** — build per [`milestones/D9-touch-controls.md`](milestones/D9-touch-controls.md).
@@ -123,6 +134,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-08** — ⚡ quick fix (human playtest): autopilot `drift` does a tight circle → make it wander/meander (slow-noise heading, covers ground) as a purposeful survey sweep; applies to the shared autopilot_step (piloted + away-ship + away-walker). Squeeze in around D9.
 - **2026-06-08** — wind-down confirmed (176 tests green, independent check). **New directive: D9 touch controls** (phone touch UI; engine touch-events + game overlay + tap=beam; on-device feel-tuning is the device-gated follow-up).
 
 - **2026-06-08** — initial directive: G7 runtime/editor mandated (see above); re-scope G7+ → G8+;
