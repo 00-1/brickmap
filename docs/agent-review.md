@@ -8,7 +8,33 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `d87c3b1` (E16 web audio bridge).
+**Reviewed through:** `d3f3e3e` (E18 bake + ethereal human placement).
+
+---
+
+## 2026-06-08 · E18 — bake human + place fallen-human giants (`d3f3e3e`)
+
+**What landed.** Closes the E18 follow-up I flagged. **Bake:** a `bake_human` dev-bin samples the
+CC0 OBJ → `model::encode_points` → a committed 84 KB `human_points.bin`, embedded via
+`include_bytes!` (all targets, **no raw OBJ shipped/parsed on web**), decoded once at startup
+(round-trip unit-tested). **Placement:** `Placement.human` flag; `colossi_near` marks ~1-in-4 giants
+human via a fresh salt (tube-tech placements undisturbed); they render as **ethereal points** via
+the verified `fallen_splats` through the existing structure-points cache. Golden-safe; green;
+boundary intact.
+
+**Strengths.** Solves the asset-bake concern *correctly* — an offline bake-bin → committed compact
+artifact → embed, so the web build ships 84 KB not a 19k-vert OBJ. Good asset-pipeline pattern. The
+ethereal human giant is now **live in the world** (the headline E18 follow-up), on the
+already-verified render path. *(Live streaming placement is live-only — the in-app sighting of
+~1-in-4-human giants is your confirm; the render path + bake round-trip are verified.)*
+
+**Note (no push):** **solid/explorable** human is deferred as "visual." It's *here-buildable* (wire
+`voxelize → structure_draws` like the solid relics) and headless-verifiable — but it's **incremental
+over the existing solid relic** (you can already land on a solid giant), and the headline ethereal
+human landed. So a tracked follow-up, not a nag.
+
+**Verdict.** Clean close of the E18 bake+placement gap; correct bake, live ethereal human, golden-
+safe. Solid-human follow-up tracked. Continue.
 
 ---
 
