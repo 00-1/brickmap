@@ -293,7 +293,7 @@ The aesthetic pass that **became the identity** (backlog §I; see the aesthetic 
   only when the explored set grows. `map.wgsl` validated via the headless render.
 - **De-risks:** done — funnelling the frame through a tiny palette + dither *is* the look.
 
-### ✨ E11 — More dynamic voxels *(exploration)* ⏳
+### ✨ E11 — More dynamic voxels *(exploration)* ◑ &nbsp;→ [`milestones/E11-dynamic-voxels.md`](milestones/E11-dynamic-voxels.md)
 Extend E5 onto a proper substrate (backlog §J): **block/Margolus CA** (free
 mass-conservation + safe rayon parallelism) + **active-set/dirty-AABB** (Noita-style),
 then **pressure water** (compressible-mass; rendered as a separate vertex-displaced pass,
@@ -301,6 +301,11 @@ then **pressure water** (compressible-mass; rendered as a separate vertex-displa
 (explode→carve→eject→rest→write→slump), and **growth** (moss/vines/crystals).
 - **Outcome:** water that finds its level, fire that spreads, things that grow and crumble.
 - **De-risks:** re-mesh churn (active-set + off-thread mesher + don't-mesh-water absorb it).
+- **Landed (E11-1, the CA rule):** `sim::step_water` — deterministic, mass-conserving, terminating
+  water that **falls + flows downhill + pools** (slides diagonally like sand, else flows sideways
+  toward a way down). Unit-tested (falls/conserved, flows off a ledge, rests when boxed in);
+  golden-neutral (not run on the static world). **Next:** flat-floor leveling via the
+  pressure/compressible-mass model + wiring the live world's water to flow (active-set seeding).
 
 ### ✨ Features (E12–E18) — from the research passes (backlog §L–P) + 2026-06 ideas
 User-facing features, all rated *great fit* because they reuse machinery we already have.
