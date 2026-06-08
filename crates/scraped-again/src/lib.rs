@@ -42,6 +42,8 @@ pub mod scan;
 pub mod console;
 // The automated expedition (G8c): the cross-agent deploy→harvest→return phase machine.
 pub mod expedition;
+// Global weather (E9): a seeded Clear→Building→Precip→Clearing cycle driving precipitation.
+pub mod weather;
 // Decipherment lexicon (G6): a seeded grammar that renders a comprehended script as words.
 pub mod lexicon;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
@@ -123,6 +125,11 @@ struct App {
     /// M8a: dynamic-resolution extra internal-res divisor (added to the art `pixel_scale`). 0 on
     /// capable hardware; rises under frame-time pressure so weak GPUs hold their rate.
     dyn_extra: u32,
+    /// E9: the global weather cycle (drives precipitation; advanced only in the live loop, so the
+    /// headless/golden render stays dry).
+    weather: weather::Weather,
+    /// E9: per-frame counter scattering precip-drop spawn positions (cosmetic).
+    precip_seq: u32,
     /// Cinematic auto-fly / **autopilot**: on by default so the build is watchable with no input
     /// (mobile / hands-off). Manual input switches it off; `F` / pad A toggles it. In `Walk` mode
     /// it's ignored (you're on foot).
@@ -1498,6 +1505,54 @@ impl App {
         }
     }
 
+    /// E9: advance the global weather cycle and, during precipitation, spawn rain/snow particles
+    /// around the camera scaled by intensity (snow in frost biomes — slow, white, drifting; rain
+    /// elsewhere — fast, cool, thin). Advanced only here (the live loop), so the headless/golden
+    /// render stays dry. *(Fog/wetness coupling + god-rays + the audio term are noted follow-ups.)*
+    fn tick_weather(&mut self, dt: f32) {
+        self.weather.advance(dt);
+        let intensity = self.weather.intensity();
+        if intensity <= 0.0 {
+            return;
+        }
+        let cold = biome::at(self.camera.position.x, self.camera.position.z, self.seed)
+            .name
+            .contains("frost");
+        let cam = self.camera.position;
+        // A handful of fresh drops per frame, scaled by intensity (capped so a downpour is dense
+        // but bounded). Spawn in a box above + around the camera so it falls through the view.
+        let n = (intensity * WEATHER_MAX_DROPS as f32).round() as u32;
+        for i in 0..n {
+            // Cheap per-drop scatter (deterministic-ish in frame count + index; cosmetic).
+            let h = |salt: u32| {
+                let mut x = (self.precip_seq.wrapping_mul(0x9e37_79b9))
+                    .wrapping_add(i.wrapping_mul(0x85eb_ca6b))
+                    .wrapping_add(salt.wrapping_mul(0xc2b2_ae35));
+                x ^= x >> 16;
+                (x & 0xffff) as f32 / 65535.0
+            };
+            let off = Vec3::new((h(1) - 0.5) * 60.0, 18.0 + h(2) * 14.0, (h(3) - 0.5) * 60.0);
+            if cold {
+                self.particles.spawn(
+                    cam + off,
+                    Vec3::new((h(4) - 0.5) * 2.0, -3.5, (h(5) - 0.5) * 2.0), // slow drift
+                    Vec3::new(0.85, 0.88, 0.95),                             // white
+                    3.5,
+                    0.16,
+                );
+            } else {
+                self.particles.spawn(
+                    cam + off,
+                    Vec3::new(0.0, -34.0, 0.0), // fast straight fall
+                    Vec3::new(0.45, 0.55, 0.7), // cool
+                    0.7,
+                    0.07,
+                );
+            }
+        }
+        self.precip_seq = self.precip_seq.wrapping_add(1);
+    }
+
     /// Seed a clump of sand high in a loaded chunk ahead of the camera; it falls onto the terrain.
     fn seed_sand(&mut self) {
         self.seed_material(sim::SAND, 0.0);
@@ -2186,6 +2241,8 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
                 self.sim(dt);
+                // Global weather (E9): advance the cycle + spawn precipitation when it's raining.
+                self.tick_weather(dt);
                 // Ambient debris bursts ahead of the camera so the flight sweeps
                 // over rising embers (there's always motion in frame).
                 self.particles
@@ -2428,6 +2485,10 @@ impl ApplicationHandler<AppEvent> for App {
                         // M8a: surface dynamic-resolution when it's engaged (chunkier under load).
                         if self.dyn_extra > 0 {
                             meshing.push_str(&format!(" · dynres +{}", self.dyn_extra));
+                        }
+                        // E9: surface the weather when it's doing something.
+                        if self.weather.intensity() > 0.0 {
+                            meshing.push_str(&format!(" · {}", self.weather.phase().label()));
                         }
                         // In biome mode, show the (blended) biome name; else the manual palette.
                         let pal = if self.biome_mode {
@@ -2713,6 +2774,8 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         sand_timer: 0.0,
         water_timer: 0.0,
         dyn_extra: 0,
+        weather: weather::Weather::new(view.seed),
+        precip_seq: 0,
         auto_fly: true,
         auto_fly_angle: 0.0,
         auto_fly_t: 0.0,
@@ -2929,6 +2992,8 @@ const SIM_TICK: f32 = 0.05;
 const SAND_INTERVAL: f32 = 0.14;
 /// How often a water clump is dropped (E11) — slower than sand: water pools, so less is more.
 const WATER_INTERVAL: f32 = 0.55;
+/// Max precipitation drops spawned per frame at full weather intensity (E9). Tunable by eye.
+const WEATHER_MAX_DROPS: u32 = 28;
 /// M8a dynamic resolution: the frame-time budget (ms) the controller holds, and the most extra
 /// internal-res divisor steps it may add under load. Conservative target (~30 fps) so it only
 /// engages when genuinely slow; capable hardware never leaves the art base. Tunable.

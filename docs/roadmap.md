@@ -251,7 +251,12 @@ its own brief.
   (`ChunkCoord` is already 3D, so it's mostly removing the `cy == 0` / `y = 0` hardcodes +
   filling worldgen by absolute world-y + wiring the ±Y mesher neighbours).*
 
-### ✨ E9 — Weather, water & sound *(exploration)* ⏳
+### ✨ E9 — Weather, water & sound *(exploration)* ◑ &nbsp;→ [`milestones/E9-weather.md`](milestones/E9-weather.md)
+- **Landed (v1):** a seeded global **weather** state machine (`weather::Weather` — `Clear →
+  Building → Precip → Clearing`, jittered, deterministic, unit-tested) driving **precipitation** —
+  rain/snow (by frost biome) spawned through the particle system, scaled by intensity; HUD shows
+  the phase. Live-loop only → the headless/golden render stays dry. **Deferred (visual/audio):**
+  fog/wetness blend, god-rays, stylised-water upgrades, and the weather→drone audio term (→ E16).
 From the research (backlog §H): a single **global weather state** (wind + gust + precip +
 sun) driving everything; **screen-space god-rays**; **rain/snow as camera-space
 particles** with **snow/wetness accumulation as a per-column shader blend**; **stylized
