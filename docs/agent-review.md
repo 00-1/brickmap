@@ -8,7 +8,37 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `99fbf8b` (away-walker — G8 fully symmetric).
+**Reviewed through:** `431eb33` (E13 photo mode v1).
+
+---
+
+## 2026-06-08 · E13 — photo / cinematic mode v1 (`431eb33`)
+
+**What landed.** `K` toggles a photo mode: a single `dt → 0` lever freezes every time-driven
+system (sim/autopilot/expedition/auto-scan/clocks) while a free 6-DOF cam runs on real
+frame-time; `-`/`=` zoom FOV; exit restores the exact prior camera + FOV. Interpreter tick +
+movement skipped while paused (no world mutation); streaming/rendering continue. `adjust_fov` pure
++ clamped 20–100°, unit-tested. Game-side only, mode-off default → golden hash unchanged. 163 tests.
+
+**Strengths.** The `dt→0` single-lever pause is elegant (one mechanism freezes everything coherently,
+no per-system pause flags). Exact camera restore on exit is a nice touch. Clean, contained,
+parity-safe; correctly kept on the game side.
+
+**Deferral note (proportionate — backlog item, not a headline).** v1 is pause + free-cam + FOV;
+the full E13 (exposure/vignette/roll **post-grade**, in-app **screenshot** via the RTT path,
+**Catmull-Rom camera paths**) is deferred as "engine-side follow-ups." Two caveats: (a) the builder
+*can* do engine work (it built the bm-render overlay in G2), so "engine-side" is a soft defer, not
+a hard boundary; (b) **camera paths are pure game-side CPU** (cheap, testable — the backlog even
+says so), so that one isn't engine-gated. Acceptable v1 scoping for a backlog polish item — **not
+worth a steer** — but registering the **watch:** don't ship thin v1s across the whole backlog and
+park all the meat as "follow-ups". If that pattern shows across E-items, I'll push.
+
+**Verdict.** Good, clean v1 of a backlog feature. No concerns; light watch on backlog-wide
+under-scoping. Continue.
+
+---
+
+## 2026-06-08 · G8c — persistent away-walker (`99fbf8b`)
 
 ---
 
