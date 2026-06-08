@@ -1095,12 +1095,17 @@ impl App {
         }
     }
 
-    /// G8c: has the ship **arrived** at a site? — the nearest known-uncollected site is within
-    /// arrival range. Drives the `on-arrive` trigger (the expedition skeleton: seek → arrive → act).
-    fn ship_arrived(&self) -> bool {
+    /// G8c: has an agent at `pos` **arrived** at a site? — the nearest known-uncollected site is
+    /// within arrival range. Drives the `on-arrive` trigger (seek → arrive → act).
+    fn arrived_at(&self, pos: Vec3) -> bool {
         const ARRIVE_RADIUS: f32 = 12.0;
         self.seek_target()
-            .is_some_and(|t| (t - self.ship_pos()).length() < ARRIVE_RADIUS)
+            .is_some_and(|t| (t - pos).length() < ARRIVE_RADIUS)
+    }
+
+    /// Has the **ship** arrived at a site? (Arrival measured from the ship's position.)
+    fn ship_arrived(&self) -> bool {
+        self.arrived_at(self.ship_pos())
     }
 
     /// G8a: fly the **autonomous ship** while you're on foot. The cruiser runs its own ship
@@ -1846,12 +1851,18 @@ impl ApplicationHandler<AppEvent> for App {
                         _ => {}
                     }
                 }
-                // G8b: on foot, the walker is a **second agent** — its routines run simultaneously.
-                // Foot nav/scan (auto-walk) is deferred to G8c; for now the shared acts fire
-                // (e.g. a continuous `collect` harvests as you explore; `when … → decode`/`hail`).
+                // G8b/G8c: on foot, the walker is a **second agent** — its routines run
+                // simultaneously. The foot `walk` nav steers the walker toward known sites
+                // (applied in the Walk movement arm below); shared acts fire (a continuous
+                // `collect` harvests as you explore; `when … → decode`/`hail`; `on-arrive` when
+                // the walker reaches the site it's heading to).
+                let mut foot_nav = None;
                 if self.mode == Mode::Walk {
-                    // The walker has no self-directed travel yet (G8c-2), so it never "arrives".
-                    let foot = self.console.tick(console::Agent::Foot, data, false);
+                    let walker_arrived = self.arrived_at(self.camera.position);
+                    let foot = self
+                        .console
+                        .tick(console::Agent::Foot, data, walker_arrived);
+                    foot_nav = foot.nav;
                     for act in foot.acts {
                         match act.block {
                             console::Block::Collect => self.dispatch_collect(act.filter),
@@ -1894,7 +1905,18 @@ impl ApplicationHandler<AppEvent> for App {
                         // The controller drives the look + the *wanted* free-fly delta.
                         let prev = self.camera.position;
                         self.controller.update(&mut self.camera, dt);
-                        let wanted = self.camera.position;
+                        let mut wanted = self.camera.position;
+                        // G8c: a foot `walk` routine **auto-walks** the walker toward the nearest
+                        // known site — but only when you're not steering yourself (manual input
+                        // always wins). Combined with `on-arrive → collect`, this is the on-foot
+                        // auto-collection loop you compose.
+                        let moved = (wanted - prev).with_y(0.0).length() > 1e-4;
+                        if !moved && foot_nav == Some(console::Block::Walk) {
+                            if let Some(target) = self.seek_target() {
+                                wanted = walk_toward(prev, target, WALK_SPEED, dt);
+                                self.camera.position = wanted;
+                            }
+                        }
                         // Riding the survey-beam (G2): if attached to a live beam, the wanted
                         // movement projected onto the beam axis slides you along the rail (1-DoF,
                         // any angle). Reaching the far end detaches; expiry drops you (gravity).
@@ -2405,6 +2427,19 @@ fn autopilot_step(
     (pos, angle)
 }
 
+/// G8c: a foot auto-walk step — a horizontal wanted-position toward `target` at `speed`. The
+/// caller feeds this through the walker's voxel-collision constrain (gravity / auto-step), so
+/// this only sets the horizontal intent. Pure + unit-testable.
+fn walk_toward(pos: Vec3, target: Vec3, speed: f32, dt: f32) -> Vec3 {
+    let to = (target - pos).with_y(0.0);
+    let d = to.length();
+    if d < 1e-3 {
+        return pos;
+    }
+    let step = (speed * dt).min(d);
+    pos + to / d * step
+}
+
 /// Set up the world/view + `App`. Shared by the desktop/web entry (`run`) and the Android
 /// entry (`android_main`, which then drives the loop itself).
 fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
@@ -2672,6 +2707,8 @@ const CRUISER_ENTER_DIST: f32 = 11.0;
 const AUTO_FLY_SPEED: f32 = 26.0;
 /// Downward tilt of the auto-fly camera (radians).
 const AUTO_FLY_PITCH: f32 = -0.22;
+/// Foot auto-walk speed (G8c) — the `walk` nav steers the walker toward known sites at this rate.
+const WALK_SPEED: f32 = 10.0;
 
 /// The demo world: a procedurally-generated noise-terrain world (M3). Used by the
 /// native headless renderer (a fixed scene); the live app streams instead.
@@ -3143,6 +3180,24 @@ mod tests {
             0.2,
         );
         assert!(angle.abs() > 0.05, "circle should turn steadily: {angle}");
+    }
+
+    #[test]
+    fn walk_toward_steps_horizontally_and_stops_at_target() {
+        // G8c foot auto-walk: a horizontal step toward the target, capped at the remaining
+        // distance (no overshoot), leaving y to the collision/gravity pass.
+        let pos = Vec3::new(0.0, 5.0, 0.0);
+        let target = Vec3::new(100.0, 80.0, 0.0); // far + way above
+        let next = walk_toward(pos, target, WALK_SPEED, 0.1);
+        assert!(
+            (next.x - WALK_SPEED * 0.1).abs() < 1e-3,
+            "steps ~speed·dt along x"
+        );
+        assert_eq!(next.y, pos.y, "y is left to gravity/collision");
+        // Close to the target → clamps to it (horizontally), no overshoot.
+        let near = Vec3::new(99.5, 5.0, 0.0);
+        let stop = walk_toward(near, target, WALK_SPEED, 1.0);
+        assert!((stop.x - target.x).abs() < 1e-3);
     }
 
     #[test]

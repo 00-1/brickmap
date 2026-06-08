@@ -103,8 +103,9 @@ pub enum Block {
     Spend,          // spend a shard on a faculty (vocabulary stub — no targets yet)
     Goto,           // direct travel to a picked map target (vocabulary stub — no map picker yet)
     Drift,          // aimless cinematic wander — the default autopilot
-    Seek,           // head to the nearest known-uncollected site (nav)
-    Circle,         // loiter / orbit the current area (nav)
+    Seek,           // head to the nearest known-uncollected site (ship nav)
+    Circle,         // loiter / orbit the current area (ship nav)
+    Walk,           // on foot, walk to the nearest known site (foot nav — G8c)
     Hail,           // recall the autonomous/parked ship to the walker (G8a — foot/shared)
 }
 
@@ -122,6 +123,7 @@ impl Block {
             Block::Drift => "drift",
             Block::Seek => "seek(uncollected)",
             Block::Circle => "circle",
+            Block::Walk => "walk(uncollected)",
             Block::Hail => "hail",
         }
     }
@@ -140,20 +142,23 @@ impl Block {
         !matches!(self, Block::Spend | Block::Goto)
     }
 
-    /// Is this a navigation block (it steers the autopilot rather than firing an effect)?
+    /// Is this a navigation block (it steers an agent rather than firing an effect)?
     pub fn is_nav(self) -> bool {
-        matches!(self, Block::Drift | Block::Seek | Block::Circle)
+        matches!(
+            self,
+            Block::Drift | Block::Seek | Block::Circle | Block::Walk
+        )
     }
 
     /// Which agent this block belongs to — `None` = **shared** (usable by either agent). Ship
-    /// blocks fly/scan/route; the foot block is the survey-beam; collect/decode/spend/hail are
-    /// shared (game-system §7).
+    /// blocks fly/scan/route; foot blocks are the survey-beam + `walk`; collect/decode/spend/hail
+    /// are shared (game-system §7).
     pub fn agent(self) -> Option<Agent> {
         match self {
             Block::Scan(_) | Block::Drift | Block::Seek | Block::Circle | Block::Goto => {
                 Some(Agent::Ship)
             }
-            Block::FireBeam => Some(Agent::Foot),
+            Block::FireBeam | Block::Walk => Some(Agent::Foot),
             Block::Collect | Block::Decode | Block::Spend | Block::Hail => None, // shared
         }
     }
@@ -428,6 +433,7 @@ impl Console {
             Step::Do(Block::Drift),
             Step::Do(Block::Seek),
             Step::Do(Block::Circle),
+            Step::Do(Block::Walk),
             Step::Do(Block::Goto),
             Step::Do(Block::Spend),
             Step::Do(Block::Hail),
@@ -736,6 +742,7 @@ impl Console {
             Step::Do(Block::Drift) => "d".into(),
             Step::Do(Block::Seek) => "k".into(),
             Step::Do(Block::Circle) => "o".into(),
+            Step::Do(Block::Walk) => "W".into(),
             Step::Do(Block::Hail) => "H".into(),
             Step::Match(MatchField::Rare) => "m".into(),
             Step::Repeat(n) => format!("r{n}"),
@@ -756,6 +763,7 @@ impl Console {
                 'd' => Step::Do(Block::Drift),
                 'k' => Step::Do(Block::Seek),
                 'o' => Step::Do(Block::Circle),
+                'W' => Step::Do(Block::Walk),
                 'H' => Step::Do(Block::Hail),
                 'm' => Step::Match(MatchField::Rare),
                 'r' => {
@@ -1215,6 +1223,9 @@ mod tests {
         assert!(ship.contains(&Step::Do(Block::Scan(ScanItem::Shards))));
         assert!(!ship.contains(&Step::Do(Block::FireBeam))); // beam is a foot block
         assert!(foot.contains(&Step::Do(Block::FireBeam)));
+        assert!(foot.contains(&Step::Do(Block::Walk))); // walk is the foot nav block (G8c)
+        assert!(Block::Walk.is_nav() && Block::Walk.agent() == Some(Agent::Foot));
+        assert!(!ship.contains(&Step::Do(Block::Walk))); // ship doesn't walk
         assert!(!foot.contains(&Step::Do(Block::Seek))); // seek is a ship nav block
         for shared in [
             Step::Do(Block::Collect),

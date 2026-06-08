@@ -58,12 +58,19 @@ gated deep end (game-system §7 ceiling, §11 Tier 3).
   within an arrival radius). Composable like the other triggers (cycle to it in the editor;
   persists in `co=`); so you can author `seek → on-arrive → decode/hail/…`. The interpreter takes
   an `arrived` flag; the app computes it for the ship (`ship_arrived`).
-- **G8c-2 ⏳ — the full expedition + cross-agent meta.** Needs a **second persistent agent
-  entity** (a tracked walker that auto-walks off-screen, like the autonomous ship), foot nav
-  (`walk`/`path`), the disembark/return choreography, and cross-agent `run(foot: …)`. This is the
-  game's deepest systems-and-feel slice — its payoff hinges on play-iteration, so it's flagged for
-  human review/tuning at end-of-run (per the run rules: build the testable skeleton now, record
-  what needs a human eye, keep moving).
+- **G8c-2a ✅ — foot `walk` nav + on-foot auto-walk.** A foot nav block `walk(uncollected)`
+  (foot analog of the ship's `seek`); while on foot, a `walk` routine **auto-walks** the walker
+  toward the nearest known site (only when you're not steering — manual input always wins), fed
+  through the existing voxel-collision walk (gravity / auto-step). With `on-arrive → collect` (or
+  a continuous foot `collect`), this is the **on-foot auto-collection loop** you compose — the
+  walker gets the ground-level finds the high-cruising ship misses. Pure `walk_toward` step is
+  unit-tested; `walk` is foot-scoped + persisted.
+- **G8c-2b ⏳ — the off-screen expedition + cross-agent meta.** A **second *persistent* walker
+  entity** that auto-walks + banks **while you pilot** (the away-walker, mirroring G8a's
+  away-ship), the disembark/return choreography, and cross-agent `run(foot: …)`. This needs a
+  change to the board/exit movement flow (the walker persists where you left it and tours on its
+  own), so its payoff hinges on play-feel — flagged for end-of-run human iteration (the testable
+  skeleton — on-arrive, foot nav, per-agent ticks — is in place).
 
 ## G8a — design sketch
 
