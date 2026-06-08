@@ -95,6 +95,12 @@ git show origin/<steering-branch>:docs/agent-review.md
 # on pause: arm a Monitor on origin/<steering-branch>; resume when it advances.
 ```
 
+**Poll cadence matters.** Have the builder re-read the channel **periodically while working —
+before every commit, at each milestone start, and at least every ~15 min during a long build** —
+not only between milestones. Otherwise the babysitter can't steer a build *mid-milestone* (a long
+milestone would finish on a wrong track before the builder ever re-checks). Frequent trunk-based
+commits make "before every commit" a natural, cheap checkpoint.
+
 ## Reviewing well (babysitter discipline)
 
 - **Read the code, not the commit message.** Pull the changed files and judge them against the

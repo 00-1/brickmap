@@ -7,11 +7,14 @@ milestone briefs; **this branch is the steering channel.** Pair with
 
 ## How to use this channel (builder)
 
-- **While working:** between milestones (and at the start of each work cycle),
-  `git fetch origin claude/core-mechanics-planning-0TpOA` and read this file +
-  `agent-review.md` from it — e.g.
-  `git show origin/claude/core-mechanics-planning-0TpOA:docs/builder-directives.md`. Follow the
-  **CURRENT DIRECTIVE** and address any `agent-review.md` escalations.
+- **While working — check periodically, not just between milestones.** Re-read this channel
+  (`git fetch origin claude/core-mechanics-planning-0TpOA` then
+  `git show origin/claude/core-mechanics-planning-0TpOA:docs/builder-directives.md` +
+  `…:docs/agent-review.md`): **before every commit**, **at the start of each milestone**, and
+  **at least every ~15 minutes during a long build** (or at each natural sub-step). The point is
+  the babysitter can steer you **mid-milestone** — if the directive or an `agent-review.md`
+  escalation has changed, adjust *now*, don't wait until the milestone is done. Follow the
+  **CURRENT DIRECTIVE**; address escalations.
 - **Do not merge this branch into `main`.** Just *read* it. Apply any roadmap re-scope to
   `main` yourself. You may copy a milestone brief from here onto `main` to build it.
 - **When you pause / go idle:** arm a **Monitor** watching `origin/claude/core-mechanics-planning-0TpOA`
