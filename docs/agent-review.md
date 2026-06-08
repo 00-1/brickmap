@@ -29,11 +29,13 @@ see if shafts appear) — so "no headless-verifiable core" slightly overstates; 
 building-blind-on-request) is fair. **Routed into the human's look-and-feel pass as a decision:**
 want it built (blind) now, or skip?
 
-**This is the legitimate final wind-down of the buildable run.** Per protocol I'll independently
-re-run the suite on the code tip (93a02e6) to confirm green before calling it done.
+**Legitimate final wind-down of the buildable run — independently RE-VERIFIED GREEN.** I checked
+out the code tip (`93a02e6`) and ran the full suite myself: **184 tests pass, 0 failures, 0
+errors** (up from 176 at the first wind-down — the new commits added coverage). Confirmed solid.
 
-**Verdict.** Legit final stop; only look-tuning (incl. god-rays-on-request) + hardware/secret-gated
-items remain. The run delivered the full systems set, green throughout.
+**Verdict.** Legit final stop, independently verified green. Only look-tuning (incl. god-rays-on-
+request) + hardware/secret-gated items remain. The run delivered the full systems set, green at
+every commit start-to-finish.
 
 ---
 
