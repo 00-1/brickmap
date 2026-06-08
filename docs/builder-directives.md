@@ -44,7 +44,25 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-08 (NEW: D9 touch controls)
+## CURRENT DIRECTIVE — 2026-06-08 (NEW: D10 touch overlay visuals)
+
+**Playtest:** D9 touch *mapping* works well, but the on-screen overlay is just a HUD text line —
+**the player can't see where to touch.** New work:
+
+- **D10 — touch control overlay** — build per [`milestones/D10-touch-overlay.md`](milestones/D10-touch-overlay.md).
+  Render the D9 controls (two edge sliders + buttons 1/2/A/B) as **visible, dimmed on-screen
+  controls** with press/value feedback + context labels, drawn **from the existing `touch::Layout`**
+  (so visual == hit-zones, single source of truth). Game-side HUD in `scraped-again`; any new HUD
+  rect primitive in `bm-render` must be **generic** (no game concept). Headless-verifiable (opt-in
+  screenshot flag like `SCRAPED_BEAM`, golden stays clean); on-device size/opacity/placement *feel*
+  is the human follow-up — build the visible overlay now, don't block on a phone. Pinned defaults in
+  the brief; styling is the human's later call (don't pause on it).
+- Then (only if you want breadth): **E9 god-rays** is build-blind-on-request only — leave it for the
+  human's eye-pass unless directed. Everything else buildable is done.
+
+---
+
+*(superseded — D9 + the autopilot wander fix landed)*
 
 ### ✅ QUICK FIX DONE (`a5f316f`) — autopilot `drift` wanders, not circles
 
@@ -137,6 +155,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-08** — D9 ✅ (touch mapping works in playtest). **New directive: D10 — touch control overlay** (render the sliders/buttons visibly from `touch::Layout` so you can see where to touch; game-side HUD; generic engine rect primitive; headless-verifiable; on-device feel = human follow-up).
 - **2026-06-08** — ⚡ quick fix (human playtest): autopilot `drift` does a tight circle → make it wander/meander (slow-noise heading, covers ground) as a purposeful survey sweep; applies to the shared autopilot_step (piloted + away-ship + away-walker). Squeeze in around D9.
 - **2026-06-08** — wind-down confirmed (176 tests green, independent check). **New directive: D9 touch controls** (phone touch UI; engine touch-events + game overlay + tap=beam; on-device feel-tuning is the device-gated follow-up).
 
