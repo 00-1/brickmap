@@ -1085,6 +1085,24 @@ impl App {
         }
     }
 
+    /// The ship's effective world position: the camera while piloting, else the parked/autonomous
+    /// cruiser. Used for arrival detection (G8c).
+    fn ship_pos(&self) -> Vec3 {
+        if self.mode == Mode::Pilot {
+            self.camera.position
+        } else {
+            self.cruiser_pos
+        }
+    }
+
+    /// G8c: has the ship **arrived** at a site? — the nearest known-uncollected site is within
+    /// arrival range. Drives the `on-arrive` trigger (the expedition skeleton: seek → arrive → act).
+    fn ship_arrived(&self) -> bool {
+        const ARRIVE_RADIUS: f32 = 12.0;
+        self.seek_target()
+            .is_some_and(|t| (t - self.ship_pos()).length() < ARRIVE_RADIUS)
+    }
+
     /// G8a: fly the **autonomous ship** while you're on foot. The cruiser runs its own ship
     /// routine independently — advancing `cruiser_pos` under the same nav intent the piloted
     /// autopilot uses (drift wander / seek nearest known site / circle), tracking cruise height —
@@ -1813,7 +1831,8 @@ impl ApplicationHandler<AppEvent> for App {
                 // the old named-accessor hacks: `nav` steers the autopilot, `scan` gates the
                 // auto-scan, one-shot acts (continuous non-nav + `when`-edge fires) dispatch now.
                 let data = self.progress.strata.total().min(u32::MAX as u64) as u32;
-                let tick = self.console.tick(console::Agent::Ship, data);
+                let arrived = self.ship_arrived();
+                let tick = self.console.tick(console::Agent::Ship, data, arrived);
                 self.nav_intent = tick.nav;
                 self.scan_wanted = tick.scan;
                 for act in tick.acts {
@@ -1831,7 +1850,8 @@ impl ApplicationHandler<AppEvent> for App {
                 // Foot nav/scan (auto-walk) is deferred to G8c; for now the shared acts fire
                 // (e.g. a continuous `collect` harvests as you explore; `when … → decode`/`hail`).
                 if self.mode == Mode::Walk {
-                    let foot = self.console.tick(console::Agent::Foot, data);
+                    // The walker has no self-directed travel yet (G8c-2), so it never "arrives".
+                    let foot = self.console.tick(console::Agent::Foot, data, false);
                     for act in foot.acts {
                         match act.block {
                             console::Block::Collect => self.dispatch_collect(act.filter),

@@ -164,6 +164,12 @@ impl Block {
     }
 }
 
+impl PartialEq for Routine {
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
 /// One step in a routine body. A linear sequence of these is the routine's program;
 /// `Match`/`Repeat` are *prefix modifiers* (see the module decision note).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -233,12 +239,14 @@ impl Cond {
 }
 
 /// When a routine's body runs. The interpreter fires `Continuous` every tick, `OnScan` on a scan
-/// that finds something, and `When` once on the rising edge of its condition.
+/// that finds something, `When` once on the rising edge of its condition, and `OnArrive` once when
+/// the agent reaches the site it's heading to (the expedition skeleton — game-system §7/§11).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Trigger {
     Continuous,
     OnScan,
     When(Cond),
+    OnArrive,
 }
 
 impl Trigger {
@@ -247,13 +255,14 @@ impl Trigger {
             Trigger::Continuous => "every tick".to_string(),
             Trigger::OnScan => "on scan".to_string(),
             Trigger::When(c) => format!("when {} ≥ {}", c.state.label(), c.min),
+            Trigger::OnArrive => "on arrive".to_string(),
         }
     }
 }
 
 /// A routine: **data** the interpreter runs. No per-name behaviour — the givens are just the
-/// default instances.
-#[derive(Clone, Debug, PartialEq)]
+/// default instances. (`armed` is transient runtime edge-state, excluded from equality below.)
+#[derive(Clone, Debug)]
 pub struct Routine {
     pub name: String,
     pub enabled: bool,
@@ -276,6 +285,17 @@ impl Routine {
             body,
             armed: false,
         }
+    }
+
+    /// The persistent identity of a routine, ignoring the transient `armed` edge-state.
+    fn key(&self) -> (&str, bool, Agent, Trigger, &[Step]) {
+        (
+            &self.name,
+            self.enabled,
+            self.agent,
+            self.trigger,
+            &self.body,
+        )
     }
 
     /// Does this routine steer the autopilot? (A continuous routine whose body does a nav block.)
@@ -442,10 +462,11 @@ impl Console {
         out
     }
 
-    /// Run one interpreter tick for `agent`'s **continuous** + **when** routines, given the current
-    /// `data` (total banked strata) for `when` conditions. Returns this tick's [`Tick`] intents.
+    /// Run one interpreter tick for `agent`'s **continuous** / **when** / **on-arrive** routines,
+    /// given the current `data` (total banked strata) for `when` conditions and whether the agent
+    /// has just `arrived` at the site it's heading to. Returns this tick's [`Tick`] intents.
     /// (`on-scan` routines fire separately, on a scan hit — see [`Console::on_scan_acts`].)
-    pub fn tick(&mut self, agent: Agent, data: u32) -> Tick {
+    pub fn tick(&mut self, agent: Agent, data: u32, arrived: bool) -> Tick {
         let mut t = Tick::default();
         for r in &mut self.routines {
             if r.agent != agent {
@@ -474,6 +495,12 @@ impl Console {
                         t.acts.extend(Self::expand(&r.body)); // rising edge → fire once
                     }
                     r.armed = sat;
+                }
+                Trigger::OnArrive => {
+                    if arrived && !r.armed {
+                        t.acts.extend(Self::expand(&r.body)); // reached the site → fire once
+                    }
+                    r.armed = arrived;
                 }
             }
         }
@@ -645,6 +672,7 @@ impl Console {
                 state: State::Data,
                 min: 10,
             }),
+            Trigger::OnArrive,
         ];
         // Compare by discriminant so the current `When(min)` matches the `When` slot.
         let cur = kinds
@@ -750,12 +778,14 @@ impl Console {
             Trigger::Continuous => "c".into(),
             Trigger::OnScan => "s".into(),
             Trigger::When(c) => format!("w:{}", c.min),
+            Trigger::OnArrive => "a".into(),
         }
     }
 
     fn parse_trigger(s: &str) -> Trigger {
         match s.chars().next() {
             Some('s') => Trigger::OnScan,
+            Some('a') => Trigger::OnArrive,
             Some('w') => Trigger::When(Cond {
                 state: State::Data,
                 min: s
@@ -938,7 +968,7 @@ mod tests {
     #[test]
     fn interpreter_runs_the_givens() {
         let mut c = Console::default();
-        let t = c.tick(Agent::Ship, 0);
+        let t = c.tick(Agent::Ship, 0, false);
         // drift → nav steering; survey → scan request; collect is on-scan (not in the tick).
         assert_eq!(t.nav, Some(Block::Drift));
         assert!(t.scan);
@@ -957,7 +987,7 @@ mod tests {
     fn disabling_drift_drops_the_nav_intent() {
         let mut c = Console::default();
         c.toggle_routine(0); // drift off
-        let t = c.tick(Agent::Ship, 0);
+        let t = c.tick(Agent::Ship, 0, false);
         assert_eq!(t.nav, None); // no continuous nav routine ⇒ autopilot off
         assert!(t.scan); // survey still scans
     }
@@ -1004,8 +1034,8 @@ mod tests {
             }),
             vec![Step::Do(Block::Decode)],
         ));
-        assert!(c.tick(Agent::Ship, 5).acts.is_empty()); // below threshold
-        let fired = c.tick(Agent::Ship, 12); // crosses ⇒ fires once
+        assert!(c.tick(Agent::Ship, 5, false).acts.is_empty()); // below threshold
+        let fired = c.tick(Agent::Ship, 12, false); // crosses ⇒ fires once
         assert_eq!(
             fired.acts,
             vec![Act {
@@ -1013,9 +1043,31 @@ mod tests {
                 filter: None
             }]
         );
-        assert!(c.tick(Agent::Ship, 12).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
-        c.tick(Agent::Ship, 0); // drop below ⇒ re-arm
-        assert!(!c.tick(Agent::Ship, 20).acts.is_empty()); // crosses again ⇒ fires
+        assert!(c.tick(Agent::Ship, 12, false).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
+        c.tick(Agent::Ship, 0, false); // drop below ⇒ re-arm
+        assert!(!c.tick(Agent::Ship, 20, false).acts.is_empty()); // crosses again ⇒ fires
+    }
+
+    #[test]
+    fn on_arrive_fires_once_when_the_ship_reaches_a_site() {
+        // G8c: an `on-arrive → decode` ship routine fires once on the arrival edge.
+        let mut c = Console::default();
+        c.routines.push(Routine::new(
+            "land",
+            Agent::Ship,
+            Trigger::OnArrive,
+            vec![Step::Do(Block::Decode)],
+        ));
+        assert!(c.tick(Agent::Ship, 0, false).acts.is_empty()); // not arrived
+        let fired = c.tick(Agent::Ship, 0, true); // reaches a site → fires once
+        assert!(fired.acts.iter().any(|a| a.block == Block::Decode));
+        assert!(c.tick(Agent::Ship, 0, true).acts.is_empty()); // still there ⇒ no re-fire
+        c.tick(Agent::Ship, 0, false); // leaves ⇒ re-arm
+        assert!(!c.tick(Agent::Ship, 0, true).acts.is_empty()); // arrives again ⇒ fires
+                                                                // The trigger round-trips through `co=`.
+        let mut back = Console::default();
+        back.restore(&c.encode());
+        assert_eq!(back.routines, c.routines);
     }
 
     #[test]

@@ -49,10 +49,21 @@ flies on*).
 - **Deferred to G8c:** foot **nav** (auto-walk / pathing) — the walker doesn't yet steer itself;
   foot routines currently contribute their *shared* acts + on-scan collect while you move.
 
-### G8c — the expedition + cross-agent meta  ⏳
+### G8c — the expedition + cross-agent meta  ◑ (in progress)
 The choreography (`goto(site) → land → run(foot: collect) → return → fly on`), `on-arrive`
 triggers, and cross-agent meta (a ship routine that runs the walker's routine) — the rare-stratum-
 gated deep end (game-system §7 ceiling, §11 Tier 3).
+- **G8c-1 ✅ — the `on-arrive` trigger** (the expedition skeleton). `Trigger::OnArrive` fires once
+  (rising edge) when the agent reaches the site it's heading to (the ship's nearest known site is
+  within an arrival radius). Composable like the other triggers (cycle to it in the editor;
+  persists in `co=`); so you can author `seek → on-arrive → decode/hail/…`. The interpreter takes
+  an `arrived` flag; the app computes it for the ship (`ship_arrived`).
+- **G8c-2 ⏳ — the full expedition + cross-agent meta.** Needs a **second persistent agent
+  entity** (a tracked walker that auto-walks off-screen, like the autonomous ship), foot nav
+  (`walk`/`path`), the disembark/return choreography, and cross-agent `run(foot: …)`. This is the
+  game's deepest systems-and-feel slice — its payoff hinges on play-iteration, so it's flagged for
+  human review/tuning at end-of-run (per the run rules: build the testable skeleton now, record
+  what needs a human eye, keep moving).
 
 ## G8a — design sketch
 

@@ -657,9 +657,12 @@ arc. Built in slices.
   collect/decode/spend/hail); `tick(agent,…)`/`on_scan_acts(agent)` run each agent's routines. On
   foot the walker is a second agent (its shared routines run as you explore); **Tab** flips a
   routine's agent; agent persists in `co=`. 156 tests; golden voxel-hash + headless unchanged.
-- **G8c ⏳ — the expedition + cross-agent meta** (foot auto-walk/pathing; `goto → land →
-  run(foot) → return`, `on-arrive`,
-  cross-agent run; rare-stratum-gated). Then decipherment fluency, the late **Concordance/
+- **G8c ◑ — the expedition + cross-agent meta.** **G8c-1 ✅** the `on-arrive` trigger (fires once
+  when the ship reaches the site it's heading to) — composable + persisted, so `seek → on-arrive →
+  decode/hail` works (the expedition skeleton). **G8c-2 ⏳** the full choreography (a second
+  persistent walker entity + foot auto-walk/pathing; `goto → land → run(foot) → return`;
+  cross-agent run; rare-stratum-gated) — the deepest systems+feel slice, flagged for end-of-run
+  play-iteration. Then decipherment fluency, the late **Concordance/
   Synthesis** arc, the Resonance/pristine branch, and co-op shared archive (N1).
 
 ## Dev tooling & process (D-series)
