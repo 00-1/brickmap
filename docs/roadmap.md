@@ -606,10 +606,14 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
 >   bridge** (E16 platform parity); **E18** human **bake** (committed compact asset, embedded — no
 >   OBJ on web) + **live ethereal fallen-human giants** (~1-in-4, verified render path); **E9 v2**
 >   weather-driven **atmospheric fog/murk** (storm greys the horizon in).
-> - **Remaining = the human's low-priority/visual/look-tuning territory** (tracked, none pushed):
->   E18 **solid-explorable** human (here-buildable, incremental over the solid relic); E9 **god-rays
->   / stylised-water v2 / wetness**; D9 **per-pixel tap aim + edge-strip overlay visual** (both
->   here-buildable refinements); plus on-device feel-tuning + the hardware/secret-gated items.
+> - **E18 solid-explorable human ✅** — ~half the human giants are now solid/landable (shared
+>   `voxels_to_instances`; dissolves-with-distance like the solid relics).
+> - **Remaining = look-tuning + one pure-shader-look item** (none pushed): **E9 god-rays** is the
+>   sole substantive buildable item left, but it's a ¼-res post pass whose *entire deliverable is
+>   the look* — unverifiable headless, so it's left for the human's eye-pass (build the system +
+>   tune blind only on request). Plus E9 wetness/stylised-water v2, the D9 per-pixel tap aim +
+>   edge-strip overlay visual (here-buildable refinements), on-device feel-tuning, and the
+>   hardware/secret-gated items (M8b/D7/D8/D5/N1).
 >
 > **M/E/D backlog — full pass complete (2026-06-08).** After a false-pause correction from the
 > channel, built every non-blocked backlog item's *systems* in the directed order, deferring only
