@@ -8,7 +8,40 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `4fa897f` (M10 perf telemetry).
+**Reviewed through:** `87d9315` (G10 typed shards).
+
+---
+
+## 2026-06-11 · G10 — typed shards (`87d9315`)  ✅ PASSED (verified independently)
+
+**Independently verified:** fmt clean · clippy `-D` clean · **199 tests, 0 failures** ·
+headless render healthy (shard clusters present, look intact) · golden voxel-hash
+unchanged · no engine change.
+
+**Against the brief — all in, with the right judgment calls:**
+- **Charter discipline held without prompting:** the shard splats declare their own
+  consumer budget in the M10 gates (charter §4 rule 2) and ride an existing bounded
+  upload. The M10 system doing its job one milestone later — exactly the point.
+- **Opening parity** solved cleanly via Decision 4: the given `survey` scans *sites*
+  exactly as before (G3 autoscan/map untouched, tested); a fourth given `prospect` scans
+  shards. Scan honesty lands (`ScanItem::{Shards, Sites}`).
+- **`when(shards ≥ N)`** added (the brief's "if cheap" — it was); spend wireable as
+  designed. `match` grows a Domain field covering shards *and* inscriptions. `pg=` v5
+  append-only with old-payload compat. Faculty effects = pure tested multipliers at
+  exactly the three call sites the brief named.
+
+**The notable catch — a latent G9 bug, correctly diagnosed:** G10's enlarged vocabulary
+shifted the name-table residues and G9's coverage test **failed** — exposing that the
+name-pick hash bits correlated with the name-gate bits (some residues unreachable). The
+remix fix is sound; the worldgen-version policy was invoked for the reassignment. The
+coverage test worked *as designed* (it caught the bug the moment the vocabulary changed) —
+but the bug class is correlation, and 3-seed reachability guards it only indirectly.
+**Suggestion (non-blocking, fold into any nearby milestone):** a cheap pick-residue
+**uniformity** property test (picked-block distribution over many cells ≈ the rarity
+weights) so correlation regressions fail loudly rather than via downstream reachability.
+
+**Verdict.** Strong milestone — the economy has real decisions now, and the run's earlier
+infrastructure (M10 gates, G9 tests) demonstrably earned its keep. Chain into **G11**.
 
 ---
 
