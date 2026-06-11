@@ -839,6 +839,24 @@ executing step** (`▶`). The HUD gains the **one lit goal** — a single neares
 wants it); never a quest log. Pure fns unit-tested (state matrix, attribution, rate, goal
 picker). 203 tests; golden + `pg=` untouched; no engine change.
 
+### ✨ G12 — Glyph console (de-Anglicization) ✅ &nbsp;→ [`milestones/G12-glyph-console.md`](milestones/G12-glyph-console.md)
+The human's settled call: **block names stay unreadable — no English layer at all.** A block's
+identity is now its **glyph-name** — the stable cluster of its name in its stratum's script, the
+*same* glyphs carved in the world — everywhere player-facing: the palette, routine rows, the
+editor body, the discovery toast, and the lit-goal's name part. Function is learned by **clicking
+and watching** (L0), never a label. Structural instrumentation stays minimal-English (numbers,
+gauges, `running`/`waiting`/`blocked`, the `▶` marker, the `(locked: decode SCH)` tag);
+parameters render glyph for world-vocabulary items (scan target, faculty, match field), numeric
+for quantities. The world also de-Anglicizes: a name-bearer keeps its glyph cluster even once its
+script is legible (only ambient lore translates). **Engine reality the brief didn't anticipate:**
+the console draws through the **ASCII-only HUD overlay** (not the five-script `WorldText`), so it
+needed a small *generic* engine addition — wiring the existing five-script glyph rasterizer into
+the HUD via self-identifying overlay codepoints (`text::to_overlay`/`overlay_glyph`; Galactic→SGA
+PUA, Runic→a dedicated PUA range), no new scripts. Built in two commits (machinery + world-text;
+then the HUD capability + wiring). A unit test proves the console glyphs reproduce the world
+billboard's exact bitmaps; ASCII HUD output stays byte-identical (`BASIC_LEGACY == BASIC_FONTS`).
+210 tests; golden voxel-hash unchanged; `co=`/`pg=` + routine equality untouched.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear

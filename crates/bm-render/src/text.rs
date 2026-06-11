@@ -47,6 +47,20 @@ fn runic(c: char) -> Option<[u8; 8]> {
     if c == ' ' {
         return None;
     }
+    // Deterministic stave per char (the overlay path keys the same index via `runic_pua`).
+    Some(runic_stave((c as usize).wrapping_mul(7)))
+}
+
+/// PUA base for the runic staves on the **overlay** (HUD) path (G12): `RUNIC_PUA_BASE + idx`
+/// renders stave `idx`. Distinct from the Standard-Galactic PUA block (U+E541..) so the HUD can
+/// auto-detect either system by codepoint. (The world-text billboard keys staves off any char
+/// directly via [`runic`]; the flat overlay needs a stable codepoint, hence this range.)
+pub const RUNIC_PUA_BASE: u32 = 0xE600;
+/// Count of distinct runic staves.
+pub const RUNIC_STAVES: usize = 12;
+
+/// One runic stave by index (wraps mod the stave count).
+fn runic_stave(idx: usize) -> [u8; 8] {
     // Each rune is 8 rows of 8 chars; '#' = lit pixel. Angular, vertical-stave forms.
     const P: [[&str; 8]; 12] = [
         [
@@ -98,7 +112,7 @@ fn runic(c: char) -> Option<[u8; 8]> {
             "   #    ",
         ],
     ];
-    let rows = P[(c as usize).wrapping_mul(7) % P.len()];
+    let rows = P[idx % P.len()];
     let mut g = [0u8; 8];
     for (r, line) in rows.iter().enumerate() {
         for (col, b) in line.as_bytes().iter().enumerate().take(GLYPH) {
@@ -107,7 +121,7 @@ fn runic(c: char) -> Option<[u8; 8]> {
             }
         }
     }
-    Some(g)
+    g
 }
 
 /// Look a character up in a given `script`. `Auto` walks the whole fallback chain; the explicit
@@ -138,6 +152,54 @@ fn glyph(script: Script, c: char) -> Option<[u8; 8]> {
         }
         Script::Runic => runic(c),
     }
+}
+
+/// G12 — the **overlay** glyph path: a *single self-identifying codepoint* → its 8×8 bitmap,
+/// for the flat HUD text path (which carries no per-char script tag, unlike the world billboards).
+/// Covers the non-ASCII writing systems by codepoint: Greek and Hiragana (their own Unicode
+/// blocks), the Standard Galactic Alphabet (its PUA block U+E541..), and our runic staves (the
+/// [`RUNIC_PUA_BASE`] range). Returns `None` for ASCII and anything unknown, so the HUD keeps
+/// rendering ASCII through its own legacy font (byte-identical) and unknowns as a dot.
+pub fn overlay_glyph(c: char) -> Option<[u8; 8]> {
+    let code = c as u32;
+    if (RUNIC_PUA_BASE..RUNIC_PUA_BASE + RUNIC_STAVES as u32).contains(&code) {
+        return Some(runic_stave((code - RUNIC_PUA_BASE) as usize));
+    }
+    font8x8::GREEK_FONTS
+        .get(c)
+        .or_else(|| font8x8::HIRAGANA_FONTS.get(c))
+        .or_else(|| font8x8::SGA_FONTS.get(c))
+}
+
+/// The Standard-Galactic PUA codepoint for an ASCII letter (U+E541 + offset), or `None` for a
+/// non-letter — the codepoint [`overlay_glyph`] renders as that SGA rune.
+pub fn galactic_pua(c: char) -> Option<char> {
+    let lc = c.to_ascii_lowercase();
+    lc.is_ascii_lowercase()
+        .then(|| char::from_u32(0xE541 + (lc as u32 - 'a' as u32)).unwrap())
+}
+
+/// The runic-stave PUA codepoint for `c` — keyed by the *same* index [`runic`] uses, so a string
+/// mapped through here renders (via [`overlay_glyph`]) as the identical staves the world billboard
+/// draws for the original string.
+pub fn runic_pua(c: char) -> char {
+    let idx = (c as usize).wrapping_mul(7) % RUNIC_STAVES;
+    char::from_u32(RUNIC_PUA_BASE + idx as u32).unwrap()
+}
+
+/// Map a string from its **world-text representation** (what [`rasterize_script`] draws for a given
+/// `script`) into the **self-identifying overlay codepoints** the flat HUD renders identically.
+/// Greek/Hiragana/Latin already render by codepoint (identity); Galactic and Runic carry Latin
+/// stand-in letters that only render correctly *with* their script, so they're remapped to their
+/// PUA codepoints. This is what closes the world↔console recognition loop on the HUD.
+pub fn to_overlay(s: &str, script: Script) -> String {
+    s.chars()
+        .map(|c| match script {
+            Script::Galactic => galactic_pua(c).unwrap_or(c),
+            Script::Runic => runic_pua(c),
+            _ => c,
+        })
+        .collect()
 }
 
 /// Rasterise `text` in the `Auto` fallback script. See [`rasterize_script`].
@@ -457,5 +519,44 @@ mod tests {
                 "expected glyph pixels for {script:?}"
             );
         }
+    }
+
+    /// G12 recognition loop: the **overlay** codepoints (what the flat HUD renders, by codepoint)
+    /// reproduce the *exact* bitmaps the world-text billboard draws for the same string + script.
+    /// So a block's console glyph cluster is visually identical to its world inscription.
+    #[test]
+    fn overlay_codepoints_reproduce_world_bitmaps() {
+        // Galactic + Runic carry Latin-letter stand-ins; their PUA overlay codepoints must render
+        // the same rune the world draws for the letter.
+        for c in 'a'..='z' {
+            assert_eq!(
+                overlay_glyph(galactic_pua(c).unwrap()),
+                glyph(Script::Galactic, c),
+                "galactic overlay mismatch for {c}"
+            );
+            assert_eq!(
+                overlay_glyph(runic_pua(c)),
+                glyph(Script::Runic, c),
+                "runic overlay mismatch for {c}"
+            );
+        }
+        // Greek + Hiragana render by their own codepoints in both paths (identity overlay).
+        for c in ['α', 'β', 'ω'] {
+            assert_eq!(
+                overlay_glyph(c),
+                glyph(Script::Greek, c),
+                "greek mismatch for {c}"
+            );
+        }
+        for c in ['あ', 'き', 'ん'] {
+            assert_eq!(
+                overlay_glyph(c),
+                glyph(Script::Hiragana, c),
+                "hiragana mismatch for {c}"
+            );
+        }
+        // ASCII is handled by the HUD's own legacy font (proven equal to Basic elsewhere); the
+        // overlay path declines it so the HUD keeps its byte-identical ASCII rendering.
+        assert_eq!(overlay_glyph('A'), None);
     }
 }

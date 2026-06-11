@@ -9,9 +9,11 @@ use font8x8::legacy::BASIC_LEGACY;
 pub const GLYPH: usize = 8;
 
 /// Rasterise `text` to a tightly-packed RGBA buffer: white text on a translucent dark
-/// strip (so it stays legible over bright sky/foliage). One 8×8 cell per character;
-/// non-printable / non-ASCII chars render as `.`. Honours embedded newlines (`\n`) as line
-/// breaks — sized to the widest line × the line count. Returns `(width, height, pixels)`.
+/// strip (so it stays legible over bright sky/foliage). One 8×8 cell per character; ASCII via
+/// the legacy font, the non-ASCII writing systems (G12 glyph console) via
+/// [`crate::text::overlay_glyph`] by codepoint, and any other char (arrows, symbols) as `.`.
+/// Honours embedded newlines (`\n`) as line breaks — sized to the widest line × the line count.
+/// Returns `(width, height, pixels)`.
 pub fn rasterize(text: &str) -> (u32, u32, Vec<u8>) {
     let lines: Vec<&str> = text.split('\n').collect();
     let cols = lines
@@ -32,10 +34,13 @@ pub fn rasterize(text: &str) -> (u32, u32, Vec<u8>) {
         let y0 = li * GLYPH;
         for (gi, c) in line.chars().enumerate() {
             let code = c as u32;
+            // ASCII through the legacy font (byte-identical to the historic HUD); the non-ASCII
+            // writing systems (G12 glyph console) through the overlay glyph path by codepoint;
+            // anything else (arrows, ≥, ·, ▶ …) falls back to a dot as before.
             let glyph = if (0x20..0x7f).contains(&code) {
                 BASIC_LEGACY[code as usize]
             } else {
-                BASIC_LEGACY[b'.' as usize]
+                crate::text::overlay_glyph(c).unwrap_or(BASIC_LEGACY[b'.' as usize])
             };
             for (row, bits) in glyph.iter().enumerate() {
                 for col in 0..GLYPH {

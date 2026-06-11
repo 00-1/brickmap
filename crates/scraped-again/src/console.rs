@@ -78,15 +78,14 @@ impl MatchField {
 
     /// G12: the filter argument as glyphs — a world-vocabulary item: the rarity tier (in the
     /// `match` step's own Rites script), or a stratum **domain** rendered in *that stratum's own*
-    /// script so it reads as that family's glyphs.
+    /// script so it reads as that family's glyphs. Mapped to overlay codepoints for the flat HUD.
     pub fn glyphs(self) -> String {
         use crate::progress::script_for;
-        match self {
-            MatchField::Rare => {
-                crate::structures::transliterate("rare", script_for(self.required()))
-            }
-            MatchField::Domain(d) => crate::structures::transliterate(self.label(), script_for(d)),
-        }
+        let (word, script) = match self {
+            MatchField::Rare => ("rare", script_for(self.required())),
+            MatchField::Domain(d) => (self.label(), script_for(d)),
+        };
+        crate::text::to_overlay(&crate::structures::transliterate(word, script), script)
     }
 }
 
@@ -221,14 +220,18 @@ impl Block {
     }
 
     /// G12: the block's **glyph-name** — its bare [`name`](Self::name) transliterated into its
-    /// stratum's script (via [`structures::transliterate`]/[`structures::block_script`]), i.e. the
-    /// *exact* glyph cluster the player finds carved in the world for this block. Stable +
-    /// deterministic, so a block is recognisable *as a symbol* though unreadable *as a word* (icon
-    /// literacy, not reading literacy). This is the player-facing identity (palette, routine rows,
-    /// codex, the discovery toast); [`name`](Self::name)/[`label`](Self::label) stay for internal
-    /// codes/tests/the `co=` codec. Closes the world↔console recognition loop G9 opened.
+    /// stratum's script and mapped to the self-identifying overlay codepoints the flat HUD renders
+    /// (via [`crate::text::to_overlay`]). Visually the *exact* glyph cluster the player finds carved
+    /// in the world for this block (same `transliterate` + script — the world↔console recognition
+    /// loop), recognisable *as a symbol* though unreadable *as a word*. This is the player-facing
+    /// identity (palette, routine rows, codex, discovery toast); [`name`](Self::name)/
+    /// [`label`](Self::label) stay for internal codes/tests/the `co=` codec.
     pub fn glyphs(self) -> String {
-        crate::structures::transliterate(self.name(), crate::structures::block_script(self))
+        let script = crate::structures::block_script(self);
+        crate::text::to_overlay(
+            &crate::structures::transliterate(self.name(), script),
+            script,
+        )
     }
 
     /// G12: the full player-facing form — the glyph-name plus, for a parameterised block, its
@@ -242,11 +245,12 @@ impl Block {
             _ => None,
         };
         match arg {
-            Some(a) => format!(
-                "{}({})",
-                self.glyphs(),
-                crate::structures::transliterate(a, crate::structures::block_script(self))
-            ),
+            Some(a) => {
+                let script = crate::structures::block_script(self);
+                let arg =
+                    crate::text::to_overlay(&crate::structures::transliterate(a, script), script);
+                format!("{}({})", self.glyphs(), arg)
+            }
             None => self.glyphs(),
         }
     }
@@ -1331,12 +1335,14 @@ impl Console {
             }
             let pct = p.strata.get(st) as f32 / crate::progress::DECODE_COST as f32;
             if pct >= 1.0 {
-                // Fully affordable decode beats a near-threshold (completion = 1).
+                // Fully affordable decode beats a near-threshold (completion = 1). G12: where the
+                // goal names a block (the "I've seen this name" pull), that part goes glyph; the
+                // `decode SCH ready` instrumentation stays minimal-English.
                 let who = self
                     .discovered
                     .iter()
                     .find(|b| b.required() == Some(st))
-                    .map(|b| format!("{}: ", b.name()))
+                    .map(|b| format!("{}: ", b.glyphs()))
                     .unwrap_or_default();
                 consider(1.0, format!("{who}decode {} ready", st.label()));
             } else {
@@ -1364,7 +1370,7 @@ impl Console {
         for r in &self.routines {
             let cur = if row == self.cursor { ">" } else { " " };
             let on = if r.enabled { "on " } else { "off" };
-            let steps: Vec<String> = r.body.iter().map(|b| b.label()).collect();
+            let steps: Vec<String> = r.body.iter().map(|b| b.glyph_label()).collect();
             let pipe = if steps.is_empty() {
                 "—".to_string()
             } else {
@@ -1413,10 +1419,12 @@ impl Console {
                 _ => String::new(),
             };
             // Dim a found-but-locked name (lowercase-dotted) so it reads as known-of, not usable.
+            // G12: the block shows by its glyph-name; the `(locked: decode SCH)` tag stays
+            // minimal-English instrumentation (a stratum gauge, not the block's vocabulary).
             if !self.is_unlocked(b) && b.required().is_some() {
-                s.push_str(&format!("{cur} · {}{}\n", b.label(), tag));
+                s.push_str(&format!("{cur} · {}{}\n", b.glyph_label(), tag));
             } else {
-                s.push_str(&format!("{cur} {}{}\n", b.label(), tag));
+                s.push_str(&format!("{cur} {}{}\n", b.glyph_label(), tag));
             }
             row += 1;
         }
@@ -1443,7 +1451,11 @@ impl Console {
             } else {
                 " "
             };
-            s.push_str(&format!("{cur} {live} {}. {}\n", si + 1, step.label()));
+            s.push_str(&format!(
+                "{cur} {live} {}. {}\n",
+                si + 1,
+                step.glyph_label()
+            ));
         }
         // Add-step row.
         let cur = if self.cursor == r.body.len() + 1 {
@@ -1463,21 +1475,30 @@ impl Console {
 mod tests {
     use super::*;
 
-    /// G12: a block's console glyph-name is the **exact** cluster a world name-inscription spells
-    /// for it (same `transliterate` + stratum script) — the world↔console recognition loop. Stable,
-    /// non-empty, and (across the unique names) distinct.
+    /// G12: a block's console glyph-name is the overlay form of the **exact** cluster a world
+    /// name-inscription spells for it (same `transliterate` + stratum script) — the world↔console
+    /// recognition loop. Stable, non-empty, every char HUD-renderable (never a fallback dot), and
+    /// (across the unique names) distinct.
     #[test]
     fn block_glyphs_match_world_inscriptions() {
         use crate::structures;
         for b in Block::ALL {
-            let world = structures::transliterate(b.name(), structures::block_script(b));
+            let script = structures::block_script(b);
+            let world = structures::transliterate(b.name(), script);
             assert_eq!(
                 b.glyphs(),
-                world,
-                "console glyphs must equal the world inscription for {b:?}"
+                crate::text::to_overlay(&world, script),
+                "console glyphs must be the overlay of the world inscription for {b:?}"
             );
             assert_eq!(b.glyphs(), b.glyphs(), "deterministic");
             assert!(!b.glyphs().is_empty());
+            // Every glyph the console emits is renderable by the HUD (no fallback dots).
+            for c in b.glyphs().chars() {
+                assert!(
+                    c.is_ascii_graphic() || crate::text::overlay_glyph(c).is_some(),
+                    "char {c:?} of {b:?} glyphs is not HUD-renderable"
+                );
+            }
         }
         // Parameterised families share a name → share a glyph cluster (by design).
         use std::collections::{HashMap, HashSet};
@@ -1812,7 +1833,16 @@ mod tests {
         assert!(!c.is_unlocked(Block::Seek));
         assert!(!c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
         let home = c.render_home();
-        assert!(home.contains("seek"), "discovered name should be listed");
+        // G12: the discovered name is listed by its **glyph** cluster (not the English "seek"),
+        // still tagged with its stratum (instrumentation stays English).
+        assert!(
+            home.contains(&Block::Seek.glyphs()),
+            "discovered name should be listed as its glyphs"
+        );
+        assert!(
+            !home.contains("seek"),
+            "the English block name must not appear in the console"
+        );
         assert!(
             home.contains("locked: decode SCH"),
             "and tagged with its stratum"
@@ -2029,9 +2059,15 @@ mod tests {
         p2.strata.schematics = crate::progress::DECODE_COST + 1;
         c.discovered.insert(Block::Seek);
         let goal = c.lit_goal(&p2).expect("decode-ready qualifies");
+        // G12: the goal names the waiting block by its **glyphs** (the `decode SCH` part stays
+        // minimal-English instrumentation).
         assert!(
-            goal.contains("seek") && goal.contains("SCH"),
-            "names the waiting block: {goal}"
+            goal.contains(&Block::Seek.glyphs()) && goal.contains("SCH"),
+            "names the waiting block by its glyphs: {goal}"
+        );
+        assert!(
+            !goal.contains("seek"),
+            "no English block name in the goal: {goal}"
         );
     }
 

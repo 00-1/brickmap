@@ -1265,10 +1265,13 @@ impl App {
             out.push_str("(nothing yet — aim at a glowing inscription and press T)");
         } else {
             for e in c.iter().rev().take(20) {
+                // G12: render each find as its glyph cluster in its own script (overlay
+                // codepoints) — the same glyphs the world billboard draws, so a Galactic/Runic
+                // find reads as its alien staves here too, never the Latin stand-in letters.
                 out.push_str(&format!(
                     "{}  {}\n",
                     progress::stratum_of(e.script).label(),
-                    e.text
+                    text::to_overlay(&e.text, e.script)
                 ));
             }
         }
@@ -2982,10 +2985,12 @@ impl ApplicationHandler<AppEvent> for App {
                             mode.push_str(" · ");
                             mode.push_str(exp);
                         }
-                        // G9: announce a fresh block-name discovery for a few seconds.
+                        // G9/G12: announce a fresh block-name discovery for a few seconds — the
+                        // recovered name as its glyph cluster (the event marker stays English
+                        // instrumentation; the block's *name* never does).
                         if let Some((blk, t)) = self.last_discovery {
                             if self.time - t < 5.0 {
-                                mode.push_str(&format!(" · NAME RECOVERED — {}", blk.name()));
+                                mode.push_str(&format!(" · NAME RECOVERED — {}", blk.glyphs()));
                             }
                         }
                         // G11: the one lit goal — the single nearest-to-done thing.

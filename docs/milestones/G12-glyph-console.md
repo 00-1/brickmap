@@ -97,15 +97,44 @@ text/render capability (the five scripts already render).
 - **Recognition vs reading:** the win depends on glyph clusters being visually distinct at
   row size — the same constraint world inscriptions already meet; final sizing is eye-pass.
 
+## As built (2026-06-11, two commits)
+
+The brief assumed "game-side only, no engine change; the five scripts already render." That
+held for the **world-text billboards** (`text::WorldText`) but **not** the console, which
+draws through the **ASCII-only HUD overlay** (`hud::rasterize` rendered `0x20..0x7f`, else a
+dot) — and `transliterate` stores Latin-letter stand-ins for Galactic/Runic, so a flat string
+isn't script-self-describing. So G12 needed a small **generic** engine addition: wire the
+existing five-script glyph rasterizer into the HUD overlay (no *new* scripts invented). Split:
+
+- **G12 (1/2)** `a6a898d` — identity machinery (`Block::glyphs`/`glyph_label`,
+  `MatchField::glyphs`, `Step::glyph_label`) + the **world-text de-Anglicization** (a
+  name-bearer keeps its glyph cluster even when its script is legible; only ambient text
+  translates) + docs (game-system §1/§4/§5, game-mechanics §8.2).
+- **G12 (2/2)** *(this commit)* — the engine HUD capability + console/HUD wiring.
+
+The chosen design avoids a per-segment "runs" API: block glyphs are emitted as
+**self-identifying overlay codepoints** (`text::to_overlay`: Greek/Hiragana already are;
+Galactic→SGA PUA; Runic→a dedicated PUA range), and the HUD detects each char's script by
+codepoint (`text::overlay_glyph`). ASCII still routes through the HUD's legacy font, so existing
+HUD output is **byte-identical** (verified: `BASIC_LEGACY == BASIC_FONTS` for ASCII, and a
+clean-HEAD render `cmp`s identical). A unit test proves the overlay codepoints reproduce the
+*exact* bitmaps the world billboard draws (the recognition loop, at the pixel level).
+
 ## Acceptance checklist
 
-- [ ] Blocks render as glyph-names (stratum script, stable/deterministic) in palette,
-      routine rows, selected-detail, codex, and discovery toast; no English block words.
-- [ ] World↔console recognition holds: a console block shows the same glyphs as the
-      inscription that discovered it.
-- [ ] Structural/meta UI stays minimal-English per the scope line (vetoable); parameters
-      render glyph for vocabulary items, numeric for quantities.
-- [ ] Learn-by-clicking intact; given routines + opening behaviour unchanged (only
-      rendering changed; codecs/equality untouched).
-- [ ] `game-system.md` §1/§6 + `game-mechanics.md` readable-name lines updated; roadmap G12.
-- [ ] Golden voxel-hash unchanged; headless console A/B shows glyphs; CI green; boundary intact.
+- [x] Blocks render as glyph-names (stratum script, stable/deterministic) in palette,
+      routine rows, the editor body, and the discovery toast; no English block words.
+      *(Selected-detail line is counters only — no block name there; codex already shows the
+      raw inscription glyphs.)*
+- [x] World↔console recognition holds: a console block's glyphs are the overlay form of the
+      exact cluster its world inscription spells (`block_glyphs_match_world_inscriptions` +
+      `overlay_codepoints_reproduce_world_bitmaps` — bitmap-identical).
+- [x] Structural/meta UI stays minimal-English per the scope line (numbers, gauges, state,
+      `▶`, the `(locked: decode SCH)` tag, `decode … ready`); parameters render glyph for
+      vocabulary items (scan target, faculty, match field), quantities stay numeric.
+- [x] Learn-by-clicking intact; given routines + opening behaviour unchanged (only rendering
+      changed; `co=`/`pg=` codecs + routine equality untouched).
+- [x] `game-system.md` §1/§4/§5 + `game-mechanics.md` §8.2 updated; roadmap G12 entry added.
+- [x] Golden voxel-hash unchanged; headless console A/B (`SCRAPED_CONSOLE`) shows glyph blocks;
+      CI green (fmt / clippy -D / tests / wasm); engine boundary intact (the HUD addition is
+      generic — `text::Script`/`overlay_glyph`, no game concept).

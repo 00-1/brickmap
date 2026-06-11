@@ -734,17 +734,26 @@ pub fn capture_view(
         ui.draw(&mut encoder, &target_view);
     }
     // In-engine HUD overlay — same code path as the live app, so the hero shot verifies it.
+    // G12 A/B (opt-in via `SCRAPED_CONSOLE`): render the operations console instead of the perf
+    // line, so a headless screenshot shows block identity as **glyph-names** — Records/Latin,
+    // Schematics/Greek, Relics/Runic clusters via the new multi-script HUD path — not English
+    // words. Off by default → the standard/CI render is byte-identical.
     let mut hud = crate::hud::HudOverlay::new(&device, COLOR_FORMAT);
-    hud.set_text(
-        &device,
-        &queue,
-        &format!(
+    let hud_text = if std::env::var("SCRAPED_CONSOLE").is_ok() {
+        let mut console = crate::console::Console::default();
+        console.discovered.insert(crate::console::Block::Seek); // Schematics → Greek
+        console.discovered.insert(crate::console::Block::RunFoot); // Relics → Runic
+        console.open = true;
+        console.render()
+    } else {
+        format!(
             "brickmap {} - {} chunks - seed {}",
             crate::BUILD,
             instances.len(),
             crate::WORLD_SEED
-        ),
-    );
+        )
+    };
+    hud.set_text(&device, &queue, &hud_text);
     hud.draw(&queue, &mut encoder, &target_view, width, height);
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
