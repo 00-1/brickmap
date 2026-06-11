@@ -59,20 +59,35 @@ The P20 milestone; pure game-side, mostly console UI + interpreter instrumentati
   cargo-full once G14 lands) — the one-tap "why".
 - HUD: the **one lit goal** (P17): nearest almost-done thing (a threshold at 87%, an
   affordable faculty, an undecoded stratum with data banked). One line, never a quest log.
+- **State triggers render as live gauges** (`when/while(shards ≥ 50)` shows `37/50` on the
+  block) while event triggers flash on fire — the measured TAP event/state-confusion fix
+  ([`research-block-language.md`](research-block-language.md)) riding telemetry's data.
 - Console home shows per-routine yield/hr once enough samples exist (`—` before that).
 - *Why now:* every later economy/agent milestone becomes debuggable + lovable through this.
 
-### G12 — Record-to-program — *sketch*
-The P9 on-ramp, very on-brand (the dead console remembers your hands).
-- Manual block presses (and beam-collects/scans they map to) append to a rolling per-agent
-  **action memory** (last ~10).
-- In the console: **"trace → routine"** — creates a draft routine from the memory (collapse
-  repeats into `repeat`, drop nav noise), opened in the existing editor for pruning.
+### G12 — Record-to-program — *sketch (research-updated)*
+The P9 on-ramp, very on-brand (the dead console remembers your hands). The PBD literature
+([`research-block-language.md`](research-block-language.md): Eager, Lieberman post-mortems)
+pins the contract: **record literally, generalize manually** — silently-inferred intent is
+what killed every programming-by-demonstration system.
+- Manual block presses (and the beam-collects/scans they map to) append to a rolling
+  per-agent **action memory** (last ~10).
+- **"trace → routine"** creates a draft of the *exact* concrete blocks — only mechanical
+  folding of identical adjacent repeats into `repeat(n)`; **no dropping "noise", no
+  generalization** — opened in the editor where the *player* generalizes via steppers
+  (Victor's create-by-abstracting closes the loop PBD couldn't).
+- Playback borrows Eager's trick: pre-highlight the agent's next world target so the
+  routine's intent is verifiable at a glance.
 - The draft is ordinary G7 data; zero new runtime semantics. Discoverability: the console
   shows the trace filling as you act (a faint ticker — expose-the-tech).
 
-### G13 — Subroutines, templates & nested steps — *sketch*
-The P10 tedium-killers + the deferred "nested/grouped steps" polish, folded together.
+### G13 — Subroutines, templates & nested steps — *sketch (research-updated)*
+The P10 tedium-killers + the deferred "nested/grouped steps" polish, folded together. The
+tiny-language research adds two requirements ([`research-block-language.md`](research-block-language.md)):
+**no seams** (Steele — a player's named routine must appear in the palette looking exactly
+like a primitive block) and the **one-implicit-register rule** (concatenative stack-shuffle
+failure mode — exactly one "current thing" flows between steps; a second implicit referent
+is forbidden, make it a parameter).
 - `run(routine)` extended to **same-agent** calls (it exists cross-agent since G8c); cycle
   guard (a routine can't call into a loop — static check at insert time).
 - **Duplicate routine** in the editor; later "template" if duplication proves common.
@@ -93,6 +108,16 @@ The P1/P13 milestone — gives the automation something to strain against.
   human pass.
 - *Fork-gated bits* (don't build until answered): shard↔strata consolidation; gradual
   shard-fill vs spend; domain-matched costs (see open-questions).
+
+### G15a — Lexicon v2: statistical honesty — *sketch; fork-FREE (buildable any time)*
+The one Archive-tranche piece gated on nothing: make the seeded lexicon's output pass the
+tests pattern-hunting players will run ([`research-linguistics.md`](research-linguistics.md)
+§2 checklist): Zipf rank-frequency, Heaps' law, 3–4 bits/char conditional entropy, Zipf
+abbreviation, a small consistent affix inventory, bursty content-words, no adjacent-word
+similarity or line-position artifacts — **every property a unit test** (the repo's
+test-pure-logic norm). Plus the corpus-shape rules: some long texts, structured
+name+logogram+numeral lists, one recurring ritual frame for Rites. Slots anywhere in the
+queue; pure logic, golden-neutral (content-keyed like G9).
 
 ### G15 — Handshakes & the expedition economy — *sketch*
 P18 made real on the G8 expedition: caches the walker fills and the ship collects
