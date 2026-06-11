@@ -44,45 +44,34 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-11 (queue drained → G12 glyph console)
+## CURRENT DIRECTIVE — 2026-06-11 (G12 done → G13 record-to-program)
 
-**The published queue G9 → M10 → G10 → G11 → M11 is fully built, green, and reviewed**
-(see [`agent-review.md`](agent-review.md)). New work, dispatched by the babysitter:
+**G12 (glyph console) is complete + reviewed** (both halves; `baa4a73`; the console now
+renders block identity as stratum-script glyphs, English only as instrumentation). New work:
 
-- **G12 (2/2) — console glyph wiring + the overlay capability it needs.** Part 1
-  (`a6a898d`) correctly exposed that my brief's "no engine change; five scripts already
-  render" was **wrong for the console** (it draws through the ASCII-only HUD overlay, not
-  the WorldText path). **That line is withdrawn.** Build the **generic mixed-script HUD
-  overlay** in `bm-render` (render arbitrary glyph indices via the existing five-script
-  rasterizer — a content-agnostic capability, **no new scripts, no game concepts** → the
-  boundary holds), then wire the console palette/rows/selected-detail/codex, the discovery
-  toast, and the `◆` lit-goal's name part through `Block::glyphs()`. Headless console A/B
-  (opt-in flag) + roadmap G12 entry close the milestone. Structural UI stays minimal-English
-  as before. Good split — proceed.
+- **G13 — Record-to-program** — build per
+  [`milestones/G13-record-to-program.md`](milestones/G13-record-to-program.md) (copy to
+  `main`). Turn the player's last ~10 **manual** actions into a **draft routine** with one
+  console action — the on-ramp from playing-by-hand to authoring. **Non-negotiable contract
+  (the research's load-bearing finding): record LITERALLY, generalize MANUALLY** — the draft
+  is the *exact* concrete blocks, with the only transformation being mechanical run-length
+  folding of identical adjacent actions into `repeat(n)`; **no inference, no "noise"
+  dropping, no auto-generalization** (that's what killed every real programming-by-
+  demonstration system). The player generalizes afterward via the existing steppers. Draft =
+  ordinary G7 routine data (persists/edits/runs through existing paths). Include Eager-style
+  **pre-highlight of the agent's next target** during playback if it's small (else split to
+  G13b — note it). Show the trace **filling as you act** (a ticker); glyph-rendered per G12.
+  Record only *manual* actions (autopilot/auto-collect must not pollute the trace). Pinned
+  defaults in the brief — veto only on a genuine fork.
+- **Then stand by** — do not wind down. Next after G13: G14 (subroutines/templates/nested
+  steps), then the comprehension-as-research economy (G15) and the Archive groundwork
+  (the fork-free **lexicon v2** statistical-honesty pass, G16a, is buildable any time).
 
-- **G12 — Glyph console (de-Anglicization)** — build per
-  [`milestones/G12-glyph-console.md`](milestones/G12-glyph-console.md) (copy to `main`).
-  **Human decision (recorded):** block names stay **unreadable — no English layer at all**.
-  Render block identity as its **glyph-name** (the G9 `transliterate` output, in the block's
-  stratum script) everywhere player-facing: palette, routine rows, selected-detail, codex,
-  the discovery toast. Function is learned by **clicking and observing** — no English
-  tooltip. **Structural/meta UI stays minimal-English** (numbers, gauges `37/50`, `×fires`,
-  the `▶` marker, state glosses like `waiting`/`blocked`, faculty levels) — that's the
-  machine's *instrumentation*; its *vocabulary* is the dead language. Parameters render
-  glyph for world-vocabulary items, numeric for quantities. **Docs in lockstep:** update
-  `game-system.md` §1/§6 and any `game-mechanics.md` readable-name lines (blocks are
-  glyph-named, learned by clicking). Pinned defaults in the brief — veto only on a genuine
-  fork. Golden voxel-hash unchanged (console/HUD aren't in it); headless console A/B
-  (opt-in flag) shows glyphs; codecs/equality untouched (only *rendering* changes).
-- **Then stand by** — do not wind down. The next tranche (G13 record-to-program, G14
-  subroutines, then the comprehension-as-research economy G15 and the Archive groundwork)
-  is being briefed; directives will land here. The research backing it all is in
-  `docs/research-*.md` and the plan in [`game-depth.md`](game-depth.md).
-
-### Why G12 now
-Block names being unreadable is a settled design decision; the longer G9/G11's English
-labels live in the console/HUD, the more labelled surfaces accrete to convert later. This
-is the cheap moment. (The superseded knowledge-gate / derive-a-name verb is NOT needed.)
+### Two eye-pass notes from the G12 review (no action needed now)
+Routine names and faculty names render English (not glyph) — defensible scope calls (author
+labels / inherent faculties, not world-discovered vocabulary), flagged for the human's
+eye-pass; faculties may want glyph once G15 makes them research targets. Carry forward; don't
+change now.
 
 ---
 
@@ -199,6 +188,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — G12 ✅ both halves (glyph console complete, console rendered, recognition loop pixel-proven). **New directive: G13 — record-to-program** (manual actions → draft routine; LITERAL record + manual generalize, the non-negotiable PBD contract; Eager pre-highlight if small; trace ticker; manual-only). Eye-pass notes: routine/faculty names left English.
 - **2026-06-11** — G12 (1/2) ✅ (glyph identity + world-text de-Anglicization). Brief's "no engine change" line **withdrawn** — the console needs a generic mixed-script HUD overlay (builder's correct catch); sanctioned for G12 (2/2), boundary intact (no new scripts).
 - **2026-06-11** — queue (G9→M10→G10→G11→M11) **fully drained, all green/reviewed**. **New directive: G12 — glyph console (de-Anglicization)** — block names render as stratum-script glyphs everywhere player-facing; learn-by-clicking; structural UI stays minimal-English; docs (game-system §1/§6) in lockstep. Human decision: names unreadable, no English layer.
 - **2026-06-11** — **NEW RUN (incremental dispatch).** D10 ✅ (verified rendered). **New
