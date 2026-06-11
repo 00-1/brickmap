@@ -63,7 +63,20 @@ You decided: shards exist, auto-collectible, types + rarities. Four sub-forks I 
 4. **Name readability** — ✅ superseded by §A's answer: names are never readable;
    the fork dissolves.
 
-## C. How numeric should the upgrade layer be?
+## C. How numeric should the upgrade layer be?  ✅ RESOLVED (2026-06-11) by the research-economy model
+
+The human's "find words → research blocks → add shards to unlock/upgrade" reframe
+(recorded in [`game-depth.md`](game-depth.md) G14) settles this: progression is
+**vocabulary funded by shard-research**, not a +% layer; faculties fold into the same pipe
+as ordinary research targets; numbers serve unlocking verbs. Forks B.1 (shards = research
+substrate, not a sixth currency), B.2 (gradual fill, pacing TBD in prose), and B.3
+(domain-matched research cost) converge here too. **One open sub-point: research pacing**
+(allocate-and-fill vs bank-then-commit vs hybrid) — to decide in prose; default
+allocate-and-fill.
+
+--- original question kept below ---
+
+### How numeric should the upgrade layer be? (superseded)
 
 Both research packs converge on a warning: numeric +% layers (faculties, yields) are the
 genre's hedonic treadmill, and Outer Wilds' lesson (P12) is that a *second* progression

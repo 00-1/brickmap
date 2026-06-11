@@ -95,19 +95,36 @@ is forbidden, make it a parameter).
   `Vec<Step>` bodies — surface editing them in the cursor UI without becoming a tree IDE;
   one nesting level is probably enough, pin that).
 
-### G14 — Scarcities & the economy shape — *sketch; some forks gated on the human*
-The P1/P13 milestone — gives the automation something to strain against.
-- **Carry/buffer capacity**: walker carry cap + ship buffer cap (asymmetric, P19); collect
-  blocks when full; `when(buffer ≥ %)` becomes meaningful; a `deposit`/cache verb (the
-  first handshake primitive, P18).
-- **Decode becomes a process**: decoding takes banked data + time (a queue the interpreter
-  works through), so automated collection floods it and `priority`/`budget` finally bite.
-- **`when` states expansion** (the deferred polish): shards, buffer %, in-range, decode-queue.
-- **Cost pacing**: faculty costs + decode costs paced against the G9 discovery cadence
-  (vocabulary events break walls — P13). Numbers are placeholders; feel-tuning is the
-  human pass.
-- *Fork-gated bits* (don't build until answered): shard↔strata consolidation; gradual
-  shard-fill vs spend; domain-matched costs (see open-questions).
+### G14 — Comprehension-as-research (the unified economy) — *human-endorsed model (2026-06-11); pacing TBD*
+The reframe the human proposed and endorsed: **discovery + shards + decode are ONE pipe.**
+Find a block's glyph-name in the world → it becomes a **research target** (locked); your
+auto-collected **shards** are poured into it until research completes → the block is
+**comprehended (usable)**; keep feeding for **levels** (parameter unlocks / modest boosts).
+"Decoding" and "spending" are the same act. This unifies G9 (discovery), G10 (shards), and
+the old decode economy, and resolves several forks at once:
+- **Fork C (treadmill):** shards buy **new verbs**, not bigger numbers — progression stays
+  vocabulary growth; numbers serve unlocking composition. The not-a-clicker property holds.
+- **Fork B.3 (domain-matched):** a block's research consumes (mostly) its **stratum's
+  domain** of shards — so deep/rare blocks are gated behind exploring rarer strata, tying
+  the management game to manual expeditions (game-system §11's intended gating, mechanized).
+- **Fork B.1 (shard↔strata):** shards are the **research substrate**, not a sixth currency
+  competing with strata data — strata *are* the shard domains.
+- **Fork B.2 (fill vs spend):** leaning **gradual fill** (comprehension takes time) — the
+  exact mechanic is the one open sub-point (pacing): allocate-and-fill-over-time
+  (idle-resonant, pairs with autopilot) vs bank-then-commit vs hybrid. *Prose decision
+  pending; default if unspecified = allocate-and-fill, as the most idle/theme-resonant and
+  the closest to the human's "add shards to them" phrasing.*
+- **Faculties** (G10's sensing/reach/drive) become **ordinary research targets** in the
+  same pipe (game-system §3: "an upgrade is just the spend action") — no separate +% subsystem.
+- **G11's "one lit goal"** now naturally points at the nearest-to-complete research.
+- **Scarcities still apply** (the original G14 content, now downstream of research):
+  carry/buffer caps (asymmetric per agent), a `deposit`/cache verb (first handshake
+  primitive), `when(state)` expansion (shards/buffer/range/research-progress), cost pacing
+  against the G9 discovery cadence (vocabulary events break walls — Pecorella P13).
+- *Still fork-gated:* the pacing sub-point above; whether levels are pure parameter-unlocks
+  vs include any capped +% (lean parameter-unlocks; faculties the only modest +%).
+- **Note:** G10 already shipped bank-then-spend faculties — so this milestone partly
+  *retrofits* G10's `spend` into the research model. Frame as evolution, keep `pg=` compat.
 
 ### G15a — Lexicon v2: statistical honesty — *sketch; fork-FREE (buildable any time)*
 The one Archive-tranche piece gated on nothing: make the seeded lexicon's output pass the
