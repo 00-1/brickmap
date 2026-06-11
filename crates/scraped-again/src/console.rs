@@ -321,8 +321,9 @@ impl PartialEq for Routine {
 }
 
 /// One step in a routine body. A linear sequence of these is the routine's program;
-/// `Match`/`Repeat` are *prefix modifiers* (see the module decision note).
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+/// `Match`/`Repeat` are *prefix modifiers* (see the module decision note); `Group` (G14b) is the
+/// one bodied container — a small **nested block** of steps. (Not `Copy`: `Group` owns a `Vec`.)
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Step {
     /// Do a block.
     Do(Block),
@@ -330,51 +331,78 @@ pub enum Step {
     Match(MatchField),
     /// Repeat the **next** `Do` this many times (1..=9).
     Repeat(u8),
-    /// G14: call another **same-agent** routine by its stable [`RoutineId`] — its body runs in
+    /// G14a: call another **same-agent** routine by its stable [`RoutineId`] — its body runs in
     /// place (subroutine). No seams: it reads in the palette/rows as an ordinary block.
     Run(RoutineId),
+    /// G14b: a **nested step group** — run `body` `times` (1..=9), under an optional `match`
+    /// `filter`, as a unit. Covers both "repeat a group" (`times>1`) and "if-match a group"
+    /// (`filter=Some`). **One nesting level**: a group's `body` may not itself contain a `Group`
+    /// (the editor never offers it inside a group — Decision 1, linear-with-grouping, not a tree).
+    Group {
+        times: u8,
+        filter: Option<MatchField>,
+        body: Vec<Step>,
+    },
 }
 
 impl Step {
-    /// Internal label (codes/tests). `Run` shows its id; the player-facing console resolves the
-    /// callee's name via [`Console::step_render`].
-    pub fn label(self) -> String {
+    /// Internal label (codes/tests). `Run`/`Group` show structural placeholders; the player-facing
+    /// console resolves callee names + inner steps via [`Console::step_render`].
+    pub fn label(&self) -> String {
         match self {
             Step::Do(b) => b.label().to_string(),
             Step::Match(f) => format!("match({})", f.label()),
             Step::Repeat(n) => format!("repeat ×{n}"),
             Step::Run(id) => format!("run(#{id})"),
+            Step::Group {
+                times,
+                filter,
+                body,
+            } => {
+                let inner = body.iter().map(|s| s.label()).collect::<Vec<_>>().join(" ");
+                let f = filter
+                    .map(|f| format!(" match({})", f.label()))
+                    .unwrap_or_default();
+                format!("group ×{times}{f} {{{inner}}}")
+            }
         }
     }
     /// G12: player-facing rendering — block + world-item vocabulary as glyphs; the structural
-    /// modifiers (`match`/`repeat`) stay minimal-English instrumentation, only their vocabulary
-    /// argument goes glyph. (`Run` is resolved to the callee name by [`Console::step_render`].)
-    pub fn glyph_label(self) -> String {
+    /// modifiers (`match`/`repeat`/`group`) stay minimal-English instrumentation, only their
+    /// vocabulary argument goes glyph. (`Run`/`Group` inner content resolves in
+    /// [`Console::step_render`], which knows the routine set.)
+    pub fn glyph_label(&self) -> String {
         match self {
             Step::Do(b) => b.glyph_label(),
             Step::Match(f) => format!("match({})", f.glyphs()),
             Step::Repeat(n) => format!("repeat ×{n}"),
             Step::Run(id) => format!("run(#{id})"),
+            Step::Group { times, filter, .. } => {
+                let f = filter
+                    .map(|f| format!(" match({})", f.glyphs()))
+                    .unwrap_or_default();
+                format!("group ×{times}{f}")
+            }
         }
     }
-    /// The stratum gating this step (so a locked step can't be inserted/cycled into). A `Run` is
-    /// composition, not gated — the callee's own steps gate themselves when expanded.
-    fn required(self) -> Option<Stratum> {
+    /// The stratum gating this step (so a locked step can't be inserted/cycled into). `Run`/`Group`
+    /// are composition, not gated — their inner steps gate themselves when expanded.
+    fn required(&self) -> Option<Stratum> {
         match self {
             Step::Do(b) => b.required(),
             Step::Match(f) => Some(f.required()),
-            Step::Repeat(_) | Step::Run(_) => None,
+            Step::Repeat(_) | Step::Run(_) | Step::Group { .. } => None,
         }
     }
 }
 
-/// Is `step` available to `agent`? `Do(block)` follows the block's agent; the `Match`/`Repeat`
-/// modifiers are shared; a `Run` is offered per-agent by [`Console::vocabulary`] (only same-agent
-/// callees), so it's agent-agnostic here.
-fn step_for_agent(step: Step, agent: Agent) -> bool {
+/// Is `step` available to `agent`? `Do(block)` follows the block's agent; the `Match`/`Repeat`/
+/// `Group` structural steps are shared; a `Run` is offered per-agent by
+/// [`Console::editor_vocabulary`] (only same-agent callees), so it's agent-agnostic here.
+fn step_for_agent(step: &Step, agent: Agent) -> bool {
     match step {
         Step::Do(b) => b.for_agent(agent),
-        Step::Match(_) | Step::Repeat(_) | Step::Run(_) => true,
+        Step::Match(_) | Step::Repeat(_) | Step::Run(_) | Step::Group { .. } => true,
     }
 }
 
@@ -645,6 +673,9 @@ pub enum View {
     Home,
     /// Editing routine `i`'s trigger + body (the free-form editor).
     Edit(usize),
+    /// G14b: editing the **inner body** of routine `i`'s step `s` (a `Group`) — the same editor,
+    /// one level down. Row 0 is the group's header (`×times` + optional `match`); `O` backs out.
+    EditGroup(usize, usize),
 }
 
 /// The console: the routines (data), the manual/insert block palette, cursor + view state.
@@ -771,10 +802,10 @@ impl Console {
         self.is_discovered(b) && b.required().is_none_or(|s| self.unlocked.contains(&s))
     }
 
-    fn step_unlocked(&self, s: Step) -> bool {
+    fn step_unlocked(&self, s: &Step) -> bool {
         let discovered = match s {
-            Step::Do(b) => self.is_discovered(b),
-            _ => true, // the match/repeat modifiers aren't name-gated
+            Step::Do(b) => self.is_discovered(*b),
+            _ => true, // the match/repeat/group modifiers aren't name-gated
         };
         discovered && s.required().is_none_or(|st| self.unlocked.contains(&st))
     }
@@ -806,9 +837,15 @@ impl Console {
             Step::Match(MatchField::Domain(Stratum::Relics)),
             Step::Match(MatchField::Domain(Stratum::Signals)),
             Step::Repeat(2),
+            // G14b: an empty nested group (one level — the editor won't offer this inside a group).
+            Step::Group {
+                times: 2,
+                filter: None,
+                body: Vec::new(),
+            },
         ];
         all.into_iter()
-            .filter(|s| self.step_unlocked(*s) && step_for_agent(*s, agent))
+            .filter(|s| self.step_unlocked(s) && step_for_agent(s, agent))
             .collect()
     }
 
@@ -859,14 +896,31 @@ impl Console {
     /// G14: render a step for the player — like [`Step::glyph_label`], but a `run(id)` resolves to
     /// the callee's **name** (`run(sweep)`; a dangling id → `run(?)`). Routine names are author
     /// labels (kept English per the G12 review), so only the block vocabulary is glyph-rendered.
-    fn step_render(&self, s: Step) -> String {
+    fn step_render(&self, s: &Step) -> String {
         match s {
             Step::Run(id) => {
                 let name = self
-                    .index_of_id(id)
+                    .index_of_id(*id)
                     .map(|j| self.routines[j].name.as_str())
                     .unwrap_or("?");
                 format!("run({name})")
+            }
+            // G14b: a group renders its header + its inner steps (each resolved — a `run` inside a
+            // group still shows its callee name), kept compact for a row.
+            Step::Group {
+                times,
+                filter,
+                body,
+            } => {
+                let f = filter
+                    .map(|f| format!(" match({})", f.glyphs()))
+                    .unwrap_or_default();
+                let inner = body
+                    .iter()
+                    .map(|s| self.step_render(s))
+                    .collect::<Vec<_>>()
+                    .join(" → ");
+                format!("group ×{times}{f} {{{inner}}}")
             }
             other => other.glyph_label(),
         }
@@ -936,6 +990,24 @@ impl Console {
                         filter,
                     ));
                     visited.pop();
+                }
+                Step::Group {
+                    times: gtimes,
+                    filter: gfilter,
+                    body: gbody,
+                } => {
+                    // G14b: a nested group runs its body `gtimes` as a unit. Its `match` (if any)
+                    // is **scoped** to the body — saved/restored around it (a local block), unlike
+                    // a `run` whose register flows out. `repeat` doesn't multiply a group.
+                    times = 1;
+                    let saved = *filter;
+                    if let Some(f) = gfilter {
+                        *filter = Some(*f);
+                    }
+                    for _ in 0..(*gtimes).max(1) {
+                        out.extend(Self::expand(gbody, routine, all, depth, visited, filter));
+                    }
+                    *filter = saved;
                 }
             }
         }
@@ -1106,14 +1178,52 @@ impl Console {
     }
 
     /// Editor rows for routine `i`: the trigger row, each body step, then an "add step" row.
-    fn edit_rows(&self, i: usize) -> usize {
-        1 + self.routines[i].body.len() + 1
+    /// G14b: the step list the editor is currently acting on — a routine's body (`Edit`) or a
+    /// group's inner body (`EditGroup`). Empty slice if the view/step is wrong (failsoft).
+    fn target_body(&self) -> &[Step] {
+        match self.view {
+            View::Edit(i) => self
+                .routines
+                .get(i)
+                .map(|r| r.body.as_slice())
+                .unwrap_or(&[]),
+            View::EditGroup(i, s) => match self.routines.get(i).and_then(|r| r.body.get(s)) {
+                Some(Step::Group { body, .. }) => body,
+                _ => &[],
+            },
+            View::Home => &[],
+        }
+    }
+
+    /// Mutable counterpart of [`target_body`](Self::target_body).
+    fn target_body_mut(&mut self) -> Option<&mut Vec<Step>> {
+        match self.view {
+            View::Edit(i) => self.routines.get_mut(i).map(|r| &mut r.body),
+            View::EditGroup(i, s) => match self.routines.get_mut(i).and_then(|r| r.body.get_mut(s))
+            {
+                Some(Step::Group { body, .. }) => Some(body),
+                _ => None,
+            },
+            View::Home => None,
+        }
+    }
+
+    /// The routine being edited (the run/vocabulary context), in either editor view.
+    fn editing_routine(&self) -> Option<usize> {
+        match self.view {
+            View::Edit(i) | View::EditGroup(i, _) => Some(i),
+            View::Home => None,
+        }
+    }
+
+    fn edit_rows(&self) -> usize {
+        1 + self.target_body().len() + 1 // params row + steps + add-step
     }
 
     fn rows(&self) -> usize {
         match self.view {
             View::Home => self.home_rows(),
-            View::Edit(i) => self.edit_rows(i),
+            View::Edit(_) | View::EditGroup(..) => self.edit_rows(),
         }
     }
 
@@ -1136,9 +1246,10 @@ impl Console {
         }
     }
 
-    /// Resolve the editor cursor for routine `i`.
-    pub fn edit_focus(&self, i: usize) -> EditFocus {
-        let nb = self.routines[i].body.len();
+    /// Resolve the editor cursor against the current target body (routine or group). Row 0 is the
+    /// params row (`Trigger` in `Edit`, the group header in `EditGroup`).
+    pub fn edit_focus(&self) -> EditFocus {
+        let nb = self.target_body().len();
         if self.cursor == 0 {
             EditFocus::Trigger
         } else if self.cursor <= nb {
@@ -1257,61 +1368,132 @@ impl Console {
         self.cursor = 0;
     }
 
-    pub fn close_editor(&mut self) {
-        if let View::Edit(i) = self.view {
-            // Going home — land the cursor on the routine we were editing (if it still exists).
-            self.cursor = i.min(self.routines.len().saturating_sub(1));
+    /// G14b: descend into the focused step if it's a `Group`, to edit its inner body. No-op
+    /// otherwise (and never from inside a group — one nesting level).
+    pub fn enter_group(&mut self) {
+        if let (View::Edit(i), EditFocus::Step(s)) = (self.view, self.edit_focus()) {
+            if matches!(
+                self.routines.get(i).and_then(|r| r.body.get(s)),
+                Some(Step::Group { .. })
+            ) {
+                self.view = View::EditGroup(i, s);
+                self.cursor = 0;
+            }
         }
-        self.view = View::Home;
+    }
+
+    pub fn close_editor(&mut self) {
+        match self.view {
+            // G14b: leaving a group → back to its routine editor, cursor on the group step.
+            View::EditGroup(i, s) => {
+                self.view = View::Edit(i);
+                self.cursor = s + 1;
+            }
+            View::Edit(i) => {
+                // Going home — land on the routine we were editing (if it still exists).
+                self.cursor = i.min(self.routines.len().saturating_sub(1));
+                self.view = View::Home;
+            }
+            View::Home => {}
+        }
+    }
+
+    /// The steps insertable in the current editor view: the editing routine's
+    /// [`editor_vocabulary`](Self::editor_vocabulary), minus `Group` when already inside a group
+    /// (one nesting level — Decision 1).
+    fn current_vocabulary(&self) -> Vec<Step> {
+        let Some(r) = self.editing_routine() else {
+            return Vec::new();
+        };
+        let mut v = self.editor_vocabulary(r);
+        if matches!(self.view, View::EditGroup(..)) {
+            v.retain(|s| !matches!(s, Step::Group { .. }));
+        }
+        v
     }
 
     // ---- body / step edits (the free-form editor) -------------------------------------------
 
     /// Insert a step after the editor cursor (or append, on the "add step" row). The inserted
     /// step is the first unlocked vocabulary entry; ←/→ then cycles it. No-op if nothing unlocked.
-    pub fn insert_step(&mut self, i: usize) {
-        let Some(first) = self.editor_vocabulary(i).into_iter().next() else {
+    pub fn insert_step(&mut self) {
+        let Some(first) = self.current_vocabulary().into_iter().next() else {
             return;
         };
-        let at = match self.edit_focus(i) {
+        let at = match self.edit_focus() {
             EditFocus::Trigger => 0,
             EditFocus::Step(s) => s + 1,
-            EditFocus::AddStep => self.routines[i].body.len(),
+            EditFocus::AddStep => self.target_body().len(),
         };
-        self.routines[i].body.insert(at, first);
-        self.cursor = at + 1; // land on the new step (trigger row is 0)
+        if let Some(body) = self.target_body_mut() {
+            body.insert(at, first);
+            self.cursor = at + 1; // land on the new step (params row is 0)
+        }
     }
 
     /// Remove the step under the editor cursor.
-    pub fn remove_step(&mut self, i: usize) {
-        if let EditFocus::Step(s) = self.edit_focus(i) {
-            self.routines[i].body.remove(s);
-            self.cursor = self.cursor.min(self.edit_rows(i).saturating_sub(1));
+    pub fn remove_step(&mut self) {
+        if let EditFocus::Step(s) = self.edit_focus() {
+            if let Some(body) = self.target_body_mut() {
+                body.remove(s);
+            }
+            self.cursor = self.cursor.min(self.edit_rows().saturating_sub(1));
         }
     }
 
     /// Move the step under the cursor up/down within the body (reorder).
-    pub fn move_step(&mut self, i: usize, dir: i32) {
-        if let EditFocus::Step(s) = self.edit_focus(i) {
-            let body = &mut self.routines[i].body;
-            let j = s as i32 + dir;
-            if (0..body.len() as i32).contains(&j) {
-                body.swap(s, j as usize);
-                self.cursor = (j as usize) + 1;
-            }
+    pub fn move_step(&mut self, dir: i32) {
+        let EditFocus::Step(s) = self.edit_focus() else {
+            return;
+        };
+        let j = s as i32 + dir;
+        if !(0..self.target_body().len() as i32).contains(&j) {
+            return;
+        }
+        if let Some(body) = self.target_body_mut() {
+            body.swap(s, j as usize);
+        }
+        self.cursor = (j as usize) + 1;
+    }
+
+    /// ←/→ on the focused row: cycle the params row (the trigger, or a group's `match` filter), or
+    /// cycle the focused step through the unlocked vocabulary. (Numeric counts → [`Console::adjust`].)
+    pub fn cycle(&mut self, i: i32) {
+        match self.edit_focus() {
+            EditFocus::Trigger => match self.view {
+                View::Edit(r) => self.cycle_trigger(r, i),
+                View::EditGroup(..) => self.cycle_group_filter(i),
+                View::Home => {}
+            },
+            EditFocus::Step(s) => self.cycle_step(s, i),
+            EditFocus::AddStep => {}
         }
     }
 
-    /// ←/→ on the focused row: cycle the trigger kind, or cycle the focused step through the
-    /// unlocked vocabulary. (`When` threshold + `Repeat` count are nudged by [`Console::adjust`].)
-    pub fn cycle(&mut self, i: i32) {
-        let View::Edit(r) = self.view else {
-            return;
-        };
-        match self.edit_focus(r) {
-            EditFocus::Trigger => self.cycle_trigger(r, i),
-            EditFocus::Step(s) => self.cycle_step(r, s, i),
-            EditFocus::AddStep => {}
+    /// G14b: cycle the focused group's `match` filter (the header row) through None → Rare →
+    /// each domain → None.
+    fn cycle_group_filter(&mut self, i: i32) {
+        let opts: Vec<Option<MatchField>> = std::iter::once(None)
+            .chain(
+                [
+                    MatchField::Rare,
+                    MatchField::Domain(Stratum::Records),
+                    MatchField::Domain(Stratum::Schematics),
+                    MatchField::Domain(Stratum::Rites),
+                    MatchField::Domain(Stratum::Relics),
+                    MatchField::Domain(Stratum::Signals),
+                ]
+                .map(Some),
+            )
+            .collect();
+        if let View::EditGroup(r, s) = self.view {
+            if let Some(Step::Group { filter, .. }) =
+                self.routines.get_mut(r).and_then(|x| x.body.get_mut(s))
+            {
+                let cur = opts.iter().position(|o| o == filter).unwrap_or(0) as i32;
+                let n = opts.len() as i32;
+                *filter = opts[(((cur + i) % n + n) % n) as usize];
+            }
         }
     }
 
@@ -1344,15 +1526,22 @@ impl Console {
         self.routines[r].armed = false;
     }
 
-    fn cycle_step(&mut self, r: usize, s: usize, i: i32) {
-        let vocab = self.editor_vocabulary(r);
+    fn cycle_step(&mut self, s: usize, i: i32) {
+        let vocab = self.current_vocabulary();
         if vocab.is_empty() {
             return;
         }
-        let cur = self.routines[r].body[s];
+        let Some(body) = self.target_body_mut() else {
+            return;
+        };
+        let Some(cur) = body.get(s).cloned() else {
+            return;
+        };
         // Find the current step in the vocabulary by full value first (so parameterised families
         // — scan items, spend faculties, match domains — cycle through their variants), falling
-        // back to *kind* (so a Repeat(5) still matches the Repeat slot).
+        // back to *kind* (so a Repeat(5) still matches the Repeat slot, a populated Group the
+        // Group slot). A group's inner body is preserved across a *value* match; a kind-fallback
+        // cycle that leaves a Group replaces it (cycling away from a group is a deliberate edit).
         let pos = vocab
             .iter()
             .position(|v| *v == cur)
@@ -1363,24 +1552,31 @@ impl Console {
             })
             .unwrap_or(0) as i32;
         let n = vocab.len() as i32;
-        self.routines[r].body[s] = vocab[(((pos + i) % n + n) % n) as usize];
+        body[s] = vocab[(((pos + i) % n + n) % n) as usize].clone();
     }
 
-    /// −/+ on the focused row: nudge a numeric parameter — the `When` threshold (±5) or a
-    /// `Repeat` count (±1, 1..=9).
+    /// −/+ on the focused row: nudge a numeric parameter — the `When` threshold (±5), a `Repeat`
+    /// count (±1, 1..=9), or (G14b) a group's `×times` on its header row.
     pub fn adjust(&mut self, delta: i32) {
-        let View::Edit(r) = self.view else {
-            return;
-        };
-        match self.edit_focus(r) {
-            EditFocus::Trigger => {
-                if let Trigger::When(c) = &mut self.routines[r].trigger {
-                    let step = 5 * delta;
-                    c.min = (c.min as i32 + step).clamp(0, 9_999) as u32;
+        match self.edit_focus() {
+            EditFocus::Trigger => match self.view {
+                View::Edit(r) => {
+                    if let Trigger::When(c) = &mut self.routines[r].trigger {
+                        c.min = (c.min as i32 + 5 * delta).clamp(0, 9_999) as u32;
+                    }
                 }
-            }
+                // G14b: the group header row — nudge the repeat count.
+                View::EditGroup(r, s) => {
+                    if let Some(Step::Group { times, .. }) =
+                        self.routines.get_mut(r).and_then(|x| x.body.get_mut(s))
+                    {
+                        *times = (*times as i32 + delta).clamp(1, 9) as u8;
+                    }
+                }
+                View::Home => {}
+            },
             EditFocus::Step(s) => {
-                if let Step::Repeat(n) = &mut self.routines[r].body[s] {
+                if let Some(Step::Repeat(n)) = self.target_body_mut().and_then(|b| b.get_mut(s)) {
                     *n = (*n as i32 + delta).clamp(1, 9) as u8;
                 }
             }
@@ -1390,7 +1586,7 @@ impl Console {
 
     // ---- persistence (`co=` segment) --------------------------------------------------------
 
-    fn step_code(s: Step) -> String {
+    fn step_code(s: &Step) -> String {
         match s {
             Step::Do(Block::Scan(ScanItem::Shards)) => "S".into(),
             Step::Do(Block::Scan(ScanItem::Sites)) => "T".into(),
@@ -1419,7 +1615,31 @@ impl Console {
                 }
             ),
             Step::Repeat(n) => format!("r{n}"),
-            Step::Run(id) => format!("u{id}"), // G14: call routine #id
+            Step::Run(id) => format!("u{id}"), // G14a: call routine #id
+            // G14b: a nested group `(times[filter]:inner)`. Inner step codes are self-delimiting
+            // (parse reads char-by-char), so no separators; one level (inner carries no `(`).
+            Step::Group {
+                times,
+                filter,
+                body,
+            } => {
+                let f = match filter {
+                    None => String::new(),
+                    Some(MatchField::Rare) => "m".into(),
+                    Some(MatchField::Domain(d)) => format!(
+                        "M{}",
+                        match d {
+                            Stratum::Records => '0',
+                            Stratum::Schematics => '1',
+                            Stratum::Rites => '2',
+                            Stratum::Relics => '3',
+                            Stratum::Signals => '4',
+                        }
+                    ),
+                };
+                let inner: String = body.iter().map(Self::step_code).collect();
+                format!("({times}{f}:{inner})")
+            }
         }
     }
 
@@ -1463,7 +1683,7 @@ impl Console {
                     Step::Repeat(num.parse::<u8>().unwrap_or(2).clamp(1, 9))
                 }
                 'u' => {
-                    // G14: run(routine #id). A dangling id (missing callee) loads fine and
+                    // G14a: run(routine #id). A dangling id (missing callee) loads fine and
                     // degrades to a no-op at expand time (failsoft).
                     let mut num = String::new();
                     while let Some(d) = it.peek().filter(|d| d.is_ascii_digit()) {
@@ -1471,6 +1691,50 @@ impl Console {
                         it.next();
                     }
                     Step::Run(num.parse::<RoutineId>().unwrap_or(0))
+                }
+                '(' => {
+                    // G14b: a nested group `(times[filter]:inner)`. Read times, an optional filter
+                    // token, skip `:`, then collect the inner chars up to `)` and parse them
+                    // recursively (one level — a well-formed inner carries no `(`).
+                    let mut tnum = String::new();
+                    while let Some(d) = it.peek().filter(|d| d.is_ascii_digit()) {
+                        tnum.push(*d);
+                        it.next();
+                    }
+                    let times = tnum.parse::<u8>().unwrap_or(2).clamp(1, 9);
+                    let filter = match it.peek() {
+                        Some('m') => {
+                            it.next();
+                            Some(MatchField::Rare)
+                        }
+                        Some('M') => {
+                            it.next();
+                            let d = match it.next() {
+                                Some('1') => Stratum::Schematics,
+                                Some('2') => Stratum::Rites,
+                                Some('3') => Stratum::Relics,
+                                Some('4') => Stratum::Signals,
+                                _ => Stratum::Records,
+                            };
+                            Some(MatchField::Domain(d))
+                        }
+                        _ => None,
+                    };
+                    if it.peek() == Some(&':') {
+                        it.next();
+                    }
+                    let mut inner = String::new();
+                    for ch in it.by_ref() {
+                        if ch == ')' {
+                            break;
+                        }
+                        inner.push(ch);
+                    }
+                    Step::Group {
+                        times,
+                        filter,
+                        body: Self::parse_steps(&inner),
+                    }
                 }
                 _ => continue,
             };
@@ -1522,7 +1786,7 @@ impl Console {
                 let steps = r
                     .body
                     .iter()
-                    .map(|s| Self::step_code(*s))
+                    .map(Self::step_code)
                     .collect::<Vec<_>>()
                     .join(",");
                 let agent = match r.agent {
@@ -1657,7 +1921,7 @@ impl Console {
     pub fn render(&self) -> String {
         match self.view {
             View::Home => self.render_home(),
-            View::Edit(i) => self.render_edit(i),
+            View::Edit(_) | View::EditGroup(..) => self.render_edit(),
         }
     }
 
@@ -1669,7 +1933,7 @@ impl Console {
         for r in &self.routines {
             let cur = if row == self.cursor { ">" } else { " " };
             let on = if r.enabled { "on " } else { "off" };
-            let steps: Vec<String> = r.body.iter().map(|b| self.step_render(*b)).collect();
+            let steps: Vec<String> = r.body.iter().map(|b| self.step_render(b)).collect();
             let pipe = if steps.is_empty() {
                 "—".to_string()
             } else {
@@ -1751,21 +2015,44 @@ impl Console {
         s
     }
 
-    fn render_edit(&self, i: usize) -> String {
+    fn render_edit(&self) -> String {
+        let Some(i) = self.editing_routine() else {
+            return String::new();
+        };
         let r = &self.routines[i];
-        let mut s = format!(
-            "EDIT ROUTINE  {}  [{}]  agent:{} [Tab]   [O back]\n",
-            r.name,
-            if r.enabled { "on" } else { "off" },
-            r.agent.label(),
-        );
-        // Trigger row.
+        // Header + the params row (row 0): a routine's trigger, or (G14b) a group's `×times` +
+        // optional `match`.
+        let (mut s, params, help) = match self.view {
+            View::EditGroup(_, gs) => {
+                let header = format!("EDIT GROUP  in {}  (step {})   [O back]\n", r.name, gs + 1);
+                let params = match r.body.get(gs) {
+                    Some(Step::Group { times, filter, .. }) => {
+                        let f = filter
+                            .map(|f| format!(" · match({})", f.glyphs()))
+                            .unwrap_or_else(|| " · match(none)".into());
+                        format!("group: repeat ×{times}{f}")
+                    }
+                    _ => "group: (gone)".into(),
+                };
+                (header, params, "[↑↓ · ←→ filter · -/+ ×times · Enter insert · X remove · [ ] reorder · O back]")
+            }
+            _ => {
+                let header = format!(
+                    "EDIT ROUTINE  {}  [{}]  agent:{} [Tab]   [O back]\n",
+                    r.name,
+                    if r.enabled { "on" } else { "off" },
+                    r.agent.label(),
+                );
+                (header, format!("trigger: {}", r.trigger.label()), "[↑↓ · ←→ change · -/+ value · Enter insert · G enter group · X remove · [ ] reorder · Tab agent]")
+            }
+        };
         let cur = if self.cursor == 0 { ">" } else { " " };
-        s.push_str(&format!("{cur} trigger: {}\n", r.trigger.label()));
-        // Body steps (G11: `▶` lights the step the interpreter executed this tick).
-        for (si, step) in r.body.iter().enumerate() {
+        s.push_str(&format!("{cur} {params}\n"));
+        // Body steps (G11: `▶` lights the step the interpreter executed this tick — top level only).
+        let body = self.target_body();
+        for (si, step) in body.iter().enumerate() {
             let cur = if self.cursor == si + 1 { ">" } else { " " };
-            let live = if r.stats.executing_step == Some(si) {
+            let live = if matches!(self.view, View::Edit(_)) && r.stats.executing_step == Some(si) {
                 "▶"
             } else {
                 " "
@@ -1773,19 +2060,17 @@ impl Console {
             s.push_str(&format!(
                 "{cur} {live} {}. {}\n",
                 si + 1,
-                self.step_render(*step)
+                self.step_render(step)
             ));
         }
         // Add-step row.
-        let cur = if self.cursor == r.body.len() + 1 {
+        let cur = if self.cursor == body.len() + 1 {
             ">"
         } else {
             " "
         };
         s.push_str(&format!("{cur}   + add step\n"));
-        s.push_str(
-            "[↑↓ move · ←→ change · -/+ value · Enter insert · X remove · [ ] reorder · Tab agent]",
-        );
+        s.push_str(help);
         s
     }
 }
@@ -1994,21 +2279,21 @@ mod tests {
         assert!(c.routines[i].body.is_empty());
         // Insert a step (cursor on the trigger row → inserts at front).
         c.cursor = 0;
-        c.insert_step(i);
+        c.insert_step();
         assert_eq!(c.routines[i].body.len(), 1);
         // Insert another after it, then reorder.
-        c.insert_step(i);
+        c.insert_step();
         assert_eq!(c.routines[i].body.len(), 2);
         c.routines[i].body = vec![
             Step::Do(Block::Scan(ScanItem::Shards)),
             Step::Do(Block::Collect),
         ];
         c.cursor = 1; // first step
-        c.move_step(i, 1); // swap down
+        c.move_step(1); // swap down
         assert_eq!(c.routines[i].body[0], Step::Do(Block::Collect));
         // Remove the step under the cursor.
         c.cursor = 1;
-        c.remove_step(i);
+        c.remove_step();
         assert_eq!(c.routines[i].body.len(), 1);
     }
 
@@ -2017,14 +2302,14 @@ mod tests {
         let mut c = Console::default();
         let i = c.create_routine(Agent::Ship);
         c.cursor = 0;
-        c.insert_step(i); // a step exists now (cursor on it, row 1)
+        c.insert_step(); // a step exists now (cursor on it, row 1)
         c.cursor = 1;
         // Cycle through the whole vocabulary; with nothing decoded it must never become a
         // locked block (seek/circle/goto/match).
         for _ in 0..20 {
             c.cycle(1);
-            let s = c.routines[i].body[0];
-            assert!(c.step_unlocked(s), "cycled into a locked step: {s:?}");
+            let s = c.routines[i].body[0].clone();
+            assert!(c.step_unlocked(&s), "cycled into a locked step: {s:?}");
         }
         // Two-stage (G9): decoding Schematics alone is no longer enough — seek's *name* must
         // also have been found in the world.
@@ -2611,8 +2896,110 @@ mod tests {
         old.restore("co=main|1|c|u99|S");
         assert_eq!(old.routines.len(), 1);
         assert_eq!(old.routines[0].body, vec![Step::Run(99)]);
-        assert_eq!(old.step_render(Step::Run(99)), "run(?)");
+        assert_eq!(old.step_render(&Step::Run(99)), "run(?)");
         let t = old.tick(Agent::Ship, 0, 0, false);
         assert!(t.acts.is_empty(), "dangling run is a failsoft no-op");
+    }
+
+    // ---- G14b: nested step groups ----------------------------------------------------------
+
+    /// A `Group` runs its body `times`; its `match` is **scoped** to the body (doesn't leak to
+    /// later steps). One implicit register, honoured.
+    #[test]
+    fn group_repeats_body_with_scoped_filter() {
+        let mut c = Console::default();
+        let r = c.create_routine(Agent::Ship); // continuous
+        c.routines[r].body = vec![
+            Step::Group {
+                times: 3,
+                filter: Some(MatchField::Rare),
+                body: vec![Step::Do(Block::Collect)],
+            },
+            Step::Do(Block::Decode),
+        ];
+        c.view = View::Home;
+        let t = c.tick(Agent::Ship, 0, 0, false);
+        let collects: Vec<_> = t
+            .acts
+            .iter()
+            .filter(|a| a.block == Block::Collect && a.routine == r)
+            .collect();
+        assert_eq!(collects.len(), 3, "group repeated its body ×3");
+        assert!(
+            collects.iter().all(|a| a.filter == Some(MatchField::Rare)),
+            "the group's match applies to its body"
+        );
+        let decode = t
+            .acts
+            .iter()
+            .find(|a| a.block == Block::Decode && a.routine == r)
+            .expect("the trailing step ran");
+        assert_eq!(
+            decode.filter, None,
+            "the group's match is scoped — it doesn't leak to later steps"
+        );
+    }
+
+    /// A `Group` (times + filter + inner body) round-trips through `co=`.
+    #[test]
+    fn codec_round_trips_a_group() {
+        let mut c = Console::default();
+        let r = c.create_routine(Agent::Ship);
+        c.routines[r].body = vec![Step::Group {
+            times: 4,
+            filter: Some(MatchField::Domain(Stratum::Relics)),
+            body: vec![
+                Step::Do(Block::Scan(ScanItem::Sites)),
+                Step::Do(Block::Collect),
+            ],
+        }];
+        let mut back = Console::default();
+        back.restore(&c.encode());
+        assert_eq!(back.routines, c.routines, "group round-trips through co=");
+    }
+
+    /// The group sub-editor: enter a group, edit its inner body + header; **one level** (a group's
+    /// vocabulary never offers another group); back out returns to the routine.
+    #[test]
+    fn group_editor_is_one_level_and_edits_inner_body() {
+        let mut c = Console::default();
+        let r = c.create_routine(Agent::Ship);
+        c.routines[r].body = vec![Step::Group {
+            times: 2,
+            filter: None,
+            body: vec![],
+        }];
+        c.view = View::Edit(r);
+        c.cursor = 1; // the group step
+        c.enter_group();
+        assert_eq!(c.view, View::EditGroup(r, 0));
+        assert!(
+            !c.current_vocabulary()
+                .iter()
+                .any(|s| matches!(s, Step::Group { .. })),
+            "one level: no group-in-group offered"
+        );
+        c.cursor = 0; // header row → insert at the front of the inner body
+        c.insert_step();
+        c.cursor = 0;
+        c.adjust(1); // ×times 2 → 3
+        c.cycle(1); // filter none → rare
+        let Step::Group {
+            times,
+            filter,
+            body,
+        } = &c.routines[r].body[0]
+        else {
+            panic!("still a group");
+        };
+        assert_eq!(body.len(), 1, "inserted into the group's inner body");
+        assert_eq!(*times, 3, "×times nudged on the header");
+        assert_eq!(
+            *filter,
+            Some(MatchField::Rare),
+            "filter cycled on the header"
+        );
+        c.close_editor();
+        assert_eq!(c.view, View::Edit(r), "back out to the routine editor");
     }
 }

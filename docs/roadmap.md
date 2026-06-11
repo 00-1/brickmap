@@ -873,8 +873,9 @@ unit-tested. **Split:** the Eager-style **pre-highlight of the agent's next worl
 playback needs target prediction + a new marker draw (more than small, visual) → **G13b**. 212
 tests; golden voxel-hash + headless render unchanged; no engine change; boundary intact.
 
-### ✨ G14a — Subroutines (`run(routine)`) ✅ &nbsp;→ [`milestones/G14-subroutines.md`](milestones/G14-subroutines.md)
-The composition-depth layer (Forth/Moore "vocabulary"): a player's routine becomes a reusable
+### ✨ G14 — Subroutines + nested step groups ✅ &nbsp;→ [`milestones/G14-subroutines.md`](milestones/G14-subroutines.md)
+The composition-depth layer (Forth/Moore "vocabulary"), in two commits. **G14a — subroutines:**
+a player's routine becomes a reusable
 **`run(routine)`** step — the interpreter expands the callee's body in place, crediting the
 **callee** (Decision 4). A stable per-console **`id`** (minted monotonically, persisted as a
 trailing `co=` field, survives reorder/rename — Decision 3) is the ref; `run` is offered in the
@@ -885,9 +886,16 @@ bounded). **One implicit register (Decision 5):** the `match` filter is the sing
 — it flows *into* a called routine and persists on return; no second referent (tested across a
 call). **Duplicate routine** (key `C`) → an independent freshly-id'd copy. `co=` gains the `u{id}`
 step code + the id field (append-only; old payloads load, ids by index; a dangling `run` → no-op).
-**Split:** nested step groups (the `Repeat`/`If` bodied-container model change + its editor) →
-**G14b**. 132 console tests (run-in-place + register flow + cycle guard + failsoft + duplicate +
-codec); golden voxel-hash + headless render unchanged; no engine change; boundary intact.
+**G14b — nested step groups:** a bodied `Step::Group { times, filter, body }` (one variant covering
+"repeat a group" + "if-match a group"); `Step` became non-`Copy` (compiler-guided mechanical
+ripple). The interpreter runs a group's body `×times` with its `match` **scoped** to the body (a
+local block, vs `run`'s register-flow); **one nesting level** (no group-in-group). A
+`View::EditGroup` sub-view reuses the whole step editor on the inner body (`target_body` makes the
+edit fns view-aware); `G` enters a group, `O` backs out, the header nudges `×times`/cycles the
+filter. `co=` gains a self-delimiting `(times[filter]:inner)` group token. 134 console tests
+(run-in-place + register flow + cycle guard + failsoft + duplicate + group repeat/scoped-filter +
+one-level editor + codec round-trips); golden voxel-hash + headless render byte-identical; no
+engine change; boundary intact.
 
 ## Dev tooling & process (D-series)
 

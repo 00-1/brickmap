@@ -914,7 +914,10 @@ impl App {
                 }
                 _ => {}
             },
-            console::View::Edit(i) => match code {
+            // G14b: the routine editor and the group sub-editor share the same keys (the console
+            // resolves which body they act on by view); the group view adds nothing but `O` backs
+            // out to the routine, and `G` (in the routine view) descends into a focused group.
+            console::View::Edit(_) | console::View::EditGroup(..) => match code {
                 KeyCode::KeyO | KeyCode::Escape => self.console.close_editor(),
                 KeyCode::ArrowUp | KeyCode::KeyW => self.console.move_cursor(-1),
                 KeyCode::ArrowDown | KeyCode::KeyS => self.console.move_cursor(1),
@@ -922,11 +925,12 @@ impl App {
                 KeyCode::ArrowRight | KeyCode::KeyD => self.console.cycle(1),
                 KeyCode::Minus => self.console.adjust(-1),
                 KeyCode::Equal => self.console.adjust(1),
-                KeyCode::Enter | KeyCode::Space => self.console.insert_step(i),
-                KeyCode::KeyX | KeyCode::Delete | KeyCode::Backspace => self.console.remove_step(i),
-                KeyCode::BracketLeft => self.console.move_step(i, -1),
-                KeyCode::BracketRight => self.console.move_step(i, 1),
-                KeyCode::Tab => self.console.cycle_agent(), // G8b: flip ship ↔ foot
+                KeyCode::Enter | KeyCode::Space => self.console.insert_step(),
+                KeyCode::KeyX | KeyCode::Delete | KeyCode::Backspace => self.console.remove_step(),
+                KeyCode::BracketLeft => self.console.move_step(-1),
+                KeyCode::BracketRight => self.console.move_step(1),
+                KeyCode::KeyG => self.console.enter_group(), // G14b: descend into a focused group
+                KeyCode::Tab => self.console.cycle_agent(),  // G8b: flip ship ↔ foot
                 _ => {}
             },
         }

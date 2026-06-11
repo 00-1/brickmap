@@ -105,14 +105,24 @@ beyond call + nesting.
   feature seems to need two, it's a parameter, not a second register.
 - **Credit ambiguity in G11** → Decision 4 pins it; document on the routine detail line.
 
-## As built (2026-06-11) — G14a; nested groups split to G14b
+## As built (2026-06-11) — G14a + G14b (two commits)
 
-The `run(routine)` composition core shipped as **G14a**; the **nested step groups** half is split
-to **G14b** (it needs the deeper `Step` model change — turning the `Repeat`/`Match` *prefix
-modifiers* into bodied containers + the editor for one-level inner bodies — riskier, with a codec
-migration, so it's its own milestone per the "split big milestones" rule). Game-side only; no
-engine change. **Persistence note:** routines live in the console's **`co=`** segment, not `pg=`
-(the brief said `pg=` — corrected here; `co=` is where authored routines round-trip).
+Shipped in two commits: **G14a** the `run(routine)` composition core, **G14b** the nested step
+groups. Game-side only; no engine change. **Persistence note:** routines live in the console's
+**`co=`** segment, not `pg=` (the brief said `pg=` — corrected here; `co=` is where authored
+routines round-trip).
+
+**G14b — nested step groups:** a single bodied `Step::Group { times, filter, body }` covers both
+"repeat a group" (`times`) and "if-match a group" (`filter`). `Step` became non-`Copy` (owns a
+`Vec`) — the compiler-guided ripple (`label`/`glyph_label`/`required`/`step_code`/`step_render`
+→ `&self`/`&Step`, clones at the cycle/assign sites) is mechanical and verified. The interpreter
+expands a group's body `times` with its `match` **scoped** to the body (saved/restored — a local
+block, unlike a `run` whose register flows out); **one nesting level** (a group's body may not
+contain a `Group` — the sub-editor never offers it). Editor: a `View::EditGroup(routine, step)`
+sub-view reuses the whole step editor on the group's inner body (`target_body`/`target_body_mut`
+make the edit fns view-aware); `G` descends into a focused group, `O` backs out; the header row
+nudges `×times` (`-/+`) and cycles the `match` filter (`←→`). `co=` gains a `(times[filter]:inner)`
+group token (self-delimiting inner; one level; old payloads unaffected).
 
 - **`Step::Run(RoutineId)`** — same-agent call; the interpreter (`expand`) expands the callee's
   body in place via a per-tick routine snapshot, crediting the **callee** (Decision 4). A stable
@@ -136,7 +146,8 @@ engine change. **Persistence note:** routines live in the console's **`co=`** se
       block (`run(<name>)`; routine names are author labels, English per G12).
 - [x] Insert-time cycle guard (`would_cycle` + `editor_vocabulary` omission) + runtime depth cap
       (`RUN_DEPTH_CAP` + visited, failsoft); duplicate-routine action (key `C`).
-- [~] Nested step groups in `repeat`/`if` bodies — **split to G14b** (model change; noted above).
+- [x] Nested step groups (`Step::Group { times, filter, body }`), editable in a `EditGroup`
+      sub-view, **one level** (no group-in-group offered) — G14b.
 - [x] One-implicit-register invariant documented + tested (the `match` register flows across a call).
 - [x] `run` persists (`co=`, append-only; old payloads load; missing callee → no-op); G11 credit
       pinned to the **callee**.
