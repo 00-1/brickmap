@@ -260,6 +260,8 @@ struct App {
     /// D10: the most-recently-pressed button + the `self.time` it was pressed, for a brief press
     /// highlight in the on-screen overlay.
     touch_pressed: Option<(touch::Region, f32)>,
+    /// G9: the most recent block-name discovery + when, for the transient HUD announce.
+    last_discovery: Option<(console::Block, f32)>,
     /// cpal doom-drone output (E16). `None` if no audio device. Desktop + Android.
     #[cfg(not(target_arch = "wasm32"))]
     audio: Option<audio_native::AudioEngine>,
@@ -589,6 +591,18 @@ impl App {
                 progress::stratum_of(c.script).label(),
             );
             self.forget_scanned_chunk(c.pos); // it's no longer an opportunity (G3)
+            self.discover(c.name); // G9: a name-bearer also discovers its block
+        }
+    }
+
+    /// G9: a collected inscription **named a block** — apply the `Discover` event (idempotent;
+    /// a re-collected known name is just a normal yield) and announce a *new* discovery on the
+    /// HUD. Shared by every collect route (T / beam / auto-collect).
+    fn discover(&mut self, name: Option<console::Block>) {
+        let Some(block) = name else { return };
+        if self.progress.apply(&progress::Event::Discover { block }) {
+            self.last_discovery = Some((block, self.time));
+            log::info!("NAME RECOVERED — {}", block.name());
         }
     }
 
@@ -614,6 +628,7 @@ impl App {
         let mut swept = 0u32;
         let mut done: Vec<u64> = Vec::new();
         let mut done_pos: Vec<[f32; 3]> = Vec::new();
+        let mut named: Vec<console::Block> = Vec::new();
         for c in &self.collectible {
             if beam::on_path(Vec3::from(c.pos), b.a, b.b) {
                 let ev = progress::Event::Collect {
@@ -626,12 +641,18 @@ impl App {
                     swept += 1;
                     done.push(c.find_id);
                     done_pos.push(c.pos);
+                    if let Some(b) = c.name {
+                        named.push(b); // G9: the beam sweeps up names too
+                    }
                 }
             }
         }
         self.collectible.retain(|c| !done.contains(&c.find_id));
         for p in done_pos {
             self.forget_scanned_chunk(p); // collected → no longer opportunities (G3)
+        }
+        for b in named {
+            self.discover(Some(b));
         }
         self.beam = Some(b);
         // On foot, attach to the fresh beam as a rail (ride it to escape pits/cliffs — and
@@ -748,6 +769,8 @@ impl App {
             .into_iter()
             .filter(|&s| self.progress.is_comprehended(s))
             .collect();
+        // G9: the console's view of which names have been found in the world.
+        self.console.discovered = self.progress.discovered_blocks().collect();
     }
 
     /// G7: keyboard/pad control of the open console (no typing) — cursor + discrete buttons.
@@ -1228,24 +1251,23 @@ impl App {
                     script: m.script,
                     text: m.text.clone(),
                     pos: m.pos.to_array(),
+                    name: m.name, // G9: a name-bearer discovers its block on collect
                 })
             })
             .collect();
-        // G6 decipherment: a comprehended script renders **translated** (a seeded lexicon
-        // phrase in the Latin font) instead of glowing glyphs. The find id still hashes the
-        // original glyphs (collecting stays stable), so only the *display* changes.
+        // G6 decipherment: a comprehended script renders **translated** instead of glowing
+        // glyphs — a name-bearer (G9) shows its plain block name (it IS the meaning), ambient
+        // text a seeded lexicon phrase. The find id still hashes the original glyphs
+        // (collecting stays stable), so only the *display* changes.
         let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
             .into_iter()
             .map(|m| {
                 if self.progress.is_legible(m.script) {
-                    let words = progress::glyph_count(&m.text);
-                    (
-                        lexicon::phrase(seed, m.cell, words),
-                        text::Script::Latin,
-                        m.pos,
-                        m.height,
-                        m.color,
-                    )
+                    let translated = match m.name {
+                        Some(b) => b.name().to_string(),
+                        None => lexicon::phrase(seed, m.cell, progress::glyph_count(&m.text)),
+                    };
+                    (translated, text::Script::Latin, m.pos, m.height, m.color)
                 } else {
                     (m.text, m.script, m.pos, m.height, m.color)
                 }
@@ -2767,6 +2789,12 @@ impl ApplicationHandler<AppEvent> for App {
                             mode.push_str(" · ");
                             mode.push_str(exp);
                         }
+                        // G9: announce a fresh block-name discovery for a few seconds.
+                        if let Some((blk, t)) = self.last_discovery {
+                            if self.time - t < 5.0 {
+                                mode.push_str(&format!(" · NAME RECOVERED — {}", blk.name()));
+                            }
+                        }
                         // E13: photo mode readout (paused · free-cam · FOV).
                         if self.photo_active {
                             mode = format!(
@@ -3104,6 +3132,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         touch_layout: touch::Layout::default(),
         touch_seen: false,
         touch_pressed: None,
+        last_discovery: None,
         // Start the drone on the world seed so the dirge matches the world (desktop + Android;
         // a no-op None if there's no audio device). Web starts audio from the page on first tap.
         #[cfg(not(target_arch = "wasm32"))]

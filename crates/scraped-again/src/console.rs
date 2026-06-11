@@ -32,7 +32,7 @@ use crate::progress::Stratum;
 
 /// The item a `scan` block senses. v1 has only `shards` (the data sites); the parameterised
 /// form (`scan(item)`) is here so the model carries block params uniformly (G7 cleanup).
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ScanItem {
     Shards,
 }
@@ -94,7 +94,7 @@ impl Agent {
 /// A block — one recovered console **action** (game-system §11). Triggers (`on-scan`, `when`) and
 /// the `match`/`repeat` modifiers are *not* blocks: they live on the routine ([`Trigger`]) or as
 /// modifier [`Step`]s, so this enum is exactly "things an agent can *do*".
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Block {
     Scan(ScanItem), // sense sites of `item` in the forward cone (G3)
     Collect,        // collect the aimed/nearest in-reach site (G1)
@@ -111,6 +111,64 @@ pub enum Block {
 }
 
 impl Block {
+    /// The full block vocabulary (G9: every one of these has a **name** findable in the world).
+    pub const ALL: [Block; 12] = [
+        Block::Scan(ScanItem::Shards),
+        Block::Collect,
+        Block::FireBeam,
+        Block::Decode,
+        Block::Spend,
+        Block::Goto,
+        Block::Drift,
+        Block::Seek,
+        Block::Circle,
+        Block::Walk,
+        Block::Hail,
+        Block::RunFoot,
+    ];
+
+    /// The block's bare **name** (no parameter sugar) — what an in-world name-inscription spells
+    /// (G9) and what the HUD announces on discovery. Distinct across [`Block::ALL`] (tested).
+    pub fn name(self) -> &'static str {
+        match self {
+            Block::Scan(_) => "scan",
+            Block::Collect => "collect",
+            Block::FireBeam => "beam",
+            Block::Decode => "decode",
+            Block::Spend => "spend",
+            Block::Goto => "goto",
+            Block::Drift => "drift",
+            Block::Seek => "seek",
+            Block::Circle => "circle",
+            Block::Walk => "walk",
+            Block::Hail => "hail",
+            Block::RunFoot => "runfoot",
+        }
+    }
+
+    /// A stable byte for the `pg=` discovery payload (G9). Append-only — never renumber.
+    pub fn code(self) -> u8 {
+        match self {
+            Block::Scan(_) => 0,
+            Block::Collect => 1,
+            Block::FireBeam => 2,
+            Block::Decode => 3,
+            Block::Spend => 4,
+            Block::Goto => 5,
+            Block::Drift => 6,
+            Block::Seek => 7,
+            Block::Circle => 8,
+            Block::Walk => 9,
+            Block::Hail => 10,
+            Block::RunFoot => 11,
+        }
+    }
+
+    /// Inverse of [`Block::code`] (lenient: unknown bytes → `None`, so old/new payloads coexist).
+    pub fn from_code(b: u8) -> Option<Block> {
+        Block::ALL.iter().copied().find(|x| x.code() == b)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Block::Scan(i) => match i {
@@ -374,6 +432,10 @@ pub struct Console {
     pub palette: Vec<Block>,
     /// Comprehended strata (synced from `progress` each frame) — gates the block vocabulary (G6).
     pub unlocked: HashSet<Stratum>,
+    /// Discovered gated blocks (G9; synced from `progress`) — a block's name must be found in the
+    /// world before it's even *listed*. Starters are implicitly discovered (see
+    /// [`Console::is_discovered`]), so this only carries the gated vocabulary.
+    pub discovered: HashSet<Block>,
 }
 
 impl Default for Console {
@@ -413,6 +475,7 @@ impl Default for Console {
                 Block::Drift,
             ],
             unlocked: HashSet::new(),
+            discovered: HashSet::new(),
         }
     }
 }
@@ -420,18 +483,30 @@ impl Default for Console {
 impl Console {
     // ---- vocabulary gating ------------------------------------------------------------------
 
-    /// Has this block been recovered? (Starters always; gated blocks need their stratum decoded.)
+    /// Is this block **discovered** (G9) — its name found in the world? Starters always;
+    /// gated blocks only once a name-bearing inscription was collected. Undiscovered blocks are
+    /// *absent* from every listing (you can't covet what you've never read).
+    pub fn is_discovered(&self, b: Block) -> bool {
+        b.required().is_none() || self.discovered.contains(&b)
+    }
+
+    /// Usable? **Two-stage** (G9): the name must be *discovered* AND its stratum *decoded*.
+    /// (Starters pass both implicitly, so the opening + given routines are untouched.)
     pub fn is_unlocked(&self, b: Block) -> bool {
-        b.required().is_none_or(|s| self.unlocked.contains(&s))
+        self.is_discovered(b) && b.required().is_none_or(|s| self.unlocked.contains(&s))
     }
 
     fn step_unlocked(&self, s: Step) -> bool {
-        s.required().is_none_or(|st| self.unlocked.contains(&st))
+        let discovered = match s {
+            Step::Do(b) => self.is_discovered(b),
+            _ => true, // the match/repeat modifiers aren't name-gated
+        };
+        discovered && s.required().is_none_or(|st| self.unlocked.contains(&st))
     }
 
-    /// The steps `agent` may insert / cycle to, in cycle order — filtered to what's recovered (G6)
-    /// **and** scoped to the agent's context + shared blocks (game-system §7). (Blocks, then the
-    /// `match` modifier, then `repeat`.)
+    /// The steps `agent` may insert / cycle to, in cycle order — filtered to what's **discovered**
+    /// (G9: an unfound name is absent) **and** recovered (G6 decode) **and** scoped to the agent's
+    /// context + shared blocks (game-system §7). (Blocks, then the `match` modifier, then `repeat`.)
     pub fn vocabulary(&self, agent: Agent) -> Vec<Step> {
         let all = [
             Step::Do(Block::Scan(ScanItem::Shards)),
@@ -534,9 +609,27 @@ impl Console {
 
     // ---- home navigation --------------------------------------------------------------------
 
-    /// Home rows: routines (toggle/edit), a "new routine" row, then the manual block palette.
+    /// The home screen's **visible** block listing (G9): the palette's discovered entries, plus
+    /// any *other* discovered gated blocks (a found name appears here, dimmed until decoded).
+    /// Undiscovered blocks are absent entirely.
+    pub fn visible_palette(&self) -> Vec<Block> {
+        let mut out: Vec<Block> = self
+            .palette
+            .iter()
+            .copied()
+            .filter(|b| self.is_discovered(*b))
+            .collect();
+        for b in Block::ALL {
+            if b.required().is_some() && self.is_discovered(b) && !out.contains(&b) {
+                out.push(b);
+            }
+        }
+        out
+    }
+
+    /// Home rows: routines (toggle/edit), a "new routine" row, then the visible block listing.
     pub fn home_rows(&self) -> usize {
-        self.routines.len() + 1 + self.palette.len()
+        self.routines.len() + 1 + self.visible_palette().len()
     }
 
     /// Editor rows for routine `i`: the trigger row, each body step, then an "add step" row.
@@ -564,7 +657,7 @@ impl Console {
         } else if self.cursor == nr {
             Sel::NewRoutine
         } else {
-            Sel::Block(self.palette[self.cursor - nr - 1])
+            Sel::Block(self.visible_palette()[self.cursor - nr - 1])
         }
     }
 
@@ -917,7 +1010,10 @@ impl Console {
         s.push_str(&format!("{cur} + new routine\n"));
         row += 1;
         s.push_str("blocks (Enter runs):\n");
-        for b in &self.palette {
+        // G9: only *discovered* blocks are listed (a name you've read in the world); a discovered-
+        // but-undecoded one renders **dimmed** with its stratum tag — the "I've seen this name"
+        // tease. Undiscovered blocks are absent entirely.
+        for b in self.visible_palette() {
             let cur = if row == self.cursor { ">" } else { " " };
             let tag = match b.required() {
                 Some(st) if !self.unlocked.contains(&st) => {
@@ -926,7 +1022,12 @@ impl Console {
                 _ if !b.wired() => "  (—)".to_string(),
                 _ => String::new(),
             };
-            s.push_str(&format!("{cur} {}{}\n", b.label(), tag));
+            // Dim a found-but-locked name (lowercase-dotted) so it reads as known-of, not usable.
+            if !self.is_unlocked(b) && b.required().is_some() {
+                s.push_str(&format!("{cur} · {}{}\n", b.label(), tag));
+            } else {
+                s.push_str(&format!("{cur} {}{}\n", b.label(), tag));
+            }
             row += 1;
         }
         s.push_str("[↑↓ select · Enter run/toggle · E edit · X delete]");
@@ -1130,10 +1231,12 @@ mod tests {
             let s = c.routines[i].body[0];
             assert!(c.step_unlocked(s), "cycled into a locked step: {s:?}");
         }
-        // Once Schematics is comprehended, seek becomes reachable.
+        // Two-stage (G9): decoding Schematics alone is no longer enough — seek's *name* must
+        // also have been found in the world.
         c.unlocked.insert(Stratum::Schematics);
-        let reachable = c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek));
-        assert!(reachable);
+        assert!(!c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
+        c.discovered.insert(Block::Seek);
+        assert!(c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
     }
 
     #[test]
@@ -1216,9 +1319,45 @@ mod tests {
         assert!(!vocab.contains(&Step::Match(MatchField::Rare)));
         c.unlocked.insert(Stratum::Schematics);
         c.unlocked.insert(Stratum::Rites);
+        // G9 two-stage: the decode alone unlocks `match` (a modifier — not name-gated) but a
+        // *block* additionally needs its name discovered.
         let vocab = c.vocabulary(Agent::Ship);
-        assert!(vocab.contains(&Step::Do(Block::Seek)));
+        assert!(!vocab.contains(&Step::Do(Block::Seek)));
         assert!(vocab.contains(&Step::Match(MatchField::Rare)));
+        c.discovered.insert(Block::Seek);
+        assert!(c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
+    }
+
+    #[test]
+    fn discovery_states_absent_dimmed_insertable() {
+        // G9: the three console visibility states for a gated block (`seek`).
+        let mut c = Console::default();
+        // 1. Undiscovered → absent from the home listing AND the editor vocabulary.
+        assert!(!c.visible_palette().contains(&Block::Seek));
+        assert!(!c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
+        // 2. Discovered (name found) but stratum undecoded → listed, locked (not insertable).
+        c.discovered.insert(Block::Seek);
+        assert!(c.visible_palette().contains(&Block::Seek));
+        assert!(!c.is_unlocked(Block::Seek));
+        assert!(!c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
+        let home = c.render_home();
+        assert!(home.contains("seek"), "discovered name should be listed");
+        assert!(
+            home.contains("locked: decode SCH"),
+            "and tagged with its stratum"
+        );
+        // 3. Discovered + decoded → insertable.
+        c.unlocked.insert(Stratum::Schematics);
+        assert!(c.is_unlocked(Block::Seek));
+        assert!(c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
+        // Starters were never gated: present in the listing + vocabulary from the start.
+        let fresh = Console::default();
+        assert!(fresh.visible_palette().contains(&Block::Collect));
+        assert!(fresh
+            .vocabulary(Agent::Ship)
+            .contains(&Step::Do(Block::Scan(ScanItem::Shards))));
+        // The undiscovered gated palette entry (goto) is absent on a fresh console.
+        assert!(!fresh.visible_palette().contains(&Block::Goto));
     }
 
     #[test]
@@ -1282,6 +1421,7 @@ mod tests {
             .vocabulary(Agent::Ship)
             .contains(&Step::Do(Block::RunFoot)));
         c.unlocked.insert(Stratum::Relics);
+        c.discovered.insert(Block::RunFoot); // G9: its name must also be found
         assert!(c
             .vocabulary(Agent::Ship)
             .contains(&Step::Do(Block::RunFoot)));

@@ -69,6 +69,18 @@ pub fn stratum_of(script: Script) -> Stratum {
     }
 }
 
+/// The inverse of [`stratum_of`]: the writing system a stratum's text is written in (G9 — a
+/// block's name-inscription renders in **its stratum's script**).
+pub fn script_for(stratum: Stratum) -> Script {
+    match stratum {
+        Stratum::Records => Script::Latin,
+        Stratum::Schematics => Script::Greek,
+        Stratum::Rites => Script::Hiragana,
+        Stratum::Relics => Script::Runic,
+        Stratum::Signals => Script::Galactic,
+    }
+}
+
 /// Data yielded by collecting a glyph of `script` with `glyphs` non-space characters. A pure
 /// function (rarer strata pay more per glyph); small integers, tuned later. `glyphs` is
 /// clamped so a pathological string can't mint a fortune.
@@ -138,6 +150,8 @@ pub struct Collectible {
     pub script: Script,
     pub text: String,
     pub pos: [f32; 3],
+    /// G9: this inscription **names a block** — collecting it discovers that block in the console.
+    pub name: Option<crate::console::Block>,
 }
 
 /// A stable, deterministic id for an inscription find — a function of its grid cell + script +
@@ -181,6 +195,9 @@ pub enum Event {
         text: String,
         pos: [f32; 3],
     },
+    /// G9: **discover** a block — its name was collected from a name-bearing inscription, so the
+    /// console lists it (still stratum-locked until decoded).
+    Discover { block: crate::console::Block },
 }
 
 /// All run progress: the banked strata + the codex of finds (with a de-dup set) + the set of
@@ -194,6 +211,10 @@ pub struct Progress {
     /// Comprehended strata (G6): spending `decode` makes a stratum's script legible + grows the
     /// console's block vocabulary.
     comprehended: std::collections::HashSet<Stratum>,
+    /// Discovered blocks (G9): names collected from the world. Starters (no required stratum) are
+    /// implicitly always discovered — see [`Progress::is_discovered`] — so this set only carries
+    /// the gated vocabulary, and pre-G9 payloads load as starter-only.
+    discovered: std::collections::HashSet<crate::console::Block>,
 }
 
 impl Progress {
@@ -250,6 +271,18 @@ impl Progress {
             .max_by_key(|&s| self.strata.get(s))
     }
 
+    /// Is this block **discovered** (G9) — its name collected from the world? Starters (no
+    /// required stratum) are always discovered, so the opening + given routines are untouched and
+    /// pre-G9 payloads load as starter-only.
+    pub fn is_discovered(&self, b: crate::console::Block) -> bool {
+        b.required().is_none() || self.discovered.contains(&b)
+    }
+
+    /// The discovered gated blocks (for syncing the console's view of the vocabulary).
+    pub fn discovered_blocks(&self) -> impl Iterator<Item = crate::console::Block> + '_ {
+        self.discovered.iter().copied()
+    }
+
     /// Apply an event. Returns `true` if it changed state (a new find), `false` on a
     /// duplicate collect (no-op — the de-dup that keeps strata/codex stable).
     pub fn apply(&mut self, ev: &Event) -> bool {
@@ -272,6 +305,14 @@ impl Progress {
                 });
                 true
             }
+            // G9: a block name recovered. Idempotent — re-collecting an already-discovered name
+            // is a normal collect (the Collect event above still banks its data).
+            Event::Discover { block } => {
+                if self.is_discovered(*block) {
+                    return false;
+                }
+                self.discovered.insert(*block)
+            }
         }
     }
 
@@ -279,7 +320,7 @@ impl Progress {
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(3u8); // version (2 = + scanned set, G3; 3 = + comprehended strata, G6)
+        b.push(4u8); // version (2 = + scanned, G3; 3 = + comprehended, G6; 4 = + discovered, G9)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -312,6 +353,11 @@ impl Progress {
         comp.sort_unstable();
         b.push(comp.len() as u8);
         b.extend_from_slice(&comp);
+        // v4: discovered blocks (G9; sorted codes for a stable encoding).
+        let mut disc: Vec<u8> = self.discovered.iter().map(|x| x.code()).collect();
+        disc.sort_unstable();
+        b.push(disc.len() as u8);
+        b.extend_from_slice(&disc);
         format!("pg={}", to_hex(&b))
     }
 
@@ -362,7 +408,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if !(1..=3).contains(&version) {
+    if !(1..=4).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -408,12 +454,23 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             comprehended.insert(Stratum::from_byte(*take(&mut p, 1)?.first()?));
         }
     }
+    // v4: discovered blocks (G9; absent pre-v4 → starter-only). Unknown codes skipped (lenient).
+    let mut discovered = std::collections::HashSet::new();
+    if version >= 4 {
+        let dc = *take(&mut p, 1)?.first()?;
+        for _ in 0..dc {
+            if let Some(blk) = crate::console::Block::from_code(*take(&mut p, 1)?.first()?) {
+                discovered.insert(blk);
+            }
+        }
+    }
     Some(Progress {
         strata,
         codex,
         seen,
         scanned,
         comprehended,
+        discovered,
     })
 }
 
@@ -447,6 +504,7 @@ impl PartialEq for Progress {
             && self.codex == other.codex
             && self.scanned == other.scanned
             && self.comprehended == other.comprehended
+            && self.discovered == other.discovered
     }
 }
 
@@ -600,6 +658,50 @@ mod tests {
         let back = Progress::decode(&format!("s=1&{}", p.encode()));
         assert_eq!(back, p);
         assert!(back.is_comprehended(Stratum::Relics));
+    }
+
+    #[test]
+    fn discover_applies_idempotently_and_starters_are_implicit() {
+        use crate::console::Block;
+        let mut p = Progress::default();
+        // Starters are always discovered (the opening is untouched); gated blocks aren't.
+        assert!(p.is_discovered(Block::Collect));
+        assert!(!p.is_discovered(Block::Seek));
+        // Discovering a gated block applies once; the dupe is a no-op (a normal re-collect).
+        assert!(p.apply(&Event::Discover { block: Block::Seek }));
+        assert!(p.is_discovered(Block::Seek));
+        assert!(!p.apply(&Event::Discover { block: Block::Seek }));
+        // Discovering a starter is always a no-op (already known).
+        assert!(!p.apply(&Event::Discover {
+            block: Block::Collect
+        }));
+    }
+
+    #[test]
+    fn discoveries_round_trip_v4_and_v3_loads_starter_only() {
+        use crate::console::Block;
+        let mut p = Progress::default();
+        p.apply(&ev(1, Script::Latin, "AB"));
+        p.apply(&Event::Discover { block: Block::Seek });
+        p.apply(&Event::Discover {
+            block: Block::RunFoot,
+        });
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p);
+        assert!(back.is_discovered(Block::Seek) && back.is_discovered(Block::RunFoot));
+        assert!(!back.is_discovered(Block::Goto));
+        // A pre-G9 (v3) blob still loads — discoveries just come back starter-only.
+        let v3_hex = {
+            let mut b = vec![3u8];
+            b.extend_from_slice(&[0u8; 40]); // strata
+            b.extend_from_slice(&0u32.to_le_bytes()); // codex count
+            b.extend_from_slice(&0u32.to_le_bytes()); // scanned count
+            b.push(0); // comprehended count
+            super::to_hex(&b)
+        };
+        let v3 = Progress::decode(&format!("pg={v3_hex}"));
+        assert!(v3.is_discovered(Block::Collect)); // starters implicit
+        assert!(!v3.is_discovered(Block::Seek)); // gated: undiscovered
     }
 
     #[test]

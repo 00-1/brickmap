@@ -764,6 +764,24 @@ expedition**. Built in slices; systems complete, feel/visual tuning + the late l
 - **Still ahead (the arc) ⏳:** decipherment fluency, the late **Concordance/Synthesis** arc, the
   Resonance/pristine branch, and co-op shared archive (N1).
 
+### ✨ G9 — Names in the world (block discovery) ✅ &nbsp;→ [`milestones/G9-block-name-discovery.md`](milestones/G9-block-name-discovery.md)
+*(First dispatch of the 2026-06-11 incremental run.)* The world's text becomes **load-bearing**: a
+deterministic ~1-in-4 of inscriptions spell a **block's name** — a stable transliteration in the
+block's stratum's script — and **collecting one discovers the block** in the console. Vocabulary
+growth is now exploration-driven, a **two-stage gate** (found → listed dimmed + stratum-tagged;
+stratum decoded → insertable) replacing "decode unlocks the whole stratum at once."
+- **Landed:** `structures::transliterate`/`block_script`/name-bearing `compose` arm +
+  always-name-bearing colossus labels (biased to the deep `runfoot` — sole Relics-tier block;
+  recorded deviation); `Inscription.name` → `Collectible.name` → `App::discover` on **every**
+  collect route (T / beam sweep / auto-collect) with a transient **NAME RECOVERED** HUD announce;
+  `progress::Event::Discover` (idempotent) + `pg=` **v4** (append-only; old payloads load
+  starter-only); console `is_unlocked` = discovered AND decoded, `visible_palette`/`vocabulary`
+  hide undiscovered names, discovered-locked render dimmed; starters implicitly pre-discovered
+  (opening + givens untouched); legible name-bearers display the plain name. Tested: determinism +
+  collision, ~1/4 fraction, full-vocabulary coverage within 2500 units (3 seeds), discover/v4
+  round-trip + v3 compat, console tri-state. 192 tests; golden voxel-hash unchanged; no engine
+  change.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear

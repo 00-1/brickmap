@@ -104,6 +104,9 @@ pub struct Inscription {
     pub script: Script,
     pub height: f32,
     pub color: [f32; 3],
+    /// G9: this inscription spells a **block's name** — collecting it discovers the block.
+    /// `None` = ambient glyph-noise (the melancholy majority).
+    pub name: Option<crate::console::Block>,
 }
 
 /// Per-script character pool to assemble abstract "words" from (Latin/Galactic/Runic all draw
@@ -114,6 +117,49 @@ fn pool(script: Script) -> &'static str {
         Script::Hiragana => "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん",
         _ => "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
     }
+}
+
+/// G9: render a block's bare name into `script` as a **stable transliteration** — the same
+/// glyphs every time for the same block, so a name reads as *a name* (recognisably recurring),
+/// not fresh noise. Letter-wise: `a..z` maps positionally into the script's glyph pool (for the
+/// Latin-glyph scripts — Latin/Galactic/Runic — that's the uppercase letters themselves; the
+/// renderer draws them in the script's own glyph forms). Distinct across the vocabulary (tested).
+pub fn transliterate(name: &str, script: Script) -> String {
+    let glyphs: Vec<char> = pool(script).chars().collect();
+    name.chars()
+        .filter(|c| c.is_ascii_alphabetic())
+        .map(|c| {
+            let idx = (c.to_ascii_lowercase() as u8 - b'a') as usize;
+            glyphs[idx % glyphs.len()]
+        })
+        .collect()
+}
+
+/// G9: the script a block's name is written in — its required stratum's script (starters →
+/// Records/Latin).
+pub fn block_script(b: crate::console::Block) -> Script {
+    use crate::progress::{script_for, Stratum};
+    script_for(b.required().unwrap_or(Stratum::Records))
+}
+
+/// G9: pick the block a name-bearing cell spells, **stratum-rarity-weighted** (common strata
+/// often, the deep vocabulary rare — but everything findable; the coverage test guards it).
+fn name_pick(h: u32) -> crate::console::Block {
+    use crate::console::Block;
+    use crate::progress::Stratum;
+    // Weighted table: starters ×3 (common Records-tier chatter), Schematics ×2, deeper ×1.
+    let mut table: Vec<Block> = Vec::new();
+    for b in Block::ALL {
+        let w = match b.required() {
+            None => 3,
+            Some(Stratum::Schematics) => 2,
+            _ => 1,
+        };
+        for _ in 0..w {
+            table.push(b);
+        }
+    }
+    table[(h >> 3) as usize % table.len()]
 }
 
 /// Compose a deterministic abstract inscription (1–2 short "words") from a cell hash: a script,
@@ -152,10 +198,25 @@ fn compose(h: u32) -> (String, Script, f32, [f32; 3]) {
 }
 
 /// A monument inscription for a colossus (E17×E18): a glowing label at the giant's base, so the
-/// fallen giants read as ancient *labelled* monuments. Composed from the colossus's own seed
-/// (a different salt than the grid markers), a touch taller/brighter than a scattered marker.
+/// fallen giants read as ancient *labelled* monuments. **G9: always name-bearing** — the giants
+/// are *named after* the deep operations, so the rare vocabulary lives at the rare landmarks.
+/// *(Brief said Relics/Signals-tier; the vocabulary currently has only one such block (`runfoot`),
+/// so labels draw from the full gated set biased deep — runfoot half the time — for variety.
+/// Recorded deviation; revisit when G10 grows the deep vocabulary.)*
 pub fn colossus_label(p: &Placement) -> Inscription {
-    let (text, script, _h, color) = compose(p.seed ^ 0x00C0_1055);
+    use crate::console::Block;
+    let h = p.seed ^ 0x00C0_1055;
+    let (_text, _script, _h, color) = compose(h);
+    const DEEP: [Block; 6] = [
+        Block::RunFoot, // ×3: the deep Relics-tier name dominates the monuments
+        Block::RunFoot,
+        Block::RunFoot,
+        Block::Seek,
+        Block::Circle,
+        Block::Goto,
+    ];
+    let block = DEEP[(h >> 9) as usize % DEEP.len()];
+    let script = block_script(block);
     Inscription {
         cell: (
             (p.pos.x / CELL).floor() as i32,
@@ -163,10 +224,11 @@ pub fn colossus_label(p: &Placement) -> Inscription {
         ),
         // Float a few blocks above the giant's feet so it reads as a plaque at the base.
         pos: p.pos + Vec3::new(0.0, 3.0, 0.0),
-        text,
+        text: transliterate(block.name(), script),
         script,
         height: 1.8,
         color,
+        name: Some(block),
     }
 }
 
@@ -200,6 +262,17 @@ pub fn inscriptions_near(
                 continue;
             }
             let (text, script, height, color) = compose(h);
+            // G9: ~1 in 4 cells spell a **block's name** (stratum-script, stable transliteration)
+            // instead of ambient noise — the world's text becomes load-bearing. The ambient
+            // majority is unchanged (same compose), keeping the melancholy noise.
+            let name = (h >> 5).is_multiple_of(4).then(|| name_pick(h));
+            let (text, script) = match name {
+                Some(b) => {
+                    let s = block_script(b);
+                    (transliterate(b.name(), s), s)
+                }
+                None => (text, script),
+            };
             out.push(Inscription {
                 cell: (cx, cz),
                 // Float just above the surface — a small label tethered to the ground voxel.
@@ -208,6 +281,7 @@ pub fn inscriptions_near(
                 script,
                 height,
                 color,
+                name,
             });
         }
     }
@@ -261,6 +335,116 @@ mod tests {
         assert!(
             a.pos.y > p.pos.y,
             "label should float above the giant's feet"
+        );
+    }
+
+    #[test]
+    fn transliteration_stable_and_distinct_across_vocabulary() {
+        use crate::console::Block;
+        // Deterministic: same block+script → the same glyphs every time (a recurring *name*).
+        for b in Block::ALL {
+            let s = block_script(b);
+            assert_eq!(transliterate(b.name(), s), transliterate(b.name(), s));
+            assert!(!transliterate(b.name(), s).is_empty());
+        }
+        // Distinct: no two blocks' names collide (within or across scripts) — each is readable
+        // as ITS name. (The brief's collision test.)
+        let all: Vec<String> = Block::ALL
+            .iter()
+            .map(|b| transliterate(b.name(), block_script(*b)))
+            .collect();
+        for i in 0..all.len() {
+            for j in (i + 1)..all.len() {
+                assert_ne!(
+                    all[i], all[j],
+                    "name collision: {:?} vs {:?}",
+                    all[i], all[j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn name_bearers_are_a_minority_and_match_their_block() {
+        // ~1 in 4 inscriptions name-bearing; a name-bearer's text is its block's transliteration
+        // in the block's stratum script; ambient majority unchanged in spirit (no name).
+        let g = |_x: f32, _z: f32| 0.0;
+        let marks = inscriptions_near(1337, Vec3::ZERO, 1500.0, g);
+        assert!(!marks.is_empty());
+        let named = marks.iter().filter(|m| m.name.is_some()).count();
+        let frac = named as f32 / marks.len() as f32;
+        assert!(
+            (0.10..=0.45).contains(&frac),
+            "name fraction should be ~1/4, got {frac} ({named}/{})",
+            marks.len()
+        );
+        for m in &marks {
+            if let Some(b) = m.name {
+                assert_eq!(
+                    m.script,
+                    block_script(b),
+                    "name renders in its stratum script"
+                );
+                assert_eq!(
+                    m.text,
+                    transliterate(b.name(), m.script),
+                    "stable name text"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_block_name_is_findable_nearby() {
+        // Coverage guarantee (no discovery softlock): the full vocabulary's names occur within a
+        // bounded radius of the start, across seeds. 2500 units ≈ a modest autopilot wander.
+        use crate::console::Block;
+        let g = |_x: f32, _z: f32| 0.0;
+        for seed in [1u32, 42, 1337] {
+            let mut found: std::collections::HashSet<u8> = std::collections::HashSet::new();
+            for m in inscriptions_near(seed, Vec3::ZERO, 2500.0, g) {
+                if let Some(b) = m.name {
+                    found.insert(b.code());
+                }
+            }
+            // Colossus monuments also surface deep names.
+            for p in colossi_near(seed, Vec3::ZERO, 2500.0, g) {
+                if let Some(b) = colossus_label(&p).name {
+                    found.insert(b.code());
+                }
+            }
+            for b in Block::ALL {
+                assert!(
+                    found.contains(&b.code()),
+                    "seed {seed}: block '{}' has no findable name within 2500 units",
+                    b.name()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn colossus_labels_name_deep_blocks() {
+        use crate::console::Block;
+        let g = |_x: f32, _z: f32| 12.0;
+        let placements = colossi_near(7, Vec3::ZERO, 1200.0, g);
+        assert!(!placements.is_empty());
+        let mut saw_runfoot = false;
+        for p in &placements {
+            let l = colossus_label(p);
+            let b = l.name.expect("every monument label is name-bearing (G9)");
+            assert!(
+                b.required().is_some(),
+                "monuments name the gated vocabulary"
+            );
+            assert_eq!(l.text, transliterate(b.name(), l.script));
+            saw_runfoot |= b == Block::RunFoot;
+            // Deterministic per colossus.
+            assert_eq!(colossus_label(p).name, l.name);
+        }
+        assert!(
+            saw_runfoot,
+            "the deep Relics-tier name should dominate the monuments"
         );
     }
 
