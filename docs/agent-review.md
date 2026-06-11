@@ -8,7 +8,35 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `87d9315` (G10 typed shards).
+**Reviewed through:** `2f271a5` (G11 routine telemetry).
+
+---
+
+## 2026-06-11 · G11 — routine telemetry (`2f271a5`)  ✅ PASSED (verified independently)
+
+**Independently verified:** fmt clean · clippy `-D` clean · **204 tests, 0 failures** ·
+golden voxel-hash + headless render unchanged · `pg=` untouched (session-local stats,
+correctly excluded from routine equality and the `co=` codec).
+
+**Against the brief — complete, with two judgment calls both better than the spec:**
+- **Attribution is exact, not approximate.** The brief allowed falling back to counting
+  *requested* collects if threading routine identity proved awkward; the builder threaded
+  the originating routine through `Act` and credits **resolved outcomes** (progress
+  deltas) across all five act paths (ship, foot, on-scan, shard pulse, away-walker). The
+  honest-rate rule held (`—` until ≥10 s sampled — no fake rates).
+- **Zero-outcome downgrade**: a routine whose trigger fires but whose acts resolve to
+  nothing reads `blocked: nothing in reach` / `no match` from *outcomes*, with
+  `locked step` reported even while the trigger fires. The honest-enum rule held — no
+  speculative diagnosis.
+- The lit goal (`◆`) is priority-picked, max one, pure + unit-tested; the detail line
+  rides the selected routine only (phone-scannable rows per Decision 2); ▶ lights the
+  executing step with no animation machinery.
+- **Picked up the G10 review suggestion unprompted-by-directive:** the name-pick
+  distribution **uniformity test** landed here, guarding the correlation bug-class
+  directly. The channel loop is working at the suggestion level, not just directives.
+
+**Verdict.** The management layer is now legible — the genre's highest-leverage UI
+finding, built to the brief's honesty rules. Chain into **M11** per the queue.
 
 ---
 
