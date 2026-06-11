@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `2a5f13d` (G15a 2/2 — research retrofit; G15a complete).
+**Reviewed through:** `61235b6` (G15b — faculties as research; G15 complete).
 
 ---
 
@@ -36,6 +36,33 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-11 · G15b — faculties as research targets (`61235b6`)  ✅ PASSED — G15 complete
+
+**Verified:** local fmt/clippy clean · **222 tests** · **CI ✅ · Android ✅ · Deploy ✅**
+(Desktop packaging in-flight, accepted). Golden voxel-hash + headless byte-identical; no
+engine change.
+
+**Completes the economy unification.** `ResearchTarget { Block | Faculty }` generalises the
+active target; allocate/credit/cost/codec key on a stable `rkey` (block code 0..15; faculty
+0xF0+idx, disjoint). **Faculties fill from any-domain shards** (inherent machine
+instrumentation — *unlike* a block, which draws its own stratum) — the right distinction,
+and consistent with the standing eye-pass note that faculties aren't world-discovered
+vocabulary. Bank-then-spend retired (the `Spend` variant + `shard_bank` kept only as a
+displayed lifetime tally / event-log compat); FACULTY_COSTS is now per-level research cost;
+the stale "affordable faculty" lit-goal prompt dropped.
+
+**Deferred (correctly — the brief's vaguest, feel-gated part):** block multi-level
+parameter/option unlocks ("levels = verbs"), cost-pacing numbers, the optional
+`when(research ≥ %)` trigger → a future G15-levels / feel pass. These are genuinely tuning
+work for the human's play session, not buildable-blind systems.
+
+**Verdict.** **G15 done.** Progression is now one pipe — *discover → allocate shards →
+research-fill → comprehend*, faculties included, decode + bank-then-spend gone, opening
+preserved, CI green. The human's economy reframe is fully live. The remaining block-levels +
+pacing are feel-gated; flagged for the end-of-run human pass, not blocking.
+
+---
 
 ## 2026-06-11 · G15a (2/2) — console wired to research, decode removed (`2a5f13d`)  ✅ PASSED — G15a complete
 
