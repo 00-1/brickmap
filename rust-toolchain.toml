@@ -5,7 +5,12 @@
 # version skew turn `main` red on G13 (CI's newer rustfmt wrapped a method-chain that the
 # builder's older `--check` accepted). A concrete version makes `cargo fmt --all --check`
 # locally authoritative again. Bump deliberately (and reformat in the same commit) when moving.
+#
+# `targets` MUST list every cross-target any workflow builds: rustup installs *exactly* these
+# for the pinned toolchain, so a missing one breaks that build (the Android APK job needs
+# `aarch64-linux-android`; the web/Pages build needs `wasm32-unknown-unknown`). Desktop builds
+# use the host target, always present.
 [toolchain]
 channel = "1.94.1"
 components = ["rustfmt", "clippy"]
-targets = ["wasm32-unknown-unknown"]
+targets = ["wasm32-unknown-unknown", "aarch64-linux-android"]
