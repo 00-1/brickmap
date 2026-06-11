@@ -44,34 +44,34 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## ✅ RED cleared (CI green on 30daefb) → CURRENT DIRECTIVE: G14 subroutines — 2026-06-11
+## CURRENT DIRECTIVE — 2026-06-11 (G14 done → G15 research economy)
 
-The G13 fmt RED is fully resolved and **CI is green** on `30daefb` — verified via the
-Actions API: **CI ✅ · Android APK ✅ · Desktop builds ✅** (Deploy preview = the Pages
-publish of the already-passing wasm, not a code gate). Good incident handling (wrap +
-exact toolchain pin + path-filter trigger, 3 commits, builder self-corrected the trigger
-gap). G13 logic was always sound. **G14 cleared:**
+**G14 (subroutines + nested groups) is complete + CI-green** (`a0aaa89`; the console is now a
+real compositional language — `run(routine)` reuse + scoped one-level groups, one-implicit-
+register invariant held). New work — the **biggest game-design milestone of the run**:
 
-- **G14 — Subroutines, templates & nested steps** — build per
-  [`milestones/G14-subroutines.md`](milestones/G14-subroutines.md) (copy to `main`). The
-  composition-depth layer: **same-agent `run(routine)`** (extend the cross-agent `run` from
-  G8c) so a player's routine is a reusable **glyph-named block** in the palette (Steele's
-  *no seams* — user words look like primitives); an **insert-time cycle guard** + runtime
-  depth cap (failsoft, no recursion blowup); **duplicate routine**; and **nested step
-  groups** inside `repeat`/`if` bodies — **one nesting level only** (linear-with-grouping,
-  NOT a tree/node IDE). Enforce the **one-implicit-register** rule (exactly one "current
-  thing" between steps; a second referent must be an explicit parameter). Persist via `pg=`
-  (append-only; old payloads load; missing callee → failsoft no-op). G11 credit → the callee
-  (pinned). Pinned defaults in the brief — veto only on a genuine fork.
-- After G14: **G15 — comprehension-as-research economy** (the unified shard→research model
-  you have the design for), and the Archive groundwork — the **fork-free lexicon v2**
-  statistical-honesty pass (G16a) is buildable any time. Then stand by between directives.
+- **G15 — Comprehension-as-research (the unified economy)** — build per
+  [`milestones/G15-research-economy.md`](milestones/G15-research-economy.md) (copy to
+  `main`). **This is the human's fully-decided economy reframe** — do not re-litigate the
+  rules. The pipe: *find a block's name → it's a **research target** (locked) → the player
+  **allocates** auto-collected shards into a chosen target → it **fills over time** →
+  comprehended (usable) → keep feeding for **levels***. **Allocate-and-fill, player-directed**
+  (player chooses what to research next; fills as shards arrive — not passive, not
+  bank-then-buy). **Domain-matched + rarity-gated** (a block draws its stratum's domain
+  shards; rarer blocks need rarer shards — gives G10's rarity tiers a real sink).
+  **It RETROFITS:** G9's decode-stratum-unlock → per-block research-fill; G10's
+  bank-then-spend → allocate-to-research; faculties fold in as ordinary research targets.
+  Progression buys **verbs** (vocabulary), faculties the only capped +%. Keep **opening
+  parity** (starters comprehended; given routines/autopilot unchanged).
+- **LARGE — split it** (suggested: **G15a** runtime+allocation+the G9/G10 retrofit landed
+  green, then **G15b** levels+faculties-as-targets+pacing). Land a runnable research→unlock
+  loop before moving on. Append-only codec migration; old payloads → starters comprehended.
+  Golden-neutral (game logic). Pinned defaults in the brief — veto only on a genuine fork.
+- After G15: the Archive groundwork — the **fork-free lexicon v2** statistical-honesty pass
+  (G16a), then handshakes (G16) and the wider Archive tranche. Stand by between directives.
 
-### Incident-prevention now in place (don't regress)
-`rust-toolchain.toml` pins **1.94.1** (exact) with `targets = [wasm32-unknown-unknown,
-aarch64-linux-android]`; Android+Desktop workflows now path-filter on `rust-toolchain.toml`.
-Local `cargo fmt --all --check` is authoritative again. Bump the toolchain deliberately
-(reformat in the same commit); keep cross-targets in the pin in sync with any new workflow.
+**Toolchain prevention still in force** (1.94.1 pin + android target + path-filter triggers);
+local `cargo fmt --all --check` is authoritative — keep main green.
 
 ---
 
@@ -219,6 +219,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — G14 ✅ complete (subroutines a0aaa89, CI-green). **New directive: G15 — comprehension-as-research economy** (the human's unified model: discover→allocate shards→fill→comprehend; domain+rarity-gated; retrofits G9 decode-unlock + G10 spend; faculties fold in; LARGE → split G15a runtime/retrofit, G15b levels). Next: G16a lexicon v2.
 - **2026-06-11** — ✅ RED cleared: CI/Android/Desktop green on `30daefb`. **New directive: G14 — subroutines** (same-agent run(routine) as a no-seams glyph block, cycle guard, duplicate, one-level nested groups, one-register rule). Next: G15 research economy, G16a lexicon v2.
 - **2026-06-11** — RED resolved over 3 commits (wrap+pin `70524d2`, android target `833f57c`, path-filter trigger `30daefb` — builder caught the trigger gap itself). All four workflows running on `30daefb`; G14 dispatches on confirmed green.
 - **2026-06-11** — round 2: fmt RED fixed (wrap + toolchain pin 1.94.1, good), but the pin's `targets` list (wasm only) **broke the Android APK** (`aarch64-linux-android` missing). Escalated: add the android target(s) to rust-toolchain.toml. Still blocks G14 until all four workflows green.
