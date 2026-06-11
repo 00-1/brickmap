@@ -435,6 +435,45 @@ mod tests {
     }
 
     #[test]
+    fn name_pick_distribution_matches_weights() {
+        // Babysitter suggestion (G10 review): guard the correlation bug-class directly — the
+        // picked-block distribution over many hashes must track the rarity weights (a stuck
+        // residue/correlation would skew it loudly), not just 3-seed reachability.
+        use crate::console::Block;
+        use crate::progress::Stratum;
+        let n = 40_000u32;
+        let mut counts: std::collections::HashMap<u8, u32> = std::collections::HashMap::new();
+        for i in 0..n {
+            // Drive with the same gate the live path applies: only gate-passing hashes pick.
+            let h = hash(i as i32, -(i as i32) * 7 + 3, 0xABCD);
+            if (h >> 5).is_multiple_of(4) {
+                *counts.entry(name_pick(h).code()).or_default() += 1;
+            }
+        }
+        let total: u32 = counts.values().sum();
+        assert!(total > 5_000, "need a large gated sample, got {total}");
+        // Expected share per code = its table weight / total weight (families share a code).
+        let weight = |b: Block| match b.required() {
+            None => 3u32,
+            Some(Stratum::Schematics) => 2,
+            _ => 1,
+        };
+        let total_w: u32 = Block::ALL.iter().map(|b| weight(*b)).sum();
+        let mut code_w: std::collections::HashMap<u8, u32> = std::collections::HashMap::new();
+        for b in Block::ALL {
+            *code_w.entry(b.code()).or_default() += weight(b);
+        }
+        for (code, w) in code_w {
+            let expect = w as f32 / total_w as f32;
+            let got = counts.get(&code).copied().unwrap_or(0) as f32 / total as f32;
+            assert!(
+                (got - expect).abs() < expect * 0.35 + 0.005,
+                "code {code}: distribution skew — got {got:.3}, expected ≈{expect:.3}"
+            );
+        }
+    }
+
+    #[test]
     fn colossus_labels_name_deep_blocks() {
         use crate::console::Block;
         let g = |_x: f32, _z: f32| 12.0;

@@ -354,8 +354,87 @@ impl Trigger {
     }
 }
 
+/// G11: why a routine isn't producing right now — only reasons the interpreter/app actually
+/// evaluated (the honesty rule: never invent a diagnosis).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum BlockReason {
+    /// The body acted but nothing was in reach to take.
+    NothingInReach,
+    /// A `match` filter excluded everything in reach.
+    NoMatch,
+    /// The body contains a step that isn't unlocked (discovered + decoded) yet.
+    LockedStep,
+}
+
+impl BlockReason {
+    pub fn label(self) -> &'static str {
+        match self {
+            BlockReason::NothingInReach => "nothing in reach",
+            BlockReason::NoMatch => "no match",
+            BlockReason::LockedStep => "locked step",
+        }
+    }
+}
+
+/// G11: a routine's live execution state, derived each tick (pure — tested as a matrix).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum RState {
+    Disabled,
+    /// The trigger fired/held this tick and the body ran.
+    Running,
+    /// Enabled, waiting on its trigger (the label says which).
+    #[default]
+    Waiting,
+    /// The trigger fires but the body can't produce — with the honest reason.
+    Blocked(BlockReason),
+}
+
+/// G11: per-routine **telemetry** — session-local working memory (never persisted; excluded
+/// from equality + `co=`). Counters are increments; no allocation on the tick path.
+#[derive(Clone, Debug, Default)]
+pub struct RoutineStats {
+    /// Total trigger fires (continuous: ticks run; when/on-arrive: edge fires; on-scan: hits).
+    pub fires: u32,
+    /// Items + data credited to this routine's collects.
+    pub items: u32,
+    pub yields: u64,
+    /// `console.now` when the routine last fired.
+    pub last_fired: Option<f32>,
+    /// The body step index that executed most recently this tick (the live highlight).
+    pub executing_step: Option<usize>,
+    /// Current derived state.
+    pub state: RState,
+    /// Yield-rate window: (window start time, yields at window start).
+    pub window: Option<(f32, u64)>,
+}
+
+impl RoutineStats {
+    /// Yield/hour over the live window — `None` (render `—`) until ~10 s of data exist.
+    pub fn rate_per_hour(&self, now: f32) -> Option<f32> {
+        let (t0, y0) = self.window?;
+        let dt = now - t0;
+        if dt < 10.0 {
+            return None;
+        }
+        Some((self.yields.saturating_sub(y0)) as f32 / dt * 3600.0)
+    }
+    /// Terse row suffix: `run 412 · y 1.2k · <state>` (the console list's at-a-glance line).
+    pub fn suffix(&self, now: f32) -> String {
+        let state = match self.state {
+            RState::Disabled => "off".to_string(),
+            RState::Running => "run".to_string(),
+            RState::Waiting => "wait".to_string(),
+            RState::Blocked(r) => format!("blk:{}", r.label()),
+        };
+        match self.rate_per_hour(now) {
+            Some(r) => format!("×{} · y{} · {r:.0}/h · {state}", self.fires, self.yields),
+            None => format!("×{} · y{} · {state}", self.fires, self.yields),
+        }
+    }
+}
+
 /// A routine: **data** the interpreter runs. No per-name behaviour — the givens are just the
-/// default instances. (`armed` is transient runtime edge-state, excluded from equality below.)
+/// default instances. (`armed` + `stats` are transient runtime state, excluded from equality.)
 #[derive(Clone, Debug)]
 pub struct Routine {
     pub name: String,
@@ -367,6 +446,8 @@ pub struct Routine {
     pub body: Vec<Step>,
     /// `When`-edge state: was the condition satisfied last tick? (Runtime only; not persisted.)
     pub armed: bool,
+    /// G11: live telemetry (runtime only; not persisted).
+    pub stats: RoutineStats,
 }
 
 impl Routine {
@@ -378,6 +459,7 @@ impl Routine {
             trigger,
             body,
             armed: false,
+            stats: RoutineStats::default(),
         }
     }
 
@@ -402,11 +484,14 @@ impl Routine {
     }
 }
 
-/// One resolved action the app dispatches: a block plus the match-filter context it runs under.
+/// One resolved action the app dispatches: a block plus the match-filter context it runs under,
+/// and (G11) the routine it came from — so collect outcomes credit back to their author.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Act {
     pub block: Block,
     pub filter: Option<MatchField>,
+    /// Index of the originating routine (G11 telemetry attribution).
+    pub routine: usize,
 }
 
 /// This tick's intents, produced by the interpreter from the enabled routines. The app applies
@@ -461,6 +546,8 @@ pub struct Console {
     /// world before it's even *listed*. Starters are implicitly discovered (see
     /// [`Console::is_discovered`]), so this only carries the gated vocabulary.
     pub discovered: HashSet<Block>,
+    /// G11: the app's clock (set each frame before `tick`) — drives last-fired age + yield rates.
+    pub now: f32,
 }
 
 impl Default for Console {
@@ -515,12 +602,18 @@ impl Default for Console {
             ],
             unlocked: HashSet::new(),
             discovered: HashSet::new(),
+            now: 0.0,
         }
     }
 }
 
 impl Console {
     // ---- vocabulary gating ------------------------------------------------------------------
+
+    /// G11: set the telemetry clock (the app's `time`, each frame before `tick`).
+    pub fn set_now(&mut self, now: f32) {
+        self.now = now;
+    }
 
     /// Is this block **discovered** (G9) — its name found in the world? Starters always;
     /// gated blocks only once a name-bearing inscription was collected. Undiscovered blocks are
@@ -579,8 +672,8 @@ impl Console {
     // ---- the interpreter --------------------------------------------------------------------
 
     /// Expand a body into resolved acts: `match` sets the filter for following Collects;
-    /// `repeat(n)` multiplies the next `Do`.
-    fn expand(body: &[Step]) -> Vec<Act> {
+    /// `repeat(n)` multiplies the next `Do`. `routine` tags each act for telemetry attribution.
+    fn expand(body: &[Step], routine: usize) -> Vec<Act> {
         let mut out = Vec::new();
         let mut filter = None;
         let mut times: u8 = 1;
@@ -590,7 +683,11 @@ impl Console {
                 Step::Repeat(n) => times = (*n).max(1),
                 Step::Do(b) => {
                     for _ in 0..times {
-                        out.push(Act { block: *b, filter });
+                        out.push(Act {
+                            block: *b,
+                            filter,
+                            routine,
+                        });
                     }
                     times = 1;
                 }
@@ -605,17 +702,29 @@ impl Console {
     /// this tick's [`Tick`] intents. (`on-scan` routines fire on a scan hit — [`Console::on_scan_acts`].)
     pub fn tick(&mut self, agent: Agent, data: u32, shards: u32, arrived: bool) -> Tick {
         let mut t = Tick::default();
-        for r in &mut self.routines {
+        let now = self.now;
+        for (idx, r) in self.routines.iter_mut().enumerate() {
             if r.agent != agent {
                 continue;
             }
             if !r.enabled {
                 r.armed = false;
+                r.stats.state = RState::Disabled;
+                r.stats.executing_step = None;
                 continue;
             }
+            // G11: telemetry — a routine with an unlocked-gate problem is honestly `blocked`.
+            let has_locked = r.body.iter().any(|st| {
+                matches!(st, Step::Do(b) if {
+                    let disc = b.required().is_none() || self.discovered.contains(b);
+                    !(disc && b.required().is_none_or(|s| self.unlocked.contains(&s)))
+                })
+            });
+            let mut fired = false;
             match r.trigger {
                 Trigger::Continuous => {
-                    for act in Self::expand(&r.body) {
+                    fired = true;
+                    for act in Self::expand(&r.body, idx) {
                         if act.block.is_nav() {
                             t.nav = Some(act.block);
                         } else if matches!(act.block, Block::Scan(ScanItem::Sites)) {
@@ -631,19 +740,68 @@ impl Console {
                 Trigger::When(c) => {
                     let sat = c.holds(data, shards);
                     if sat && !r.armed {
-                        t.acts.extend(Self::expand(&r.body)); // rising edge → fire once
+                        fired = true;
+                        t.acts.extend(Self::expand(&r.body, idx)); // rising edge → fire once
                     }
                     r.armed = sat;
                 }
                 Trigger::OnArrive => {
                     if arrived && !r.armed {
-                        t.acts.extend(Self::expand(&r.body)); // reached the site → fire once
+                        fired = true;
+                        t.acts.extend(Self::expand(&r.body, idx)); // reached the site → fire
                     }
                     r.armed = arrived;
                 }
             }
+            // G11: derive the state + bump counters (pure increments — no allocation).
+            if fired {
+                r.stats.fires = r.stats.fires.saturating_add(1);
+                r.stats.last_fired = Some(now);
+                r.stats.window.get_or_insert((now, r.stats.yields));
+                // The live step highlight: the last Do that executed this tick.
+                r.stats.executing_step = r.body.iter().rposition(|st| matches!(st, Step::Do(_)));
+            } else {
+                r.stats.executing_step = None;
+            }
+            r.stats.state = if has_locked {
+                RState::Blocked(BlockReason::LockedStep)
+            } else if fired {
+                RState::Running
+            } else {
+                RState::Waiting
+            };
         }
         t
+    }
+
+    /// G11: credit a resolved collect back to its routine (`items` taken, `yields` banked).
+    /// Zero items downgrades the routine's state to the honest blocked-reason.
+    pub fn credit(&mut self, routine: usize, items: u32, yields: u64, filtered: bool) {
+        let Some(r) = self.routines.get_mut(routine) else {
+            return;
+        };
+        if items > 0 {
+            r.stats.items += items;
+            r.stats.yields += yields;
+        } else if matches!(r.stats.state, RState::Running) {
+            r.stats.state = RState::Blocked(if filtered {
+                BlockReason::NoMatch
+            } else {
+                BlockReason::NothingInReach
+            });
+        }
+    }
+
+    /// G11: an on-scan routine fired (a scan hit ran its acts) — count it.
+    pub fn note_scan_fire(&mut self, routine: usize) {
+        let now = self.now;
+        if let Some(r) = self.routines.get_mut(routine) {
+            r.stats.fires = r.stats.fires.saturating_add(1);
+            r.stats.last_fired = Some(now);
+            r.stats.window.get_or_insert((now, r.stats.yields));
+            r.stats.state = RState::Running;
+            r.stats.executing_step = r.body.iter().rposition(|st| matches!(st, Step::Do(_)));
+        }
     }
 
     /// The acts `agent`'s enabled **on-scan** routines want, when a scan finds something (typically
@@ -651,8 +809,9 @@ impl Console {
     pub fn on_scan_acts(&self, agent: Agent) -> Vec<Act> {
         self.routines
             .iter()
-            .filter(|r| r.agent == agent && r.enabled && matches!(r.trigger, Trigger::OnScan))
-            .flat_map(|r| Self::expand(&r.body))
+            .enumerate()
+            .filter(|(_, r)| r.agent == agent && r.enabled && matches!(r.trigger, Trigger::OnScan))
+            .flat_map(|(i, r)| Self::expand(&r.body, i))
             .collect()
     }
 
@@ -1063,11 +1222,74 @@ impl Console {
                 trigger,
                 body,
                 armed: false,
+                stats: RoutineStats::default(),
             });
         }
         if !routines.is_empty() {
             self.routines = routines;
         }
+    }
+
+    /// G11: the HUD's **one lit goal** — the single nearest-to-done thing (≥ ~75%), priority by
+    /// completion: a `when` threshold close to firing · an affordable-unbought faculty · a
+    /// stratum nearly affordable to decode (named after a discovered-locked block wanting it,
+    /// when one exists). Exactly one line; nothing qualifying → `None` (never a quest log).
+    pub fn lit_goal(&self, p: &crate::progress::Progress) -> Option<String> {
+        let mut best: Option<(f32, String)> = None;
+        let mut consider = |pct: f32, label: String| {
+            let pct = pct.min(1.0);
+            if pct >= 0.75 && best.as_ref().is_none_or(|(b, _)| pct > *b) {
+                best = Some((pct, label));
+            }
+        };
+        // 1. `when` thresholds approaching their trigger (skip already-satisfied ones).
+        let data = p.strata.total() as f32;
+        let shards = p.shard_bank() as f32;
+        for r in self.routines.iter().filter(|r| r.enabled) {
+            if let Trigger::When(c) = r.trigger {
+                if c.min == 0 || r.armed {
+                    continue;
+                }
+                let cur = match c.state {
+                    State::Data => data,
+                    State::Shards => shards,
+                };
+                let pct = cur / c.min as f32;
+                if pct < 1.0 {
+                    consider(pct, format!("{} {:.0}%", r.name, pct * 100.0));
+                }
+            }
+        }
+        // 2. An affordable, unbought faculty (completion = 100%).
+        for f in crate::progress::Faculty::ALL {
+            let lvl = p.faculty_levels()[f.idx()];
+            if lvl < crate::progress::MAX_FACULTY_LEVEL
+                && p.shard_bank() >= crate::progress::FACULTY_COSTS[lvl as usize]
+            {
+                consider(1.0, format!("{} affordable", f.label()));
+            }
+        }
+        // 3. A stratum nearing its decode cost — named after a discovered-locked block that
+        //    wants it, when there is one (the "I've seen this name" pull).
+        for st in Stratum::ALL {
+            if p.is_comprehended(st) {
+                continue;
+            }
+            let pct = p.strata.get(st) as f32 / crate::progress::DECODE_COST as f32;
+            if pct >= 1.0 {
+                // Fully affordable decode beats a near-threshold (completion = 1).
+                let who = self
+                    .discovered
+                    .iter()
+                    .find(|b| b.required() == Some(st))
+                    .map(|b| format!("{}: ", b.name()))
+                    .unwrap_or_default();
+                consider(1.0, format!("{who}decode {} ready", st.label()));
+            } else {
+                consider(pct, format!("decode {} {:.0}%", st.label(), pct * 100.0));
+            }
+        }
+        best.map(|(_, label)| label)
     }
 
     // ---- render -----------------------------------------------------------------------------
@@ -1095,13 +1317,30 @@ impl Console {
                 steps.join(" → ")
             };
             s.push_str(&format!(
-                "{cur} [{on}] {:<4} {:<9} {:<11}: {}\n",
+                "{cur} [{on}] {:<4} {:<9} {:<11}: {}   {}\n",
                 r.agent.label(),
                 r.name,
                 r.trigger.label(),
-                pipe
+                pipe,
+                r.stats.suffix(self.now), // G11: ×fires · yields · rate · state
             ));
             row += 1;
+        }
+        // G11: detail line for the selected routine (Decision 2 — details on selected only).
+        if let Sel::Routine(i) = self.selected() {
+            let st = &self.routines[i].stats;
+            let age = st
+                .last_fired
+                .map(|t| format!("{:.0}s ago", (self.now - t).max(0.0)))
+                .unwrap_or_else(|| "never".into());
+            let rate = st
+                .rate_per_hour(self.now)
+                .map(|r| format!("{r:.0}/h"))
+                .unwrap_or_else(|| "—".into());
+            s.push_str(&format!(
+                "    └ items {} · yield {} · rate {} · last fired {}\n",
+                st.items, st.yields, rate, age
+            ));
         }
         let cur = if row == self.cursor { ">" } else { " " };
         s.push_str(&format!("{cur} + new routine\n"));
@@ -1142,10 +1381,15 @@ impl Console {
         // Trigger row.
         let cur = if self.cursor == 0 { ">" } else { " " };
         s.push_str(&format!("{cur} trigger: {}\n", r.trigger.label()));
-        // Body steps.
+        // Body steps (G11: `▶` lights the step the interpreter executed this tick).
         for (si, step) in r.body.iter().enumerate() {
             let cur = if self.cursor == si + 1 { ">" } else { " " };
-            s.push_str(&format!("{cur}   {}. {}\n", si + 1, step.label()));
+            let live = if r.stats.executing_step == Some(si) {
+                "▶"
+            } else {
+                " "
+            };
+            s.push_str(&format!("{cur} {live} {}. {}\n", si + 1, step.label()));
         }
         // Add-step row.
         let cur = if self.cursor == r.body.len() + 1 {
@@ -1198,7 +1442,8 @@ mod tests {
             c.on_scan_acts(Agent::Ship),
             vec![Act {
                 block: Block::Collect,
-                filter: None
+                filter: None,
+                routine: 3, // the given `collect`
             }]
         );
     }
@@ -1222,7 +1467,8 @@ mod tests {
             c.on_scan_acts(Agent::Ship),
             vec![Act {
                 block: Block::Collect,
-                filter: Some(MatchField::Rare)
+                filter: Some(MatchField::Rare),
+                routine: 3,
             }]
         );
     }
@@ -1234,7 +1480,7 @@ mod tests {
             Step::Do(Block::Decode),
             Step::Do(Block::Collect),
         ];
-        let acts = Console::expand(&body);
+        let acts = Console::expand(&body, 0);
         // decode ×3 then collect ×1 (repeat only multiplies the *next* Do).
         assert_eq!(acts.len(), 4);
         assert!(acts[..3].iter().all(|a| a.block == Block::Decode));
@@ -1260,7 +1506,8 @@ mod tests {
             fired.acts,
             vec![Act {
                 block: Block::Decode,
-                filter: None
+                filter: None,
+                routine: 4, // the appended when-routine
             }]
         );
         assert!(c.tick(Agent::Ship, 12, 0, false).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
@@ -1560,6 +1807,126 @@ mod tests {
         let mut back = Console::default();
         back.restore(&c.encode());
         assert_eq!(back.routines[2].body, vec![Step::Do(Block::Hail)]);
+    }
+
+    #[test]
+    fn telemetry_state_matrix() {
+        // G11: the honest state machine — disabled / running / waiting / blocked(reason).
+        let mut c = Console::default();
+        // Disabled.
+        c.toggle_routine(0); // drift off
+        c.tick(Agent::Ship, 0, 0, false);
+        assert_eq!(c.routines[0].stats.state, RState::Disabled);
+        // Continuous + enabled → running, fires count, step highlight on its Do.
+        assert_eq!(c.routines[1].stats.state, RState::Running); // survey
+        assert!(c.routines[1].stats.fires >= 1);
+        assert_eq!(c.routines[1].stats.executing_step, Some(0));
+        // `when` below threshold → waiting; crossing → running once.
+        c.routines.push(Routine::new(
+            "w",
+            Agent::Ship,
+            Trigger::When(Cond {
+                state: State::Data,
+                min: 10,
+            }),
+            vec![Step::Do(Block::Decode)],
+        ));
+        let wi = c.routines.len() - 1;
+        c.tick(Agent::Ship, 5, 0, false);
+        assert_eq!(c.routines[wi].stats.state, RState::Waiting);
+        c.tick(Agent::Ship, 12, 0, false);
+        assert_eq!(c.routines[wi].stats.state, RState::Running);
+        // A locked step → blocked(locked step), honestly, regardless of trigger.
+        c.routines[wi].body = vec![Step::Do(Block::Seek)]; // undiscovered + undecoded
+        c.tick(Agent::Ship, 0, 0, false);
+        assert_eq!(
+            c.routines[wi].stats.state,
+            RState::Blocked(BlockReason::LockedStep)
+        );
+    }
+
+    #[test]
+    fn telemetry_credit_and_blocked_reasons() {
+        let mut c = Console::default();
+        c.tick(Agent::Ship, 0, 0, false); // survey runs
+                                          // Credit accrues items + yields to the routine.
+        c.credit(1, 3, 12, false);
+        assert_eq!(c.routines[1].stats.items, 3);
+        assert_eq!(c.routines[1].stats.yields, 12);
+        // A zero outcome downgrades a running routine to the honest reason.
+        c.tick(Agent::Ship, 0, 0, false);
+        c.credit(1, 0, 0, false);
+        assert_eq!(
+            c.routines[1].stats.state,
+            RState::Blocked(BlockReason::NothingInReach)
+        );
+        c.tick(Agent::Ship, 0, 0, false);
+        c.credit(1, 0, 0, true);
+        assert_eq!(
+            c.routines[1].stats.state,
+            RState::Blocked(BlockReason::NoMatch)
+        );
+    }
+
+    #[test]
+    fn telemetry_rate_windows_honestly() {
+        // `—` (None) until ~10 s of window data; a real rate after.
+        let mut c = Console::default();
+        c.set_now(100.0);
+        c.tick(Agent::Ship, 0, 0, false); // opens the window at 100.0
+        c.credit(1, 1, 10, false);
+        assert_eq!(c.routines[1].stats.rate_per_hour(c.now), None); // no time elapsed
+        c.set_now(130.0); // 30 s later
+        c.tick(Agent::Ship, 0, 0, false);
+        c.credit(1, 2, 20, false);
+        let r = c.routines[1].stats.rate_per_hour(c.now).unwrap();
+        assert!(
+            (r - 3600.0).abs() < 1.0,
+            "30 yield over 30 s = 3600/h, got {r}"
+        );
+        // Idle routine: no window → None, no div-by-zero.
+        assert_eq!(c.routines[3].stats.rate_per_hour(c.now), None);
+    }
+
+    #[test]
+    fn lit_goal_picks_one_nearest_to_done() {
+        use crate::progress::{Event, Progress, Stratum as PStratum};
+        let mut c = Console::default();
+        let p = Progress::default();
+        // Nothing qualifying → no line (never a quest log).
+        assert_eq!(c.lit_goal(&p), None);
+        // A when(data ≥ 10) at 80% qualifies…
+        c.routines.push(Routine::new(
+            "almost",
+            Agent::Ship,
+            Trigger::When(Cond {
+                state: State::Data,
+                min: 10,
+            }),
+            vec![Step::Do(Block::Decode)],
+        ));
+        let mut p = Progress::default();
+        p.strata.records = 8; // data total 8/10 = 80%
+        let goal = c.lit_goal(&p).expect("80% when-threshold qualifies");
+        assert!(goal.contains("almost"), "goal names the routine: {goal}");
+        // …but a fully affordable faculty (100%) beats it.
+        for _ in 0..30 {
+            p.apply(&Event::CollectShard {
+                domain: PStratum::Records,
+                rarity: crate::shards::Rarity::Common,
+            });
+        }
+        let goal = c.lit_goal(&p).expect("affordable faculty qualifies");
+        assert!(goal.contains("affordable"), "100% beats 80%: {goal}");
+        // A decode-ready stratum names a discovered-locked block wanting it.
+        let mut p2 = Progress::default();
+        p2.strata.schematics = crate::progress::DECODE_COST + 1;
+        c.discovered.insert(Block::Seek);
+        let goal = c.lit_goal(&p2).expect("decode-ready qualifies");
+        assert!(
+            goal.contains("seek") && goal.contains("SCH"),
+            "names the waiting block: {goal}"
+        );
     }
 
     #[test]

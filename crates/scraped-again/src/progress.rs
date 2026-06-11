@@ -411,6 +411,11 @@ impl Progress {
         self.shard_counts[d.byte() as usize].iter().sum()
     }
 
+    /// G10/G11: lifetime shard pickups across every domain (telemetry item accounting).
+    pub fn shard_total_count(&self) -> u32 {
+        self.shard_counts.iter().flatten().sum()
+    }
+
     /// G10: the current faculty levels (sensing / reach / drive).
     pub fn faculty_levels(&self) -> [u8; 3] {
         self.faculties

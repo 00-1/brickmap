@@ -775,8 +775,13 @@ impl App {
                 console::Agent::Ship
             };
             for act in self.console.on_scan_acts(agent) {
+                self.console.note_scan_fire(act.routine); // G11: the hit fired this routine
                 match act.block {
-                    console::Block::Collect => self.dispatch_collect(act.filter),
+                    console::Block::Collect => {
+                        let (items, yields) = self.dispatch_collect(act.filter);
+                        self.console
+                            .credit(act.routine, items, yields, act.filter.is_some());
+                    }
                     console::Block::FireBeam => self.cast_beam(),
                     console::Block::Decode => self.decode_action(),
                     _ => {}
@@ -787,7 +792,11 @@ impl App {
 
     /// Run a routine `collect` act (the hands-off auto-collect), honouring an optional `match`
     /// filter (G5/G7). Uses the generous nearby reach so it harvests at cruise altitude.
-    fn dispatch_collect(&mut self, filter: Option<console::MatchField>) {
+    /// Returns `(items, yields)` actually taken — G11 telemetry credits them to the routine.
+    fn dispatch_collect(&mut self, filter: Option<console::MatchField>) -> (u32, u64) {
+        let before_items =
+            self.progress.collected_count() as u32 + self.progress.shard_total_count();
+        let before_yield = self.progress.strata.total() + self.progress.shard_bank();
         match filter {
             Some(console::MatchField::Rare) => self.collect_nearby_where(|c| {
                 matches!(
@@ -804,6 +813,10 @@ impl App {
         // G10: the auto-collect also sweeps in-reach shards, honouring the same filter
         // (`rare` = rare rarity; `domain` = that domain only).
         self.collect_shards_in_reach(filter);
+        let items = self.progress.collected_count() as u32 + self.progress.shard_total_count()
+            - before_items;
+        let yields = self.progress.strata.total() + self.progress.shard_bank() - before_yield;
+        (items, yields)
     }
 
     /// G10: collect every uncollected shard within the hands-off reach, honouring an optional
@@ -1168,7 +1181,14 @@ impl App {
         };
         for act in self.console.on_scan_acts(agent) {
             if let console::Block::Collect = act.block {
+                self.console.note_scan_fire(act.routine); // G11
+                let before = self.progress.shard_total_count();
+                let before_bank = self.progress.shard_bank();
                 self.collect_shards_in_reach(act.filter);
+                let items = self.progress.shard_total_count() - before;
+                let yields = self.progress.shard_bank() - before_bank;
+                self.console
+                    .credit(act.routine, items, yields, act.filter.is_some());
             }
         }
     }
@@ -1614,7 +1634,12 @@ impl App {
         let walker_pos = self.walker_pos;
         for act in foot.acts {
             match act.block {
-                console::Block::Collect => self.collect_nearest_to(walker_pos),
+                console::Block::Collect => {
+                    let before = self.progress.collected_count() as u32;
+                    self.collect_nearest_to(walker_pos);
+                    let items = self.progress.collected_count() as u32 - before;
+                    self.console.credit(act.routine, items, items as u64, false);
+                }
                 console::Block::Decode => self.decode_action(),
                 _ => {} // hail/fire-beam are no-ops for the off-screen walker
             }
@@ -2452,6 +2477,7 @@ impl ApplicationHandler<AppEvent> for App {
                     let data = self.progress.strata.total().min(u32::MAX as u64) as u32;
                     let bank = self.progress.shard_bank().min(u32::MAX as u64) as u32;
                     let arrived = self.ship_arrived();
+                    self.console.set_now(self.time); // G11: drive telemetry ages/rates
                     let tick = self.console.tick(console::Agent::Ship, data, bank, arrived);
                     self.nav_intent = tick.nav;
                     self.scan_wanted = tick.scan;
@@ -2460,7 +2486,15 @@ impl ApplicationHandler<AppEvent> for App {
                         match act.block {
                             console::Block::FireBeam => self.cast_beam(),
                             console::Block::Decode => self.decode_action(),
-                            console::Block::Collect => self.dispatch_collect(act.filter),
+                            console::Block::Collect => {
+                                let (items, yields) = self.dispatch_collect(act.filter);
+                                self.console.credit(
+                                    act.routine,
+                                    items,
+                                    yields,
+                                    act.filter.is_some(),
+                                );
+                            }
                             console::Block::Hail => self.hail_ship(),
                             console::Block::RunFoot => self.start_expedition(), // G8c cross-agent
                             console::Block::Spend(f) => self.spend_action(f), // when(shards)→spend
@@ -2483,7 +2517,15 @@ impl ApplicationHandler<AppEvent> for App {
                         foot_nav = foot.nav;
                         for act in foot.acts {
                             match act.block {
-                                console::Block::Collect => self.dispatch_collect(act.filter),
+                                console::Block::Collect => {
+                                    let (items, yields) = self.dispatch_collect(act.filter);
+                                    self.console.credit(
+                                        act.routine,
+                                        items,
+                                        yields,
+                                        act.filter.is_some(),
+                                    );
+                                }
                                 console::Block::Decode => self.decode_action(),
                                 console::Block::Hail => self.hail_ship(),
                                 console::Block::FireBeam => self.cast_beam(),
@@ -2942,6 +2984,10 @@ impl ApplicationHandler<AppEvent> for App {
                             if self.time - t < 5.0 {
                                 mode.push_str(&format!(" · NAME RECOVERED — {}", blk.name()));
                             }
+                        }
+                        // G11: the one lit goal — the single nearest-to-done thing.
+                        if let Some(goal) = self.console.lit_goal(&self.progress) {
+                            mode.push_str(&format!(" · ◆ {goal}"));
                         }
                         // E13: photo mode readout (paused · free-cam · FOV).
                         if self.photo_active {

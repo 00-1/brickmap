@@ -806,6 +806,19 @@ wireable via the new `when(shards ≥ N)`. The M10 gates count + gate the new sp
 199 tests; golden voxel-hash unchanged; no engine change. *(Session-only per-item respawn +
 economy numbers flagged for the tuning pass — see the brief's as-built.)*
 
+### ✨ G11 — Routine telemetry ("the machine answers why") ✅ &nbsp;→ [`milestones/G11-routine-telemetry.md`](milestones/G11-routine-telemetry.md)
+Automation stays loved only while it stays **legible**: every routine now reports what it's doing
+and why. Per-routine session telemetry (`RoutineStats`): trigger fires, items + yields credited
+back through act-level attribution (`Act.routine` tags every emission; the app credits resolved
+outcomes across both agents + the on-scan/shard paths), last-fired age, a windowed **yield/hr**
+(`—` until honestly sampled), and a derived state from an honest enum — `running` / `waiting` /
+`blocked: nothing in reach · no match · locked step` (only reasons actually evaluated). The
+console shows a terse row suffix + details on the selected routine; the editor **lights the
+executing step** (`▶`). The HUD gains the **one lit goal** — a single nearest-to-done line
+(when-threshold ≥75% · affordable faculty · decode-ready, naming a discovered-locked block that
+wants it); never a quest log. Pure fns unit-tested (state matrix, attribution, rate, goal
+picker). 203 tests; golden + `pg=` untouched; no engine change.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear
