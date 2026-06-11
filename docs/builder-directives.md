@@ -44,7 +44,33 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-08 (NEW: D10 touch overlay visuals)
+## CURRENT DIRECTIVE — 2026-06-11 (NEW RUN: G9 block-name discovery)
+
+**This run is dispatched incrementally**: the babysitter is mid-planning and will post each
+milestone here as it's ready. When you finish G9 and no new directive is up yet, that is **not**
+a pause — re-arm your watcher and stand by; more is coming (G10 typed shards is being planned
+now). Wind down only when this channel says the run is over.
+
+- **G9 — Names in the world (block discovery)** — build per
+  [`milestones/G9-block-name-discovery.md`](milestones/G9-block-name-discovery.md) (copy it to
+  `main` to build). The human-decided direction: a deterministic minority of in-world
+  inscriptions carry **block names** (rendered in the block's stratum's script, stable
+  transliteration); **collecting one discovers the block** in the console (listed, dimmed,
+  stratum-locked); the existing decode then unlocks it — a **two-stage gate** replacing
+  "decode unlocks the whole stratum at once." Starter set pre-discovered (opening unchanged);
+  colossus monument labels name the deep Relics/Signals-tier blocks. All collect routes
+  (T / beam / auto-collect) discover. Pinned defaults in the brief — follow them; the
+  "must-comprehend-script-to-read-names" variant is a human fork, **don't** build it.
+- Game-side only (no engine change expected); golden voxel-hash must stay unchanged; if a
+  golden *image* covers inscription content, update it intentionally once, noted.
+- Queue note: **G10 — typed shards** (types + rarities + auto-collectible currency behind
+  `spend`) is next; its brief lands here when ready. Don't pre-build it.
+
+---
+
+*(superseded — D10 landed + verified)*
+
+### ~~CURRENT DIRECTIVE — 2026-06-08 (D10 touch overlay visuals)~~
 
 **Playtest:** D9 touch *mapping* works well, but the on-screen overlay is just a HUD text line —
 **the player can't see where to touch.** New work:
@@ -155,6 +181,10 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — **NEW RUN (incremental dispatch).** D10 ✅ (verified rendered). **New
+  directive: G9 — block-name discovery** (in-world inscriptions carry block names; collect →
+  discover → decode unlocks; two-stage gate; starter pre-discovered; brief on this branch).
+  G10 (typed shards) being planned — stand by between directives, don't wind down.
 - **2026-06-08** — D9 ✅ (touch mapping works in playtest). **New directive: D10 — touch control overlay** (render the sliders/buttons visibly from `touch::Layout` so you can see where to touch; game-side HUD; generic engine rect primitive; headless-verifiable; on-device feel = human follow-up).
 - **2026-06-08** — ⚡ quick fix (human playtest): autopilot `drift` does a tight circle → make it wander/meander (slow-noise heading, covers ground) as a purposeful survey sweep; applies to the shared autopilot_step (piloted + away-ship + away-walker). Squeeze in around D9.
 - **2026-06-08** — wind-down confirmed (176 tests green, independent check). **New directive: D9 touch controls** (phone touch UI; engine touch-events + game overlay + tap=beam; on-device feel-tuning is the device-gated follow-up).
