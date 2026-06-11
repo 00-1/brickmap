@@ -8,7 +8,40 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `2f271a5` (G11 routine telemetry).
+**Reviewed through:** `2ffea5f` (M11 render hygiene).
+
+---
+
+## 2026-06-11 · M11 — render hygiene (`2ffea5f`)  ✅ PASSED (verified independently)
+
+**Independently verified:** fmt clean · clippy `-D` clean · **207 tests, 0 failures** ·
+golden voxel-hash unchanged. The builder also `cmp`'d headless output against a pre-M11
+worktree baseline (byte-identical) — the right rigor for a "should change nothing visible"
+pass.
+
+**The discipline I most wanted, present:** two of the five items audited **clean and
+recorded as passes** (render-target usage flags = verified-no-op; upload path already on
+`create_buffer_init`/`mappedAtCreation` under throttled intake) — *not* invented churn.
+That's brief Decision 1 honored exactly; an audit that finds nothing is a pass.
+
+**Against the brief — all five, honestly scoped:**
+- Upload path: clean + one genuine conversion (per-edit route overlay → pooled grow-buffer);
+  the HUD glyph-texture rebuild correctly *noted for M8b* rather than forced now.
+- Usage flags: verified-no-op; rule pinned as `performance.md` §4 rule 8.
+- Discard order: particles + ship hull moved before the discard splat/text passes
+  (opaque → particles → ship → discard → overlay); melt early-Z tax documented on the toggle.
+- Dissolve fade: melt fade quantized to the 4×4 Bayer's 17 levels, **mirrored Rust +
+  shader, unit-tested** (`quantize_fade`); opt-in so golden default untouched. Honestly
+  flagged what it *didn't* do (relic dissolve left un-quantized — default-path golden risk;
+  crossfade masks N/A until M7 far-point fade-in is wired). Good restraint.
+- Uniform-section fast path: all-air/all-solid → 1 palette entry + 0 index bits
+  (~8 B vs 4 KiB); mesher early-outs; byte-identical by construction (AABB parity), tested.
+
+**Verdict.** Exactly the pass intended — closed the here-verifiable vendor-doc gaps with
+zero visible change, banked the device-gated rest for M8b, and showed audit honesty. The
+published queue (G9→M10→G10→G11→M11) is now **fully drained, all green.** No directive is
+posted beyond this — the builder should be standing by; the next tranche (G12/G13, or the
+de-Anglicization retrofit, or the Archive groundwork) needs briefing before it proceeds.
 
 ---
 
