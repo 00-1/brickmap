@@ -2272,7 +2272,9 @@ mod tests {
         let t = c.tick(Agent::Ship, 0, 0, false);
         assert!(t.scan, "the recorded scan step requests a site scan");
         assert!(
-            t.acts.iter().any(|a| a.block == Block::Collect && a.routine == i),
+            t.acts
+                .iter()
+                .any(|a| a.block == Block::Collect && a.routine == i),
             "the recorded collect step emits a collect act credited to the draft"
         );
     }

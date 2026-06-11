@@ -1,5 +1,11 @@
-# Pins the toolchain so local dev and CI agree. `rustup` reads this automatically.
+# Pins the toolchain so local dev and CI agree. `rustup` reads this automatically (for any
+# cargo command run in the repo), so both sides use the *same* rustc/rustfmt/clippy.
+#
+# Pinned to an EXACT version on purpose: `channel = "stable"` floats, which let a rustfmt
+# version skew turn `main` red on G13 (CI's newer rustfmt wrapped a method-chain that the
+# builder's older `--check` accepted). A concrete version makes `cargo fmt --all --check`
+# locally authoritative again. Bump deliberately (and reformat in the same commit) when moving.
 [toolchain]
-channel = "stable"
+channel = "1.94.1"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]
