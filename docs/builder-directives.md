@@ -44,34 +44,31 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-11 (G14 done → G15 research economy)
+## CURRENT DIRECTIVE — 2026-06-11 (G15 done → G16 lexicon v2; Archive tranche begins)
 
-**G14 (subroutines + nested groups) is complete + CI-green** (`a0aaa89`; the console is now a
-real compositional language — `run(routine)` reuse + scoped one-level groups, one-implicit-
-register invariant held). New work — the **biggest game-design milestone of the run**:
+**G15 (comprehension-as-research economy) is complete + CI-green** (`61235b6`; discover →
+allocate shards → research-fill → comprehend, faculties folded in, decode + bank-then-spend
+gone, opening preserved). The automation/economy arc G9–G15 is built. New direction — the
+**Archive tranche** (human green-lit; binding constraint **NO readable lore** — comprehension
+is structural, never prose; block names stay glyph), starting with its **fork-free** piece:
 
-- **G15 — Comprehension-as-research (the unified economy)** — build per
-  [`milestones/G15-research-economy.md`](milestones/G15-research-economy.md) (copy to
-  `main`). **This is the human's fully-decided economy reframe** — do not re-litigate the
-  rules. The pipe: *find a block's name → it's a **research target** (locked) → the player
-  **allocates** auto-collected shards into a chosen target → it **fills over time** →
-  comprehended (usable) → keep feeding for **levels***. **Allocate-and-fill, player-directed**
-  (player chooses what to research next; fills as shards arrive — not passive, not
-  bank-then-buy). **Domain-matched + rarity-gated** (a block draws its stratum's domain
-  shards; rarer blocks need rarer shards — gives G10's rarity tiers a real sink).
-  **It RETROFITS:** G9's decode-stratum-unlock → per-block research-fill; G10's
-  bank-then-spend → allocate-to-research; faculties fold in as ordinary research targets.
-  Progression buys **verbs** (vocabulary), faculties the only capped +%. Keep **opening
-  parity** (starters comprehended; given routines/autopilot unchanged).
-- **LARGE — split it** (suggested: **G15a** runtime+allocation+the G9/G10 retrofit landed
-  green, then **G15b** levels+faculties-as-targets+pacing). Land a runnable research→unlock
-  loop before moving on. Append-only codec migration; old payloads → starters comprehended.
-  Golden-neutral (game logic). Pinned defaults in the brief — veto only on a genuine fork.
-- After G15: the Archive groundwork — the **fork-free lexicon v2** statistical-honesty pass
-  (G16a), then handshakes (G16) and the wider Archive tranche. Stand by between directives.
+- **G16 — Lexicon v2 (statistical honesty)** — build per
+  [`milestones/G16-lexicon-v2.md`](milestones/G16-lexicon-v2.md) (copy to `main`). Make the
+  seeded `lexicon` generator pass the **statistical-honesty checklist** (Zipf, Heaps,
+  natural conditional entropy, Zipf abbreviation, a function-word layer, consistent
+  morphology, bursty content-words, no autocopy/layout artifacts) — **each property a unit
+  test** (with a broken-generator meta-test that *fails* them, so the tests bite); plus the
+  corpus-shape rules (some long strings, a name+logogram+numeral record shape, a recurring
+  one-varying-slot frame). Output stays **nonsense words in the five scripts** (no English,
+  no lore); G9 names + the ambient/name distinction unchanged. Deterministic in seed
+  (share-link safe; E12 golden-hash holds). Golden-neutral. **Scope is statistical honesty +
+  corpus-shape ONLY** — the proto-language / Leiden display / cartouches / sensing-ladder are
+  later Archive milestones (they carry forks; I'll brief them with fork-checks). Pinned
+  defaults in the brief.
+- After G16: the deeper Archive milestones (briefed with human fork-checks) and/or G17
+  (handshakes/expedition economy). Stand by between directives.
 
-**Toolchain prevention still in force** (1.94.1 pin + android target + path-filter triggers);
-local `cargo fmt --all --check` is authoritative — keep main green.
+Toolchain prevention in force (1.94.1 pin etc.); keep main green; CI is the authority.
 
 ---
 
@@ -219,6 +216,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — G15 ✅ complete (economy unified, 61235b6, CI-green). **New directive: G16 — lexicon v2** (statistical honesty: Zipf/Heaps/entropy/morphology checklist as unit tests + corpus-shape; fork-free Archive groundwork; output stays nonsense-words, no lore). Deeper Archive milestones briefed next with fork-checks. (Handshakes → G17.)
 - **2026-06-11** — G14 ✅ complete (subroutines a0aaa89, CI-green). **New directive: G15 — comprehension-as-research economy** (the human's unified model: discover→allocate shards→fill→comprehend; domain+rarity-gated; retrofits G9 decode-unlock + G10 spend; faculties fold in; LARGE → split G15a runtime/retrofit, G15b levels). Next: G16a lexicon v2.
 - **2026-06-11** — ✅ RED cleared: CI/Android/Desktop green on `30daefb`. **New directive: G14 — subroutines** (same-agent run(routine) as a no-seams glyph block, cycle guard, duplicate, one-level nested groups, one-register rule). Next: G15 research economy, G16a lexicon v2.
 - **2026-06-11** — RED resolved over 3 commits (wrap+pin `70524d2`, android target `833f57c`, path-filter trigger `30daefb` — builder caught the trigger gap itself). All four workflows running on `30daefb`; G14 dispatches on confirmed green.

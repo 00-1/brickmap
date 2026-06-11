@@ -139,7 +139,7 @@ the old decode economy, and resolves several forks at once:
 - **Note:** G10 already shipped bank-then-spend faculties — so this milestone partly
   *retrofits* G10's `spend` into the research model. Frame as evolution, keep `pg=` compat.
 
-### G16a — Lexicon v2: statistical honesty — *sketch; fork-FREE (buildable any time)*
+### G16 — Lexicon v2: statistical honesty — *DISPATCHED 2026-06-11 (fork-FREE, Archive groundwork)*
 The one Archive-tranche piece gated on nothing: make the seeded lexicon's output pass the
 tests pattern-hunting players will run ([`research-linguistics.md`](research-linguistics.md)
 §2 checklist): Zipf rank-frequency, Heaps' law, 3–4 bits/char conditional entropy, Zipf
@@ -149,7 +149,7 @@ test-pure-logic norm). Plus the corpus-shape rules: some long texts, structured
 name+logogram+numeral lists, one recurring ritual frame for Rites. Slots anywhere in the
 queue; pure logic, golden-neutral (content-keyed like G9).
 
-### G16 — Handshakes & the expedition economy — *sketch*
+### G17 — Handshakes & the expedition economy — *sketch*
 P18 made real on the G8 expedition: caches the walker fills and the ship collects
 (coordination via world state only, no direct agent RPC); failed-handoff vignettes (the
 walker waiting at an empty drop — visible, melancholy, legible); per-agent routine-slot
