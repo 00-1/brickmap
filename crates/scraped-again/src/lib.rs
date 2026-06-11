@@ -965,7 +965,7 @@ impl App {
         // allocates the player's domain-shard intake to researching it (allocate-and-fill,
         // player-directed). An undiscovered block can't be acted on (find its name first).
         if !self.console.is_unlocked(b) {
-            if self.progress.allocate(b) {
+            if self.progress.allocate(progress::ResearchTarget::Block(b)) {
                 self.sync_console_unlock();
                 log::info!(
                     "researching {} — its domain's shards now fill it (allocate-and-fill)",
@@ -987,7 +987,16 @@ impl App {
             console::Block::Drift => self.auto_fly = true, // (re)engage the wander
             console::Block::Hail => self.hail_ship(),      // G8a: recall the autonomous ship
             console::Block::RunFoot => self.start_expedition(), // G8c: deploy the walker
-            console::Block::Spend(f) => self.spend_action(f), // G10: buy a faculty level (→ G15b)
+            // G15b: a faculty is a **research target** now — clicking `spend(f)` allocates research
+            // to it (its level fills from any-domain shard intake), retiring bank-then-spend.
+            console::Block::Spend(f) => {
+                self.progress.allocate(progress::ResearchTarget::Faculty(f));
+                self.sync_console_unlock();
+                log::info!(
+                    "researching faculty {} — shard intake now levels it",
+                    f.label()
+                );
+            }
             // G15: `decode` is removed (comprehension is now research); a stray Decode is a no-op.
             other => log::info!("block {}: no longer a direct action", other.label()),
         }
@@ -1162,21 +1171,12 @@ impl App {
             .map(|c| Vec3::from(c.pos))
     }
 
-    /// G10: `spend(faculty)` — buy the next level if the bank affords it (the event is gated).
+    /// G15b: `spend(faculty)` now **allocates research** to the faculty (bank-then-spend retired) —
+    /// its level then fills from any-domain shard intake. Used by both the manual click and
+    /// interpreter `when(shards)→spend` routines.
     fn spend_action(&mut self, f: progress::Faculty) {
-        let lvl = self.progress.faculty_levels()[f.idx()];
-        if self.progress.apply(&progress::Event::Spend { faculty: f }) {
-            log::info!("spend: {} → level {}", f.label(), lvl + 1);
-        } else {
-            log::info!(
-                "spend {}: need {} shards (bank {}) or at cap",
-                f.label(),
-                progress::FACULTY_COSTS
-                    .get(lvl as usize)
-                    .copied()
-                    .unwrap_or(0),
-                self.progress.shard_bank()
-            );
+        if self.progress.allocate(progress::ResearchTarget::Faculty(f)) {
+            log::info!("researching faculty {} — shard intake levels it", f.label());
         }
     }
 

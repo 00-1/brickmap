@@ -1909,15 +1909,8 @@ impl Console {
                 }
             }
         }
-        // 2. An affordable, unbought faculty (completion = 100%).
-        for f in crate::progress::Faculty::ALL {
-            let lvl = p.faculty_levels()[f.idx()];
-            if lvl < crate::progress::MAX_FACULTY_LEVEL
-                && p.shard_bank() >= crate::progress::FACULTY_COSTS[lvl as usize]
-            {
-                consider(1.0, format!("{} affordable", f.label()));
-            }
-        }
+        // (G15b: the old "affordable faculty" prompt is gone — faculties are research targets now;
+        // a faculty under research shows via the active-research headline above.)
         best.map(|(_, label)| label)
     }
 
@@ -2659,20 +2652,12 @@ mod tests {
         p.strata.records = 8; // data total 8/10 = 80%
         let goal = c.lit_goal(&p).expect("80% when-threshold qualifies");
         assert!(goal.contains("almost"), "goal names the routine: {goal}");
-        // …but a fully affordable faculty (100%) beats it.
-        for _ in 0..30 {
-            p.apply(&Event::CollectShard {
-                domain: PStratum::Records,
-                rarity: crate::shards::Rarity::Common,
-            });
-        }
-        let goal = c.lit_goal(&p).expect("affordable faculty qualifies");
-        assert!(goal.contains("affordable"), "100% beats 80%: {goal}");
-        // G15: an **active research** target is the headline lit goal, named by its glyphs —
-        // it overrides the when/faculty fallbacks (the player's chosen focus).
+        let _ = PStratum::Records; // (CollectShard import retained for the research case below)
+                                   // G15: an **active research** target is the headline lit goal, named by its glyphs —
+                                   // it overrides the when/faculty fallbacks (the player's chosen focus).
         let mut p2 = Progress::default();
         p2.apply(&Event::Discover { block: Block::Seek });
-        p2.allocate(Block::Seek);
+        p2.allocate(crate::progress::ResearchTarget::Block(Block::Seek));
         let goal = c.lit_goal(&p2).expect("active research is the lit goal");
         assert!(
             goal.contains(&Block::Seek.glyphs()) && goal.contains("research"),

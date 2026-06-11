@@ -114,12 +114,26 @@ runtime — but land a runnable research→unlock loop before moving on.)*
 - **Treadmill creep** → progression buys verbs; faculties the only +%, capped (the human's
   standing rule).
 
-## As built — G15a (two commits: 1/2 runtime, 2/2 console wiring)
+## As built — G15a (2 commits) + G15b (faculties-as-targets)
 
 G15a landed the **block** research economy in two green commits: **(1/2)** the runtime +
-`pg=` v6 codec (additive — decode/spend still worked); **(2/2)** the console/lib wiring +
-the rip-out (this commit). **G15b** remains: faculties-as-research-targets (G10 `spend` still
-works until then) + research **levels** + pacing. Game-side; no engine change; byte-identical.
+`pg=` v6 codec (additive); **(2/2)** the console/lib wiring + the decode rip-out. **G15b**
+then folded **faculties into the same research pipe** (this commit), retiring bank-then-spend.
+Game-side; no engine change; byte-identical throughout.
+
+**G15b — faculties as research targets:** the active target generalised from a block to a
+`ResearchTarget { Block | Faculty }`. Allocating a faculty (clicking `spend(f)`, or a
+`when(shards)→spend` routine) makes it the active research; **any-domain** shards fill it
+(faculties are general machine instrumentation, not stratum vocabulary — so unlike a block,
+no domain match); on fill it **levels up** (the existing capped multiplier — Decision 4), then
+**re-arms for the next level** until the cap, where it clears. `Event::Spend`/`spend_action`'s
+bank-then-buy is gone (the variant + the shard *bank* stay as a displayed lifetime tally /
+event-log compat). `FACULTY_COSTS` is now the per-level *research* cost. `pg=` v6 round-trips a
+faculty target the same way. **Still deferred** (a future *G15b-levels* / feel pass): **block**
+multi-level *parameter/option* unlocks (the brief's vaguest, placeholder part) and cost-pacing
+numbers; the optional `when(research ≥ %)` trigger.
+
+### G15a recap (block research)
 
 - **Allocate-and-fill:** `progress.allocate(block)` sets the single active target (Decision 1);
   on `CollectShard`, a **domain-matched** shard (Decision 2, own-domain) credits it; at
@@ -142,8 +156,9 @@ works until then) + research **levels** + pacing. Game-side; no engine change; b
 - [x] Domain-matched + rarity-gated cost (own-domain shards; deeper blocks cost more —
       placeholder numbers); G10 rarity tiers now feed research. *(G15a; rarer-shard-tier
       weighting refined in G15b/feel pass)*
-- [~] **Decode-stratum-unlock removed** *(G15a — done)*; **bank-then-spend removed** /
-      faculties-as-targets → **G15b** (G10 `spend` retained until then); levels = verbs → G15b.
+- [x] **Decode-stratum-unlock removed** *(G15a)*; **bank-then-spend removed** + faculties are
+      research targets (effects preserved, capped +%) *(G15b)*. Block multi-level *parameter*
+      unlocks (the "levels = verbs" part) → deferred to a G15b-levels/feel pass (placeholder).
 - [x] Opening parity (starters comprehended; given routines/autopilot unchanged); G11
       lit-goal → active research. *(opening-parity tests green)*
 - [x] Research + comprehension persist (append-only `pg=` v6; old payloads → migration
@@ -151,6 +166,5 @@ works until then) + research **levels** + pacing. Game-side; no engine change; b
 - [x] Golden voxel-hash + headless render byte-identical; CI green; boundary intact; roadmap
       G15 entry. *(G15a)*
 
-*(Remaining for **G15b**: faculties as research targets [retire bank-then-spend]; multi-level
-research [parameter/option unlocks + capped faculty %]; cost-pacing numbers; an optional
-`when(research ≥ %)` trigger.)*
+*(Remaining (a future **G15b-levels** / feel pass): **block** multi-level parameter/option
+unlocks; cost-pacing numbers; the optional `when(research ≥ %)` trigger.)*

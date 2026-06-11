@@ -74,9 +74,45 @@ impl Faculty {
 }
 
 /// Shard cost of each faculty level (G10 pinned ladder — placeholder numbers, tuned at the
-/// human pass). Level caps at [`MAX_FACULTY_LEVEL`].
+/// human pass). Level caps at [`MAX_FACULTY_LEVEL`]. G15b: this is now a *research* cost, not a
+/// bank-then-buy price (filled by allocated shard intake, like a block).
 pub const FACULTY_COSTS: [u64; 3] = [25, 75, 200];
 pub const MAX_FACULTY_LEVEL: u8 = 3;
+
+/// G15: what research can target — a discovered **block** (→ comprehend it, G15a) or a **faculty**
+/// (→ level it, G15b). The unified research pipe (no separate bank-then-spend subsystem).
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ResearchTarget {
+    Block(crate::console::Block),
+    Faculty(Faculty),
+}
+
+impl ResearchTarget {
+    /// A stable single-byte key for the in-progress fill map + `pg=` codec. Block codes are
+    /// 0..=15; faculties live at 0xF0.. (disjoint), so a tagged round-trip is unambiguous.
+    fn rkey(self) -> u8 {
+        match self {
+            ResearchTarget::Block(b) => b.code(),
+            ResearchTarget::Faculty(f) => 0xF0 + f.idx() as u8,
+        }
+    }
+    /// Player-facing label: a block by its **glyphs** (G12, unreadable), a faculty by its
+    /// minimal-English instrumentation name (faculties are machine instrumentation, not vocabulary).
+    pub fn glyphs(self) -> String {
+        match self {
+            ResearchTarget::Block(b) => b.glyphs(),
+            ResearchTarget::Faculty(f) => f.label().to_string(),
+        }
+    }
+    /// Resolve a `pg=` key byte back to a target (lenient — unknown → `None`).
+    fn from_rkey(k: u8) -> Option<ResearchTarget> {
+        if (0xF0..0xF0 + 3).contains(&k) {
+            Some(ResearchTarget::Faculty(Faculty::ALL[(k - 0xF0) as usize]))
+        } else {
+            crate::console::Block::from_code(k).map(ResearchTarget::Block)
+        }
+    }
+}
 
 /// The live multipliers a faculty loadout grants (pure; applied at exactly three call sites:
 /// scan range, collect/beam reach, cruise speed — charter §4: no plumbing sprawl).
@@ -281,9 +317,9 @@ pub struct Progress {
     /// comprehended (see [`Progress::is_block_comprehended`]); this set carries the gated blocks
     /// the player has researched to completion.
     comprehended_blocks: std::collections::HashSet<crate::console::Block>,
-    /// G15: the player's single **active research target** (Decision 1) — discovered-but-locked.
-    /// Auto-collected shards of its domain fill it (allocate-and-fill, player-directed).
-    active_research: Option<crate::console::Block>,
+    /// G15: the player's single **active research target** (Decision 1) — a discovered-but-locked
+    /// block or an un-maxed faculty. Auto-collected shards fill it (allocate-and-fill).
+    active_research: Option<ResearchTarget>,
     /// G15: per-target accumulated **domain-matched** shard yield (`filled`); on `filled ≥ cost`
     /// the block comprehends. Keyed by the block's `code()` so it survives `co=`/`pg=` round-trips.
     research_filled: std::collections::HashMap<u8, u64>,
@@ -332,14 +368,24 @@ impl Progress {
 
     // ---- G15: comprehension-as-research -----------------------------------------------------
 
-    /// Research cost for a block target — a base scaled by the gating stratum's depth (rarer/
-    /// deeper strata cost more; their shards are rarer, so the deepest vocabulary is the late
-    /// frontier — brief Decision 3). Numbers are placeholders tuned at the feel pass; the *shape*
-    /// (deeper = dearer) is the decided part. Starters cost 0 (pre-comprehended).
-    pub fn research_cost(b: crate::console::Block) -> u64 {
-        match b.required() {
-            None => 0,
-            Some(s) => 30 + 20 * s.byte() as u64, // Records 30 … Signals 110 (placeholder)
+    /// G15: research cost for a target. **Block** (G15a): a base scaled by the gating stratum's
+    /// depth (deeper = dearer — Decision 3; placeholders). **Faculty** (G15b): the next level's
+    /// cost from [`FACULTY_COSTS`] (capped — a maxed faculty is effectively infinite). Starters
+    /// cost 0 (pre-comprehended).
+    pub fn research_cost(&self, t: ResearchTarget) -> u64 {
+        match t {
+            ResearchTarget::Block(b) => match b.required() {
+                None => 0,
+                Some(s) => 30 + 20 * s.byte() as u64,
+            },
+            ResearchTarget::Faculty(f) => {
+                let lvl = self.faculties[f.idx()];
+                if lvl >= MAX_FACULTY_LEVEL {
+                    u64::MAX
+                } else {
+                    FACULTY_COSTS[lvl as usize]
+                }
+            }
         }
     }
 
@@ -354,31 +400,36 @@ impl Progress {
         self.comprehended_blocks.iter().copied()
     }
 
-    /// G15: set the active research target (allocate-and-fill, player-directed — Decision 1). Only
-    /// a discovered, gated, not-yet-comprehended block is valid. Returns `true` if it became active.
-    pub fn allocate(&mut self, b: crate::console::Block) -> bool {
-        if b.required().is_some() && self.is_discovered(b) && !self.is_block_comprehended(b) {
-            self.active_research = Some(b);
-            true
-        } else {
-            false
+    /// G15: set the active research target (allocate-and-fill, player-directed — Decision 1). A
+    /// **block** must be discovered, gated, not-yet-comprehended; a **faculty** must be below its
+    /// level cap. Returns `true` if it became active.
+    pub fn allocate(&mut self, t: ResearchTarget) -> bool {
+        let valid = match t {
+            ResearchTarget::Block(b) => {
+                b.required().is_some() && self.is_discovered(b) && !self.is_block_comprehended(b)
+            }
+            ResearchTarget::Faculty(f) => self.faculties[f.idx()] < MAX_FACULTY_LEVEL,
+        };
+        if valid {
+            self.active_research = Some(t);
         }
+        valid
     }
 
     /// G15: the active research target (the player's chosen "what next"), if any.
-    pub fn active_research(&self) -> Option<crate::console::Block> {
+    pub fn active_research(&self) -> Option<ResearchTarget> {
         self.active_research
     }
 
-    /// G15: `(filled, cost)` for a block's research bar.
-    pub fn research_progress(&self, b: crate::console::Block) -> (u64, u64) {
+    /// G15: `(filled, cost)` for a target's research bar.
+    pub fn research_progress(&self, t: ResearchTarget) -> (u64, u64) {
         (
-            self.research_filled.get(&b.code()).copied().unwrap_or(0),
-            Self::research_cost(b),
+            self.research_filled.get(&t.rkey()).copied().unwrap_or(0),
+            self.research_cost(t),
         )
     }
 
-    /// G15: the discovered-but-not-yet-comprehended blocks — the research targets (for the UI).
+    /// G15: the discovered-but-not-yet-comprehended blocks — the block research targets (for the UI).
     pub fn research_targets(&self) -> impl Iterator<Item = crate::console::Block> + '_ {
         self.discovered
             .iter()
@@ -386,24 +437,42 @@ impl Progress {
             .filter(|b| !self.is_block_comprehended(*b))
     }
 
-    /// G15: credit domain-matched shard `amount` to the active target; on `filled ≥ cost` mark the
-    /// block comprehended (usable) + its stratum legible (the decipherment fold-in), and clear the
-    /// active target. Returns the block if one just comprehended. (Called from `CollectShard`.)
-    fn credit_research(&mut self, amount: u64) -> Option<crate::console::Block> {
-        let b = self.active_research?;
-        let code = b.code();
-        let filled = self.research_filled.entry(code).or_default();
-        *filled += amount;
-        if *filled >= Self::research_cost(b) {
-            self.comprehended_blocks.insert(b);
-            if let Some(s) = b.required() {
-                self.comprehended.insert(s); // legibility fold-in
-            }
-            self.research_filled.remove(&code);
-            self.active_research = None;
-            return Some(b);
+    /// G15: credit shard `amount` to the active target; on `filled ≥ cost`, a **block** comprehends
+    /// (usable) + its stratum turns legible (the fold-in), a **faculty** levels up. Clears the
+    /// active target (a faculty re-arms for its next level until capped). Returns the completed
+    /// target. (Called from `CollectShard`: a block draws its own domain; a faculty draws any.)
+    fn credit_research(&mut self, amount: u64) -> Option<ResearchTarget> {
+        let t = self.active_research?;
+        let key = t.rkey();
+        let cost = self.research_cost(t);
+        let filled = {
+            let e = self.research_filled.entry(key).or_default();
+            *e += amount;
+            *e
+        };
+        if filled < cost {
+            return None;
         }
-        None
+        match t {
+            ResearchTarget::Block(b) => {
+                self.comprehended_blocks.insert(b);
+                if let Some(s) = b.required() {
+                    self.comprehended.insert(s); // legibility fold-in
+                }
+            }
+            ResearchTarget::Faculty(f) => {
+                if self.faculties[f.idx()] < MAX_FACULTY_LEVEL {
+                    self.faculties[f.idx()] += 1;
+                }
+            }
+        }
+        self.research_filled.remove(&key);
+        // A faculty re-arms for its next level (keep feeding for levels) until capped; a block clears.
+        self.active_research = match t {
+            ResearchTarget::Faculty(f) if self.faculties[f.idx()] < MAX_FACULTY_LEVEL => Some(t),
+            _ => None,
+        };
+        Some(t)
     }
 
     /// Is this block **discovered** (G9) — its name collected from the world? Starters (no
@@ -448,31 +517,27 @@ impl Progress {
                 }
                 self.discovered.insert(*block)
             }
-            // G10/G15: bank a shard (bulk currency, no dedup) AND — G15 allocate-and-fill — credit
-            // it to the active research target when its **domain matches** (Decision 2, own-domain
-            // only). The bank is kept for the (G15b) faculty path; block research fills here.
+            // G10/G15: bank a shard (lifetime tally, no dedup) AND — G15 allocate-and-fill — credit
+            // it to the active research target. A **block** draws its own stratum's domain
+            // (Decision 2, own-domain only); a **faculty** (G15b) is general machine instrumentation
+            // and draws **any** domain. The bank is now just a displayed lifetime total.
             Event::CollectShard { domain, rarity } => {
                 self.shard_bank += rarity.yield_amount();
                 self.shard_counts[domain.byte() as usize][rarity.idx()] += 1;
-                if self.active_research.and_then(|b| b.required()) == Some(*domain) {
+                let credit = match self.active_research {
+                    Some(ResearchTarget::Block(b)) => b.required() == Some(*domain),
+                    Some(ResearchTarget::Faculty(_)) => true, // any domain funds a faculty
+                    None => false,
+                };
+                if credit {
                     self.credit_research(rarity.yield_amount());
                 }
                 true
             }
-            // G10: buy the next level of a faculty — gated on the cap + affordability.
-            Event::Spend { faculty } => {
-                let lvl = self.faculties[faculty.idx()];
-                if lvl >= MAX_FACULTY_LEVEL {
-                    return false;
-                }
-                let cost = FACULTY_COSTS[lvl as usize];
-                if self.shard_bank < cost {
-                    return false;
-                }
-                self.shard_bank -= cost;
-                self.faculties[faculty.idx()] += 1;
-                true
-            }
+            // G15b: bank-then-spend is **retired** — faculties are research targets now (allocate
+            // → fill → level up, via `CollectShard`). This event is a no-op kept only so any
+            // serialized old event log still applies cleanly.
+            Event::Spend { .. } => false,
         }
     }
 
@@ -556,7 +621,7 @@ impl Progress {
         comp_b.sort_unstable();
         b.push(comp_b.len() as u8);
         b.extend_from_slice(&comp_b);
-        b.push(self.active_research.map(|x| x.code()).unwrap_or(0xFF));
+        b.push(self.active_research.map(|x| x.rkey()).unwrap_or(0xFF));
         let mut fills: Vec<(u8, u64)> =
             self.research_filled.iter().map(|(&k, &v)| (k, v)).collect();
         fills.sort_unstable_by_key(|x| x.0);
@@ -698,8 +763,10 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         }
         let act = *take(&mut p, 1)?.first()?;
         if act != 0xFF {
-            active_research =
-                crate::console::Block::from_code(act).filter(|b| b.required().is_some());
+            active_research = ResearchTarget::from_rkey(act).filter(|t| match t {
+                ResearchTarget::Block(b) => b.required().is_some(),
+                ResearchTarget::Faculty(_) => true,
+            });
         }
         let fc = *take(&mut p, 1)?.first()?;
         for _ in 0..fc {
@@ -900,7 +967,7 @@ mod tests {
             block: Block::RunFoot,
         }); // Relics-gated (Runic)
         assert!(!p.is_legible(Script::Runic));
-        p.allocate(Block::RunFoot);
+        p.allocate(ResearchTarget::Block(Block::RunFoot));
         let mut guard = 0;
         while !p.is_block_comprehended(Block::RunFoot) && guard < 10_000 {
             p.apply(&Event::CollectShard {
@@ -983,29 +1050,24 @@ mod tests {
             domain: Stratum::Signals,
             rarity: Rarity::Rare,
         });
-        assert_eq!(p.shard_bank(), 15);
+        assert_eq!(p.shard_bank(), 15); // lifetime tally (no longer spent — G15b)
         assert_eq!(p.shard_count(Stratum::Records), 3);
         assert_eq!(p.shard_count(Stratum::Signals), 1);
-        // Spend: unaffordable (sensing costs 25 > 15) → no-op; bank some more and buy level 1.
-        assert!(!p.apply(&Event::Spend {
-            faculty: Faculty::Sensing
-        }));
-        for _ in 0..2 {
+        // G15b: faculties are research now — allocate Sensing, fill it from any-domain shards →
+        // level 1 (bank-then-spend retired; the bank is just a displayed total).
+        assert!(p.allocate(ResearchTarget::Faculty(Faculty::Sensing)));
+        let mut guard = 0;
+        while p.faculty_levels()[0] == 0 && guard < 10_000 {
             p.apply(&Event::CollectShard {
                 domain: Stratum::Rites,
                 rarity: Rarity::Rare,
             });
+            guard += 1;
         }
-        assert_eq!(p.shard_bank(), 33);
-        assert!(p.apply(&Event::Spend {
-            faculty: Faculty::Sensing
-        }));
         assert_eq!(p.faculty_levels(), [1, 0, 0]);
-        assert_eq!(p.shard_bank(), 33 - 25);
-        // Round-trips through pg= v5; old v4-style payloads still load (zeroed economy).
+        // Round-trips through pg= v6; old v4/v5-style payloads still load (zeroed economy).
         let back = Progress::decode(&format!("s=1&{}", p.encode()));
         assert_eq!(back, p);
-        assert_eq!(back.shard_bank(), 8);
         assert_eq!(back.faculty_levels(), [1, 0, 0]);
     }
 
@@ -1021,19 +1083,23 @@ mod tests {
         assert!((maxed.drive - 1.45).abs() < 1e-6);
         // The ladder escalates; the cap holds.
         assert!(FACULTY_COSTS[0] < FACULTY_COSTS[1] && FACULTY_COSTS[1] < FACULTY_COSTS[2]);
+        // G15b: research the Drive faculty to its cap via shard intake; it stops at MAX.
         let mut p = Progress::default();
-        for _ in 0..400 {
+        p.allocate(ResearchTarget::Faculty(Faculty::Drive));
+        let mut guard = 0;
+        while p.faculty_levels()[2] < MAX_FACULTY_LEVEL && guard < 100_000 {
             p.apply(&Event::CollectShard {
                 domain: Stratum::Records,
                 rarity: crate::shards::Rarity::Rare,
             });
-        }
-        for _ in 0..5 {
-            p.apply(&Event::Spend {
-                faculty: Faculty::Drive,
-            });
+            guard += 1;
         }
         assert_eq!(p.faculty_levels()[2], MAX_FACULTY_LEVEL, "level caps at 3");
+        assert_eq!(
+            p.active_research(),
+            None,
+            "a maxed faculty clears the active target"
+        );
     }
 
     #[test]
@@ -1058,10 +1124,10 @@ mod tests {
         assert!(!p.is_block_comprehended(target));
         p.apply(&Event::Discover { block: target });
         assert!(
-            p.allocate(target),
+            p.allocate(ResearchTarget::Block(target)),
             "a discovered gated block is a valid research target"
         );
-        let cost = Progress::research_cost(target);
+        let cost = p.research_cost(ResearchTarget::Block(target));
         assert!(cost > 0);
         // Off-domain shards (Records) don't fill a Schematics target.
         for _ in 0..50 {
@@ -1071,7 +1137,7 @@ mod tests {
             });
         }
         assert_eq!(
-            p.research_progress(target).0,
+            p.research_progress(ResearchTarget::Block(target)).0,
             0,
             "off-domain shards don't fill (Decision 2)"
         );
@@ -1105,22 +1171,81 @@ mod tests {
         use crate::shards::Rarity;
         let mut p = Progress::default();
         p.apply(&Event::Discover { block: Block::Seek });
-        p.allocate(Block::Seek);
+        p.allocate(ResearchTarget::Block(Block::Seek));
         p.apply(&Event::CollectShard {
             domain: Stratum::Schematics,
             rarity: Rarity::Common,
         });
         assert!(
-            p.research_progress(Block::Seek).0 > 0,
+            p.research_progress(ResearchTarget::Block(Block::Seek)).0 > 0,
             "partial fill recorded"
         );
-        assert_eq!(p.active_research(), Some(Block::Seek));
+        assert_eq!(
+            p.active_research(),
+            Some(ResearchTarget::Block(Block::Seek))
+        );
         let back = Progress::decode(&p.encode());
         assert_eq!(back, p, "v6 research state round-trips");
         // A fresh (default) progress has no research — the migration default old payloads load to.
         let fresh = Progress::default();
         assert_eq!(fresh.active_research(), None);
         assert!(!fresh.is_block_comprehended(Block::Seek));
+    }
+
+    /// G15b: a **faculty** is an ordinary research target — allocate it, **any-domain** shards fill
+    /// it (faculties are general instrumentation), it levels up on fill (the tested multiplier
+    /// applies), re-arms for the next level, and stops at the cap. Round-trips through `pg=`.
+    #[test]
+    fn faculty_research_levels_up_from_any_domain_shards() {
+        use crate::shards::Rarity;
+        let mut p = Progress::default();
+        let f = Faculty::Sensing;
+        assert_eq!(p.faculty_levels()[f.idx()], 0);
+        assert!(p.allocate(ResearchTarget::Faculty(f)));
+        // Off-domain (Records) shards still fund a faculty (any domain) — unlike a block.
+        let mut guard = 0;
+        while p.faculty_levels()[f.idx()] == 0 && guard < 10_000 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Records,
+                rarity: Rarity::Common,
+            });
+            guard += 1;
+        }
+        assert_eq!(
+            p.faculty_levels()[f.idx()],
+            1,
+            "any-domain shards leveled the faculty"
+        );
+        assert!(
+            p.faculties().sensing > 1.0,
+            "the multiplier applies at level 1"
+        );
+        // It re-arms for the next level (keep feeding for levels).
+        assert_eq!(p.active_research(), Some(ResearchTarget::Faculty(f)));
+        // Drive it to the cap; the active target then clears (nothing left to research).
+        let mut guard = 0;
+        while p.faculty_levels()[f.idx()] < MAX_FACULTY_LEVEL && guard < 100_000 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Signals,
+                rarity: Rarity::Rare,
+            });
+            guard += 1;
+        }
+        assert_eq!(p.faculty_levels()[f.idx()], MAX_FACULTY_LEVEL);
+        assert_eq!(
+            p.active_research(),
+            None,
+            "a maxed faculty clears the active target"
+        );
+        // The faculty research state round-trips.
+        let mut p2 = Progress::default();
+        p2.allocate(ResearchTarget::Faculty(Faculty::Reach));
+        p2.apply(&Event::CollectShard {
+            domain: Stratum::Rites,
+            rarity: Rarity::Common,
+        });
+        let back = Progress::decode(&p2.encode());
+        assert_eq!(back, p2, "faculty research round-trips through pg=");
     }
 
     #[test]
