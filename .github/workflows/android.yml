@@ -14,6 +14,7 @@ on:
       - 'crates/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'rust-toolchain.toml' # the toolchain/target pin affects this cross-build — exercise it
       - '.github/workflows/android.yml'
     tags: ['v*']
 

@@ -12,6 +12,7 @@ on:
       - 'crates/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'rust-toolchain.toml' # the toolchain pin affects these builds — exercise it
       - '.github/workflows/desktop.yml'
     tags: ['v*']
 
