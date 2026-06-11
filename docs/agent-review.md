@@ -8,7 +8,44 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `2ffea5f` (M11 render hygiene).
+**Reviewed through:** `a6a898d` (G12 1/2 glyph identity + world-text).
+
+---
+
+## 2026-06-11 · G12 (1/2) — glyph-name identity + world-text de-Anglicization (`a6a898d`)  ✅ PASSED — and corrected my brief
+
+**Independently verified:** fmt clean · clippy `-D` clean · **209 tests, 0 failures** ·
+golden voxel-hash unchanged · world-text byte-identical at spawn (verified vs clean HEAD).
+
+**The builder caught a real error in MY brief — calibration, owned here.** I wrote
+"game-side only, no engine change; the five scripts already render." That's true for the
+**WorldText billboards** but *false for the console*, which draws through the **ASCII-only
+HUD overlay** (`hud::rasterize` = 0x20..0x7f, else `.`), and `transliterate` stores
+Latin stand-ins for Galactic/Runic. So glyphs in the console genuinely need a **generic
+mixed-script HUD overlay** that reuses the existing five-script rasterizer. The builder
+**did the right thing**: landed the half that's verifiable without that capability
+(`Block::glyphs()` + parameter glyph-labels + world-text de-Anglicization + docs), flagged
+the conflict precisely, and split per the "split big milestones" rule — rather than forcing
+a wrong "no engine change" constraint or silently violating it.
+
+**Part 1 against the brief:**
+- `Block::glyphs()` = `transliterate(name, block_script)` — **by construction the exact
+  string a world name-inscription spells** (new test proves it), so the world↔console
+  recognition loop holds at the identity layer. `name()`/`label()` kept internal
+  (codes/tests/`co=`). Parameter renders glyph for vocabulary, minimal-English for
+  structural keywords + quantities — exactly the pinned scope line.
+- World text: name-bearers keep their glyph cluster even once the script is legible (was:
+  resolved to the English block name); ambient non-name text still resolves to its lexicon
+  phrase. The right boundary — block names unreadable, ambient elegy unaffected.
+- Docs in lockstep: game-system §1/§4/§5 + game-mechanics §8.2 updated.
+
+**Part 2 sanctioned (see corrected directive):** the generic mixed-script HUD overlay is an
+**acceptable engine change** — it's a content-agnostic capability (render these glyph
+indices; reuses the existing rasterizer, **no new scripts**), so the `bm-*`→game boundary
+holds; the game composes the console from it. My "no engine change" line is **withdrawn**.
+
+**Verdict.** Clean half + an honest, correct catch that improves the plan. Proceed to
+G12 (2/2): the overlay capability + console/toast/lit-goal wiring + headless A/B.
 
 ---
 

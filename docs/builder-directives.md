@@ -49,6 +49,17 @@ risks; resist both.
 **The published queue G9 → M10 → G10 → G11 → M11 is fully built, green, and reviewed**
 (see [`agent-review.md`](agent-review.md)). New work, dispatched by the babysitter:
 
+- **G12 (2/2) — console glyph wiring + the overlay capability it needs.** Part 1
+  (`a6a898d`) correctly exposed that my brief's "no engine change; five scripts already
+  render" was **wrong for the console** (it draws through the ASCII-only HUD overlay, not
+  the WorldText path). **That line is withdrawn.** Build the **generic mixed-script HUD
+  overlay** in `bm-render` (render arbitrary glyph indices via the existing five-script
+  rasterizer — a content-agnostic capability, **no new scripts, no game concepts** → the
+  boundary holds), then wire the console palette/rows/selected-detail/codex, the discovery
+  toast, and the `◆` lit-goal's name part through `Block::glyphs()`. Headless console A/B
+  (opt-in flag) + roadmap G12 entry close the milestone. Structural UI stays minimal-English
+  as before. Good split — proceed.
+
 - **G12 — Glyph console (de-Anglicization)** — build per
   [`milestones/G12-glyph-console.md`](milestones/G12-glyph-console.md) (copy to `main`).
   **Human decision (recorded):** block names stay **unreadable — no English layer at all**.
@@ -188,6 +199,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — G12 (1/2) ✅ (glyph identity + world-text de-Anglicization). Brief's "no engine change" line **withdrawn** — the console needs a generic mixed-script HUD overlay (builder's correct catch); sanctioned for G12 (2/2), boundary intact (no new scripts).
 - **2026-06-11** — queue (G9→M10→G10→G11→M11) **fully drained, all green/reviewed**. **New directive: G12 — glyph console (de-Anglicization)** — block names render as stratum-script glyphs everywhere player-facing; learn-by-clicking; structural UI stays minimal-English; docs (game-system §1/§6) in lockstep. Human decision: names unreadable, no English layer.
 - **2026-06-11** — **NEW RUN (incremental dispatch).** D10 ✅ (verified rendered). **New
   directive: G9 — block-name discovery** (in-world inscriptions carry block names; collect →
