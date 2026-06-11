@@ -67,6 +67,11 @@ phone. Until M8b lands, our defence is (a) designs that are cheap *by constructi
 7. **Measure before optimising, but design cheap by default** — no speculative complexity
    chasing unmeasured wins (the FSR lesson: it fought the aesthetic and the numbers weren't
    there to justify it).
+8. **Render targets declare minimal usage** (M11): offscreen colour targets are
+   `RENDER_ATTACHMENT | TEXTURE_BINDING` only — never `STORAGE_BINDING`, never mutable
+   `view_formats` — so AFBC/UBWC/CCS framebuffer compression stays enabled (one wrong flag
+   silently costs ~33–50% colour-write bandwidth on mobile). Audited 2026-06-11: all current
+   targets comply.
 
 ## 5. Measurement plan
 
@@ -80,6 +85,27 @@ phone. Until M8b lands, our defence is (a) designs that are cheap *by constructi
   phone, record real frame times into design §8, tune dynamic-res thresholds, then wire the
   M7 far-LOD if the numbers say it pays. The M10 counters make that session dramatically
   more productive (the human reads numbers off the HUD instead of guessing).
+- **M11 — render hygiene (dispatchable now):** the here-verifiable engine actions from the
+  2026-06-11 vendor-doc research ([`research-gpu-perf.md`](research-gpu-perf.md),
+  [`research-voxel-rendering.md`](research-voxel-rendering.md)): upload-path audit (the
+  wgpu#1242 hitch class), render-target usage-flag audit (AFBC/UBWC compression
+  preservation), discard-draw ordering discipline, dissolve-fade quantization,
+  uniform-section fast path. Brief: [`milestones/M11-render-hygiene.md`](milestones/M11-render-hygiene.md).
+- **Banked for M8b / a numbers-gated M12** (researched, real, device-measurable only):
+  two-stream vertex split (position-first — Mali IDVS + Intel binner); fp16-first shader
+  variants (2× ALU on Mali/Xe; dual-path — Adreno browsers lack `shader-f16`); web render
+  bundles keyed on chunk-set (the big web-submission lever); BFS culling upgrades (Sodium
+  direction masks + angle test + step penalties; then Vintage-Story perimeter raycasts if
+  over-visibility shows); region vertex arenas; and the **mesh-mip far-LOD ring** (2×/4×
+  vertex-color skirted downsamples *before* the point regime — the research's amendment to
+  the M7 plan; per-point hashed fade for the point ring, screen-Bayer kept for the mesh
+  half). FSR-class upscalers are now **closed on technical grounds** (EASU's input
+  contract bans dither; temporal upscalers' jitter destroys pixel stability; ~2–6 ms cost
+  on our hardware class) — nearest blit stands.
+- **Mobile bandwidth budget (vendor planning figure):** DRAM ≈ 80–100 mW per GB/s against
+  a ~1 W mobile GPU budget ⇒ target **well under ~100 MB/frame** total at 60 fps; ground
+  truth = Streamline "Output External Read/Write Bytes" on the Pixel 6a at M8b. Iris Xe
+  ceiling ≈ 0.7–0.8 GB/frame, *shared with our meshing threads*.
 - **Cadence:** budgets reviewed when M8b lands, then at every content milestone that adds a
   streamed layer or splat consumer.
 
@@ -87,8 +113,7 @@ phone. Until M8b lands, our defence is (a) designs that are cheap *by constructi
 
 **Measured 2026-06-11** (M10; seed 1337, the three reference scenes from `budgets.rs`, via
 `cargo run -p scraped-again --bin stats`). Counters are **full streamed-set totals**
-(camera-independent: the whole 13×13 chunk keep set + in-range structures/labels — culling
-only *reduces* them live, and content regressions move *these*):
+(camera-independent — culling only reduces them, and content regressions move *these*):
 
 | Scene | tris_total | splats_total | mesh_draws | labels |
 |---|---|---|---|---|
@@ -96,23 +121,25 @@ only *reduces* them live, and content regressions move *these*):
 | forest (densest cell ±2 km) | 1,888,548 | 78,309 | **832** | 8 |
 | giant (nearest colossus) | 1,739,366 | 104,294 | 169 | 9 |
 
+*(G10 added the shard consumer — counted + gated in `budgets.rs` as `shard_splats`,
+budget ≤ 400.)*
+
 **CI-gated budgets** (worst actual + ~40% headroom; `crates/scraped-again/src/budgets.rs` —
 a failing gate is adjusted *with a recorded reason*, never deleted):
 
 | Counter | Budget | Worst actual | Basis |
 |---|---|---|---|
 | Triangles (terrain + solid structures) | ≤ 2.6 M | 1.89 M | measured (replaces the 1.5 M estimate) |
-| Live splats (foliage + structures + wisps) | ≤ 170 k | 123 k | measured |
-| Mesh draw instances (chunks + structure sections) | ≤ 1,200 | 832 | measured — **solid giants = 663 sections in the forest scene**; a real M8b lever (merge/section-cap candidate) |
+| Live splats (foliage + structures + shards + wisps) | ≤ 170 k | 123 k | measured |
+| Mesh draw instances (chunks + structure sections) | ≤ 1,200 | 832 | measured — **solid giants = 663 sections in the forest scene**; an M8b merge/section-cap lever |
 | Inscription labels in range | ≤ 16 | 9 | measured |
-| Foliage splats (consumer budget) | ≤ 170 k | 121.5 k | measured |
-| Structure points (consumer budget) | ≤ 4 k | 2.8 k | measured |
+| Foliage splats (consumer) | ≤ 170 k | 121.5 k | measured |
+| Structure points (consumer) | ≤ 4 k | 2.8 k | measured |
+| Shard splats (consumer, G10) | ≤ 400 | ~175 | measured |
 | Wisps (consumer cap) | ≤ 64 | ~7–28 live | cap |
 
-**Live-only counters** (HUD via the engine `DrawStats`; not CI-gated — timing-dependent, per
-the M10 brief's Decision 4): upload bytes/frame (`kB/f` on the HUD; the ≤ ~1 MB steady-cruise
-design figure stands as the watch level), draw calls incl. passes (`dc`), internal-res divisor
-(`÷N`, dynamic-res visible), inline mesh time (web, ≤ 3 ms — the M8a budget, already enforced
-in code).
+**Live-only counters** (HUD via the engine `DrawStats`; not CI-gated — timing-dependent):
+upload bytes/frame (`kB/f`), draw calls incl. passes (`dc`), internal-res divisor (`÷N`),
+inline mesh time (web, ≤ 3 ms — enforced in code).
 
 M8b re-baselines all of this on the reference devices and tightens the headroom.

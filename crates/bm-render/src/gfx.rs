@@ -53,7 +53,9 @@ pub struct Toggles {
     pub sand: bool,
     pub foliage: bool,
     /// Distance-dissolve (M7): stipple distant terrain/foliage into a pixel haze. Opt-in
-    /// (default off) since it's a strong stylistic choice.
+    /// (default off) since it's a strong stylistic choice. **Early-Z tax (M11):** while on,
+    /// the terrain shader carries a conditional `discard`, which forces late depth writes and
+    /// disables early-Z for the opaque terrain pass — a known, accepted cost of the look.
     pub melt: bool,
     /// Directional sun (E3). On by default; turn it off to light the world only by the
     /// in-world emissive point lights (crystals) + dim ambient — a dark, point-lit mood.
@@ -855,7 +857,8 @@ impl State {
     /// Empty clears it. Generic: the engine draws whatever it's handed, depth-tested + vivid.
     pub fn set_overlay(&mut self, verts: &[crate::overlay::OverlayVertex]) {
         self.pending_upload += std::mem::size_of_val(verts) as u64;
-        self.overlay.set_lines(&self.device, verts);
+        self.overlay
+            .set_lines_pooled(&self.device, &self.queue, verts);
     }
 
     /// Space cruiser (E19): whether to draw the parked ship this frame, and where/at what yaw.
@@ -1218,6 +1221,26 @@ impl State {
                 triangles += draw.num_indices / 3;
             }
 
+            // M11 discard draw-order discipline (vendor docs): every *opaque depth-writer*
+            // draws first — terrain/structures above, then particles + the ship hull here —
+            // and every discard-using pass (foliage/structure/creature splats, text) comes
+            // after, never interleaved, so early-Z keeps rejecting behind the opaques.
+            // (The terrain shader itself carries conditional discards for the opt-in `melt`
+            // and the relic dissolve — that early-Z tax is documented on the toggle.)
+            if !particles.is_empty() {
+                pass.set_pipeline(&self.particle_pipeline);
+                pass.set_bind_group(0, &self.globals_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
+                pass.set_vertex_buffer(1, self.particle_instances.slice(..));
+                pass.set_index_buffer(self.cube_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..particles.len() as u32);
+            }
+            // Space cruiser hull (E19): opaque, into the scene (bloom + palette map it like
+            // terrain); its nav-lights draw later, after the palette. Off under the map.
+            if self.ship_active && !self.map_active {
+                self.ship.draw_hull(&mut pass);
+            }
+
             // Foliage splats (E6): instanced billboards over the same visible (sorted)
             // chunks. One quad (6 verts) per instance, no index/vertex buffer. Drawn after
             // terrain so depth rejects buried blades.
@@ -1293,23 +1316,6 @@ impl State {
                     self.draws.len(),
                     particles.len()
                 );
-            }
-
-            // Emissive particles on top, sharing the globals (group 0).
-            if !particles.is_empty() {
-                pass.set_pipeline(&self.particle_pipeline);
-                pass.set_bind_group(0, &self.globals_bind_group, &[]);
-                pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
-                pass.set_vertex_buffer(1, self.particle_instances.slice(..));
-                pass.set_index_buffer(self.cube_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..particles.len() as u32);
-            }
-
-            // Space cruiser hull (E19): drawn into the scene (its transform was uploaded
-            // before this pass), so bloom + palette map it like terrain and it depth-tests
-            // against the world. The nav-lights draw later, after the palette. Off under the map.
-            if self.ship_active && !self.map_active {
-                self.ship.draw_hull(&mut pass);
             }
         }
 

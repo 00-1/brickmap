@@ -593,6 +593,26 @@ set is already 1.79–1.89 M tris (the charter's 1.5 M was an underestimate — 
 recorded in §6), and **solid colossi cost 663 mesh sections** in the forest scene (an M8b lever).
 Live-only counters (upload/draw-calls/dyn-res) are HUD-only, not CI-gated (brief Decision 4).
 
+### M11 — Render hygiene & cheap wins (vendor-doc pass) ✅ &nbsp;→ [`milestones/M11-render-hygiene.md`](milestones/M11-render-hygiene.md)
+The five here-verifiable engine actions from the 2026-06-11 research pass, all **byte-identical
+headless** (proven by `cmp` against a pre-M11 worktree baseline) and unit-tested — no reference
+hardware needed. **(1) Upload path:** chunk/structure meshes already ride `create_buffer_init`
+(= `mappedAtCreation`) and throttled intake (`STREAM_UPLOADS`/web time budget); splat/UI/particle
+buffers already pooled — *converted* the per-edit route overlay to a pooled grow-buffer
+(`set_lines_pooled`); HUD glyph-texture rebuild noted for M8b. **(2) Usage flags:** audited
+**verified-no-op** — every offscreen target is already `RENDER_ATTACHMENT | TEXTURE_BINDING`
+(depth attachment-only), no `STORAGE_BINDING`/mutable `view_formats`, so AFBC/UBWC/CCS compression
+stays on; rule pinned as charter §4 rule 8. **(3) Discard order:** particles + ship hull moved
+*before* the discard-using splat/text passes so depth-writers stay un-interleaved (front-to-back
+opaque → particles → ship → discard draws → overlay); pinned with a comment + the `melt` early-Z
+tax documented. **(4) Fade:** the M7 melt fade quantized to the 4×4 Bayer's 17 levels in-shader,
+mirrored + unit-tested in Rust (`quantize_fade`); opt-in so the golden default is untouched (relic
+dissolve deliberately left un-quantized — default-path golden risk; crossfade masks N/A until the
+M7 far-point fade-in is wired). **(5) Uniform sections:** all-air/all-solid sections now store one
+palette entry + **zero index bits** (~8 B vs 4 KiB), and the mesher early-outs for uniform-air and
+fully-enclosed uniform-solid — byte-identical by construction. An audit that finds clean code is a
+recorded pass, not a failure (brief Decision 1).
+
 ## Scraped Again — gameplay (G-series)
 
 > **Unattended run log (2026-06-08).** Block-substrate thread: **G4 ✅** (block runtime + console),

@@ -39,7 +39,10 @@ pub struct OverlayRenderer {
     /// Internal-res buffer the lines draw into (then composited up to the surface).
     view: wgpu::TextureView,
     composite_bg: wgpu::BindGroup,
+    /// Pooled vertex buffer (M11: grown on demand, written per frame — never created
+    /// mid-frame once warm) + the live vertex count (0 = nothing to draw).
     verts: Option<(wgpu::Buffer, u32)>,
+    verts_capacity: usize,
 }
 
 impl OverlayRenderer {
@@ -209,6 +212,7 @@ impl OverlayRenderer {
             view,
             composite_bg,
             verts: None,
+            verts_capacity: 0,
         }
     }
 
@@ -227,8 +231,42 @@ impl OverlayRenderer {
     }
 
     /// Upload this frame's overlay triangles (empty clears the overlay).
+    pub fn set_lines_pooled(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        verts: &[OverlayVertex],
+    ) {
+        // M11 upload hygiene: a pooled buffer grown on demand (pow2) + `write_buffer`,
+        // instead of a fresh `create_buffer_init` every frame the beam/flicks are live
+        // (the wgpu#1242 hitch class is unthrottled mid-frame buffer creation).
+        if verts.is_empty() {
+            if let Some((_, count)) = &mut self.verts {
+                *count = 0;
+            }
+            return;
+        }
+        if verts.len() > self.verts_capacity {
+            self.verts_capacity = verts.len().next_power_of_two().max(256);
+            self.verts = Some((
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("overlay-verts"),
+                    size: (self.verts_capacity * std::mem::size_of::<OverlayVertex>()) as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                0,
+            ));
+        }
+        let (buf, count) = self.verts.as_mut().expect("just ensured");
+        queue.write_buffer(buf, 0, bytemuck::cast_slice(verts));
+        *count = verts.len() as u32;
+    }
+
+    /// One-shot variant (headless tooling): builds a fresh exact-size buffer.
     pub fn set_lines(&mut self, device: &wgpu::Device, verts: &[OverlayVertex]) {
         use wgpu::util::DeviceExt;
+        self.verts_capacity = verts.len();
         self.verts = (!verts.is_empty()).then(|| {
             let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("overlay-verts"),
@@ -248,7 +286,7 @@ impl OverlayRenderer {
 
     /// Is there anything to draw this frame? (Gates depth retention + the passes.)
     pub fn active(&self) -> bool {
-        self.verts.is_some()
+        self.verts.as_ref().is_some_and(|(_, n)| *n > 0)
     }
 
     /// Draw the overlay triangles into the internal buffer, depth-tested against `depth` (the
@@ -277,7 +315,7 @@ impl OverlayRenderer {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        if let Some((vbuf, count)) = &self.verts {
+        if let Some((vbuf, count)) = self.verts.as_ref().filter(|(_, n)| *n > 0) {
             pass.set_pipeline(&self.line_pipeline);
             pass.set_bind_group(0, &self.line_bg, &[]);
             pass.set_vertex_buffer(0, vbuf.slice(..));

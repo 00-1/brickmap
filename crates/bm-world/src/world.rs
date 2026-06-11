@@ -50,13 +50,24 @@ impl Section {
     /// Total voxels in a section.
     pub const VOLUME: usize = (Self::SIZE * Self::SIZE * Self::SIZE) as usize;
 
-    /// A new section filled entirely with air (palette `[AIR]`, 1 bit/voxel).
+    /// A new section filled entirely with air. **Uniform fast path (M11):** a one-entry
+    /// palette stores **zero bits per voxel** — no index array at all — so an all-air (or
+    /// any uniform) section costs ~8 bytes instead of 4 KiB, and `uniform()` lets the mesher
+    /// skip it outright. Indices materialise on the first write of a second block.
     pub fn new() -> Self {
         Self {
             palette: vec![BlockId::AIR],
-            indices: vec![0u64; Self::words(1)],
-            bits: 1,
+            indices: Vec::new(),
+            bits: 0,
         }
+    }
+
+    /// `Some(block)` when the whole section is provably one block (a one-entry palette —
+    /// the M11 uniform fast path). `None` means "mixed or unknown" (the palette only grows,
+    /// so a section written then overwritten back to uniform reports `None`; that's fine —
+    /// this is an optimisation hint, never a correctness gate).
+    pub fn uniform(&self) -> Option<BlockId> {
+        (self.palette.len() == 1).then(|| self.palette[0])
     }
 
     /// `u64` words needed to hold `VOLUME` indices of `bits` each.
@@ -117,10 +128,14 @@ impl Section {
         self.palette.push(block);
         let needed = Self::bits_for(self.palette.len());
         if needed > self.bits {
+            // Widen (incl. the 0-bit uniform case: every implicit index was 0, so a fresh
+            // zeroed buffer is already correct and the copy loop is skipped).
             let mut wider = vec![0u64; Self::words(needed)];
-            for i in 0..Self::VOLUME {
-                let idx = Self::read_bits(&self.indices, i, self.bits);
-                Self::write_bits(&mut wider, i, needed, idx);
+            if self.bits > 0 {
+                for i in 0..Self::VOLUME {
+                    let idx = Self::read_bits(&self.indices, i, self.bits);
+                    Self::write_bits(&mut wider, i, needed, idx);
+                }
             }
             self.indices = wider;
             self.bits = needed;
@@ -131,6 +146,10 @@ impl Section {
     /// The block at a local coordinate. Coordinates must be `< SIZE`.
     #[inline]
     pub fn get(&self, x: u32, y: u32, z: u32) -> BlockId {
+        if self.bits == 0 {
+            debug_assert!(x < Self::SIZE && y < Self::SIZE && z < Self::SIZE);
+            return self.palette[0]; // uniform fast path (M11)
+        }
         let idx = Self::read_bits(&self.indices, Self::index(x, y, z), self.bits);
         self.palette[idx]
     }
@@ -139,11 +158,18 @@ impl Section {
     #[inline]
     pub fn set(&mut self, x: u32, y: u32, z: u32, block: BlockId) {
         let p = self.palette_index(block);
+        if self.bits == 0 {
+            debug_assert!(x < Self::SIZE && y < Self::SIZE && z < Self::SIZE);
+            return; // uniform write of the same block: nothing to store (M11)
+        }
         Self::write_bits(&mut self.indices, Self::index(x, y, z), self.bits, p);
     }
 
     /// Whether every voxel is air (nothing to mesh).
     pub fn is_empty(&self) -> bool {
+        if let Some(b) = self.uniform() {
+            return b.is_air(); // uniform fast path (M11)
+        }
         (0..Self::VOLUME)
             .all(|i| self.palette[Self::read_bits(&self.indices, i, self.bits)].is_air())
     }
@@ -212,6 +238,26 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn uniform_fast_path_zero_bits_and_round_trip() {
+        // M11: a fresh (all-air) section stores no index words and reports uniform.
+        let mut s = Section::new();
+        assert_eq!(s.uniform(), Some(BlockId::AIR));
+        assert_eq!(s.mem_bytes(), std::mem::size_of::<BlockId>()); // ~2 bytes, not 4 KiB
+        assert!(s.is_empty());
+        assert_eq!(s.get(31, 31, 31), BlockId::AIR);
+        // Writing the same (uniform) block stays 0-bit.
+        s.set(5, 5, 5, BlockId::AIR);
+        assert_eq!(s.uniform(), Some(BlockId::AIR));
+        assert!(s.mem_bytes() < 64);
+        // The first different block materialises indices and round-trips exactly.
+        s.set(1, 2, 3, BlockId(7));
+        assert_eq!(s.uniform(), None);
+        assert_eq!(s.get(1, 2, 3), BlockId(7));
+        assert_eq!(s.get(0, 0, 0), BlockId::AIR);
+        assert!(s.mem_bytes() >= Section::VOLUME / 8); // 1 bit/voxel materialised
+    }
+
     use super::*;
 
     const STONE: BlockId = BlockId(1);

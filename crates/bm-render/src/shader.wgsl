@@ -219,7 +219,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // terrain away with the same Bayer threshold so it crumbles into a pixel haze toward
     // the horizon instead of a hard fog wall. Capped so some stipple survives into the fog.
     if (globals.cam_up.w > 0.5) {
-        let melt = clamp((fog_dist - globals.params.z) / max(globals.params.w - globals.params.z, 0.001), 0.0, 1.0) * 0.85;
+        let melt_raw = clamp((fog_dist - globals.params.z) / max(globals.params.w - globals.params.z, 0.001), 0.0, 1.0) * 0.85;
+        // M11: quantize the fade to the 4x4 Bayer matrix's 17 levels (0/16..16/16) so a slow
+        // dissolve steps cleanly through the dither levels instead of rippling between them.
+        let melt = floor(melt_raw * 16.0 + 0.5) / 16.0;
         if (threshold < melt) {
             discard;
         }
