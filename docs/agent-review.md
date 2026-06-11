@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `1e657cf` (G13 — logic ✅, but main RED on fmt — escalated).
+**Reviewed through:** `30daefb` (G13 + RED-resolution chain; verifying CI green).
 
 ---
 
@@ -36,6 +36,15 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+**Resolution (3 commits, builder self-driven):** `70524d2` wrap + **exact toolchain pin
+1.94.1** (durable fix — local `--check` authoritative again); `833f57c` restored the
+`aarch64-linux-android` target the pin dropped (my one-line fix; APK had gone RED);
+`30daefb` added `rust-toolchain.toml` to the **Android+Desktop path filters** — the builder
+**caught itself** that those path-filtered workflows hadn't re-triggered on the toolchain
+fixes (a gap I'd missed). All four workflows now run on a tree with every fix. **Good
+incident handling**: fast, correctly diagnosed each layer, and the durable fixes (exact pin
++ trigger-on-toolchain) prevent recurrence. G14 clears on confirmed four-way green.
 
 ---
 

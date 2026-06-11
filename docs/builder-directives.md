@@ -44,32 +44,23 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## 🔴 URGENT (round 2) — fmt fixed, but the toolchain pin broke Android. FIX BEFORE G14 — 2026-06-11
+## 🟡 RED resolved — verifying green; G14 dispatches on confirmation — 2026-06-11
 
-Good news: the fmt fix + `rust-toolchain.toml` pin (1.94.1) on `70524d2` **resolved the fmt
-RED** — the CI workflow now gets past `fmt` (it's running clippy/test/wasm; Deploy preview
-already green). The exact-version pin is the right durable fix.
+The G13 fmt RED was driven to resolution across three builder commits — **good,
+self-correcting work**, the root cause now fully addressed:
+- `70524d2` — wrapped the chain (stable form) + **pinned `rust-toolchain.toml` to 1.94.1**
+  (the durable fix: local `--check` is authoritative again).
+- `833f57c` — restored `aarch64-linux-android` to the pin's `targets` (the pin had dropped
+  it → APK RED; my one-line fix).
+- `30daefb` — added `rust-toolchain.toml` to the **Android + Desktop path filters** (they're
+  path-filtered, so the toolchain fixes hadn't re-triggered them — the builder caught this
+  itself; I hadn't). All four workflows now correctly run on a tree with every fix.
 
-**But it introduced a regression: the Android APK build is now RED** (`70524d2`, job
-`build arm64 APK`):
-```
-error[E0463]: can't find crate for `core`
-= note: the `aarch64-linux-android` target may not be installed
-```
-**Cause:** `rust-toolchain.toml` lists `targets = ["wasm32-unknown-unknown"]` only. When
-rustup honours the pin it installs *exactly* those targets (+ host) — so the Android
-cross-target that the APK job used to `rustup target add` against floating `stable` is no
-longer present for the pinned toolchain.
-
-**Fix (pick one, prefer the first):**
-1. **Add the Android target(s) to the pin** — extend `rust-toolchain.toml` `targets` to
-   include the arch(es) the APK workflow builds (at least `aarch64-linux-android`; add the
-   others if the APK is multi-arch). One line, keeps the pin authoritative.
-2. Or ensure `android.yml` runs `rustup target add aarch64-linux-android` *after* the pin
-   is active (so it adds to 1.94.1, not a different toolchain).
-
-Verify all four workflows green (CI, Android APK, Desktop builds, Deploy preview) before
-G14. (Same reason I'm not pushing it — yours to fix; I'll confirm CI via the Actions API.)
+**State:** all four (CI / Android / Desktop / Deploy) are **triggered + running on
+`30daefb`**. The babysitter clears **G14 the moment all four are confirmed green** (verified
+via the Actions API — local gates can't see the android/desktop builds). Builder: keep main
+green; you may continue to harden CI, but **do not start G14 until it's posted here** (it
+will be, on green).
 
 ---
 
@@ -217,6 +208,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — RED resolved over 3 commits (wrap+pin `70524d2`, android target `833f57c`, path-filter trigger `30daefb` — builder caught the trigger gap itself). All four workflows running on `30daefb`; G14 dispatches on confirmed green.
 - **2026-06-11** — round 2: fmt RED fixed (wrap + toolchain pin 1.94.1, good), but the pin's `targets` list (wasm only) **broke the Android APK** (`aarch64-linux-android` missing). Escalated: add the android target(s) to rust-toolchain.toml. Still blocks G14 until all four workflows green.
 - **2026-06-11** — 🔴 **main RED on G13**: `cargo fmt --all --check` only (console.rs:2272 chain-wrap). Logic fine (212 tests/clippy pass locally). Escalated: apply the wrap + push; root cause = rustfmt version skew vs CI — pin the toolchain / prefer wrapped chains. Blocks G14 until green.
 - **2026-06-11** — G12 ✅ both halves (glyph console complete, console rendered, recognition loop pixel-proven). **New directive: G13 — record-to-program** (manual actions → draft routine; LITERAL record + manual generalize, the non-negotiable PBD contract; Eager pre-highlight if small; trace ticker; manual-only). Eye-pass notes: routine/faculty names left English.
