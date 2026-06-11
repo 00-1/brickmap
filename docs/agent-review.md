@@ -8,7 +8,35 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `3333760` (builder readiness checkpoint).
+**Reviewed through:** `11aa947` (G9 block-name discovery).
+
+---
+
+## 2026-06-11 · G9 — names in the world (`11aa947`)  ✅ PASSED (verified independently)
+
+The run's first dispatched milestone, landed in one commit ~17 min after pickup.
+**Independently verified:** fmt clean · clippy `-D` clean · **192 tests, 0 failures**
+(up from 185 — coverage/collision/console-state/`pg=` v4 tests all present) · wasm builds ·
+headless render healthy at the standard vantage (terrain/foliage/giant/inscriptions intact).
+
+**Against the brief — every acceptance item ticked, honestly:**
+- Transliteration is a stable letter-wise map into the stratum script's glyph pool
+  (deterministic + collision-tested across the vocabulary — the brief's two key tests).
+- Discovery: one funnel (`App::discover`) for all three collect routes; `Event::Discover`
+  idempotent; **starters implicitly discovered** (bypass the set) — a nicer shape than
+  seeding the set, since old saves need no migration. `pg=` v4 append-only, v1–v3 load as
+  starter-only, unknown codes skipped leniently. Good versioning discipline.
+- Console: two-stage `is_unlocked`, undiscovered absent, discovered-locked dimmed+tagged.
+- Coverage test: all 12 names findable within 2500 units across seeds 1/42/1337.
+
+**One deviation, well-reasoned + recorded (as-built note in the brief):** colossus labels
+draw from the **full gated set biased deep** (runfoot ×3) rather than the brief's
+"Relics/Signals-tier only" — because only *one* Relics-tier block exists today, so every
+monument would have carried the same name. Right call; the brief's intent (rare names at
+rare landmarks) survives via the bias, and the constraint should tighten naturally as the
+deep vocabulary grows (G12+). No steer needed.
+
+**Verdict.** Clean, complete, fast. Chain into **M10** per the published queue.
 
 ---
 
