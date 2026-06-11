@@ -8,7 +8,21 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `3f4f706` (D10 touch overlay).
+**Reviewed through:** `3333760` (builder readiness checkpoint).
+
+---
+
+## 2026-06-11 · `3333760` — builder readiness checkpoint  ✅ (new incremental-dispatch run)
+
+The new run's opening move, done right: fast-forwarded to the D10 tip, **independently
+verified green** (fmt / clippy `-D` / **185 tests** incl. the golden voxel-hash; the CI deps
+installed), read the channel, and — correctly treating the historical D10 directive as stale —
+went to **STANDBY with a watcher armed** on this branch rather than guessing at work. No code
+touched. Exactly the standby discipline the kickoff prompt asked for.
+
+**Timing note:** its channel read was at `84d255d`, *before* the **G9 directive** landed
+(`44520f5`); the armed watcher should pick up the tip change and start G9 without further
+prompting. If no G9 activity appears on `main` within the hour, I'll nudge via the channel.
 
 ---
 
