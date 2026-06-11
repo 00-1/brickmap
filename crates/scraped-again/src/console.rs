@@ -26,9 +26,13 @@
 //!    The console owns its serialization (it already round-tripped through `co=`); what the brief
 //!    requires is that authored routines *persist + round-trip*, which `co=` satisfies.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 use crate::progress::Stratum;
+
+/// G13: how many of the player's most-recent **manual** actions the per-agent trace remembers
+/// (session-local working memory — the source for "trace → routine").
+pub const TRACE_CAP: usize = 10;
 
 /// The item a `scan` block senses (G10: scan is honest now — `shards` senses the typed shard
 /// items, `sites` senses inscription sites, each its own scannable).
@@ -91,7 +95,7 @@ impl MatchField {
 
 /// Which agent a routine drives (game-system §7). Routines are **per-agent**, drawing on a shared
 /// block library; the *insertable* vocabulary is context-scoped to the agent (+ shared blocks).
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Agent {
     /// The cruiser — flies, scans, routes (the autopilot half).
     Ship,
@@ -574,11 +578,41 @@ pub enum EditFocus {
     AddStep,
 }
 
+/// G13 — the **literal** trace→program transform: map recorded blocks to body steps, the *only*
+/// change being mechanical run-length folding of identical **adjacent** actions into a
+/// `Repeat(n)` + one `Do` (chunked at `Repeat`'s 1..=9 ceiling). Nothing else: non-adjacent
+/// repeats stay separate (`scan, collect, scan, collect` does NOT become a loop), no "noise" is
+/// dropped, nothing is generalized — that's the player's job afterward via the steppers. Pure.
+fn trace_to_steps(blocks: &[Block]) -> Vec<Step> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < blocks.len() {
+        let b = blocks[i];
+        let mut run = 1;
+        while i + run < blocks.len() && blocks[i + run] == b {
+            run += 1;
+        }
+        i += run;
+        // Emit the run, chunked at the `Repeat` ceiling (9); a chunk of 1 is just a `Do`.
+        while run > 0 {
+            let chunk = run.min(9);
+            if chunk >= 2 {
+                out.push(Step::Repeat(chunk as u8));
+            }
+            out.push(Step::Do(b));
+            run -= chunk;
+        }
+    }
+    out
+}
+
 /// What the home cursor is on.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Sel {
     Routine(usize),
     NewRoutine,
+    /// G13: build a draft routine from the active agent's recorded manual trace.
+    TraceToRoutine,
     Block(Block),
 }
 
@@ -606,6 +640,12 @@ pub struct Console {
     pub discovered: HashSet<Block>,
     /// G11: the app's clock (set each frame before `tick`) — drives last-fired age + yield rates.
     pub now: f32,
+    /// G13: per-agent rolling memory of the player's last manual block actions (session-local,
+    /// never persisted) — the literal source for "trace → routine". Newest at the back.
+    pub traces: std::collections::HashMap<Agent, VecDeque<Block>>,
+    /// G13: the agent the player is currently controlling (set each frame by the app, like `now`)
+    /// — selects which trace the ticker shows and "trace → routine" captures.
+    pub active_agent: Agent,
 }
 
 impl Default for Console {
@@ -661,6 +701,8 @@ impl Default for Console {
             unlocked: HashSet::new(),
             discovered: HashSet::new(),
             now: 0.0,
+            traces: std::collections::HashMap::new(),
+            active_agent: Agent::Ship,
         }
     }
 }
@@ -893,9 +935,10 @@ impl Console {
         out
     }
 
-    /// Home rows: routines (toggle/edit), a "new routine" row, then the visible block listing.
+    /// Home rows: routines (toggle/edit), a "new routine" row, a "trace → routine" row (G13),
+    /// then the visible block listing.
     pub fn home_rows(&self) -> usize {
-        self.routines.len() + 1 + self.visible_palette().len()
+        self.routines.len() + 2 + self.visible_palette().len()
     }
 
     /// Editor rows for routine `i`: the trigger row, each body step, then an "add step" row.
@@ -922,8 +965,10 @@ impl Console {
             Sel::Routine(self.cursor)
         } else if self.cursor == nr {
             Sel::NewRoutine
+        } else if self.cursor == nr + 1 {
+            Sel::TraceToRoutine
         } else {
-            Sel::Block(self.visible_palette()[self.cursor - nr - 1])
+            Sel::Block(self.visible_palette()[self.cursor - nr - 2])
         }
     }
 
@@ -946,6 +991,47 @@ impl Console {
         let r = &mut self.routines[i];
         r.enabled = !r.enabled;
         r.enabled
+    }
+
+    // ---- G13: record-to-program -------------------------------------------------------------
+
+    /// Record one **manual** player action into `agent`'s rolling trace (newest at the back,
+    /// capped at [`TRACE_CAP`]). Called only from the app's manual action sites — autopilot /
+    /// auto-collect / interpreter acts never reach here, so the trace stays the player's hands.
+    pub fn record_manual(&mut self, agent: Agent, block: Block) {
+        let ring = self.traces.entry(agent).or_default();
+        ring.push_back(block);
+        while ring.len() > TRACE_CAP {
+            ring.pop_front();
+        }
+    }
+
+    /// The active agent's recorded manual trace, oldest→newest (for the ticker display).
+    pub fn trace(&self, agent: Agent) -> Vec<Block> {
+        self.traces
+            .get(&agent)
+            .map(|r| r.iter().copied().collect::<Vec<Block>>())
+            .unwrap_or_default()
+    }
+
+    /// Build a **draft routine** from `agent`'s trace (the G13 contract: *record literally,
+    /// generalize manually*) and open it in the editor. The only transformation is mechanical
+    /// run-length folding of identical adjacent actions into `repeat(n)` — no inference, no
+    /// dropping, no generalization. Returns the new routine index, or `None` if the trace is
+    /// empty. The draft is ordinary G7 data (persists / edits / runs through existing paths).
+    pub fn trace_to_routine(&mut self, agent: Agent) -> Option<usize> {
+        let blocks = self.trace(agent);
+        if blocks.is_empty() {
+            return None;
+        }
+        let body = trace_to_steps(&blocks);
+        let name = format!("trace-{}", self.routines.len() + 1);
+        self.routines
+            .push(Routine::new(name, agent, Trigger::Continuous, body));
+        let i = self.routines.len() - 1;
+        self.view = View::Edit(i);
+        self.cursor = 0;
+        Some(i)
     }
 
     /// Create a fresh empty `agent` routine and open its editor. Returns the new index.
@@ -1404,6 +1490,26 @@ impl Console {
         }
         let cur = if row == self.cursor { ">" } else { " " };
         s.push_str(&format!("{cur} + new routine\n"));
+        row += 1;
+        // G13: "trace → routine" — turn the recorded manual actions into a draft. The ticker
+        // (recent manual actions of the active agent, glyph-rendered per G12) makes the feature
+        // announce itself; the count tells you what'll be captured.
+        let cur = if row == self.cursor { ">" } else { " " };
+        let trace = self.trace(self.active_agent);
+        let ticker = if trace.is_empty() {
+            "(act by hand to record)".to_string()
+        } else {
+            trace
+                .iter()
+                .map(|b| b.glyph_label())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        s.push_str(&format!(
+            "{cur} ↻ trace → routine  [{}]  {}\n",
+            trace.len(),
+            ticker
+        ));
         row += 1;
         s.push_str("blocks (Enter runs):\n");
         // G9: only *discovered* blocks are listed (a name you've read in the world); a discovered-
@@ -2078,7 +2184,96 @@ mod tests {
         let mut c = Console::default();
         c.cursor = c.routines.len(); // the "new routine" row
         assert_eq!(c.selected(), Sel::NewRoutine);
-        c.cursor = c.routines.len() + 1; // first palette block
+        c.cursor = c.routines.len() + 1; // the "trace → routine" row (G13)
+        assert_eq!(c.selected(), Sel::TraceToRoutine);
+        c.cursor = c.routines.len() + 2; // first palette block
         assert!(matches!(c.selected(), Sel::Block(_)));
+    }
+
+    /// G13: the trace records manual actions (capped, per-agent), and "trace → routine" builds a
+    /// **literal** draft — exact blocks, only identical-adjacent runs folded to `repeat(n)`.
+    #[test]
+    fn trace_to_routine_is_literal_with_run_length_fold() {
+        // Pure fold: non-adjacent repeats stay separate; adjacent identical fold to Repeat+Do.
+        let scan = Block::Scan(ScanItem::Sites);
+        let steps = trace_to_steps(&[scan, Block::Collect, scan, Block::Collect]);
+        assert_eq!(
+            steps,
+            vec![
+                Step::Do(scan),
+                Step::Do(Block::Collect),
+                Step::Do(scan),
+                Step::Do(Block::Collect),
+            ],
+            "non-adjacent repeats must NOT collapse to a loop"
+        );
+        let folded = trace_to_steps(&[Block::Collect, Block::Collect, Block::Collect]);
+        assert_eq!(
+            folded,
+            vec![Step::Repeat(3), Step::Do(Block::Collect)],
+            "adjacent identical fold to repeat(n)+do"
+        );
+        // A run past the Repeat ceiling (9) chunks, still literal (no loss).
+        let ten = vec![Block::Collect; 10];
+        assert_eq!(
+            trace_to_steps(&ten),
+            vec![
+                Step::Repeat(9),
+                Step::Do(Block::Collect),
+                Step::Do(Block::Collect)
+            ]
+        );
+
+        // Recording: per-agent, capped, manual-only (only record_manual feeds it).
+        let mut c = Console::default();
+        for _ in 0..15 {
+            c.record_manual(Agent::Ship, scan);
+        }
+        c.record_manual(Agent::Foot, Block::Collect);
+        assert_eq!(c.trace(Agent::Ship).len(), TRACE_CAP, "capped at TRACE_CAP");
+        assert_eq!(
+            c.trace(Agent::Foot),
+            vec![Block::Collect],
+            "per-agent isolation"
+        );
+
+        // trace → routine: a draft ship routine of the exact (folded) blocks, opened for editing.
+        let before = c.routines.len();
+        let i = c
+            .trace_to_routine(Agent::Ship)
+            .expect("non-empty trace builds a draft");
+        assert_eq!(c.routines.len(), before + 1);
+        assert_eq!(c.routines[i].agent, Agent::Ship);
+        assert_eq!(c.routines[i].trigger, Trigger::Continuous);
+        assert_eq!(
+            c.routines[i].body,
+            vec![Step::Repeat(9), Step::Do(scan), Step::Do(scan)],
+            "10 identical scans → repeat(9)+do, +1 leftover do (literal, chunked)"
+        );
+        assert_eq!(
+            c.view,
+            View::Edit(i),
+            "opens in the editor for manual generalization"
+        );
+        // Empty trace → no draft.
+        let mut empty = Console::default();
+        assert_eq!(empty.trace_to_routine(Agent::Ship), None);
+    }
+
+    /// G13: a recorded draft is **ordinary G7 data** — once built (enabled, continuous) the
+    /// interpreter ticks it like any routine, reproducing the manual behaviour automatically.
+    #[test]
+    fn recorded_draft_runs_through_the_interpreter() {
+        let mut c = Console::default();
+        // The canonical hand-loop: scan a site, then collect.
+        c.record_manual(Agent::Ship, Block::Scan(ScanItem::Sites));
+        c.record_manual(Agent::Ship, Block::Collect);
+        let i = c.trace_to_routine(Agent::Ship).expect("draft built");
+        let t = c.tick(Agent::Ship, 0, 0, false);
+        assert!(t.scan, "the recorded scan step requests a site scan");
+        assert!(
+            t.acts.iter().any(|a| a.block == Block::Collect && a.routine == i),
+            "the recorded collect step emits a collect act credited to the draft"
+        );
     }
 }

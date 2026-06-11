@@ -857,6 +857,22 @@ then the HUD capability + wiring). A unit test proves the console glyphs reprodu
 billboard's exact bitmaps; ASCII HUD output stays byte-identical (`BASIC_LEGACY == BASIC_FONTS`).
 210 tests; golden voxel-hash unchanged; `co=`/`pg=` + routine equality untouched.
 
+### ✨ G13 — Record-to-program ("the console remembers your hands") ✅ &nbsp;→ [`milestones/G13-record-to-program.md`](milestones/G13-record-to-program.md)
+The PBD on-ramp from playing-by-hand to authoring — built to the research's load-bearing
+contract: **record literally, generalize manually.** A per-agent rolling memory (`TRACE_CAP=10`,
+session-local) captures the player's **manual** actions (console clicks via `dispatch_block`; the
+`T`/beam/`H`/touch keybinds) — never autopilot or interpreter acts, so the trace stays the
+player's hands. A console **"↻ trace → routine"** row turns it into a draft `Routine`: the *exact*
+concrete blocks in order, the **only** transformation being mechanical run-length folding of
+identical *adjacent* actions into `repeat(n)` (chunked at the 1..=9 ceiling) — **no inference, no
+noise-dropping, no generalization** (that's the player's job, via the existing steppers). The
+draft is ordinary G7 data (continuous trigger; persists/edits/runs unchanged) and opens straight
+in the editor. A glyph-rendered **ticker** (per G12) shows the trace filling as you act, so the
+feature announces itself. Pure fold + per-agent/cap/manual-only memory + interpreter-parity all
+unit-tested. **Split:** the Eager-style **pre-highlight of the agent's next world target** during
+playback needs target prediction + a new marker draw (more than small, visual) → **G13b**. 212
+tests; golden voxel-hash + headless render unchanged; no engine change; boundary intact.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear

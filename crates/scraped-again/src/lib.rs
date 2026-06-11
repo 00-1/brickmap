@@ -863,6 +863,25 @@ impl App {
             .collect();
         // G9: the console's view of which names have been found in the world.
         self.console.discovered = self.progress.discovered_blocks().collect();
+        // G13: which agent the player is driving (ticker + "trace → routine" target).
+        self.console.active_agent = self.active_agent();
+    }
+
+    /// G13: the agent the player is currently controlling (walking → foot, else the cruiser).
+    fn active_agent(&self) -> console::Agent {
+        if self.mode == Mode::Walk {
+            console::Agent::Foot
+        } else {
+            console::Agent::Ship
+        }
+    }
+
+    /// G13: record one **manual** player action into the active agent's trace (the source for
+    /// "trace → routine"). Only the manual call sites call this — routine/autopilot acts never do,
+    /// so the trace stays the player's own hands.
+    fn record_manual(&mut self, block: console::Block) {
+        let agent = self.active_agent();
+        self.console.record_manual(agent, block);
     }
 
     /// G7: keyboard/pad control of the open console (no typing) — cursor + discrete buttons.
@@ -914,6 +933,11 @@ impl App {
                 // New routines default to the ship agent; Tab in the editor flips to foot (G8b).
                 self.console.create_routine(console::Agent::Ship);
             }
+            console::Sel::TraceToRoutine => {
+                // G13: build a draft from the active agent's recorded manual trace + open it.
+                let agent = self.active_agent();
+                self.console.trace_to_routine(agent);
+            }
             console::Sel::Routine(i) => {
                 let on = self.console.toggle_routine(i);
                 // Re-enabling a routine that steers the autopilot re-engages the wander (generic —
@@ -925,7 +949,9 @@ impl App {
         }
     }
 
-    /// G4: run a console block once — parity with its keybind shortcut; routines call this too.
+    /// G4: run a console block once — the manual console-click path (its only caller). G13:
+    /// records the click into the active agent's trace (manual-only — routines bypass this and
+    /// call the effect fns directly).
     fn dispatch_block(&mut self, b: console::Block) {
         if !self.console.is_unlocked(b) {
             log::info!(
@@ -934,6 +960,7 @@ impl App {
             );
             return;
         }
+        self.record_manual(b); // G13: a manual console click is part of the trace
         match b {
             console::Block::Scan(_) => self.scan_pulse(),
             console::Block::Collect => self.collect_aimed(),
@@ -1013,7 +1040,10 @@ impl App {
                 }
                 self.codex_open = false;
             }
-            touch::Tap::Beam => self.cast_beam(),
+            touch::Tap::Beam => {
+                self.record_manual(console::Block::FireBeam); // G13: trace the manual beam
+                self.cast_beam();
+            }
             touch::Tap::MenuTap(_x, y) => {
                 // Tap a console row to run/toggle it (Home view). Mapping y→row is approximate —
                 // precise tap targeting is the deferred on-device feel-tuning.
@@ -2364,8 +2394,10 @@ impl ApplicationHandler<AppEvent> for App {
                     } else if code == KeyCode::KeyE && pressed {
                         self.toggle_cruiser(); // enter/exit the cruiser
                     } else if code == KeyCode::KeyT && pressed {
+                        self.record_manual(console::Block::Collect); // G13: trace the manual collect
                         self.collect_aimed(); // G1: collect the aimed inscription
                     } else if code == KeyCode::KeyH && pressed {
+                        self.record_manual(console::Block::Hail); // G13: trace the manual hail
                         self.hail_ship(); // G8a: recall the autonomous ship (on foot)
                     } else if code == KeyCode::KeyK && pressed {
                         self.toggle_photo(); // E13: cinematic photo mode (pause + free-cam + zoom)
@@ -2409,6 +2441,7 @@ impl ApplicationHandler<AppEvent> for App {
             } => {
                 self.auto_fly = false;
                 if self.cursor_locked {
+                    self.record_manual(console::Block::FireBeam); // G13: trace the manual beam
                     self.cast_beam();
                 } else {
                     self.set_capture(true);
