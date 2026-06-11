@@ -104,16 +104,21 @@ auto-collected **shards** are poured into it until research completes → the bl
 the old decode economy, and resolves several forks at once:
 - **Fork C (treadmill):** shards buy **new verbs**, not bigger numbers — progression stays
   vocabulary growth; numbers serve unlocking composition. The not-a-clicker property holds.
-- **Fork B.3 (domain-matched):** a block's research consumes (mostly) its **stratum's
-  domain** of shards — so deep/rare blocks are gated behind exploring rarer strata, tying
-  the management game to manual expeditions (game-system §11's intended gating, mechanized).
+- **Fork B.3 (domain-matched) + rarity-gating: ✅ DECIDED** (human, 2026-06-11): a block's
+  research consumes its **stratum's domain** of shards, and **rare blocks demand rarer
+  shards** (G10's common/uncommon/rare tiers, ~85/13/2) and/or larger totals — so the
+  deepest vocabulary is genuinely hard to unlock, gated behind exploring rarer strata and
+  patiently accumulating scarce shards. This ties comprehension-power to manual expeditions
+  (game-system §11's intended gating, now mechanized) and gives the rarity tiers a real
+  sink (not just `match` flavor). Rough shape: tier-0 blocks fill fast on common shards;
+  Signals-tier blocks want rare Signals shards + a long fill — the late-game frontier.
 - **Fork B.1 (shard↔strata):** shards are the **research substrate**, not a sixth currency
   competing with strata data — strata *are* the shard domains.
-- **Fork B.2 (fill vs spend):** leaning **gradual fill** (comprehension takes time) — the
-  exact mechanic is the one open sub-point (pacing): allocate-and-fill-over-time
-  (idle-resonant, pairs with autopilot) vs bank-then-commit vs hybrid. *Prose decision
-  pending; default if unspecified = allocate-and-fill, as the most idle/theme-resonant and
-  the closest to the human's "add shards to them" phrasing.*
+- **Fork B.2 (fill vs spend): ✅ DECIDED — allocate-and-fill, player-directed** (human,
+  2026-06-11): the player **chooses which research target their shards go into**; the bar
+  fills as shards flow in (over time / as collected, even while flying). It's an explicit
+  allocation decision — what to research *next* — not a passive trickle and not a
+  bank-then-instant-buy. (Pairs with autopilot: set it researching, fly, watch it climb.)
 - **Faculties** (G10's sensing/reach/drive) become **ordinary research targets** in the
   same pipe (game-system §3: "an upgrade is just the spend action") — no separate +% subsystem.
 - **G11's "one lit goal"** now naturally points at the nearest-to-complete research.
@@ -121,8 +126,10 @@ the old decode economy, and resolves several forks at once:
   carry/buffer caps (asymmetric per agent), a `deposit`/cache verb (first handshake
   primitive), `when(state)` expansion (shards/buffer/range/research-progress), cost pacing
   against the G9 discovery cadence (vocabulary events break walls — Pecorella P13).
-- *Still fork-gated:* the pacing sub-point above; whether levels are pure parameter-unlocks
-  vs include any capped +% (lean parameter-unlocks; faculties the only modest +%).
+- *Economy shape now fully decided* (allocate-and-fill, player-directed, domain+rarity-
+  gated cost). Remaining minor pin: whether *levels* are pure parameter-unlocks vs include
+  any capped +% (lean parameter-unlocks; faculties the only modest +%) — a brief-time call,
+  not a human fork.
 - **Note:** G10 already shipped bank-then-spend faculties — so this milestone partly
   *retrofits* G10's `spend` into the research model. Frame as evolution, keep `pg=` compat.
 

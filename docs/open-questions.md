@@ -70,9 +70,11 @@ The human's "find words → research blocks → add shards to unlock/upgrade" re
 **vocabulary funded by shard-research**, not a +% layer; faculties fold into the same pipe
 as ordinary research targets; numbers serve unlocking verbs. Forks B.1 (shards = research
 substrate, not a sixth currency), B.2 (gradual fill, pacing TBD in prose), and B.3
-(domain-matched research cost) converge here too. **One open sub-point: research pacing**
-(allocate-and-fill vs bank-then-commit vs hybrid) — to decide in prose; default
-allocate-and-fill.
+(domain-matched research cost) converge here too. **Pacing now decided too (2026-06-11):**
+allocate-and-fill, **player-directed** (you choose which target the shards go into), with
+**rarer blocks demanding rarer shards** — the deepest vocabulary is the hard, late frontier.
+The economy fork is fully closed; only brief-time tuning (numbers, whether levels carry any
+capped +%) remains.
 
 --- original question kept below ---
 
