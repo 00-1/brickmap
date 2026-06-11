@@ -109,9 +109,34 @@ asymmetry (P19) introduced as a *discovered* world property, not a menu number (
   invalidate copy-paste routines. Pairs with E8 vertical stacks / new world content.
 - **The witnessing arc** (P16): act emphasis shifts operator → author → overseer; mostly
   free (it emerges from the ladder) — needs a design pass in game-mechanics, not a system.
-- **Decipherment deepening**: hypothesis→confirmation on names, script comprehension
-  stages, lexicon surfacing — fed by [`research-decipherment.md`](research-decipherment.md)
-  and heavily fork-gated on the human's answers.
+- **The Archive tranche** (the decipherment deepening, now research-shaped — see
+  [`research-linguistics.md`](research-linguistics.md),
+  [`research-material-text.md`](research-material-text.md),
+  [`research-decipherment.md`](research-decipherment.md)): a coherent multi-milestone
+  direction, fork-gated on [`open-questions.md`](open-questions.md) §A/§D —
+  **Leiden display grammar** (brackets/underdots/⟦erasure⟧ as the survey log's state
+  system) · **cartouches** (a name-bracket glyph pair — the real first foothold of every
+  historical decipherment) · **formulaic frames** (epitaph/curse/ledger registers; crack a
+  frame once, harvest names forever) · **the sensing ladder** (raking → UV → multispectral
+  → penetrating; palimpsest undertexts; re-processing old scans as a free late win) ·
+  **factoid-graph prosopography** (attributable hands — the player joins the records of
+  one dead engineer) · **one proto-language, five daughter scripts** (deterministic
+  sound-change cascades → detectable cognates; the endgame comparative puzzle) ·
+  **compositional agglutinative names** (Kober-able morphology + bouba/kiki sound
+  symbolism — the substrate the knowledge-gate fork needs) · **statistical honesty**
+  (the lexicon generator passes Zipf/Heaps/entropy/morphology tests — CI-checkable, per
+  this repo's test-pure-logic norm) · **hauntological content slant** (cancelled-future
+  texts; ~85% documentary; no expository diaries; the Vindolanda autograph-postscript
+  pattern).
+- **Audio identity** ([`research-audio.md`](research-audio.md)): lament-bass ostinato,
+  incommensurate swell cycles, per-stratum earcon family + a console prosody voice,
+  **phone-mode virtual bass** (the weak-hardware audio gap — our sub is inaudible on
+  phone speakers), FDN vastness tuning — buildable blind behind toggles, ear-tuned at the
+  human pass.
+- **Console language polish** ([`research-block-language.md`](research-block-language.md)):
+  event-vs-state trigger shapes (`on-…` vs `while-…` — the measured TAP confusion),
+  aggregate parameters over `repeat`, the one-implicit-register rule, failsoft semantics
+  named honestly — folds into the G12/G13 briefs and the console's evolution.
 
 ## 3. What this run does NOT build
 

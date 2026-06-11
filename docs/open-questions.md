@@ -105,6 +105,35 @@ for you to either request it (builder does it blind, you tune) or drop it.
    until you run the reference iGPU/phone session; M10 (dispatching this run) will make
    that session a read-numbers-off-the-HUD exercise.
 
+## I. New from the deep research pass (2026-06-11, second wave)
+
+1. **The Archive tranche as a direction.** The non-game research (real decipherment
+   history, epigraphy, palimpsests, archival theory —
+   [`research-linguistics.md`](research-linguistics.md),
+   [`research-material-text.md`](research-material-text.md)) assembled into something
+   bigger than §D's uncertainty layer: a Leiden bracket display grammar, cartouched
+   names, formulaic-frame decoding, a palimpsest **sensing ladder**, attributable-hands
+   prosopography, and **one proto-language with five daughter scripts** (cognates as the
+   endgame puzzle). Coherent, mostly cheap per piece, deeply on-tone — but it's a
+   *direction*, several milestones long, and it interacts with §A (knowledge-gates) and
+   §B.4 (readability). **The question:** green-light the Archive direction as the
+   post-economy tranche (after G14/G15), or keep decipherment minimal and spend that
+   budget on more automation/economy depth? My take: this is the game's soul and the
+   research makes it concretely buildable — but it's the biggest single commitment in the
+   plan. (A lexicon v2 passing the statistical-honesty checklist is the no-regrets first
+   step either way — pure CI-testable logic.)
+2. **`when` → `while` rename.** The trigger-action studies (Huang & Cakmak; the CHI 2019
+   bug taxonomy) show event/state confusion is the genre's #1 authoring bug and "when" is
+   precisely the ambiguous word; the fix is distinct wording + shapes (`on-…` fires,
+   `while-…` holds, rendered as a live gauge). **Pinned:** the shape/gauge distinction
+   folds into G11/G12 regardless; the player-facing *rename* waits on your nod.
+3. **Audio direction.** Lament-bass ostinato + per-stratum sound identity + **phone-mode
+   virtual bass** ([`research-audio.md`](research-audio.md)) would turn the drone from a
+   reactive pad into a composed grief signature — and fix the fact that our sub is
+   inaudible on phone speakers. All buildable blind behind toggles, ear-tuned later — but
+   it's the game's voice. **Pinned:** queued as a build-with-toggles milestone late in
+   this run unless you'd rather hear the current drone first and steer.
+
 ## Resolved-by-default during this run (FYI, no action needed)
 
 - M10 budget numbers: pinned loose (measured-actual +40% headroom), tightened at M8b.

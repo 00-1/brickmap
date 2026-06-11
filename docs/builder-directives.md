@@ -64,7 +64,7 @@ now). Wind down only when this channel says the run is over.
 - Game-side only (no engine change expected); golden voxel-hash must stay unchanged; if a
   golden *image* covers inscription content, update it intentionally once, noted.
 - **The queue is now published** (briefs staged on this branch — chain straight through,
-  re-reading this channel before each): **G9 → M10 → G10 → G11.**
+  re-reading this channel before each): **G9 → M10 → G10 → G11 → M11.**
   - **M10 — perf telemetry & budget gates** ([`milestones/M10-perf-telemetry.md`](milestones/M10-perf-telemetry.md))
     — engine frame-cost counters + CI budget tests; deliberately *before* G10 so the gates
     exist before the next streamed-content layer.
@@ -73,9 +73,15 @@ now). Wind down only when this channel says the run is over.
     Mind the **opening-parity** requirement (sites stay auto-collected).
   - **G11 — routine telemetry** ([`milestones/G11-routine-telemetry.md`](milestones/G11-routine-telemetry.md))
     — per-routine state/counters, live step highlight, the HUD "one lit goal".
+  - **M11 — render hygiene** ([`milestones/M11-render-hygiene.md`](milestones/M11-render-hygiene.md))
+    — the vendor-doc engine pass: upload-path audit (a measured-upstream hitch class),
+    render-target usage-flag audit, discard draw-order discipline, dissolve-fade
+    quantization, uniform-section fast path. **All byte-identical/unit-verifiable here**;
+    an audit that finds the code already clean is a recorded pass, not a failure.
   - The wider plan these come from: [`game-depth.md`](game-depth.md) +
-    [`performance.md`](performance.md) (its §4 rules apply to G10's shard layer). G12+ are
-    sketched there; briefs will land here — don't pre-build past G11.
+    [`performance.md`](performance.md) (its §4 rules apply to G10's shard layer), now
+    backed by a deep research pass (`docs/research-*.md` — six new docs). G12+ are
+    sketched in game-depth; briefs will land here — don't pre-build past M11.
 
 ---
 
