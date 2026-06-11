@@ -267,13 +267,26 @@ pub struct Progress {
     pub codex: Vec<CodexEntry>,
     seen: std::collections::HashSet<u64>,
     scanned: std::collections::HashSet<u64>,
-    /// Comprehended strata (G6): spending `decode` makes a stratum's script legible + grows the
-    /// console's block vocabulary.
+    /// Comprehended strata (G6 legibility): a stratum's script renders **translated** once
+    /// legible. G15: this is no longer set by a `decode`-stratum action (removed) — it's a
+    /// *side-effect of research*: comprehending (researching) any block of a stratum marks that
+    /// stratum legible. So the decipherment lore-spine survives, funded by the same research pipe.
     comprehended: std::collections::HashSet<Stratum>,
     /// Discovered blocks (G9): names collected from the world. Starters (no required stratum) are
     /// implicitly always discovered — see [`Progress::is_discovered`] — so this set only carries
     /// the gated vocabulary, and pre-G9 payloads load as starter-only.
     discovered: std::collections::HashSet<crate::console::Block>,
+    /// G15: blocks whose **research filled** → comprehended (usable). Replaces G9's
+    /// decode-a-stratum-unlocks-all gate with per-block research. Starters are implicitly
+    /// comprehended (see [`Progress::is_block_comprehended`]); this set carries the gated blocks
+    /// the player has researched to completion.
+    comprehended_blocks: std::collections::HashSet<crate::console::Block>,
+    /// G15: the player's single **active research target** (Decision 1) — discovered-but-locked.
+    /// Auto-collected shards of its domain fill it (allocate-and-fill, player-directed).
+    active_research: Option<crate::console::Block>,
+    /// G15: per-target accumulated **domain-matched** shard yield (`filled`); on `filled ≥ cost`
+    /// the block comprehends. Keyed by the block's `code()` so it survives `co=`/`pg=` round-trips.
+    research_filled: std::collections::HashMap<u8, u64>,
     /// G10: the spendable shard bank (Σ rarity yields of every shard collected, minus spends).
     shard_bank: u64,
     /// G10: lifetime shard pickup counts, domain × rarity (display + future domain-matched costs).
@@ -306,9 +319,20 @@ impl Progress {
         self.codex.len()
     }
 
-    /// G6: `decode` (spend) a stratum — if you can afford [`DECODE_COST`] of it and haven't
-    /// already comprehended it, spend that data and mark it comprehended. Returns `true` on
-    /// success (idempotent + affordability-gated).
+    pub fn is_comprehended(&self, s: Stratum) -> bool {
+        self.comprehended.contains(&s)
+    }
+
+    /// Is `script` legible? G15: a stratum's script renders **translated** once any of its blocks
+    /// has been **researched** (comprehended) — the decipherment spine, now funded by research
+    /// rather than a standalone `decode` action.
+    pub fn is_legible(&self, script: Script) -> bool {
+        self.comprehended.contains(&stratum_of(script))
+    }
+
+    /// (Transitional — being replaced by research; kept so the existing decode path compiles
+    /// until the console is wired to research in the next G15a step.) Comprehend a stratum if
+    /// affordable; marks it legible. *(G15 removes the decode action; do not extend.)*
     pub fn comprehend(&mut self, s: Stratum) -> bool {
         if self.comprehended.contains(&s) || self.strata.get(s) < DECODE_COST {
             return false;
@@ -318,22 +342,89 @@ impl Progress {
         true
     }
 
-    pub fn is_comprehended(&self, s: Stratum) -> bool {
-        self.comprehended.contains(&s)
-    }
-
-    /// Is `script` legible? (Its stratum has been decoded — its inscriptions render translated.)
-    pub fn is_legible(&self, script: Script) -> bool {
-        self.comprehended.contains(&stratum_of(script))
-    }
-
-    /// The richest not-yet-comprehended stratum you can currently afford to `decode`, if any —
-    /// the target for a one-click `decode` block (G6).
+    /// (Transitional — see [`comprehend`](Self::comprehend).) The richest affordable
+    /// not-yet-comprehended stratum, if any.
     pub fn decodable(&self) -> Option<Stratum> {
         Stratum::ALL
             .into_iter()
             .filter(|&s| !self.comprehended.contains(&s) && self.strata.get(s) >= DECODE_COST)
             .max_by_key(|&s| self.strata.get(s))
+    }
+
+    // ---- G15: comprehension-as-research -----------------------------------------------------
+
+    /// Research cost for a block target — a base scaled by the gating stratum's depth (rarer/
+    /// deeper strata cost more; their shards are rarer, so the deepest vocabulary is the late
+    /// frontier — brief Decision 3). Numbers are placeholders tuned at the feel pass; the *shape*
+    /// (deeper = dearer) is the decided part. Starters cost 0 (pre-comprehended).
+    pub fn research_cost(b: crate::console::Block) -> u64 {
+        match b.required() {
+            None => 0,
+            Some(s) => 30 + 20 * s.byte() as u64, // Records 30 … Signals 110 (placeholder)
+        }
+    }
+
+    /// G15: is this block **comprehended** (usable)? Starters always; a gated block once its
+    /// research filled. (Replaces the per-stratum decode gate — no path unlocks a whole stratum.)
+    pub fn is_block_comprehended(&self, b: crate::console::Block) -> bool {
+        b.required().is_none() || self.comprehended_blocks.contains(&b)
+    }
+
+    /// G15: the comprehended gated blocks (for syncing the console's unlock view).
+    pub fn comprehended_blocks(&self) -> impl Iterator<Item = crate::console::Block> + '_ {
+        self.comprehended_blocks.iter().copied()
+    }
+
+    /// G15: set the active research target (allocate-and-fill, player-directed — Decision 1). Only
+    /// a discovered, gated, not-yet-comprehended block is valid. Returns `true` if it became active.
+    pub fn allocate(&mut self, b: crate::console::Block) -> bool {
+        if b.required().is_some() && self.is_discovered(b) && !self.is_block_comprehended(b) {
+            self.active_research = Some(b);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// G15: the active research target (the player's chosen "what next"), if any.
+    pub fn active_research(&self) -> Option<crate::console::Block> {
+        self.active_research
+    }
+
+    /// G15: `(filled, cost)` for a block's research bar.
+    pub fn research_progress(&self, b: crate::console::Block) -> (u64, u64) {
+        (
+            self.research_filled.get(&b.code()).copied().unwrap_or(0),
+            Self::research_cost(b),
+        )
+    }
+
+    /// G15: the discovered-but-not-yet-comprehended blocks — the research targets (for the UI).
+    pub fn research_targets(&self) -> impl Iterator<Item = crate::console::Block> + '_ {
+        self.discovered
+            .iter()
+            .copied()
+            .filter(|b| !self.is_block_comprehended(*b))
+    }
+
+    /// G15: credit domain-matched shard `amount` to the active target; on `filled ≥ cost` mark the
+    /// block comprehended (usable) + its stratum legible (the decipherment fold-in), and clear the
+    /// active target. Returns the block if one just comprehended. (Called from `CollectShard`.)
+    fn credit_research(&mut self, amount: u64) -> Option<crate::console::Block> {
+        let b = self.active_research?;
+        let code = b.code();
+        let filled = self.research_filled.entry(code).or_default();
+        *filled += amount;
+        if *filled >= Self::research_cost(b) {
+            self.comprehended_blocks.insert(b);
+            if let Some(s) = b.required() {
+                self.comprehended.insert(s); // legibility fold-in
+            }
+            self.research_filled.remove(&code);
+            self.active_research = None;
+            return Some(b);
+        }
+        None
     }
 
     /// Is this block **discovered** (G9) — its name collected from the world? Starters (no
@@ -378,10 +469,15 @@ impl Progress {
                 }
                 self.discovered.insert(*block)
             }
-            // G10: bank a shard (always changes state — shards are bulk currency, no dedup).
+            // G10/G15: bank a shard (bulk currency, no dedup) AND — G15 allocate-and-fill — credit
+            // it to the active research target when its **domain matches** (Decision 2, own-domain
+            // only). The bank is kept for the (G15b) faculty path; block research fills here.
             Event::CollectShard { domain, rarity } => {
                 self.shard_bank += rarity.yield_amount();
                 self.shard_counts[domain.byte() as usize][rarity.idx()] += 1;
+                if self.active_research.and_then(|b| b.required()) == Some(*domain) {
+                    self.credit_research(rarity.yield_amount());
+                }
                 true
             }
             // G10: buy the next level of a faculty — gated on the cap + affordability.
@@ -430,7 +526,7 @@ impl Progress {
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(5u8); // version (…; 4 = + discovered, G9; 5 = + shards/faculties, G10)
+        b.push(6u8); // version (…; 4 = + discovered G9; 5 = + shards/faculties G10; 6 = + research G15)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -476,6 +572,20 @@ impl Progress {
             }
         }
         b.extend_from_slice(&self.faculties);
+        // v6: the G15 research economy — comprehended blocks, the active target, in-progress fills.
+        let mut comp_b: Vec<u8> = self.comprehended_blocks.iter().map(|x| x.code()).collect();
+        comp_b.sort_unstable();
+        b.push(comp_b.len() as u8);
+        b.extend_from_slice(&comp_b);
+        b.push(self.active_research.map(|x| x.code()).unwrap_or(0xFF));
+        let mut fills: Vec<(u8, u64)> =
+            self.research_filled.iter().map(|(&k, &v)| (k, v)).collect();
+        fills.sort_unstable_by_key(|x| x.0);
+        b.push(fills.len() as u8);
+        for (code, amt) in fills {
+            b.push(code);
+            b.extend_from_slice(&amt.to_le_bytes());
+        }
         format!("pg={}", to_hex(&b))
     }
 
@@ -526,7 +636,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if !(1..=5).contains(&version) {
+    if !(1..=6).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -595,6 +705,30 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         }
         faculties.copy_from_slice(take(&mut p, 3)?);
     }
+    // v6: the G15 research economy (absent pre-v6 → migration default: nothing researched
+    // in-progress; starters stay implicitly comprehended). Unknown codes skipped (lenient).
+    let mut comprehended_blocks = std::collections::HashSet::new();
+    let mut active_research = None;
+    let mut research_filled = std::collections::HashMap::new();
+    if version >= 6 {
+        let cb = *take(&mut p, 1)?.first()?;
+        for _ in 0..cb {
+            if let Some(blk) = crate::console::Block::from_code(*take(&mut p, 1)?.first()?) {
+                comprehended_blocks.insert(blk);
+            }
+        }
+        let act = *take(&mut p, 1)?.first()?;
+        if act != 0xFF {
+            active_research =
+                crate::console::Block::from_code(act).filter(|b| b.required().is_some());
+        }
+        let fc = *take(&mut p, 1)?.first()?;
+        for _ in 0..fc {
+            let code = *take(&mut p, 1)?.first()?;
+            let amt = u64at(&mut p)?;
+            research_filled.insert(code, amt);
+        }
+    }
     Some(Progress {
         strata,
         codex,
@@ -605,6 +739,9 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         shard_bank,
         shard_counts,
         faculties,
+        comprehended_blocks,
+        active_research,
+        research_filled,
     })
 }
 
@@ -642,6 +779,9 @@ impl PartialEq for Progress {
             && self.shard_bank == other.shard_bank
             && self.shard_counts == other.shard_counts
             && self.faculties == other.faculties
+            && self.comprehended_blocks == other.comprehended_blocks
+            && self.active_research == other.active_research
+            && self.research_filled == other.research_filled
     }
 }
 
@@ -919,6 +1059,85 @@ mod tests {
         assert_eq!(Progress::decode("s=1&x=2"), Progress::default()); // no pg=
         assert_eq!(Progress::decode("pg=zzzz"), Progress::default()); // bad hex
         assert_eq!(Progress::decode("pg=00"), Progress::default()); // bad version
+    }
+
+    /// G15: allocate a discovered gated block → its **domain** shards fill its research → it
+    /// comprehends (becomes usable); off-domain shards don't fill it (Decision 2). Starters are
+    /// comprehended from the start (opening parity).
+    #[test]
+    fn research_fills_from_domain_shards_and_comprehends() {
+        use crate::console::Block;
+        use crate::shards::Rarity;
+        let mut p = Progress::default();
+        // Opening parity: a starter is usable from the start; a gated block is not.
+        assert!(p.is_block_comprehended(Block::Collect)); // starter (required None)
+        let target = Block::Seek; // gated on Schematics
+        assert!(!p.is_block_comprehended(target));
+        p.apply(&Event::Discover { block: target });
+        assert!(
+            p.allocate(target),
+            "a discovered gated block is a valid research target"
+        );
+        let cost = Progress::research_cost(target);
+        assert!(cost > 0);
+        // Off-domain shards (Records) don't fill a Schematics target.
+        for _ in 0..50 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Records,
+                rarity: Rarity::Rare,
+            });
+        }
+        assert_eq!(
+            p.research_progress(target).0,
+            0,
+            "off-domain shards don't fill (Decision 2)"
+        );
+        // Domain-matched shards fill it; enough → comprehended + active target cleared.
+        let mut guard = 0;
+        while !p.is_block_comprehended(target) && guard < 10_000 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Schematics,
+                rarity: Rarity::Common,
+            });
+            guard += 1;
+        }
+        assert!(
+            p.is_block_comprehended(target),
+            "domain shards filled research → comprehended"
+        );
+        assert_eq!(
+            p.active_research(),
+            None,
+            "active target cleared on completion"
+        );
+        // Legibility folded in: comprehending a Schematics block makes Greek legible.
+        assert!(p.is_legible(Script::Greek));
+    }
+
+    /// G15: research state (active target + partial fill + comprehended set) round-trips through
+    /// `pg=` v6; old (pre-v6) payloads load with the migration default (no research).
+    #[test]
+    fn research_state_round_trips_and_old_payloads_migrate() {
+        use crate::console::Block;
+        use crate::shards::Rarity;
+        let mut p = Progress::default();
+        p.apply(&Event::Discover { block: Block::Seek });
+        p.allocate(Block::Seek);
+        p.apply(&Event::CollectShard {
+            domain: Stratum::Schematics,
+            rarity: Rarity::Common,
+        });
+        assert!(
+            p.research_progress(Block::Seek).0 > 0,
+            "partial fill recorded"
+        );
+        assert_eq!(p.active_research(), Some(Block::Seek));
+        let back = Progress::decode(&p.encode());
+        assert_eq!(back, p, "v6 research state round-trips");
+        // A fresh (default) progress has no research — the migration default old payloads load to.
+        let fresh = Progress::default();
+        assert_eq!(fresh.active_research(), None);
+        assert!(!fresh.is_block_comprehended(Block::Seek));
     }
 
     #[test]
