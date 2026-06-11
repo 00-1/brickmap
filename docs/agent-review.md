@@ -8,7 +8,33 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `11aa947` (G9 block-name discovery).
+**Reviewed through:** `4fa897f` (M10 perf telemetry).
+
+---
+
+## 2026-06-11 · M10 — perf telemetry & budget gates (`4fa897f`)  ✅ PASSED (verified independently)
+
+**Independently verified:** fmt clean · clippy `-D` clean · **194 tests, 0 failures** (the
+3-scene budget gates run in the suite). Golden voxel-hash + headless render unchanged.
+
+**Smart reinterpretation, within the brief:** CI gates assert **deterministic CPU-side
+content counters** (chunks/tris/splats/labels from the same builders that feed the renderer,
+at 3 deterministic scenes — default spawn, densest-forest argmax, nearest-giant), while the
+timing-dependent render counters (draw calls, upload bytes, dyn-res, inline-mesh ms) are
+**HUD-only**. Decision 4 applied wholesale rather than per-counter — right call: gates can't
+flake, live counters still serve the M8b session. Engine `DrawStats` stays generic.
+
+**Day-one findings — the milestone already paid for itself:**
+- Streamed set is **1.79–1.89 M tris**: the charter's 1.5 M was an *underestimate of our own
+  scene*. `performance.md` on main now carries measured actuals + ~40% headroom (tris ≤ 2.6 M,
+  splats ≤ 170 k, mesh-draws ≤ 1,200).
+- **Solid colossi = 663 mesh sections** in the forest scene — first M8b merge/section-cap
+  lever, now visible. Exactly the legibility the charter wanted.
+
+Notes: 3-scene gate adds ~40 s to debug CI (recorded, acceptable); `stats` bin provides the
+headless key=value query.
+
+**Verdict.** Clean, honest, and it found something. Chain into **G10** per the queue.
 
 ---
 
