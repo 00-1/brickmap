@@ -8,7 +8,41 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `a6a898d` (G12 1/2 glyph identity + world-text).
+**Reviewed through:** `baa4a73` (G12 2/2 — glyph console complete).
+
+---
+
+## 2026-06-11 · G12 (2/2) — mixed-script HUD overlay + console wiring (`baa4a73`)  ✅ PASSED (verified + rendered)
+
+**Independently verified:** fmt clean · clippy `-D` clean · **210 tests, 0 failures** ·
+golden voxel-hash unchanged · default headless render byte-identical · **console rendered**
+(`SCRAPED_CONSOLE=1`): glyph block-names across Latin/Greek/Runic sit beside the
+minimal-English instrumentation (`(locked: decode SCH)`, `last fired never`, faculty rows)
+— the designed split, no breakage, no dot-fallbacks.
+
+**The engine addition is clean** (the part-1 catch resolved exactly right): `text::overlay_glyph`
+maps a *self-identifying codepoint* → its 8×8 bitmap (Greek/Hiragana own-block; Galactic +
+Runic via dedicated PUA ranges), and `hud::rasterize` routes only non-ASCII through it —
+**ASCII stays on the legacy font, so HUD output is byte-identical** (`BASIC_LEGACY ==
+BASIC_FONTS` asserted). Avoided a per-segment "runs" API by making glyphs self-describing —
+a nicer design than my brief sketched. Content-agnostic, no new scripts → boundary holds.
+The standout test: `overlay_codepoints_reproduce_world_bitmaps` proves console glyphs are
+the **exact** bitmaps the world billboard draws — the recognition loop verified at the
+pixel, not just the string.
+
+**Two scope edges the brief didn't pin (note for the eye-pass, not defects):**
+1. **Routine names** (the given `survey`/`prospect`/`drift`) render English, not glyph. The
+   brief scoped *block* identity; routine names are player-authored labels, so English is
+   defensible — but it slightly softens the "dead machine's language" feel. Eye-pass call:
+   keep author-given names readable (likely right) vs glyph the given-routine defaults.
+2. **Faculty names** (`sensing`/`reach`/`drive`) render English. Defensible line: faculties
+   are *inherent machine faculties* (not world-discovered vocabulary, no inscriptions), so
+   they read as instrumentation — but if G15 makes faculties research targets like any
+   block, they'd want glyph then. Flag for when the research-economy lands.
+
+**Verdict.** Milestone complete and on-identity; the console is now the dead machine's own
+language with English only as instrumentation. The two edges are clarifications, not bugs.
+Queue drained again — next directive (G13) to follow.
 
 ---
 
