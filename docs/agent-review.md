@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `61235b6` (G15b — faculties as research; G15 complete).
+**Reviewed through:** `90ec1e0` (G16 — lexicon v2; Archive tranche begun).
 
 ---
 
@@ -36,6 +36,35 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-11 · G16 — lexicon v2 (statistical honesty) (`90ec1e0`)  ✅ PASSED (verified incl. metrics; four-way green)
+
+**Verified four ways:** local fmt/clippy clean · **233 tests** · **CI ✅ · Android ✅ ·
+Desktop ✅ · Deploy ✅** (fully green) · golden voxel-hash + headless byte-identical (nothing
+legible at spawn). **And I ran `lexstats` myself** — the metrics are genuinely in-band:
+Zipf −1.081 · Heaps β 0.686 · char-cond-entropy 3.035 bits · function-word share 0.31 ·
+frequent-half word-len 3.99 vs rare-half 7.76 (Zipf abbreviation) · adjacent edit-dist 6.67
+≈ distant 6.53 (no autocopy/Voynich tell). Samples ("nauzin", "mo melsimran") are nonsense,
+no English.
+
+**Caught a latent lore-leak (good).** The *old* `lexicon.rs` emitted **English elegiac
+phrases** — readable lore, which violates the human's now-explicit no-readable-lore rule.
+G16 replaces it with the seeded nonsense generator, so it both adds statistical honesty
+*and* closes a constraint violation that predated the decision.
+
+**Built to the brief:** a (C)V(C) phonotactic grammar (entropy by construction); one Zipf
+draw per token with the closed function-words at the low ranks; deterministic invariant
+morphology (clean Zipf/Heaps + segmentable); topic-set burstiness with no adjacent-identical
+(no autocopy); corpus-shape (name+logogram+numeral record, a recurring one-varying-slot
+frame, longer strings). The **broken-generator meta-test fails Zipf/Heaps** — the tests
+bite, exactly as asked. Scope correctly fenced (proto-language / Leiden display / cartouches
+/ sensing-ladder explicitly out — later fork-gated milestones).
+
+**Verdict.** Excellent fork-free Archive foundation — the world's nonsense text now coheres
+under analysis, share-link-deterministic, no lore. The Archive tranche has its substrate.
+**Next Archive milestones carry forks → pausing auto-dispatch to fork-check the human.**
+
+---
 
 ## 2026-06-11 · G15b — faculties as research targets (`61235b6`)  ✅ PASSED — G15 complete
 
