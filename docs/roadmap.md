@@ -918,6 +918,25 @@ a feel pass. Built across four green commits (1/2 runtime, 2/2 console, G15b fac
 round-trip + migration, per-block unlock, research lit-goal); golden voxel-hash + headless render
 byte-identical; no engine change.
 
+### ✨ G16 — Lexicon v2 (statistical honesty) ✅ &nbsp;→ [`milestones/G16-lexicon-v2.md`](milestones/G16-lexicon-v2.md)
+The fork-free first step of the **Archive tranche** (binding constraint: **no readable lore** —
+comprehension is structural). `lexicon.rs` rewritten from the old English elegiac word-bank into a
+seeded **statistically-honest nonsense** generator, so the world's inscriptions reward analysis
+instead of reading as noise. A `(C)V(C)` **phonotactic grammar** + a **one-Zipf-draw-per-token**
+stream whose lowest ranks are the closed **function words** (so they smoothly top the Zipf curve) +
+**deterministic morphology** (one surface form per root, invariant segmentable affixes) + **topic-set
+burstiness** that clusters content within a span without adjacent repeats. Measured fingerprint:
+Zipf slope −1.08, Heaps β 0.69, char conditional entropy 3.0 bits/char, function-word share 0.31,
+frequent words shorter, adjacent edit-distance ≈ distant (no Voynich autocopy tell). **Each of the
+9 honesty properties is a unit test asserting a natural-language band, with a broken-generator
+meta-test that fails them.** Corpus-shape: `record` (name + logogram + `#`-numerals), a recurring
+one-varying-slot `frame`, longer multi-word strings. Output is romanized nonsense in the five
+scripts (no English/lore); block names stay glyph (G12); deterministic per seed (share-link safe);
+a `lexstats` bin reports the fingerprint. 233 tests; golden voxel-hash + headless render
+byte-identical; no engine change. **Scope fenced to statistical honesty + corpus-shape** — the
+proto-language / display-grammar / cartouches / sensing-ladder are later fork-gated Archive
+milestones.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear
