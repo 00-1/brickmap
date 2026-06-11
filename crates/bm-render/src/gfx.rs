@@ -185,6 +185,15 @@ pub struct DrawStats {
     /// Solid colossal-relic meshes drawn this frame (E18) — for the HUD, so the mesh↔points
     /// dissolve is visible (0 = all in-range relics are currently points).
     pub relics: u32,
+    /// M10: draw invocations recorded this frame (terrain/structure/splat draws counted exactly;
+    /// each active internal pass — sky, particles, text, post, map, overlays — counted as one).
+    pub draw_calls: u32,
+    /// M10: bytes uploaded into GPU buffers/textures since the previous frame (chunk meshes,
+    /// splat instance buffers, map/text images — the streaming-bandwidth side). Per-frame
+    /// constant-size uniform writes are excluded (fixed noise floor).
+    pub upload_bytes: u64,
+    /// M10: the internal-resolution divisor in effect (the art `pixel_scale` + dynamic-res).
+    pub pixel_scale: u32,
 }
 
 /// Vertex buffer layout for the **packed** face vertex: two `u32`s per vertex (8
@@ -340,6 +349,8 @@ pub struct State {
     frame_count: u64,
     /// Last frame's draw counts, for the perf HUD (M5).
     last_stats: DrawStats,
+    /// M10: bytes uploaded since the last `render()` (harvested into `DrawStats.upload_bytes`).
+    pending_upload: u64,
     /// Start time, for the foliage wind animation (E6).
     start: web_time::Instant,
     /// In-engine text overlay (HUD), drawn the same way on every platform.
@@ -711,6 +722,7 @@ impl State {
             particle_capacity,
             frame_count: 0,
             last_stats: DrawStats::default(),
+            pending_upload: 0,
             start: web_time::Instant::now(),
             hud,
             ui_rects,
@@ -733,6 +745,7 @@ impl State {
     /// D10: set the touch-control overlay rects for this frame (empty clears it). Generic filled
     /// rects in `0..1` screen space; the game composes them from its `touch::Layout`.
     pub fn set_ui_rects(&mut self, rects: &[crate::hud::UiRect]) {
+        self.pending_upload += (rects.len() * 6 * 24) as u64; // 6 verts × (pos2+rgba) f32s
         self.ui_rects.set_rects(&self.device, &self.queue, rects);
     }
 
@@ -751,6 +764,12 @@ impl State {
         labels: &[(String, crate::text::Script, Vec3, f32, [f32; 3])],
     ) {
         self.text.clear();
+        // M10: label textures re-rasterise on a set change — approximate their upload as the
+        // glyph-pixel payload (8×8 RGBA per char).
+        self.pending_upload += labels
+            .iter()
+            .map(|(t, ..)| t.chars().count() as u64 * 8 * 8 * 4)
+            .sum::<u64>();
         for (s, script, center, height, color) in labels {
             self.text.add_script(
                 &self.device,
@@ -780,6 +799,7 @@ impl State {
                 mapped_at_creation: false,
             });
         }
+        self.pending_upload += std::mem::size_of_val(points) as u64;
         self.queue
             .write_buffer(&self.structure_splats, 0, bytemuck::cast_slice(points));
     }
@@ -800,6 +820,7 @@ impl State {
                 mapped_at_creation: false,
             });
         }
+        self.pending_upload += std::mem::size_of_val(points) as u64;
         self.queue
             .write_buffer(&self.creature_splats, 0, bytemuck::cast_slice(points));
     }
@@ -807,6 +828,10 @@ impl State {
     /// Replace the solid colossal-structure meshes (E18) — greedy-meshed giant instances drawn
     /// with the terrain pipeline. Rebuilt by the app when the in-range set changes.
     pub fn set_structure_meshes(&mut self, instances: &[ChunkInstance]) {
+        self.pending_upload += instances
+            .iter()
+            .map(|i| (i.mesh.vertices.len() * 8 + i.mesh.indices.len() * 4) as u64)
+            .sum::<u64>();
         self.structure_draws = instances
             .iter()
             .filter_map(|inst| {
@@ -829,6 +854,7 @@ impl State {
     /// Feed this frame's post-palette overlay triangles (G2) — the game's survey-beam ribbons.
     /// Empty clears it. Generic: the engine draws whatever it's handed, depth-tested + vivid.
     pub fn set_overlay(&mut self, verts: &[crate::overlay::OverlayVertex]) {
+        self.pending_upload += std::mem::size_of_val(verts) as u64;
         self.overlay.set_lines(&self.device, verts);
     }
 
@@ -840,6 +866,7 @@ impl State {
     }
     /// Upload a fresh chunk-image for the map (RGBA, one texel per chunk). Only when it grows.
     pub fn set_map_image(&mut self, w: u32, h: u32, rgba: &[u8]) {
+        self.pending_upload += rgba.len() as u64;
         self.map.set_image(&self.device, &self.queue, w, h, rgba);
     }
     /// Update the map's pan/zoom/user uniform (cheap, every frame the map is open).
@@ -868,6 +895,10 @@ impl State {
 
     /// Add or replace a chunk's GPU buffers (streaming). Empty meshes are dropped.
     pub fn upload_chunk(&mut self, instance: &ChunkInstance) {
+        self.pending_upload += (instance.mesh.vertices.len() * 8
+            + instance.mesh.indices.len() * 4
+            + instance.foliage.len() * std::mem::size_of::<SplatInstance>())
+            as u64;
         match build_chunk_draw(&self.device, &self.chunk_bind_group_layout, instance, false) {
             Some(draw) => {
                 self.draws.insert(instance.coord, draw);
@@ -1107,9 +1138,11 @@ impl State {
             });
 
             // Sky first (fullscreen, no depth write) so terrain draws over it.
+            let mut draw_calls = 0u32; // M10: in-pass draw invocations
             if toggles.sky {
                 pass.set_pipeline(&self.sky_pipeline);
                 pass.draw(0..3, 0..1);
+                draw_calls += 1;
             }
 
             pass.set_pipeline(&self.pipeline);
@@ -1198,6 +1231,7 @@ impl State {
                     };
                     pass.set_vertex_buffer(0, buf.slice(..));
                     pass.draw(0..6, 0..*count);
+                    draw_calls += 1;
                     splats += count;
                 }
             }
@@ -1208,6 +1242,7 @@ impl State {
                 pass.set_bind_group(0, &self.globals_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.structure_splats.slice(..));
                 pass.draw(0..6, 0..self.structure_count);
+                draw_calls += 1;
                 splats += self.structure_count;
             }
 
@@ -1217,12 +1252,27 @@ impl State {
                 pass.set_bind_group(0, &self.globals_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.creature_splats.slice(..));
                 pass.draw(0..6, 0..self.creature_count);
+                draw_calls += 1;
                 splats += self.creature_count;
             }
 
             // In-world text (E17): glowing inscriptions, camera-facing billboards in the scene
             // pass (depth-tested against the world, palettised + fogged, glow through bloom).
             self.text.draw(&mut pass, &self.globals_bind_group);
+            draw_calls += 1; // text (one instanced pass when labels exist)
+
+            // M10: total draw invocations = in-pass draws (mesh draws = `drawn`, splat passes,
+            // sky, text, particles) + one per active stage outside this pass (bloom composite +
+            // palette present ≈ 3; ship hull/lights 2; beam overlay 2; map 1; UI rects 1; HUD 1).
+            let post =
+                3 + if self.ship_active && !self.map_active {
+                    2
+                } else {
+                    0
+                } + if overlay_keep_depth { 2 } else { 0 }
+                    + u32::from(self.map_active)
+                    + 2; // ui-rects + hud text
+            let dc = draw_calls + drawn + u32::from(!particles.is_empty()) + post;
 
             // Record stats for the HUD; still log occasionally on native.
             self.last_stats = DrawStats {
@@ -1232,6 +1282,9 @@ impl State {
                 particles: particles.len() as u32,
                 splats,
                 relics: self.structure_draws.len() as u32,
+                draw_calls: dc,
+                upload_bytes: std::mem::take(&mut self.pending_upload),
+                pixel_scale: self.pixel_scale,
             };
             self.frame_count += 1;
             if self.frame_count.is_multiple_of(120) {

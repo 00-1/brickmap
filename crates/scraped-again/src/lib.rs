@@ -46,6 +46,8 @@ pub mod expedition;
 pub mod weather;
 // Touch controls (D9): the phone overlay layout + the pure touch→action mapping.
 pub mod touch;
+// Performance budgets + reference-scene CI gates (M10) — the charter's regression anchor.
+pub mod budgets;
 // Decipherment lexicon (G6): a seeded grammar that renders a comprehended script as words.
 pub mod lexicon;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
@@ -198,9 +200,6 @@ struct App {
     /// ≤1/frame) instead of regenerating everything on every cell crossing (the streaming-hitch
     /// fix), and pick its LOD (mesh near ↔ points far) per frame from the cached pair.
     structures: std::collections::HashMap<(i32, i32), CachedRelic>,
-    /// E18: the baked CC0 human surface points (model-space), decoded once from the embedded
-    /// asset; transformed per placement into a fallen-giant point cloud (`human` colossi).
-    human_points: Vec<Vec3>,
     /// Drifting wisp creatures (E15): a small seed-driven swarm of point-cloud motes kept
     /// loosely tethered to the camera, advanced + re-uploaded every frame so they drift and
     /// shimmer through the fly-through. Cheap (≈ a few hundred splats).
@@ -1142,44 +1141,10 @@ impl App {
                 break;
             }
             budget -= 1;
-            let entry = if p.human && p.solid {
-                // E18: a fallen *human* giant you can land on — the baked figure voxelised + meshed
-                // (a denser/smaller scale fills the shell). Pale metal, like the solid relics.
-                CachedRelic {
-                    points: Vec::new(),
-                    meshes: human_solid_instances(
-                        &self.human_points,
-                        p.pos,
-                        p.voxel * 22.0,
-                        p.yaw,
-                        world::BlockId(5),
-                    ),
-                }
-            } else if p.human {
-                // Ethereal fallen human — the baked figure as drift-through points (`fallen_splats`).
-                CachedRelic {
-                    points: model::fallen_splats(
-                        &self.human_points,
-                        p.pos,
-                        p.voxel * 38.0, // ~44–59 world units (comparable to the tube-tech relics)
-                        p.yaw,
-                        HUMAN_COLOR,
-                        p.seed,
-                    ),
-                    meshes: Vec::new(),
-                }
-            } else if p.solid {
-                CachedRelic {
-                    points: Vec::new(),
-                    meshes: relic_chunk_instances(*p, world::BlockId(5)),
-                }
-            } else {
-                CachedRelic {
-                    points: relic::relic_points(p.pos, p.voxel, p.yaw, p.seed, COLOSSUS_COLOR),
-                    meshes: Vec::new(),
-                }
-            };
-            self.structures.insert(key, entry);
+            // E18/M10: one shared builder decides what a placement renders as (ethereal points
+            // vs solid meshes, tube-tech vs human) — the budget counters count the same geometry.
+            let (points, meshes) = structure_geometry(p);
+            self.structures.insert(key, CachedRelic { points, meshes });
             changed = true;
         }
         if !changed {
@@ -1882,12 +1847,10 @@ fn mesh_chunk_core(
 /// A cache of generated sections keyed by `(cx, cz)` (the world is one chunk layer), so the
 /// web meshing path generates each section once instead of regenerating its 4 neighbours every
 /// time — ~60% of the per-chunk cost. Used by the web `ChunkLoader::drain`.
-#[cfg(any(target_arch = "wasm32", test))]
 type SectionCache = std::collections::HashMap<(i32, i32), Section>;
 
 /// Build a chunk's [`ChunkInstance`], pulling its own + neighbour sections from `cache`
 /// (generating + caching on a miss). The big web streaming win — see [`SectionCache`].
-#[cfg(any(target_arch = "wasm32", test))]
 fn build_chunk_instance_cached(
     coord: ChunkCoord,
     seed: u32,
@@ -2820,7 +2783,7 @@ impl ApplicationHandler<AppEvent> for App {
                             )
                         } else {
                             format!(
-                                "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics{pal}{meshing}{mode}{off}\n{}",
+                                "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics · {} dc · {} kB/f ÷{}{pal}{meshing}{mode}{off}\n{}",
                                 self.frame_ms_ema,
                                 self.seed,
                                 s.drawn_chunks,
@@ -2829,6 +2792,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 s.particles,
                                 s.splats,
                                 s.relics,
+                                s.draw_calls,
+                                s.upload_bytes / 1024, // M10: streamed bytes this frame
+                                s.pixel_scale,         // M10: internal-res divisor (incl. dyn-res)
                                 strata_line,
                             )
                         };
@@ -3098,7 +3064,6 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         seed: view.seed,
         undo: Vec::new(),
         structures: std::collections::HashMap::new(),
-        human_points: model::decode_points(HUMAN_POINTS_BLOB), // E18 baked human (embedded)
         // A small swarm of drifting wisps tethered to the camera's start (re-tethered each
         // frame to the live camera in the redraw loop). Seed-driven off the world seed.
         // A generous base count; how many actually drift is scaled per-biome each frame.
@@ -3271,8 +3236,50 @@ const COLOSSUS_COLOR: [f32; 3] = [0.62, 0.72, 0.9];
 /// E18: the fallen-human giant's tint — a pale bone/stone, distinct from the cool tube-tech relics
 /// (environmental art / monument, not gore).
 const HUMAN_COLOR: [f32; 3] = [0.70, 0.67, 0.60];
-/// The baked CC0 human surface points (E18), embedded so no OBJ ships. Decoded once at startup.
+/// The baked CC0 human surface points (E18), embedded so no OBJ ships. Decoded once on first use.
 static HUMAN_POINTS_BLOB: &[u8] = include_bytes!("../assets/human_points.bin");
+
+/// The decoded baked human points (lazy; shared by the live structure builder + the M10 budget
+/// counters, so both see identical geometry).
+fn human_points() -> &'static [Vec3] {
+    static PTS: std::sync::OnceLock<Vec<Vec3>> = std::sync::OnceLock::new();
+    PTS.get_or_init(|| model::decode_points(HUMAN_POINTS_BLOB))
+}
+
+/// What a colossus placement renders as (E18): ethereal **points** or solid greedy-meshed
+/// **chunk instances**, across the tube-tech × human kinds. The single source the app caches
+/// from and the M10 budget counters count — so the gates measure exactly what ships.
+pub(crate) fn structure_geometry(
+    p: &relic::Placement,
+) -> (Vec<foliage::SplatInstance>, Vec<ChunkInstance>) {
+    if p.human && p.solid {
+        // A fallen human you can land on — voxelised + meshed (denser scale fills the shell).
+        let meshes = human_solid_instances(
+            human_points(),
+            p.pos,
+            p.voxel * 22.0,
+            p.yaw,
+            world::BlockId(5),
+        );
+        (Vec::new(), meshes)
+    } else if p.human {
+        // Ethereal fallen human — the baked figure as drift-through points.
+        let pts = model::fallen_splats(
+            human_points(),
+            p.pos,
+            p.voxel * 38.0, // ~44–59 world units (comparable to the tube-tech relics)
+            p.yaw,
+            HUMAN_COLOR,
+            p.seed,
+        );
+        (pts, Vec::new())
+    } else if p.solid {
+        (Vec::new(), relic_chunk_instances(*p, world::BlockId(5)))
+    } else {
+        let pts = relic::relic_points(p.pos, p.voxel, p.yaw, p.seed, COLOSSUS_COLOR);
+        (pts, Vec::new())
+    }
+}
 /// How many newly-entered colossi to generate per frame (the rest wait for later frames), so
 /// crossing structure cells spreads the heavy point/mesh generation instead of hitching.
 const STRUCTURE_GEN_BUDGET: u32 = 1;

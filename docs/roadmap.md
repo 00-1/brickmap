@@ -582,6 +582,17 @@ structure draws, `Edit`/`apply`, `LookParams`, `AudioSource`, engine constructor
   moved its geometry into the game's `cruiser` module, so the engine's ShipRenderer is now fully
   generic.)*
 
+### M10 — Perf telemetry & budget regression gates ✅ &nbsp;→ [`milestones/M10-perf-telemetry.md`](milestones/M10-perf-telemetry.md)
+The [performance charter](performance.md) §5 made real: the frame's cost is **legible**
+(engine `DrawStats` extended with draw calls, upload bytes/frame, internal-res divisor — on the
+HUD as `… dc · … kB/f ÷N`) and **CI-assertable** (`budgets.rs`: deterministic CPU-side content
+counters for 3 reference scenes — spawn / densest-forest / nearest-giant — gated against budgets
+pinned at **measured actual + ~40%**; a blown budget fails the build naming scene + counter +
+overage). A `stats` bin prints the counters machine-readably. **Day-one findings:** the streamed
+set is already 1.79–1.89 M tris (the charter's 1.5 M was an underestimate — pins re-baselined,
+recorded in §6), and **solid colossi cost 663 mesh sections** in the forest scene (an M8b lever).
+Live-only counters (upload/draw-calls/dyn-res) are HUD-only, not CI-gated (brief Decision 4).
+
 ## Scraped Again — gameplay (G-series)
 
 > **Unattended run log (2026-06-08).** Block-substrate thread: **G4 ✅** (block runtime + console),
