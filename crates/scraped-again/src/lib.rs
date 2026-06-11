@@ -783,7 +783,6 @@ impl App {
                             .credit(act.routine, items, yields, act.filter.is_some());
                     }
                     console::Block::FireBeam => self.cast_beam(),
-                    console::Block::Decode => self.decode_action(),
                     _ => {}
                 }
             }
@@ -857,10 +856,8 @@ impl App {
     /// G6: refresh which blocks the console offers from what's been comprehended (the growing
     /// vocabulary). Cheap (five checks); called before the console is used or rendered.
     fn sync_console_unlock(&mut self) {
-        self.console.unlocked = progress::Stratum::ALL
-            .into_iter()
-            .filter(|&s| self.progress.is_comprehended(s))
-            .collect();
+        // G15: the console's unlock view is now per-block (researched), not per-stratum (decoded).
+        self.console.comprehended = self.progress.comprehended_blocks().collect();
         // G9: the console's view of which names have been found in the world.
         self.console.discovered = self.progress.discovered_blocks().collect();
         // G13: which agent the player is driving (ticker + "trace → routine" target).
@@ -964,11 +961,22 @@ impl App {
     /// records the click into the active agent's trace (manual-only — routines bypass this and
     /// call the effect fns directly).
     fn dispatch_block(&mut self, b: console::Block) {
+        // G15: a discovered-but-not-yet-researched block is a **research target** — running it
+        // allocates the player's domain-shard intake to researching it (allocate-and-fill,
+        // player-directed). An undiscovered block can't be acted on (find its name first).
         if !self.console.is_unlocked(b) {
-            log::info!(
-                "block {}: not yet recovered — decode its stratum",
-                b.label()
-            );
+            if self.progress.allocate(b) {
+                self.sync_console_unlock();
+                log::info!(
+                    "researching {} — its domain's shards now fill it (allocate-and-fill)",
+                    b.name()
+                );
+            } else {
+                log::info!(
+                    "block {}: not yet discovered — find its name in the world",
+                    b.name()
+                );
+            }
             return;
         }
         self.record_manual(b); // G13: a manual console click is part of the trace
@@ -977,11 +985,11 @@ impl App {
             console::Block::Collect => self.collect_aimed(),
             console::Block::FireBeam => self.cast_beam(),
             console::Block::Drift => self.auto_fly = true, // (re)engage the wander
-            console::Block::Decode => self.decode_action(),
-            console::Block::Hail => self.hail_ship(), // G8a: recall the autonomous ship
+            console::Block::Hail => self.hail_ship(),      // G8a: recall the autonomous ship
             console::Block::RunFoot => self.start_expedition(), // G8c: deploy the walker
-            console::Block::Spend(f) => self.spend_action(f), // G10: buy a faculty level
-            other => log::info!("block {}: not available yet", other.label()),
+            console::Block::Spend(f) => self.spend_action(f), // G10: buy a faculty level (→ G15b)
+            // G15: `decode` is removed (comprehension is now research); a stray Decode is a no-op.
+            other => log::info!("block {}: no longer a direct action", other.label()),
         }
     }
 
@@ -1139,22 +1147,6 @@ impl App {
         match self.mode {
             Mode::Walk => self.controller.add_move(0.0, 0.0, vert), // left slider = forward/back
             _ => self.controller.add_move(0.0, vert, 0.0),          // left slider = climb/descend
-        }
-    }
-
-    /// G6: `decode` — comprehend the richest stratum you can currently afford (spends its data),
-    /// making that script legible + (later) growing the vocabulary. The map text re-renders next
-    /// time inscriptions stream in.
-    fn decode_action(&mut self) {
-        match self.progress.decodable() {
-            Some(s) if self.progress.comprehend(s) => {
-                self.text_cells.clear(); // force inscriptions to rebuild as translated
-                log::info!("decoded {} — its script is now legible", s.label());
-            }
-            _ => log::info!(
-                "decode: need {} of a stratum's data to comprehend it",
-                progress::DECODE_COST
-            ),
         }
     }
 
@@ -1680,15 +1672,12 @@ impl App {
         }
         let walker_pos = self.walker_pos;
         for act in foot.acts {
-            match act.block {
-                console::Block::Collect => {
-                    let before = self.progress.collected_count() as u32;
-                    self.collect_nearest_to(walker_pos);
-                    let items = self.progress.collected_count() as u32 - before;
-                    self.console.credit(act.routine, items, items as u64, false);
-                }
-                console::Block::Decode => self.decode_action(),
-                _ => {} // hail/fire-beam are no-ops for the off-screen walker
+            // hail/fire-beam are no-ops for the off-screen walker; only collect acts.
+            if act.block == console::Block::Collect {
+                let before = self.progress.collected_count() as u32;
+                self.collect_nearest_to(walker_pos);
+                let items = self.progress.collected_count() as u32 - before;
+                self.console.credit(act.routine, items, items as u64, false);
             }
         }
     }
@@ -2535,7 +2524,6 @@ impl ApplicationHandler<AppEvent> for App {
                     for act in tick.acts {
                         match act.block {
                             console::Block::FireBeam => self.cast_beam(),
-                            console::Block::Decode => self.decode_action(),
                             console::Block::Collect => {
                                 let (items, yields) = self.dispatch_collect(act.filter);
                                 self.console.credit(
@@ -2576,7 +2564,6 @@ impl ApplicationHandler<AppEvent> for App {
                                         act.filter.is_some(),
                                     );
                                 }
-                                console::Block::Decode => self.decode_action(),
                                 console::Block::Hail => self.hail_ship(),
                                 console::Block::FireBeam => self.cast_beam(),
                                 console::Block::Spend(f) => self.spend_action(f),

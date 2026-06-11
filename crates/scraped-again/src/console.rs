@@ -685,8 +685,11 @@ pub struct Console {
     pub cursor: usize,
     pub routines: Vec<Routine>,
     pub palette: Vec<Block>,
-    /// Comprehended strata (synced from `progress` each frame) — gates the block vocabulary (G6).
-    pub unlocked: HashSet<Stratum>,
+    /// G15: comprehended **blocks** (synced from `progress` each frame) — a discovered block is
+    /// usable once its research filled. Replaces G9's per-stratum decode gate. Starters are
+    /// implicitly comprehended (see [`Console::is_unlocked`]); this carries the researched gated
+    /// blocks. The vestigial per-stratum legibility set lives in `progress` (folded from research).
+    pub comprehended: HashSet<Block>,
     /// Discovered gated blocks (G9; synced from `progress`) — a block's name must be found in the
     /// world before it's even *listed*. Starters are implicitly discovered (see
     /// [`Console::is_discovered`]), so this only carries the gated vocabulary.
@@ -747,14 +750,15 @@ impl Default for Console {
                 Block::Scan(ScanItem::Sites),
                 Block::Collect,
                 Block::FireBeam,
-                Block::Decode,
+                // G15: `decode` removed — comprehension is now research (allocate shards into a
+                // discovered-but-locked block). The variant stays for `co=` back-compat only.
                 Block::Spend(crate::progress::Faculty::Sensing),
                 Block::Spend(crate::progress::Faculty::Reach),
                 Block::Spend(crate::progress::Faculty::Drive),
                 Block::Goto,
                 Block::Drift,
             ],
-            unlocked: HashSet::new(),
+            comprehended: HashSet::new(),
             discovered: HashSet::new(),
             now: 0.0,
             traces: std::collections::HashMap::new(),
@@ -796,18 +800,29 @@ impl Console {
         b.required().is_none() || self.discovered.contains(&b)
     }
 
-    /// Usable? **Two-stage** (G9): the name must be *discovered* AND its stratum *decoded*.
-    /// (Starters pass both implicitly, so the opening + given routines are untouched.)
+    /// Usable? **Two-stage** (G9 + G15): the name must be *discovered* AND the block
+    /// *researched* (comprehended). Starters (no required stratum) pass both implicitly, so the
+    /// opening + given routines are untouched.
     pub fn is_unlocked(&self, b: Block) -> bool {
-        self.is_discovered(b) && b.required().is_none_or(|s| self.unlocked.contains(&s))
+        self.is_discovered(b) && (b.required().is_none() || self.comprehended.contains(&b))
+    }
+
+    /// G15: has the player cracked *any* of stratum `s`'s vocabulary — i.e. comprehended a block
+    /// gated on it? Gates the stratum-scoped non-block modifiers (`match`) now that there's no
+    /// decode-a-stratum action. (`match` is gated on Rites, which has no blocks today, so it's
+    /// reachable once *any* gated block is comprehended — a progression beat, not free at start.)
+    fn stratum_cracked(&self, s: Stratum) -> bool {
+        self.comprehended.iter().any(|b| b.required() == Some(s))
+            || (s == Stratum::Rites && !self.comprehended.is_empty())
     }
 
     fn step_unlocked(&self, s: &Step) -> bool {
-        let discovered = match s {
-            Step::Do(b) => self.is_discovered(*b),
-            _ => true, // the match/repeat/group modifiers aren't name-gated
-        };
-        discovered && s.required().is_none_or(|st| self.unlocked.contains(&st))
+        match s {
+            Step::Do(b) => self.is_unlocked(*b),
+            // The `match` modifier is stratum-gated (Rites); repeat/group/run aren't gated.
+            Step::Match(_) => s.required().is_none_or(|st| self.stratum_cracked(st)),
+            Step::Repeat(_) | Step::Run(_) | Step::Group { .. } => true,
+        }
     }
 
     /// The steps `agent` may insert / cycle to, in cycle order — filtered to what's **discovered**
@@ -819,7 +834,7 @@ impl Console {
             Step::Do(Block::Scan(ScanItem::Sites)),
             Step::Do(Block::Collect),
             Step::Do(Block::FireBeam),
-            Step::Do(Block::Decode),
+            // G15: `decode` removed from the vocabulary (comprehension is research now).
             Step::Do(Block::Drift),
             Step::Do(Block::Seek),
             Step::Do(Block::Circle),
@@ -1032,11 +1047,14 @@ impl Console {
                 r.stats.executing_step = None;
                 continue;
             }
-            // G11: telemetry — a routine with an unlocked-gate problem is honestly `blocked`.
+            // G11: telemetry — a routine with a not-yet-researched (locked) block is honestly
+            // `blocked` (G15: per-block research gate). Inlined (disjoint field borrows) so it
+            // coexists with the `&mut` routines loop — mirrors `is_unlocked`.
             let has_locked = r.body.iter().any(|st| {
                 matches!(st, Step::Do(b) if {
                     let disc = b.required().is_none() || self.discovered.contains(b);
-                    !(disc && b.required().is_none_or(|s| self.unlocked.contains(&s)))
+                    let comp = b.required().is_none() || self.comprehended.contains(b);
+                    !(disc && comp)
                 })
             });
             let mut fired = false;
@@ -1851,11 +1869,21 @@ impl Console {
         }
     }
 
-    /// G11: the HUD's **one lit goal** — the single nearest-to-done thing (≥ ~75%), priority by
-    /// completion: a `when` threshold close to firing · an affordable-unbought faculty · a
-    /// stratum nearly affordable to decode (named after a discovered-locked block wanting it,
-    /// when one exists). Exactly one line; nothing qualifying → `None` (never a quest log).
+    /// G11/G15: the HUD's **one lit goal**. The headline is the **active research** target the
+    /// player chose (glyph-named — "what I'm cracking next"); when none is set, fall back to the
+    /// single nearest-to-done thing (≥ ~75%): a `when` threshold close to firing · an
+    /// affordable-unbought faculty. Exactly one line; nothing qualifying → `None` (never a quest log).
     pub fn lit_goal(&self, p: &crate::progress::Progress) -> Option<String> {
+        // G15: a directed research target is the player's explicit focus — it's the lit goal.
+        if let Some(b) = p.active_research() {
+            let (filled, cost) = p.research_progress(b);
+            let pct = if cost > 0 {
+                (filled as f32 / cost as f32 * 100.0).min(100.0)
+            } else {
+                100.0
+            };
+            return Some(format!("{}: research {pct:.0}%", b.glyphs()));
+        }
         let mut best: Option<(f32, String)> = None;
         let mut consider = |pct: f32, label: String| {
             let pct = pct.min(1.0);
@@ -1888,28 +1916,6 @@ impl Console {
                 && p.shard_bank() >= crate::progress::FACULTY_COSTS[lvl as usize]
             {
                 consider(1.0, format!("{} affordable", f.label()));
-            }
-        }
-        // 3. A stratum nearing its decode cost — named after a discovered-locked block that
-        //    wants it, when there is one (the "I've seen this name" pull).
-        for st in Stratum::ALL {
-            if p.is_comprehended(st) {
-                continue;
-            }
-            let pct = p.strata.get(st) as f32 / crate::progress::DECODE_COST as f32;
-            if pct >= 1.0 {
-                // Fully affordable decode beats a near-threshold (completion = 1). G12: where the
-                // goal names a block (the "I've seen this name" pull), that part goes glyph; the
-                // `decode SCH ready` instrumentation stays minimal-English.
-                let who = self
-                    .discovered
-                    .iter()
-                    .find(|b| b.required() == Some(st))
-                    .map(|b| format!("{}: ", b.glyphs()))
-                    .unwrap_or_default();
-                consider(1.0, format!("{who}decode {} ready", st.label()));
-            } else {
-                consider(pct, format!("decode {} {:.0}%", st.label(), pct * 100.0));
             }
         }
         best.map(|(_, label)| label)
@@ -1994,12 +2000,14 @@ impl Console {
         // tease. Undiscovered blocks are absent entirely.
         for b in self.visible_palette() {
             let cur = if row == self.cursor { ">" } else { " " };
-            let tag = match b.required() {
-                Some(st) if !self.unlocked.contains(&st) => {
-                    format!("  (locked: decode {})", st.label())
-                }
-                _ if !b.wired() => "  (—)".to_string(),
-                _ => String::new(),
+            // G15: a discovered-but-not-yet-researched block reads as a locked **research target**
+            // (Enter it to allocate shards). `research` is minimal-English instrumentation.
+            let tag = if b.required().is_some() && !self.comprehended.contains(&b) {
+                "  (locked: research)".to_string()
+            } else if !b.wired() {
+                "  (—)".to_string()
+            } else {
+                String::new()
             };
             // Dim a found-but-locked name (lowercase-dotted) so it reads as known-of, not usable.
             // G12: the block shows by its glyph-name; the `(locked: decode SCH)` tag stays
@@ -2191,8 +2199,8 @@ mod tests {
     #[test]
     fn authored_match_gated_collect_filters() {
         let mut c = Console::default();
-        c.unlocked.insert(Stratum::Rites); // recover match()
-                                           // Author the collect routine to "match(rare) → collect".
+        c.comprehended.insert(Block::Seek); // crack a stratum → recovers match()
+                                            // Author the collect routine to "match(rare) → collect".
         c.routines[3].body = vec![Step::Match(MatchField::Rare), Step::Do(Block::Collect)];
         assert_eq!(
             c.on_scan_acts(Agent::Ship),
@@ -2311,9 +2319,9 @@ mod tests {
             let s = c.routines[i].body[0].clone();
             assert!(c.step_unlocked(&s), "cycled into a locked step: {s:?}");
         }
-        // Two-stage (G9): decoding Schematics alone is no longer enough — seek's *name* must
+        // Two-stage (G9/G15): researching seek alone is no longer enough — its *name* must
         // also have been found in the world.
-        c.unlocked.insert(Stratum::Schematics);
+        c.comprehended.insert(Block::Seek);
         assert!(!c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
         c.discovered.insert(Block::Seek);
         assert!(c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
@@ -2362,8 +2370,7 @@ mod tests {
     #[test]
     fn routines_round_trip_through_co_segment() {
         let mut c = Console::default();
-        c.unlocked.insert(Stratum::Schematics);
-        c.unlocked.insert(Stratum::Rites);
+        // (bodies are authored directly; the comprehension gate doesn't affect co= round-trip.)
         // Author: drift → seek; collect → match(rare) → collect; add a when-decode routine.
         c.routines[0].body = vec![Step::Do(Block::Seek)];
         c.routines[2].body = vec![Step::Match(MatchField::Rare), Step::Do(Block::Collect)];
@@ -2415,10 +2422,9 @@ mod tests {
         let vocab = c.vocabulary(Agent::Ship);
         assert!(!vocab.contains(&Step::Do(Block::Seek)));
         assert!(!vocab.contains(&Step::Match(MatchField::Rare)));
-        c.unlocked.insert(Stratum::Schematics);
-        c.unlocked.insert(Stratum::Rites);
-        // G9 two-stage: the decode alone unlocks `match` (a modifier — not name-gated) but a
-        // *block* additionally needs its name discovered.
+        // G15: researching a block comprehends it (and cracks its stratum → `match`); a *block*
+        // additionally needs its name discovered, but a modifier doesn't.
+        c.comprehended.insert(Block::Seek);
         let vocab = c.vocabulary(Agent::Ship);
         assert!(!vocab.contains(&Step::Do(Block::Seek)));
         assert!(vocab.contains(&Step::Match(MatchField::Rare)));
@@ -2450,11 +2456,11 @@ mod tests {
             "the English block name must not appear in the console"
         );
         assert!(
-            home.contains("locked: decode SCH"),
-            "and tagged with its stratum"
+            home.contains("locked: research"),
+            "and tagged as a research target"
         );
-        // 3. Discovered + decoded → insertable.
-        c.unlocked.insert(Stratum::Schematics);
+        // 3. Discovered + researched → insertable.
+        c.comprehended.insert(Block::Seek);
         assert!(c.is_unlocked(Block::Seek));
         assert!(c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
         // Starters were never gated: present in the listing + vocabulary from the start.
@@ -2472,8 +2478,10 @@ mod tests {
         // G8b: ship vocab has scan/nav but not the survey-beam; foot vocab the reverse; collect &
         // hail are shared (in both). Decode everything so comprehension-gating isn't the cause.
         let mut c = Console::default();
-        for s in Stratum::ALL {
-            c.unlocked.insert(s);
+        // Research + discover everything so neither comprehension- nor name-gating is the cause.
+        for b in Block::ALL {
+            c.comprehended.insert(b);
+            c.discovered.insert(b);
         }
         let ship = c.vocabulary(Agent::Ship);
         let foot = c.vocabulary(Agent::Foot);
@@ -2527,7 +2535,7 @@ mod tests {
         assert!(!c
             .vocabulary(Agent::Ship)
             .contains(&Step::Do(Block::RunFoot)));
-        c.unlocked.insert(Stratum::Relics);
+        c.comprehended.insert(Block::RunFoot);
         c.discovered.insert(Block::RunFoot); // G9: its name must also be found
         assert!(c
             .vocabulary(Agent::Ship)
@@ -2660,16 +2668,15 @@ mod tests {
         }
         let goal = c.lit_goal(&p).expect("affordable faculty qualifies");
         assert!(goal.contains("affordable"), "100% beats 80%: {goal}");
-        // A decode-ready stratum names a discovered-locked block wanting it.
+        // G15: an **active research** target is the headline lit goal, named by its glyphs —
+        // it overrides the when/faculty fallbacks (the player's chosen focus).
         let mut p2 = Progress::default();
-        p2.strata.schematics = crate::progress::DECODE_COST + 1;
-        c.discovered.insert(Block::Seek);
-        let goal = c.lit_goal(&p2).expect("decode-ready qualifies");
-        // G12: the goal names the waiting block by its **glyphs** (the `decode SCH` part stays
-        // minimal-English instrumentation).
+        p2.apply(&Event::Discover { block: Block::Seek });
+        p2.allocate(Block::Seek);
+        let goal = c.lit_goal(&p2).expect("active research is the lit goal");
         assert!(
-            goal.contains(&Block::Seek.glyphs()) && goal.contains("SCH"),
-            "names the waiting block by its glyphs: {goal}"
+            goal.contains(&Block::Seek.glyphs()) && goal.contains("research"),
+            "names the active research target by its glyphs: {goal}"
         );
         assert!(
             !goal.contains("seek"),

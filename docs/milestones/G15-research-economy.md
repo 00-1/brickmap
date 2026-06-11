@@ -114,17 +114,43 @@ runtime — but land a runnable research→unlock loop before moving on.)*
 - **Treadmill creep** → progression buys verbs; faculties the only +%, capped (the human's
   standing rule).
 
+## As built — G15a (two commits: 1/2 runtime, 2/2 console wiring)
+
+G15a landed the **block** research economy in two green commits: **(1/2)** the runtime +
+`pg=` v6 codec (additive — decode/spend still worked); **(2/2)** the console/lib wiring +
+the rip-out (this commit). **G15b** remains: faculties-as-research-targets (G10 `spend` still
+works until then) + research **levels** + pacing. Game-side; no engine change; byte-identical.
+
+- **Allocate-and-fill:** `progress.allocate(block)` sets the single active target (Decision 1);
+  on `CollectShard`, a **domain-matched** shard (Decision 2, own-domain) credits it; at
+  `filled ≥ research_cost` (Decision 3, deeper = dearer) the block comprehends + its stratum
+  becomes legible (the **legibility fold-in**, accepted in the 1/2 review). Clicking a
+  discovered-but-locked block in the console **allocates research** to it (`dispatch_block`).
+- **Decode removed:** the console unlock is now per-block (`Console.comprehended: HashSet<Block>`,
+  synced from `progress`); `is_unlocked`/`step_unlocked`/the `(locked: research)` tag and the
+  lit-goal all route through it. `Block::Decode` + `decode_action` are gone from the palette /
+  vocabulary / dispatch (the enum variant stays for `co=` back-compat → loads as a no-op). The
+  `match` modifier (Rites-gated, no Rites block exists) unlocks once **any** block is researched
+  — `stratum_cracked` (a documented best-judgment call for non-block vocabulary; vetoable).
+- **lit-goal:** the active research target is the headline goal (glyph-named "research N%"),
+  overriding the when/faculty fallbacks (the player's chosen focus).
+
 ## Acceptance checklist (full G15)
 
-- [ ] Discovered blocks are **research targets**; the player **allocates** shards into a
-      chosen target (allocate-and-fill, player-directed); fill → comprehended (usable).
-- [ ] Domain-matched + rarity-gated cost (own-domain shards; rarer blocks need rarer
-      shards); G10 rarity tiers now have a real sink.
-- [ ] **Decode-stratum-unlock removed**; **bank-then-spend removed** — both routed through
-      research; faculties are research targets (effects preserved); levels = verbs (+ capped
-      faculty %).
-- [ ] Opening parity (starters comprehended; given routines/autopilot unchanged); G11
-      lit-goal → nearest research.
-- [ ] Research + comprehension persist (append-only codec; old payloads → migration
-      default); tested.
-- [ ] Golden voxel-hash + headless render unchanged; CI green; boundary intact; roadmap G15.
+- [x] Discovered blocks are **research targets**; the player **allocates** shards into a
+      chosen target (allocate-and-fill, player-directed); fill → comprehended (usable). *(G15a)*
+- [x] Domain-matched + rarity-gated cost (own-domain shards; deeper blocks cost more —
+      placeholder numbers); G10 rarity tiers now feed research. *(G15a; rarer-shard-tier
+      weighting refined in G15b/feel pass)*
+- [~] **Decode-stratum-unlock removed** *(G15a — done)*; **bank-then-spend removed** /
+      faculties-as-targets → **G15b** (G10 `spend` retained until then); levels = verbs → G15b.
+- [x] Opening parity (starters comprehended; given routines/autopilot unchanged); G11
+      lit-goal → active research. *(opening-parity tests green)*
+- [x] Research + comprehension persist (append-only `pg=` v6; old payloads → migration
+      default); tested. *(G15a)*
+- [x] Golden voxel-hash + headless render byte-identical; CI green; boundary intact; roadmap
+      G15 entry. *(G15a)*
+
+*(Remaining for **G15b**: faculties as research targets [retire bank-then-spend]; multi-level
+research [parameter/option unlocks + capped faculty %]; cost-pacing numbers; an optional
+`when(research ≥ %)` trigger.)*

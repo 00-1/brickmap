@@ -78,8 +78,12 @@ The "tech tree" *is* the library of blocks you've recovered; unlocking a block =
 *lesser* layer; the headline progression is the vocabulary itself growing — every new block,
 especially a control/meta one, expands what you can *compose*.) So:
 
-- **Data unlocks vocabulary.** Collected/decoded **strata** (game-mechanics §5) unlock new
-  action and control blocks — the recovered operations of the dead civilization's console.
+- **Research unlocks vocabulary (G15).** A discovered block's name makes it a **research
+  target**; the player **allocates** their auto-collected shards into a chosen target and it
+  **fills over time** (allocate-and-fill) until **comprehended** (usable). Comprehension is
+  shard-funded research — discovery + shards + the old `decode` are one pipe now (the
+  decode-a-stratum-unlocks-all gate is gone; see [`milestones/G15-research-economy.md`]).
+  A block draws its **own stratum's domain** shards, rarer/deeper blocks cost more.
 - **Comprehension feeds automation.** What your **scan can detect** gates what your
   **filters can match on** — you can only `filter(Runic)` once scan identifies scripts,
   only `filter(rare-stratum)` once you detect strata. The knowledge-web and the

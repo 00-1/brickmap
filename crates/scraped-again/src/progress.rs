@@ -330,27 +330,6 @@ impl Progress {
         self.comprehended.contains(&stratum_of(script))
     }
 
-    /// (Transitional — being replaced by research; kept so the existing decode path compiles
-    /// until the console is wired to research in the next G15a step.) Comprehend a stratum if
-    /// affordable; marks it legible. *(G15 removes the decode action; do not extend.)*
-    pub fn comprehend(&mut self, s: Stratum) -> bool {
-        if self.comprehended.contains(&s) || self.strata.get(s) < DECODE_COST {
-            return false;
-        }
-        *self.strata.slot(s) -= DECODE_COST;
-        self.comprehended.insert(s);
-        true
-    }
-
-    /// (Transitional — see [`comprehend`](Self::comprehend).) The richest affordable
-    /// not-yet-comprehended stratum, if any.
-    pub fn decodable(&self) -> Option<Stratum> {
-        Stratum::ALL
-            .into_iter()
-            .filter(|&s| !self.comprehended.contains(&s) && self.strata.get(s) >= DECODE_COST)
-            .max_by_key(|&s| self.strata.get(s))
-    }
-
     // ---- G15: comprehension-as-research -----------------------------------------------------
 
     /// Research cost for a block target — a base scaled by the gating stratum's depth (rarer/
@@ -909,32 +888,36 @@ mod tests {
         assert_eq!(v1, Progress::default());
     }
 
+    /// G15: comprehension comes from **research** now (decode removed); comprehending a block via
+    /// its domain shards makes that stratum legible, and the comprehension round-trips through
+    /// `pg=`. (Replaces the old decode-spend tests.)
     #[test]
-    fn decode_spends_and_comprehends() {
+    fn research_comprehension_and_legibility_round_trip() {
+        use crate::console::Block;
+        use crate::shards::Rarity;
         let mut p = Progress::default();
-        // Not enough data → can't decode.
-        assert!(!p.comprehend(Stratum::Records));
-        // Bank some Records, then decode.
-        for _ in 0..6 {
-            p.apply(&ev(0, Script::Latin, "ABCD")); // 4 glyphs each; dedup → only first counts
+        p.apply(&Event::Discover {
+            block: Block::RunFoot,
+        }); // Relics-gated (Runic)
+        assert!(!p.is_legible(Script::Runic));
+        p.allocate(Block::RunFoot);
+        let mut guard = 0;
+        while !p.is_block_comprehended(Block::RunFoot) && guard < 10_000 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Relics,
+                rarity: Rarity::Rare,
+            });
+            guard += 1;
         }
-        p.strata.records = DECODE_COST + 3; // ensure affordable for the test
-        assert!(p.comprehend(Stratum::Records));
-        assert!(p.is_comprehended(Stratum::Records));
-        assert!(p.is_legible(Script::Latin)); // Latin → Records
-        assert!(!p.is_legible(Script::Greek)); // others stay glyphs
-        assert_eq!(p.strata.records, 3); // spent exactly DECODE_COST
-        assert!(!p.comprehend(Stratum::Records)); // idempotent
-    }
-
-    #[test]
-    fn comprehension_round_trips_v3() {
-        let mut p = Progress::default();
-        p.strata.relics = DECODE_COST;
-        assert!(p.comprehend(Stratum::Relics));
+        assert!(p.is_block_comprehended(Block::RunFoot));
+        assert!(
+            p.is_legible(Script::Runic),
+            "comprehending a Relics block → Runic legible"
+        );
+        assert!(!p.is_legible(Script::Greek), "untouched strata stay glyphs");
         let back = Progress::decode(&format!("s=1&{}", p.encode()));
-        assert_eq!(back, p);
-        assert!(back.is_comprehended(Stratum::Relics));
+        assert_eq!(back, p, "research comprehension round-trips");
+        assert!(back.is_legible(Script::Runic));
     }
 
     #[test]

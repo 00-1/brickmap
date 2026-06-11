@@ -897,6 +897,22 @@ filter. `co=` gains a self-delimiting `(times[filter]:inner)` group token. 134 c
 one-level editor + codec round-trips); golden voxel-hash + headless render byte-identical; no
 engine change; boundary intact.
 
+### ✨ G15a — Comprehension-as-research economy ✅ &nbsp;→ [`milestones/G15-research-economy.md`](milestones/G15-research-economy.md)
+The biggest game-design change of the run: discovery + shards + decode unified into **one
+research pipe** (the human's fully-decided reframe). A discovered block's name makes it a
+**research target**; the player **allocates** their auto-collected shards into one chosen target
+(player-directed), it **fills** as **domain-matched** shards arrive (own-domain only; deeper
+blocks cost more), and at full it **comprehends** (becomes usable) + its stratum turns legible
+(the **legibility fold-in** — decipherment now funded by research, not a standalone decode).
+**It retrofits:** G9's decode-a-stratum-unlocks-all gate is **gone** — the console unlock is now
+per-block (`Console.comprehended`); `Block::Decode`/`decode_action` removed (variant kept for
+`co=` back-compat); clicking a discovered-locked block **allocates research**; the lit-goal points
+at the active research (glyph-named). `pg=` → v6 (append-only; old payloads → starters
+comprehended). Built in two green commits (runtime, then the console rip-out). **G15b remains:**
+faculties-as-research-targets (G10 `spend` retained until then) + research levels + pacing. 221
+tests (allocate→fill→comprehend, off-domain doesn't fill, v6 round-trip + migration, per-block
+unlock, lit-goal); golden voxel-hash + headless render byte-identical; no engine change.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear
