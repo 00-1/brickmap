@@ -873,6 +873,22 @@ unit-tested. **Split:** the Eager-style **pre-highlight of the agent's next worl
 playback needs target prediction + a new marker draw (more than small, visual) → **G13b**. 212
 tests; golden voxel-hash + headless render unchanged; no engine change; boundary intact.
 
+### ✨ G14a — Subroutines (`run(routine)`) ✅ &nbsp;→ [`milestones/G14-subroutines.md`](milestones/G14-subroutines.md)
+The composition-depth layer (Forth/Moore "vocabulary"): a player's routine becomes a reusable
+**`run(routine)`** step — the interpreter expands the callee's body in place, crediting the
+**callee** (Decision 4). A stable per-console **`id`** (minted monotonically, persisted as a
+trailing `co=` field, survives reorder/rename — Decision 3) is the ref; `run` is offered in the
+editor cycle for every other same-agent routine and renders `run(<name>)` (no seams). **Cycle
+guard:** `would_cycle` (pure DFS) rejects self/cyclic calls at insert (`editor_vocabulary` omits
+them); `RUN_DEPTH_CAP` + a visited set are the runtime backstop (a loaded cycle is failsoft,
+bounded). **One implicit register (Decision 5):** the `match` filter is the single "current thing"
+— it flows *into* a called routine and persists on return; no second referent (tested across a
+call). **Duplicate routine** (key `C`) → an independent freshly-id'd copy. `co=` gains the `u{id}`
+step code + the id field (append-only; old payloads load, ids by index; a dangling `run` → no-op).
+**Split:** nested step groups (the `Repeat`/`If` bodied-container model change + its editor) →
+**G14b**. 132 console tests (run-in-place + register flow + cycle guard + failsoft + duplicate +
+codec); golden voxel-hash + headless render unchanged; no engine change; boundary intact.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear

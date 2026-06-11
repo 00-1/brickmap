@@ -885,8 +885,9 @@ impl App {
     }
 
     /// G7: keyboard/pad control of the open console (no typing) — cursor + discrete buttons.
-    /// Home: ↑↓ select · Enter run/toggle/create · E edit · X delete. Editor: ↑↓ move · ←→ change
-    /// step/trigger kind · -/+ nudge a value · Enter insert · X remove · `[`/`]` reorder · O back.
+    /// Home: ↑↓ select · Enter run/toggle/create · E edit · C duplicate (G14) · X delete. Editor:
+    /// ↑↓ move · ←→ change step/trigger kind (cycles through `run(routine)` too) · -/+ nudge a
+    /// value · Enter insert · X remove · `[`/`]` reorder · O back.
     fn console_key(&mut self, code: KeyCode) {
         self.sync_console_unlock();
         match self.console.view {
@@ -903,6 +904,12 @@ impl App {
                 KeyCode::KeyX | KeyCode::Delete | KeyCode::Backspace => {
                     if let console::Sel::Routine(i) = self.console.selected() {
                         self.console.delete_routine(i);
+                    }
+                }
+                KeyCode::KeyC => {
+                    // G14: duplicate the selected routine into an editable copy.
+                    if let console::Sel::Routine(i) = self.console.selected() {
+                        self.console.duplicate_routine(i);
                     }
                 }
                 _ => {}

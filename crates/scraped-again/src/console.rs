@@ -34,6 +34,14 @@ use crate::progress::Stratum;
 /// (session-local working memory — the source for "trace → routine").
 pub const TRACE_CAP: usize = 10;
 
+/// G14: a stable per-console routine identity (survives reorder/rename), so a `run(routine)`
+/// step keeps pointing at the same routine — unlike a raw list index (brief Decision 3).
+pub type RoutineId = u32;
+
+/// G14: runtime backstop against `run` recursion blowup — the interpreter expands at most this
+/// deep (the insert-time cycle guard prevents legal cycles; this catches a hostile/old payload).
+pub const RUN_DEPTH_CAP: u8 = 8;
+
 /// The item a `scan` block senses (G10: scan is honest now — `shards` senses the typed shard
 /// items, `sites` senses inscription sites, each its own scannable).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -322,42 +330,51 @@ pub enum Step {
     Match(MatchField),
     /// Repeat the **next** `Do` this many times (1..=9).
     Repeat(u8),
+    /// G14: call another **same-agent** routine by its stable [`RoutineId`] — its body runs in
+    /// place (subroutine). No seams: it reads in the palette/rows as an ordinary block.
+    Run(RoutineId),
 }
 
 impl Step {
+    /// Internal label (codes/tests). `Run` shows its id; the player-facing console resolves the
+    /// callee's name via [`Console::step_render`].
     pub fn label(self) -> String {
         match self {
             Step::Do(b) => b.label().to_string(),
             Step::Match(f) => format!("match({})", f.label()),
             Step::Repeat(n) => format!("repeat ×{n}"),
+            Step::Run(id) => format!("run(#{id})"),
         }
     }
     /// G12: player-facing rendering — block + world-item vocabulary as glyphs; the structural
     /// modifiers (`match`/`repeat`) stay minimal-English instrumentation, only their vocabulary
-    /// argument goes glyph.
+    /// argument goes glyph. (`Run` is resolved to the callee name by [`Console::step_render`].)
     pub fn glyph_label(self) -> String {
         match self {
             Step::Do(b) => b.glyph_label(),
             Step::Match(f) => format!("match({})", f.glyphs()),
             Step::Repeat(n) => format!("repeat ×{n}"),
+            Step::Run(id) => format!("run(#{id})"),
         }
     }
-    /// The stratum gating this step (so a locked step can't be inserted/cycled into).
+    /// The stratum gating this step (so a locked step can't be inserted/cycled into). A `Run` is
+    /// composition, not gated — the callee's own steps gate themselves when expanded.
     fn required(self) -> Option<Stratum> {
         match self {
             Step::Do(b) => b.required(),
             Step::Match(f) => Some(f.required()),
-            Step::Repeat(_) => None,
+            Step::Repeat(_) | Step::Run(_) => None,
         }
     }
 }
 
 /// Is `step` available to `agent`? `Do(block)` follows the block's agent; the `Match`/`Repeat`
-/// modifiers are shared (available to either agent).
+/// modifiers are shared; a `Run` is offered per-agent by [`Console::vocabulary`] (only same-agent
+/// callees), so it's agent-agnostic here.
 fn step_for_agent(step: Step, agent: Agent) -> bool {
     match step {
         Step::Do(b) => b.for_agent(agent),
-        Step::Match(_) | Step::Repeat(_) => true,
+        Step::Match(_) | Step::Repeat(_) | Step::Run(_) => true,
     }
 }
 
@@ -496,9 +513,13 @@ impl RoutineStats {
 }
 
 /// A routine: **data** the interpreter runs. No per-name behaviour — the givens are just the
-/// default instances. (`armed` + `stats` are transient runtime state, excluded from equality.)
+/// default instances. (`id` is a stable ref target; `armed` + `stats` are transient runtime
+/// state — all three are excluded from equality, which is name/enabled/agent/trigger/body.)
 #[derive(Clone, Debug)]
 pub struct Routine {
+    /// G14: stable identity for `run(routine)` refs — assigned by the owning [`Console`]
+    /// (`Routine::new` leaves it 0; the console mints the real id). Excluded from equality.
+    pub id: RoutineId,
     pub name: String,
     pub enabled: bool,
     /// Which agent runs this routine (game-system §7). Scopes the insertable vocabulary + which
@@ -515,6 +536,7 @@ pub struct Routine {
 impl Routine {
     fn new(name: impl Into<String>, agent: Agent, trigger: Trigger, body: Vec<Step>) -> Self {
         Routine {
+            id: 0, // the owning Console assigns a real id (see `mint_id`)
             name: name.into(),
             enabled: true,
             agent,
@@ -646,11 +668,14 @@ pub struct Console {
     /// G13: the agent the player is currently controlling (set each frame by the app, like `now`)
     /// — selects which trace the ticker shows and "trace → routine" captures.
     pub active_agent: Agent,
+    /// G14: the next stable [`RoutineId`] to mint (monotonic; survives reorder/rename). Persisted
+    /// implicitly — `restore` advances it past the largest loaded id.
+    pub next_id: RoutineId,
 }
 
 impl Default for Console {
     fn default() -> Self {
-        Console {
+        let mut c = Console {
             open: false,
             view: View::Home,
             cursor: 0,
@@ -703,11 +728,29 @@ impl Default for Console {
             now: 0.0,
             traces: std::collections::HashMap::new(),
             active_agent: Agent::Ship,
+            next_id: 0,
+        };
+        // G14: the givens get stable ids 0..n; the next mint continues past them.
+        for (i, r) in c.routines.iter_mut().enumerate() {
+            r.id = i as RoutineId;
         }
+        c.next_id = c.routines.len() as RoutineId;
+        c
     }
 }
 
 impl Console {
+    /// G14: mint the next stable routine id (monotonic).
+    fn mint_id(&mut self) -> RoutineId {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    /// G14: resolve a routine by stable id → its list index (callee lookup for `run`).
+    fn index_of_id(&self, id: RoutineId) -> Option<usize> {
+        self.routines.iter().position(|r| r.id == id)
+    }
     // ---- vocabulary gating ------------------------------------------------------------------
 
     /// G11: set the telemetry clock (the app's `time`, each frame before `tick`).
@@ -769,27 +812,130 @@ impl Console {
             .collect()
     }
 
+    /// G14: the editor's insertable steps for the routine at `editing` — the agent
+    /// [`vocabulary`](Self::vocabulary) plus a `run(routine)` for every *other* same-agent routine
+    /// whose call wouldn't cycle (Steele's no-seams: a player routine is offered like any block).
+    /// Self / cycle-creating calls are omitted, so an inserted `run` can never recurse.
+    pub fn editor_vocabulary(&self, editing: usize) -> Vec<Step> {
+        let Some(ed) = self.routines.get(editing) else {
+            return Vec::new();
+        };
+        let mut v = self.vocabulary(ed.agent);
+        for (j, r) in self.routines.iter().enumerate() {
+            if j != editing && r.agent == ed.agent && !self.would_cycle(ed.id, r.id) {
+                v.push(Step::Run(r.id));
+            }
+        }
+        v
+    }
+
+    /// G14: would inserting `run(callee)` into routine `caller` create a cycle? A self-call is a
+    /// cycle; otherwise DFS the callee's transitive `run` graph and report whether it reaches the
+    /// caller. Pure — the insert-time guard (brief Decision 2; the runtime depth cap is a backstop).
+    pub fn would_cycle(&self, caller: RoutineId, callee: RoutineId) -> bool {
+        if caller == callee {
+            return true;
+        }
+        let mut stack = vec![callee];
+        let mut seen = vec![callee];
+        while let Some(id) = stack.pop() {
+            if id == caller {
+                return true;
+            }
+            if let Some(idx) = self.index_of_id(id) {
+                for s in &self.routines[idx].body {
+                    if let Step::Run(next) = s {
+                        if !seen.contains(next) {
+                            seen.push(*next);
+                            stack.push(*next);
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// G14: render a step for the player — like [`Step::glyph_label`], but a `run(id)` resolves to
+    /// the callee's **name** (`run(sweep)`; a dangling id → `run(?)`). Routine names are author
+    /// labels (kept English per the G12 review), so only the block vocabulary is glyph-rendered.
+    fn step_render(&self, s: Step) -> String {
+        match s {
+            Step::Run(id) => {
+                let name = self
+                    .index_of_id(id)
+                    .map(|j| self.routines[j].name.as_str())
+                    .unwrap_or("?");
+                format!("run({name})")
+            }
+            other => other.glyph_label(),
+        }
+    }
+
     // ---- the interpreter --------------------------------------------------------------------
 
+    /// G14: a routine snapshot `(id, agent, body)` for `run` resolution during expansion — taken
+    /// once per tick so the recursive [`Self::expand`] can read callee bodies without conflicting
+    /// with the live `&mut` loop.
+    fn snapshot(&self) -> Vec<(RoutineId, Agent, Vec<Step>)> {
+        self.routines
+            .iter()
+            .map(|r| (r.id, r.agent, r.body.clone()))
+            .collect()
+    }
+
     /// Expand a body into resolved acts: `match` sets the filter for following Collects;
-    /// `repeat(n)` multiplies the next `Do`. `routine` tags each act for telemetry attribution.
-    fn expand(body: &[Step], routine: usize) -> Vec<Act> {
+    /// `repeat(n)` multiplies the next `Do`; **`run(id)` (G14)** expands the same-agent callee's
+    /// body in place, crediting the **callee** (Decision 4) and failsoft on a missing / other-agent
+    /// / over-deep / cyclic callee (a no-op). `routine` tags each act for telemetry attribution;
+    /// `all` is the snapshot, `depth`/`visited` are the recursion guards (cycle + [`RUN_DEPTH_CAP`]).
+    fn expand(
+        body: &[Step],
+        routine: usize,
+        all: &[(RoutineId, Agent, Vec<Step>)],
+        depth: u8,
+        visited: &mut Vec<RoutineId>,
+        filter: &mut Option<MatchField>,
+    ) -> Vec<Act> {
         let mut out = Vec::new();
-        let mut filter = None;
         let mut times: u8 = 1;
+        let agent = all.get(routine).map(|e| e.1);
         for step in body {
             match step {
-                Step::Match(f) => filter = Some(*f),
+                // G14 Decision 5 — the *one implicit register*: the `match` filter is the single
+                // "current thing" that flows between steps AND across a `run` (the callee sees it
+                // on entry via the shared `&mut`, and any change persists on return). There is no
+                // second implicit referent — anything else must be an explicit parameter.
+                Step::Match(f) => *filter = Some(*f),
                 Step::Repeat(n) => times = (*n).max(1),
                 Step::Do(b) => {
                     for _ in 0..times {
                         out.push(Act {
                             block: *b,
-                            filter,
+                            filter: *filter,
                             routine,
                         });
                     }
                     times = 1;
+                }
+                Step::Run(id) => {
+                    times = 1; // a `run` is not a `Do`; `repeat` doesn't multiply it (see G14b)
+                    if depth >= RUN_DEPTH_CAP || visited.contains(id) {
+                        continue; // failsoft: depth / cycle backstop
+                    }
+                    let Some(ci) = all.iter().position(|e| e.0 == *id && Some(e.1) == agent) else {
+                        continue; // failsoft: missing or other-agent callee
+                    };
+                    visited.push(*id);
+                    out.extend(Self::expand(
+                        &all[ci].2,
+                        ci,
+                        all,
+                        depth + 1,
+                        visited,
+                        filter,
+                    ));
+                    visited.pop();
                 }
             }
         }
@@ -803,6 +949,7 @@ impl Console {
     pub fn tick(&mut self, agent: Agent, data: u32, shards: u32, arrived: bool) -> Tick {
         let mut t = Tick::default();
         let now = self.now;
+        let all = self.snapshot(); // G14: callee bodies for `run` resolution (read-only)
         for (idx, r) in self.routines.iter_mut().enumerate() {
             if r.agent != agent {
                 continue;
@@ -824,7 +971,7 @@ impl Console {
             match r.trigger {
                 Trigger::Continuous => {
                     fired = true;
-                    for act in Self::expand(&r.body, idx) {
+                    for act in Self::expand(&r.body, idx, &all, 0, &mut Vec::new(), &mut None) {
                         if act.block.is_nav() {
                             t.nav = Some(act.block);
                         } else if matches!(act.block, Block::Scan(ScanItem::Sites)) {
@@ -841,14 +988,30 @@ impl Console {
                     let sat = c.holds(data, shards);
                     if sat && !r.armed {
                         fired = true;
-                        t.acts.extend(Self::expand(&r.body, idx)); // rising edge → fire once
+                        // rising edge → fire once
+                        t.acts.extend(Self::expand(
+                            &r.body,
+                            idx,
+                            &all,
+                            0,
+                            &mut Vec::new(),
+                            &mut None,
+                        ));
                     }
                     r.armed = sat;
                 }
                 Trigger::OnArrive => {
                     if arrived && !r.armed {
                         fired = true;
-                        t.acts.extend(Self::expand(&r.body, idx)); // reached the site → fire
+                        // reached the site → fire
+                        t.acts.extend(Self::expand(
+                            &r.body,
+                            idx,
+                            &all,
+                            0,
+                            &mut Vec::new(),
+                            &mut None,
+                        ));
                     }
                     r.armed = arrived;
                 }
@@ -907,11 +1070,12 @@ impl Console {
     /// The acts `agent`'s enabled **on-scan** routines want, when a scan finds something (typically
     /// a filtered collect). Walked through the same interpreter as everything else.
     pub fn on_scan_acts(&self, agent: Agent) -> Vec<Act> {
+        let all = self.snapshot(); // G14: `run` resolution
         self.routines
             .iter()
             .enumerate()
             .filter(|(_, r)| r.agent == agent && r.enabled && matches!(r.trigger, Trigger::OnScan))
-            .flat_map(|(i, r)| Self::expand(&r.body, i))
+            .flat_map(|(i, r)| Self::expand(&r.body, i, &all, 0, &mut Vec::new(), &mut None))
             .collect()
     }
 
@@ -1026,8 +1190,10 @@ impl Console {
         }
         let body = trace_to_steps(&blocks);
         let name = format!("trace-{}", self.routines.len() + 1);
-        self.routines
-            .push(Routine::new(name, agent, Trigger::Continuous, body));
+        let id = self.mint_id();
+        let mut r = Routine::new(name, agent, Trigger::Continuous, body);
+        r.id = id;
+        self.routines.push(r);
         let i = self.routines.len() - 1;
         self.view = View::Edit(i);
         self.cursor = 0;
@@ -1037,12 +1203,37 @@ impl Console {
     /// Create a fresh empty `agent` routine and open its editor. Returns the new index.
     pub fn create_routine(&mut self, agent: Agent) -> usize {
         let name = format!("routine-{}", self.routines.len() + 1);
-        self.routines
-            .push(Routine::new(name, agent, Trigger::Continuous, Vec::new()));
+        let id = self.mint_id();
+        let mut r = Routine::new(name, agent, Trigger::Continuous, Vec::new());
+        r.id = id;
+        self.routines.push(r);
         let i = self.routines.len() - 1;
         self.view = View::Edit(i);
         self.cursor = 0;
         i
+    }
+
+    /// G14: duplicate routine `i` into an independent editable copy (fresh id + name, same agent /
+    /// trigger / body / enabled), opened in the editor. A starting point to mutate — cheaper than
+    /// re-authoring (the brief's "duplicate routine"). Returns the new index (or `None` if `i` is
+    /// out of range).
+    pub fn duplicate_routine(&mut self, i: usize) -> Option<usize> {
+        let src = self.routines.get(i)?;
+        let id = self.next_id; // mint without a second &mut borrow of self below
+        let mut copy = Routine::new(
+            format!("{}-copy", src.name),
+            src.agent,
+            src.trigger,
+            src.body.clone(),
+        );
+        copy.id = id;
+        copy.enabled = src.enabled;
+        self.next_id += 1;
+        self.routines.push(copy);
+        let j = self.routines.len() - 1;
+        self.view = View::Edit(j);
+        self.cursor = 0;
+        Some(j)
     }
 
     /// Flip the edited routine's agent (ship ↔ foot) — re-scopes its insertable vocabulary.
@@ -1079,7 +1270,7 @@ impl Console {
     /// Insert a step after the editor cursor (or append, on the "add step" row). The inserted
     /// step is the first unlocked vocabulary entry; ←/→ then cycles it. No-op if nothing unlocked.
     pub fn insert_step(&mut self, i: usize) {
-        let Some(first) = self.vocabulary(self.routines[i].agent).into_iter().next() else {
+        let Some(first) = self.editor_vocabulary(i).into_iter().next() else {
             return;
         };
         let at = match self.edit_focus(i) {
@@ -1154,7 +1345,7 @@ impl Console {
     }
 
     fn cycle_step(&mut self, r: usize, s: usize, i: i32) {
-        let vocab = self.vocabulary(self.routines[r].agent);
+        let vocab = self.editor_vocabulary(r);
         if vocab.is_empty() {
             return;
         }
@@ -1228,6 +1419,7 @@ impl Console {
                 }
             ),
             Step::Repeat(n) => format!("r{n}"),
+            Step::Run(id) => format!("u{id}"), // G14: call routine #id
         }
     }
 
@@ -1269,6 +1461,16 @@ impl Console {
                         it.next();
                     }
                     Step::Repeat(num.parse::<u8>().unwrap_or(2).clamp(1, 9))
+                }
+                'u' => {
+                    // G14: run(routine #id). A dangling id (missing callee) loads fine and
+                    // degrades to a no-op at expand time (failsoft).
+                    let mut num = String::new();
+                    while let Some(d) = it.peek().filter(|d| d.is_ascii_digit()) {
+                        num.push(*d);
+                        it.next();
+                    }
+                    Step::Run(num.parse::<RoutineId>().unwrap_or(0))
                 }
                 _ => continue,
             };
@@ -1327,13 +1529,16 @@ impl Console {
                     Agent::Ship => 'S',
                     Agent::Foot => 'F',
                 };
+                // G14: the stable id is a trailing field (append-only — old 5-field payloads
+                // still load; their ids are reassigned by index on restore).
                 format!(
-                    "{}|{}|{}|{}|{}",
+                    "{}|{}|{}|{}|{}|{}",
                     r.name,
                     u8::from(r.enabled),
                     Self::trigger_code(r.trigger),
                     steps,
-                    agent
+                    agent,
+                    r.id
                 )
             })
             .collect::<Vec<_>>()
@@ -1348,7 +1553,7 @@ impl Console {
             return;
         };
         let mut routines = Vec::new();
-        for chunk in v.split(';').filter(|c| !c.is_empty()) {
+        for (i, chunk) in v.split(';').filter(|c| !c.is_empty()).enumerate() {
             let mut f = chunk.split('|');
             let name = f.next().unwrap_or("routine").to_string();
             let enabled = f.next() != Some("0");
@@ -1359,7 +1564,13 @@ impl Console {
             } else {
                 Agent::Ship
             };
+            // G14: trailing stable id; old payloads (no field) fall back to the list index.
+            let id = f
+                .next()
+                .and_then(|x| x.parse::<RoutineId>().ok())
+                .unwrap_or(i as RoutineId);
             routines.push(Routine {
+                id,
                 name,
                 enabled,
                 agent,
@@ -1370,6 +1581,8 @@ impl Console {
             });
         }
         if !routines.is_empty() {
+            // G14: continue minting past the largest loaded id (keep ids unique + stable).
+            self.next_id = routines.iter().map(|r| r.id + 1).max().unwrap_or(0);
             self.routines = routines;
         }
     }
@@ -1456,7 +1669,7 @@ impl Console {
         for r in &self.routines {
             let cur = if row == self.cursor { ">" } else { " " };
             let on = if r.enabled { "on " } else { "off" };
-            let steps: Vec<String> = r.body.iter().map(|b| b.glyph_label()).collect();
+            let steps: Vec<String> = r.body.iter().map(|b| self.step_render(*b)).collect();
             let pipe = if steps.is_empty() {
                 "—".to_string()
             } else {
@@ -1534,7 +1747,7 @@ impl Console {
             }
             row += 1;
         }
-        s.push_str("[↑↓ select · Enter run/toggle · E edit · X delete]");
+        s.push_str("[↑↓ select · Enter run/toggle · E edit · C dup · X delete]");
         s
     }
 
@@ -1560,7 +1773,7 @@ impl Console {
             s.push_str(&format!(
                 "{cur} {live} {}. {}\n",
                 si + 1,
-                step.glyph_label()
+                self.step_render(*step)
             ));
         }
         // Add-step row.
@@ -1713,7 +1926,9 @@ mod tests {
             Step::Do(Block::Decode),
             Step::Do(Block::Collect),
         ];
-        let acts = Console::expand(&body, 0);
+        // No `run` resolution needed here — an empty snapshot suffices.
+        let all = [(0u32, Agent::Ship, body.clone())];
+        let acts = Console::expand(&body, 0, &all, 0, &mut Vec::new(), &mut None);
         // decode ×3 then collect ×1 (repeat only multiplies the *next* Do).
         assert_eq!(acts.len(), 4);
         assert!(acts[..3].iter().all(|a| a.block == Block::Decode));
@@ -2277,5 +2492,127 @@ mod tests {
                 .any(|a| a.block == Block::Collect && a.routine == i),
             "the recorded collect step emits a collect act credited to the draft"
         );
+    }
+
+    // ---- G14: subroutines ------------------------------------------------------------------
+
+    /// `run(routine)` expands the callee's body in place; the **match register flows into the
+    /// callee** (Decision 5) and the outcome credits the **callee** (Decision 4).
+    #[test]
+    fn run_expands_callee_in_place_with_register_flow() {
+        let mut c = Console::default();
+        let p = c.create_routine(Agent::Ship);
+        c.routines[p].name = "plain".into();
+        c.routines[p].body = vec![Step::Do(Block::Collect)];
+        c.routines[p].enabled = false; // a callable subroutine (still resolves), not run standalone
+        let pid = c.routines[p].id;
+        // caller "main": match(rare) THEN run(plain) — the register set in the caller must reach
+        // the callee's collect.
+        let m = c.create_routine(Agent::Ship);
+        c.routines[m].name = "main".into();
+        c.routines[m].body = vec![Step::Match(MatchField::Rare), Step::Run(pid)];
+        c.view = View::Home;
+        let t = c.tick(Agent::Ship, 0, 0, false);
+        let collect = t
+            .acts
+            .iter()
+            .find(|a| a.block == Block::Collect && a.routine == p)
+            .expect("run drove the callee's collect, credited to the callee");
+        assert_eq!(
+            collect.filter,
+            Some(MatchField::Rare),
+            "the one implicit register flowed from caller into callee"
+        );
+    }
+
+    /// Insert-time cycle guard: self-calls and cycle-closing calls are rejected (not offered in
+    /// the editor vocabulary); legal calls are offered.
+    #[test]
+    fn cycle_guard_blocks_self_and_mutual_calls() {
+        let mut c = Console::default();
+        let a = c.create_routine(Agent::Ship);
+        let aid = c.routines[a].id;
+        let b = c.create_routine(Agent::Ship);
+        let bid = c.routines[b].id;
+        assert!(c.would_cycle(aid, aid), "self-call is a cycle");
+        assert!(!c.would_cycle(aid, bid), "a→b is fine while b is empty");
+        c.routines[b].body = vec![Step::Run(aid)]; // b already calls a
+        assert!(c.would_cycle(aid, bid), "inserting a→b would close a→b→a");
+        let vocab_a = c.editor_vocabulary(a);
+        assert!(!vocab_a.contains(&Step::Run(aid)), "self not offered");
+        assert!(
+            !vocab_a.contains(&Step::Run(bid)),
+            "cyclic callee not offered"
+        );
+        assert!(
+            c.editor_vocabulary(b)
+                .iter()
+                .any(|s| matches!(s, Step::Run(_))),
+            "non-cyclic runs are offered"
+        );
+    }
+
+    /// A cycle in a *loaded* payload (no insert guard ran) is caught failsoft at runtime by the
+    /// depth cap + visited set — the tick terminates with bounded acts.
+    #[test]
+    fn loaded_cycle_is_failsoft_at_runtime() {
+        let mut c = Console::default();
+        let a = c.create_routine(Agent::Ship);
+        let aid = c.routines[a].id;
+        let b = c.create_routine(Agent::Ship);
+        let bid = c.routines[b].id;
+        c.routines[a].body = vec![Step::Run(bid), Step::Do(Block::Decode)];
+        c.routines[b].body = vec![Step::Run(aid), Step::Do(Block::Decode)];
+        let t = c.tick(Agent::Ship, 0, 0, false); // must terminate
+        assert!(t.acts.len() < 100, "bounded by the cycle/depth guard");
+    }
+
+    /// Duplicate produces an independent, separately-id'd editable copy.
+    #[test]
+    fn duplicate_is_an_independent_copy() {
+        let mut c = Console::default();
+        let a = c.create_routine(Agent::Ship);
+        c.routines[a].body = vec![Step::Do(Block::Decode)];
+        let aid = c.routines[a].id;
+        let j = c.duplicate_routine(a).expect("duplicated");
+        assert_ne!(c.routines[j].id, aid, "fresh id");
+        assert_eq!(c.routines[j].body, c.routines[a].body, "copied body");
+        c.routines[j].body.push(Step::Do(Block::Collect));
+        assert_ne!(
+            c.routines[j].body, c.routines[a].body,
+            "edits don't touch the original"
+        );
+    }
+
+    /// `run` + stable ids round-trip through `co=`; old (no-id) payloads load (ids by index); a
+    /// dangling `run` loads and degrades to a no-op at expand.
+    #[test]
+    fn codec_round_trips_run_and_ids_and_old_payloads() {
+        let mut c = Console::default();
+        let s = c.create_routine(Agent::Ship);
+        c.routines[s].name = "sweep".into();
+        c.routines[s].body = vec![
+            Step::Do(Block::Scan(ScanItem::Sites)),
+            Step::Do(Block::Collect),
+        ];
+        let sid = c.routines[s].id;
+        let m = c.create_routine(Agent::Ship);
+        c.routines[m].name = "main".into();
+        c.routines[m].body = vec![Step::Run(sid)];
+        let mut back = Console::default();
+        back.restore(&c.encode());
+        assert_eq!(back.routines, c.routines, "run-steps + ids round-trip");
+        assert!(
+            back.next_id > sid,
+            "minting continues past the largest loaded id"
+        );
+        // Old 5-field payload, dangling run(#99): loads, renders run(?), no-op at tick.
+        let mut old = Console::default();
+        old.restore("co=main|1|c|u99|S");
+        assert_eq!(old.routines.len(), 1);
+        assert_eq!(old.routines[0].body, vec![Step::Run(99)]);
+        assert_eq!(old.step_render(Step::Run(99)), "run(?)");
+        let t = old.tick(Agent::Ship, 0, 0, false);
+        assert!(t.acts.is_empty(), "dangling run is a failsoft no-op");
     }
 }
