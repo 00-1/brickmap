@@ -6,7 +6,25 @@
 > design they swing. The hardware/feel checklists stay in
 > [`human-verification.md`](human-verification.md); this doc is *decisions*.
 
-## A. The headline fork — knowledge-gates ("the console always listened")
+## A. The headline fork — knowledge-gates  ✅ ANSWERED (2026-06-11): superseded
+
+**The human's call: block names stay UNREADABLE too** — no English layer at all. Blocks
+render by their glyph names everywhere (world *and* console); function is learned by
+clicking and observing (L0 of the ladder is the teacher; the vocabulary starts at 1–2
+blocks so learning is gradual, one block at a time at acquisition). The readable-derivation
+version of knowledge-gates is therefore moot. A glyph-composition verb (derive a compound
+by picking morpheme glyphs you've learned *by function*) remains a possible Archive-tranche
+layer — arguably stronger now — but is NOT needed; obvious-from-clicking suffices.
+
+**Build implication (the de-Anglicization retrofit):** G9/G11 currently show English block
+labels in the console and HUD ("NAME RECOVERED — `priority`"; routine rows). A milestone is
+needed to render block identity as glyphs everywhere before more English surfaces accrete.
+**Pinned scope default (veto if wrong):** *block names and name-derived strings* go glyph;
+*structural/meta UI* (numbers, gauges, ×fires, the ▶ marker, state glosses like `waiting`)
+stays minimal-English for usability — the machine's *diagnostics* read as instrumentation,
+its *vocabulary* as a dead language. Full-glyph-everything is a later eye-pass call.
+
+*(Original question kept below for the record.)*
 
 The decipherment research's top recommendation
 ([`research-decipherment.md`](research-decipherment.md) P11+P6, the Tunic Holy-Cross trick):
@@ -42,10 +60,8 @@ You decided: shards exist, auto-collectible, types + rarities. Four sub-forks I 
 3. **Domain-matched costs?** Pinned: v1 spend takes the generic total; types exist to feed
    `match` filters. Alternative: faculties cost specific domains (sensing wants Rites
    shards…) — more decisions, more grind risk.
-4. **Name readability** (from the G9 side): pinned: a found block name is readable at
-   collect time. Alternative: names render unreadable until the script's stratum is
-   comprehended (stronger decipherment arc, slower opening). The hypothesis-state design
-   (D below) is the richer version of this same instinct.
+4. **Name readability** — ✅ superseded by §A's answer: names are never readable;
+   the fork dissolves.
 
 ## C. How numeric should the upgrade layer be?
 
@@ -114,8 +130,7 @@ for you to either request it (builder does it blind, you tune) or drop it.
    **structure, never prose**: this glyph-run is a *name* (cartouche) · this is a
    *formula frame* with a varying slot (a name / a count) · this was *deliberately
    erased* · this is the *same hand* as that repair · these two words are *cognates*.
-   The ONE readable layer remains the mechanical block vocabulary (G9 names — `priority`,
-   `scan` — which translate because they're the console's operating words). The Leiden
+   (Updated by §A's answer: block names are unreadable too — no readable layer at all; function is learned by clicking.) The Leiden
    brackets annotate glyph-text, not translations. The Vindolanda/mundane-text research
    survives as *registers* (ledger vs monument vs graffiti — recognizable by format,
    layout, and density, not by reading). Grief arrives through structure: hands,

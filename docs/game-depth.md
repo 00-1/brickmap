@@ -137,7 +137,9 @@ asymmetry (P19) introduced as a *discovered* world property, not a menu number (
 - **The Archive tranche** — ✅ **green-lit by the human (2026-06-11) with a binding
   constraint: no readable lore, ever** — inscriptions stay lexicon nonsense-words in the
   five scripts; the player comprehends *structure* (names, frames, erasures, hands,
-  cognates, registers-by-format), never prose; block names stay the one readable layer.
+  cognates, registers-by-format), never prose — **and block names are unreadable too**
+  (human, 2026-06-11): blocks are glyph-named everywhere, learned by clicking (L0 is the
+  teacher). A **de-Anglicization retrofit milestone** is queued in the dispatch pipeline.
   (The decipherment deepening, research-shaped — see
   [`research-linguistics.md`](research-linguistics.md),
   [`research-material-text.md`](research-material-text.md),
