@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `a0aaa89` (G14b — nested groups; G14 complete).
+**Reviewed through:** `6c9699f` (G15a 1/2 — research runtime).
 
 ---
 
@@ -36,6 +36,35 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-11 · G15a (1/2) — research runtime + codec (`6c9699f`)  ✅ PASSED (verified + CI green)
+
+**Verified:** local fmt/clippy clean · **222 tests** · **CI ✅ · Android ✅ · Deploy ✅**
+(Desktop in-flight = release packaging of a game-side-only change CI compiled green —
+accepted). Golden voxel-hash + headless byte-identical; no engine change.
+
+**Built additively — the right sequencing for a big retrofit.** The research *runtime* +
+`pg=` v6 codec land first (allocate → domain-matched shard fill → comprehend; off-domain
+doesn't fill; starters cost 0 → opening parity), with **decode + spend still functioning**;
+the rip-out (remove decode-stratum-unlock, wire the console/allocate UX) is G15a (2/2). So
+nothing regresses at this commit — exactly how to land a system that rewrites G9/G10.
+
+**Two flagged decisions — both ACCEPTED:**
+1. **Legibility fold-in (good catch — my brief missed it).** Removing decode-stratum-unlock
+   (coming in 2/2) orphans `is_legible`'s driver (the G6 decipherment spine). The builder
+   folds it into research: **comprehending a block marks its stratum legible.** This
+   *preserves* existing behaviour's intent and is consistent with the human's no-readable-
+   lore rule (legible = ambient text shows its nonsense lexicon phrase, not lore; block
+   names stay glyph regardless). It's a preservation, not a new direction, so accepting it
+   is right — the Archive tranche can revisit legibility properly later. Noted for the human.
+2. **Sub-scope split:** G15a does **block** research; faculty/bank-then-spend conversion is
+   G15b, and G10 `spend` is **retained until then** — so this half is purely additive.
+   Matches the brief's split guidance.
+
+**Verdict.** Clean additive first half; decisions sound. Proceed to G15a (2/2): route unlock
+through research, remove decode-stratum-unlock, allocate UX.
+
+---
 
 ## 2026-06-11 · G14b — nested step groups (`a0aaa89`)  ✅ PASSED — G14 complete
 
