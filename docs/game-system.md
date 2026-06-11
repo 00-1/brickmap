@@ -18,6 +18,13 @@ and automation are all **blocks** — and the blocks themselves *are* the interf
 - A block is **clickable to trigger** — clicking `collect` *is* the manual collect; the
   block is its own button. (So there are no buttons hiding blocks; the block is the button.)
 - A block is **wireable** — feed it a trigger/condition and it runs itself.
+- A block is shown by its **glyph-name** (G12), not an English word: the stable
+  glyph-cluster of its name in its stratum's script — the *same* glyphs you find carved in
+  the world. It's recognisable *as a symbol* but **unreadable as a word**; you learn what a
+  block *does* by clicking it and watching (L0), not by reading a label. Structural
+  instrumentation around it (numbers, gauges, state like `waiting`/`blocked`, the `▶`
+  marker) stays minimal-English — the machine's readout; only its *vocabulary* is the dead
+  language.
 
 **Full transparency:** everything decomposes to **atomic leaf-blocks**; nothing is an
 opaque button you can't open. The "simple" experience and the "deep" experience are the
@@ -79,15 +86,18 @@ especially a control/meta one, expands what you can *compose*.) So:
   automation-web are wired together, not parallel.
 - **Lore is implied, never read.** Comprehension is *operational* — understanding how the
   machine works, not reading its diary. The grief is the *vibe* of operating a dead
-  people's console alone; block names and tone carry a general feeling, not text dumps.
+  people's console alone; tone carries a general feeling, not text dumps. **Block names stay
+  unreadable too (G12):** even a comprehended script keeps a name-bearer's glyph cluster —
+  you come to recognise the *symbol* through use, never read an English word.
 
 ## 5. Discovery, not programming puzzles
 
 The interest is **learning the machine's idiom**, not solving for a right answer:
 
-- New blocks (especially control/meta) arrive with **terse, slightly cryptic** descriptions
-  — a recovered man-page — and you **experiment** to learn what they reference and combine
-  with. *This* is the "figure out how it works."
+- New blocks arrive as a bare **glyph-name** (G12) — no English description, no tooltip — and
+  you **experiment** (click it, watch what happens, combine it) to learn what it does. *This*
+  is the "figure out how it works": learn-by-operating, not reading a man-page. Opacity is
+  bounded because the vocabulary grows one block at a time from a tiny starter set.
 - It stays a **sandbox, not a puzzle**: no syntax to get wrong, no single solution, results
   immediately visible, no fail-state. You compose what *you* want; mastery is fluency.
 

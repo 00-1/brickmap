@@ -1412,22 +1412,25 @@ impl App {
                 })
             })
             .collect();
-        // G6 decipherment: a comprehended script renders **translated** instead of glowing
-        // glyphs — a name-bearer (G9) shows its plain block name (it IS the meaning), ambient
-        // text a seeded lexicon phrase. The find id still hashes the original glyphs
-        // (collecting stays stable), so only the *display* changes.
+        // G6 decipherment + G12 de-Anglicization: a comprehended script renders **translated**
+        // instead of glowing glyphs — but a **block name stays unreadable** (the human decision):
+        // even once its script is legible, a name-bearer (G9) keeps its glyph cluster, so the
+        // world shows the *same* glyphs the console does (you recognise the symbol, you never read
+        // an English word). Only ambient (non-name) text translates to its seeded lexicon phrase.
+        // The find id still hashes the original glyphs (collecting stays stable) — only *display*
+        // changes.
         let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
             .into_iter()
-            .map(|m| {
-                if self.progress.is_legible(m.script) {
-                    let translated = match m.name {
-                        Some(b) => b.name().to_string(),
-                        None => lexicon::phrase(seed, m.cell, progress::glyph_count(&m.text)),
-                    };
-                    (translated, text::Script::Latin, m.pos, m.height, m.color)
-                } else {
-                    (m.text, m.script, m.pos, m.height, m.color)
-                }
+            .map(|m| match m.name {
+                Some(_) => (m.text, m.script, m.pos, m.height, m.color),
+                None if self.progress.is_legible(m.script) => (
+                    lexicon::phrase(seed, m.cell, progress::glyph_count(&m.text)),
+                    text::Script::Latin,
+                    m.pos,
+                    m.height,
+                    m.color,
+                ),
+                None => (m.text, m.script, m.pos, m.height, m.color),
             })
             .collect();
         if let Some(state) = self.state.as_mut() {

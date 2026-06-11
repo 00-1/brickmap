@@ -315,8 +315,11 @@ The cruiser's auto-scan (§6) and what it reveals on the map.
 ### 8.2 Decipherment — *the lore spine* &nbsp;(feeds: each script's own data + Relics)
 - **Legibility: Records → Schematics → Rites → Relics → Signals** — five unlocks bought
   with **that script's collected data** (which autopilot gathers too, so legibility is
-  reachable hands-off); an unlocked script renders **translated** instead of glowing
-  nonsense. Manual **"Rosetta" finds** *accelerate* a script's legibility — they don't gate it.
+  reachable hands-off); an unlocked script renders ambient text **translated** instead of
+  glowing nonsense. **Exception (G12):** a **block name** stays its glyph cluster even once its
+  script is legible — block names are unreadable by design (you recognise the symbol, you
+  never read the word). Manual **"Rosetta" finds** *accelerate* a script's legibility — they
+  don't gate it.
 - **Fluency I–III** (per script) — *progressive* legibility: first fragments resolve,
   then full phrases. Watching the world become readable **is** the progression curve.
 - **Cross-Reference** — auto-translate newly found glyphs of an already-known script.

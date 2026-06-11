@@ -75,6 +75,19 @@ impl MatchField {
     pub fn required(self) -> Stratum {
         Stratum::Rites
     }
+
+    /// G12: the filter argument as glyphs — a world-vocabulary item: the rarity tier (in the
+    /// `match` step's own Rites script), or a stratum **domain** rendered in *that stratum's own*
+    /// script so it reads as that family's glyphs.
+    pub fn glyphs(self) -> String {
+        use crate::progress::script_for;
+        match self {
+            MatchField::Rare => {
+                crate::structures::transliterate("rare", script_for(self.required()))
+            }
+            MatchField::Domain(d) => crate::structures::transliterate(self.label(), script_for(d)),
+        }
+    }
 }
 
 /// Which agent a routine drives (game-system §7). Routines are **per-agent**, drawing on a shared
@@ -207,6 +220,37 @@ impl Block {
         }
     }
 
+    /// G12: the block's **glyph-name** — its bare [`name`](Self::name) transliterated into its
+    /// stratum's script (via [`structures::transliterate`]/[`structures::block_script`]), i.e. the
+    /// *exact* glyph cluster the player finds carved in the world for this block. Stable +
+    /// deterministic, so a block is recognisable *as a symbol* though unreadable *as a word* (icon
+    /// literacy, not reading literacy). This is the player-facing identity (palette, routine rows,
+    /// codex, the discovery toast); [`name`](Self::name)/[`label`](Self::label) stay for internal
+    /// codes/tests/the `co=` codec. Closes the world↔console recognition loop G9 opened.
+    pub fn glyphs(self) -> String {
+        crate::structures::transliterate(self.name(), crate::structures::block_script(self))
+    }
+
+    /// G12: the full player-facing form — the glyph-name plus, for a parameterised block, its
+    /// world-vocabulary argument rendered glyph too (the scan target, the spent faculty), in the
+    /// block's own stratum script. Structural punctuation (the parens) stays; pure quantities
+    /// never appear here.
+    pub fn glyph_label(self) -> String {
+        let arg = match self {
+            Block::Scan(i) => Some(i.label()),
+            Block::Spend(f) => Some(f.label()),
+            _ => None,
+        };
+        match arg {
+            Some(a) => format!(
+                "{}({})",
+                self.glyphs(),
+                crate::structures::transliterate(a, crate::structures::block_script(self))
+            ),
+            None => self.glyphs(),
+        }
+    }
+
     /// The stratum whose **comprehension** (G6 `decode`) recovers this block — `None` = a starter
     /// (Tier 0). This is the "tree": decoding grows the vocabulary (game-system §4).
     pub fn required(self) -> Option<Stratum> {
@@ -277,6 +321,16 @@ impl Step {
         match self {
             Step::Do(b) => b.label().to_string(),
             Step::Match(f) => format!("match({})", f.label()),
+            Step::Repeat(n) => format!("repeat ×{n}"),
+        }
+    }
+    /// G12: player-facing rendering — block + world-item vocabulary as glyphs; the structural
+    /// modifiers (`match`/`repeat`) stay minimal-English instrumentation, only their vocabulary
+    /// argument goes glyph.
+    pub fn glyph_label(self) -> String {
+        match self {
+            Step::Do(b) => b.glyph_label(),
+            Step::Match(f) => format!("match({})", f.glyphs()),
             Step::Repeat(n) => format!("repeat ×{n}"),
         }
     }
@@ -1408,6 +1462,58 @@ impl Console {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// G12: a block's console glyph-name is the **exact** cluster a world name-inscription spells
+    /// for it (same `transliterate` + stratum script) — the world↔console recognition loop. Stable,
+    /// non-empty, and (across the unique names) distinct.
+    #[test]
+    fn block_glyphs_match_world_inscriptions() {
+        use crate::structures;
+        for b in Block::ALL {
+            let world = structures::transliterate(b.name(), structures::block_script(b));
+            assert_eq!(
+                b.glyphs(),
+                world,
+                "console glyphs must equal the world inscription for {b:?}"
+            );
+            assert_eq!(b.glyphs(), b.glyphs(), "deterministic");
+            assert!(!b.glyphs().is_empty());
+        }
+        // Parameterised families share a name → share a glyph cluster (by design).
+        use std::collections::{HashMap, HashSet};
+        let mut by_name: HashMap<&str, String> = HashMap::new();
+        for b in Block::ALL {
+            if let Some(prev) = by_name.insert(b.name(), b.glyphs()) {
+                assert_eq!(prev, b.glyphs(), "same name ⇒ identical glyphs");
+            }
+        }
+        // Distinct *names* produce distinct clusters (collision guard, G9 spirit).
+        let clusters: HashSet<String> = Block::ALL.iter().map(|b| b.glyphs()).collect();
+        let names: HashSet<&str> = Block::ALL.iter().map(|b| b.name()).collect();
+        assert_eq!(
+            clusters.len(),
+            names.len(),
+            "distinct block names ⇒ distinct glyph clusters"
+        );
+    }
+
+    /// G12: a parameterised block's `glyph_label` is its glyphs plus its argument rendered glyph
+    /// (so the two `scan` variants read distinctly); a plain block is just its glyphs.
+    #[test]
+    fn glyph_label_renders_parameter_as_glyphs() {
+        let shards = Block::Scan(ScanItem::Shards);
+        let lbl = shards.glyph_label();
+        assert!(lbl.starts_with(&shards.glyphs()) && lbl.ends_with(')') && lbl.contains('('));
+        assert_ne!(
+            Block::Scan(ScanItem::Shards).glyph_label(),
+            Block::Scan(ScanItem::Sites).glyph_label(),
+            "the scan variants must read distinctly"
+        );
+        assert_eq!(Block::Drift.glyph_label(), Block::Drift.glyphs());
+        // A `match` step glyphs its field but keeps the structural keyword (instrumentation).
+        let m = Step::Match(MatchField::Rare).glyph_label();
+        assert!(m.starts_with("match(") && m.ends_with(')'));
+    }
 
     #[test]
     fn given_routines_are_plain_data() {
