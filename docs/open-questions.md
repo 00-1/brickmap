@@ -107,7 +107,23 @@ for you to either request it (builder does it blind, you tune) or drop it.
 
 ## I. New from the deep research pass (2026-06-11, second wave)
 
-1. **The Archive tranche as a direction.** The non-game research (real decipherment
+1. **The Archive tranche as a direction.** ✅ **ANSWERED (2026-06-11): green-lit, with a
+   binding constraint — NO readable lore.** No letters-from-the-dead, no translated
+   English sentences, no text dumps: inscriptions stay nonsense words (the seeded
+   lexicon) in the five writing systems, forever. What the player "comprehends" is
+   **structure, never prose**: this glyph-run is a *name* (cartouche) · this is a
+   *formula frame* with a varying slot (a name / a count) · this was *deliberately
+   erased* · this is the *same hand* as that repair · these two words are *cognates*.
+   The ONE readable layer remains the mechanical block vocabulary (G9 names — `priority`,
+   `scan` — which translate because they're the console's operating words). The Leiden
+   brackets annotate glyph-text, not translations. The Vindolanda/mundane-text research
+   survives as *registers* (ledger vs monument vs graffiti — recognizable by format,
+   layout, and density, not by reading). Grief arrives through structure: hands,
+   erasures, repairs, numbers, cancelled-future *formats* (a countdown grid, a manifest
+   table) — never through sentences. Design docs to absorb this when the tranche briefs.
+   *(Original question kept below for the record.)*
+
+   **The original question.** The non-game research (real decipherment
    history, epigraphy, palimpsests, archival theory —
    [`research-linguistics.md`](research-linguistics.md),
    [`research-material-text.md`](research-material-text.md)) assembled into something

@@ -134,7 +134,11 @@ asymmetry (P19) introduced as a *discovered* world property, not a menu number (
   invalidate copy-paste routines. Pairs with E8 vertical stacks / new world content.
 - **The witnessing arc** (P16): act emphasis shifts operator → author → overseer; mostly
   free (it emerges from the ladder) — needs a design pass in game-mechanics, not a system.
-- **The Archive tranche** (the decipherment deepening, now research-shaped — see
+- **The Archive tranche** — ✅ **green-lit by the human (2026-06-11) with a binding
+  constraint: no readable lore, ever** — inscriptions stay lexicon nonsense-words in the
+  five scripts; the player comprehends *structure* (names, frames, erasures, hands,
+  cognates, registers-by-format), never prose; block names stay the one readable layer.
+  (The decipherment deepening, research-shaped — see
   [`research-linguistics.md`](research-linguistics.md),
   [`research-material-text.md`](research-material-text.md),
   [`research-decipherment.md`](research-decipherment.md)): a coherent multi-milestone
