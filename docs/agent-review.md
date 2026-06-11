@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `ec4aede` (G14a — subroutines).
+**Reviewed through:** `a0aaa89` (G14b — nested groups; G14 complete).
 
 ---
 
@@ -36,6 +36,32 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-11 · G14b — nested step groups (`a0aaa89`)  ✅ PASSED — G14 complete
+
+**Verified:** local fmt/clippy clean · **220 tests** · **CI ✅ · Android ✅ · Deploy ✅**
+(Desktop builds in-flight = release packaging of the identical game crate CI already
+compiled green; no new risk surface — accepted). Golden voxel-hash + headless byte-identical;
+no engine change.
+
+**The risky half, handled well.** `Step::Group { times, filter, body }` made `Step`
+**non-`Copy`** (it owns a `Vec`) — the compiler-guided ripple (`&self`/`&Step` + clones at
+cycle/assign sites, ~600 lines) is mechanical and the build verifies it. The two design
+calls are right:
+- **Group filter is SCOPED** (saved/restored — a local block), *unlike* a `run` whose
+  register flows out. The one-implicit-register rule is preserved with the correct
+  block-vs-call distinction — a subtle, correct choice.
+- **One nesting level enforced structurally**: the sub-editor (`EditGroup`, with
+  view-aware `target_body`) never offers group-in-group. Linear-with-grouping, not a tree
+  IDE — exactly Decision 1.
+- Codec: a self-delimiting `(times[filter]:inner)` `co=` token, one level, old payloads
+  unaffected.
+
+**Verdict.** G14 (composition depth) is complete and CI-green: `run(routine)` reuse +
+scoped nested groups, both honouring the one-register invariant. The console is now a real
+compositional language. Proceed to **G15** (the research economy).
+
+---
 
 ## 2026-06-11 · G14a — subroutines / run(routine) (`ec4aede`)  ✅ PASSED (verified + CI green)
 
