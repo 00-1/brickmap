@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `6c9699f` (G15a 1/2 — research runtime).
+**Reviewed through:** `2a5f13d` (G15a 2/2 — research retrofit; G15a complete).
 
 ---
 
@@ -36,6 +36,35 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-11 · G15a (2/2) — console wired to research, decode removed (`2a5f13d`)  ✅ PASSED — G15a complete
+
+**Verified:** local fmt/clippy clean · **221 tests** · **CI ✅ · Android ✅ · Deploy ✅**
+(Desktop in-flight = release packaging, accepted). Golden voxel-hash + headless byte-identical;
+no engine change.
+
+**The retrofit, done cleanly:** `Console.unlocked: HashSet<Stratum>` →
+`comprehended: HashSet<Block>` (synced from progress), routed through `is_unlocked` /
+`step_unlocked` / palette tag (`(locked: research)`); clicking a discovered-locked block
+**allocates** it as the active research target (domain shards then fill it — the 1/2
+mechanic); `decode_action` + the four interpreter `Decode` arms deleted; **`Block::Decode`
+enum variant kept so old `co=` payloads still load** (stray Decode → no-op) — correct
+backward-compat. The active research target is the G11 lit-goal ("research N%"). Opening
+parity tests retrofitted (starters comprehended) and green.
+
+**One flagged best-judgment call — ACCEPTED as transitional:** `match` is Rites-gated but no
+Rites block exists yet, so with decode gone it now unlocks once *any* block is researched
+(`stratum_cracked`). This loosens non-block-vocabulary gating slightly, but it's a sensible
+placeholder — there's no natural research target for `match` until Rites-tier blocks exist.
+**It tightens naturally as the vocabulary grows** (the Archive tranche / more blocks will
+give non-block vocab proper gates). Vetoable; noted for the human. Not a blocker.
+
+**Verdict.** G15a complete — comprehension is now shard-funded per-block research, decode
+gone, G9 unlock retrofitted, opening preserved, CI green. The economy reframe's core is
+live. Proceed to **G15b** (faculties-as-targets, levels, pacing — G10 `spend` still bank-
+then-buy until then, as planned).
+
+---
 
 ## 2026-06-11 · G15a (1/2) — research runtime + codec (`6c9699f`)  ✅ PASSED (verified + CI green)
 
