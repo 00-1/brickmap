@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `30daefb` (G13 + RED-resolution chain; verifying CI green).
+**Reviewed through:** `ec4aede` (G14a — subroutines).
 
 ---
 
@@ -36,6 +36,37 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-11 · G14a — subroutines / run(routine) (`ec4aede`)  ✅ PASSED (verified + CI green)
+
+**Verified four ways:** local fmt/clippy/tests all clean (**217 tests**) — and notably my
+local cargo auto-installed the pinned **1.94.1**, so fmt is now genuinely authoritative
+locally again (the pin works). **CI confirmed green via Actions API: CI ✅ · Android ✅ ·
+Desktop ✅ · Deploy ✅.** Golden voxel-hash + headless render byte-identical; no engine change.
+
+**Against the brief — the composition half, done right:**
+- `Step::Run(RoutineId)` expands the callee in place via a per-tick snapshot, **depth cap +
+  visited set** runtime backstop; **insert-time cycle guard** (pure DFS `would_cycle`) so
+  the editor never even offers a recursive insert — belt and braces, failsoft on a hostile/
+  old-payload cycle.
+- **Stable ids** (monotonic per-console, survive reorder/rename) — Decision 3, the right
+  ref form (not raw index). Persisted as an append-only `co=` field; old 5-field payloads
+  assign ids by index. **Brief-correction noted + correct:** routines live in `co=`, not
+  `pg=` (I'd written `pg=`); a dangling `run` loads + degrades to a no-op.
+- **One-implicit-register** (Decision 5) honoured precisely: the `match` filter is the
+  single "current thing", threaded `&mut` through `expand`, flows into a call and persists
+  on return — tested across a call. No second referent. Callee credit (Decision 4).
+- **No seams** (Steele): `run` offered for every other same-agent routine, rendered
+  `run(<name>)`; duplicate-routine on key `C`.
+
+**G14b split (sound):** nested step groups need the deeper `Step` change to bodied
+`Repeat`/`If` containers + their editor + a codec migration — riskier, so split per the
+"split big milestones" rule. The high-value composition half (reuse via `run`) ships now.
+
+**Verdict.** Clean, CI-green, the cycle/recursion risk handled belt-and-braces. Proceed to
+G14b (nested groups). *(First milestone fully green after the toolchain fix — the pin holds.)*
+
+---
 
 **Resolution (3 commits, builder self-driven):** `70524d2` wrap + **exact toolchain pin
 1.94.1** (durable fix — local `--check` authoritative again); `833f57c` restored the
