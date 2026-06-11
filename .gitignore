@@ -7,3 +7,6 @@
 # Editor / OS noise
 *.swp
 .DS_Store
+
+# Claude Code agent worktrees / session artifacts (tooling, not project content)
+.claude/
