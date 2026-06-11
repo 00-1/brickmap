@@ -44,21 +44,33 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-11: STANDBY (G16 done; Archive fork-check with the human)
+## CURRENT DIRECTIVE — 2026-06-11: D11 end-to-end harness (Archive still fork-blocked)
 
-**G16 (lexicon v2) is complete + four-way CI green** (`90ec1e0`; the seeded lexicon is now
-statistically honest nonsense — Zipf/Heaps/entropy/morphology all in-band, verified via
-`lexstats`; it also closed a latent English-lore leak). That completes the run's two big
-arcs: **automation/economy (G9–G15)** and the **Archive substrate (G16)**.
+The human asked for **autonomous end-to-end testing** — drive everything end to end and find
+problems. This is the right work *now*: G9–G16 are unit-tested + golden-hash + render-checked,
+but the **per-frame orchestration in `App` that wires the systems together over time has never
+been driven end to end**. (Archive feature milestones remain fork-blocked on the human; this is
+productive non-fork work meanwhile.)
 
-**No new milestone is dispatched.** The remaining Archive milestones (Leiden bracket display,
-cartouches, formulaic-frame cribs, the hypothesis/uncertainty layer, the proto-language,
-prosopography) each touch a **design fork** the babysitter is taking to the human before
-building. **Stand by** — keep `main` green; do not start new feature work until a directive
-lands here. (You may, if idle, do *non-fork* hardening only — e.g. CI/test robustness — but
-nothing that commits Archive design.)
+- **D11 — End-to-end play harness (headless integration + soak)** — build per
+  [`milestones/D11-e2e-harness.md`](milestones/D11-e2e-harness.md) (copy to `main`). A
+  **durable, CI-wired** harness that drives the **real** game loop headlessly and asserts
+  *integration* outcomes: a scripted seeded playthrough (discover a block → allocate →
+  domain shards fill → comprehend → author + run a routine → expedition cycle → state
+  round-trip), **persistence fidelity** (round-trip equality, v1..v5 migration, malformed →
+  graceful-not-panic), **determinism** (same seed+inputs → identical state), and a **bounded
+  seeded soak/fuzz** (no panic / NaN / overflow / unbounded growth; research progresses-or-
+  honestly-blocked). **Central design problem first:** `App` owns the GPU, so either extract
+  a **sim-core** (preferred — behaviour-preserving; golden hash unchanged) or add a
+  **headless-App** drive path; document the choice; the harness must drive the *same* tick
+  the live frame uses (no parallel re-implementation). Keep CI bounded/seeded (heavy soak
+  env-gated). Pinned defaults in the brief.
+- **Parallel:** a separate adversarial bug-hunt is running against `main` right now. Its
+  **confirmed** bugs will arrive here as fix directives — fix them, and **encode each as a
+  regression assert in D11**. So: build the harness; expect bug-fix directives to interleave.
+- After D11 + the bug-fixes: stand by for the Archive fork decision from the human.
 
-Toolchain prevention in force; CI is the authority.
+Toolchain prevention in force; CI is the authority; keep main green.
 
 ---
 
@@ -206,6 +218,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — STANDBY lifted: human asked for **autonomous end-to-end testing**. **New directive: D11 — E2E play harness** (headless integration: scripted playthrough + persistence fidelity + determinism + bounded soak/fuzz; extract a sim-core or headless-App; CI-wired). A parallel adversarial bug-hunt is running; its confirmed bugs land as fix directives + D11 regression asserts.
 - **2026-06-11** — G16 ✅ complete (lexicon v2, four-way green). **STANDBY**: remaining Archive milestones are fork-gated; babysitter fork-checking the human before the next dispatch.
 - **2026-06-11** — G15 ✅ complete (economy unified, 61235b6, CI-green). **New directive: G16 — lexicon v2** (statistical honesty: Zipf/Heaps/entropy/morphology checklist as unit tests + corpus-shape; fork-free Archive groundwork; output stays nonsense-words, no lore). Deeper Archive milestones briefed next with fork-checks. (Handshakes → G17.)
 - **2026-06-11** — G14 ✅ complete (subroutines a0aaa89, CI-green). **New directive: G15 — comprehension-as-research economy** (the human's unified model: discover→allocate shards→fill→comprehend; domain+rarity-gated; retrofits G9 decode-unlock + G10 spend; faculties fold in; LARGE → split G15a runtime/retrofit, G15b levels). Next: G16a lexicon v2.
