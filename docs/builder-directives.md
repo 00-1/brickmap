@@ -44,23 +44,34 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## 🟡 RED resolved — verifying green; G14 dispatches on confirmation — 2026-06-11
+## ✅ RED cleared (CI green on 30daefb) → CURRENT DIRECTIVE: G14 subroutines — 2026-06-11
 
-The G13 fmt RED was driven to resolution across three builder commits — **good,
-self-correcting work**, the root cause now fully addressed:
-- `70524d2` — wrapped the chain (stable form) + **pinned `rust-toolchain.toml` to 1.94.1**
-  (the durable fix: local `--check` is authoritative again).
-- `833f57c` — restored `aarch64-linux-android` to the pin's `targets` (the pin had dropped
-  it → APK RED; my one-line fix).
-- `30daefb` — added `rust-toolchain.toml` to the **Android + Desktop path filters** (they're
-  path-filtered, so the toolchain fixes hadn't re-triggered them — the builder caught this
-  itself; I hadn't). All four workflows now correctly run on a tree with every fix.
+The G13 fmt RED is fully resolved and **CI is green** on `30daefb` — verified via the
+Actions API: **CI ✅ · Android APK ✅ · Desktop builds ✅** (Deploy preview = the Pages
+publish of the already-passing wasm, not a code gate). Good incident handling (wrap +
+exact toolchain pin + path-filter trigger, 3 commits, builder self-corrected the trigger
+gap). G13 logic was always sound. **G14 cleared:**
 
-**State:** all four (CI / Android / Desktop / Deploy) are **triggered + running on
-`30daefb`**. The babysitter clears **G14 the moment all four are confirmed green** (verified
-via the Actions API — local gates can't see the android/desktop builds). Builder: keep main
-green; you may continue to harden CI, but **do not start G14 until it's posted here** (it
-will be, on green).
+- **G14 — Subroutines, templates & nested steps** — build per
+  [`milestones/G14-subroutines.md`](milestones/G14-subroutines.md) (copy to `main`). The
+  composition-depth layer: **same-agent `run(routine)`** (extend the cross-agent `run` from
+  G8c) so a player's routine is a reusable **glyph-named block** in the palette (Steele's
+  *no seams* — user words look like primitives); an **insert-time cycle guard** + runtime
+  depth cap (failsoft, no recursion blowup); **duplicate routine**; and **nested step
+  groups** inside `repeat`/`if` bodies — **one nesting level only** (linear-with-grouping,
+  NOT a tree/node IDE). Enforce the **one-implicit-register** rule (exactly one "current
+  thing" between steps; a second referent must be an explicit parameter). Persist via `pg=`
+  (append-only; old payloads load; missing callee → failsoft no-op). G11 credit → the callee
+  (pinned). Pinned defaults in the brief — veto only on a genuine fork.
+- After G14: **G15 — comprehension-as-research economy** (the unified shard→research model
+  you have the design for), and the Archive groundwork — the **fork-free lexicon v2**
+  statistical-honesty pass (G16a) is buildable any time. Then stand by between directives.
+
+### Incident-prevention now in place (don't regress)
+`rust-toolchain.toml` pins **1.94.1** (exact) with `targets = [wasm32-unknown-unknown,
+aarch64-linux-android]`; Android+Desktop workflows now path-filter on `rust-toolchain.toml`.
+Local `cargo fmt --all --check` is authoritative again. Bump the toolchain deliberately
+(reformat in the same commit); keep cross-targets in the pin in sync with any new workflow.
 
 ---
 
@@ -208,6 +219,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — ✅ RED cleared: CI/Android/Desktop green on `30daefb`. **New directive: G14 — subroutines** (same-agent run(routine) as a no-seams glyph block, cycle guard, duplicate, one-level nested groups, one-register rule). Next: G15 research economy, G16a lexicon v2.
 - **2026-06-11** — RED resolved over 3 commits (wrap+pin `70524d2`, android target `833f57c`, path-filter trigger `30daefb` — builder caught the trigger gap itself). All four workflows running on `30daefb`; G14 dispatches on confirmed green.
 - **2026-06-11** — round 2: fmt RED fixed (wrap + toolchain pin 1.94.1, good), but the pin's `targets` list (wasm only) **broke the Android APK** (`aarch64-linux-android` missing). Escalated: add the android target(s) to rust-toolchain.toml. Still blocks G14 until all four workflows green.
 - **2026-06-11** — 🔴 **main RED on G13**: `cargo fmt --all --check` only (console.rs:2272 chain-wrap). Logic fine (212 tests/clippy pass locally). Escalated: apply the wrap + push; root cause = rustfmt version skew vs CI — pin the toolchain / prefer wrapped chains. Blocks G14 until green.
