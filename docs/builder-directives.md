@@ -44,31 +44,21 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-11 (G15 done → G16 lexicon v2; Archive tranche begins)
+## CURRENT DIRECTIVE — 2026-06-11: STANDBY (G16 done; Archive fork-check with the human)
 
-**G15 (comprehension-as-research economy) is complete + CI-green** (`61235b6`; discover →
-allocate shards → research-fill → comprehend, faculties folded in, decode + bank-then-spend
-gone, opening preserved). The automation/economy arc G9–G15 is built. New direction — the
-**Archive tranche** (human green-lit; binding constraint **NO readable lore** — comprehension
-is structural, never prose; block names stay glyph), starting with its **fork-free** piece:
+**G16 (lexicon v2) is complete + four-way CI green** (`90ec1e0`; the seeded lexicon is now
+statistically honest nonsense — Zipf/Heaps/entropy/morphology all in-band, verified via
+`lexstats`; it also closed a latent English-lore leak). That completes the run's two big
+arcs: **automation/economy (G9–G15)** and the **Archive substrate (G16)**.
 
-- **G16 — Lexicon v2 (statistical honesty)** — build per
-  [`milestones/G16-lexicon-v2.md`](milestones/G16-lexicon-v2.md) (copy to `main`). Make the
-  seeded `lexicon` generator pass the **statistical-honesty checklist** (Zipf, Heaps,
-  natural conditional entropy, Zipf abbreviation, a function-word layer, consistent
-  morphology, bursty content-words, no autocopy/layout artifacts) — **each property a unit
-  test** (with a broken-generator meta-test that *fails* them, so the tests bite); plus the
-  corpus-shape rules (some long strings, a name+logogram+numeral record shape, a recurring
-  one-varying-slot frame). Output stays **nonsense words in the five scripts** (no English,
-  no lore); G9 names + the ambient/name distinction unchanged. Deterministic in seed
-  (share-link safe; E12 golden-hash holds). Golden-neutral. **Scope is statistical honesty +
-  corpus-shape ONLY** — the proto-language / Leiden display / cartouches / sensing-ladder are
-  later Archive milestones (they carry forks; I'll brief them with fork-checks). Pinned
-  defaults in the brief.
-- After G16: the deeper Archive milestones (briefed with human fork-checks) and/or G17
-  (handshakes/expedition economy). Stand by between directives.
+**No new milestone is dispatched.** The remaining Archive milestones (Leiden bracket display,
+cartouches, formulaic-frame cribs, the hypothesis/uncertainty layer, the proto-language,
+prosopography) each touch a **design fork** the babysitter is taking to the human before
+building. **Stand by** — keep `main` green; do not start new feature work until a directive
+lands here. (You may, if idle, do *non-fork* hardening only — e.g. CI/test robustness — but
+nothing that commits Archive design.)
 
-Toolchain prevention in force (1.94.1 pin etc.); keep main green; CI is the authority.
+Toolchain prevention in force; CI is the authority.
 
 ---
 
@@ -216,6 +206,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — G16 ✅ complete (lexicon v2, four-way green). **STANDBY**: remaining Archive milestones are fork-gated; babysitter fork-checking the human before the next dispatch.
 - **2026-06-11** — G15 ✅ complete (economy unified, 61235b6, CI-green). **New directive: G16 — lexicon v2** (statistical honesty: Zipf/Heaps/entropy/morphology checklist as unit tests + corpus-shape; fork-free Archive groundwork; output stays nonsense-words, no lore). Deeper Archive milestones briefed next with fork-checks. (Handshakes → G17.)
 - **2026-06-11** — G14 ✅ complete (subroutines a0aaa89, CI-green). **New directive: G15 — comprehension-as-research economy** (the human's unified model: discover→allocate shards→fill→comprehend; domain+rarity-gated; retrofits G9 decode-unlock + G10 spend; faculties fold in; LARGE → split G15a runtime/retrofit, G15b levels). Next: G16a lexicon v2.
 - **2026-06-11** — ✅ RED cleared: CI/Android/Desktop green on `30daefb`. **New directive: G14 — subroutines** (same-agent run(routine) as a no-seams glyph block, cycle guard, duplicate, one-level nested groups, one-register rule). Next: G15 research economy, G16a lexicon v2.
