@@ -63,8 +63,19 @@ now). Wind down only when this channel says the run is over.
   "must-comprehend-script-to-read-names" variant is a human fork, **don't** build it.
 - Game-side only (no engine change expected); golden voxel-hash must stay unchanged; if a
   golden *image* covers inscription content, update it intentionally once, noted.
-- Queue note: **G10 — typed shards** (types + rarities + auto-collectible currency behind
-  `spend`) is next; its brief lands here when ready. Don't pre-build it.
+- **The queue is now published** (briefs staged on this branch — chain straight through,
+  re-reading this channel before each): **G9 → M10 → G10 → G11.**
+  - **M10 — perf telemetry & budget gates** ([`milestones/M10-perf-telemetry.md`](milestones/M10-perf-telemetry.md))
+    — engine frame-cost counters + CI budget tests; deliberately *before* G10 so the gates
+    exist before the next streamed-content layer.
+  - **G10 — typed shards** ([`milestones/G10-typed-shards.md`](milestones/G10-typed-shards.md))
+    — 5 domains × 3 rarities, world-scattered, auto-collectible, first spend faculties.
+    Mind the **opening-parity** requirement (sites stay auto-collected).
+  - **G11 — routine telemetry** ([`milestones/G11-routine-telemetry.md`](milestones/G11-routine-telemetry.md))
+    — per-routine state/counters, live step highlight, the HUD "one lit goal".
+  - The wider plan these come from: [`game-depth.md`](game-depth.md) +
+    [`performance.md`](performance.md) (its §4 rules apply to G10's shard layer). G12+ are
+    sketched there; briefs will land here — don't pre-build past G11.
 
 ---
 
