@@ -8,7 +8,34 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `baa4a73` (G12 2/2 — glyph console complete).
+**Reviewed through:** `1e657cf` (G13 — logic ✅, but main RED on fmt — escalated).
+
+---
+
+## 2026-06-11 · G13 — record-to-program (`1e657cf`)  ⚠️ LOGIC PASSES · 🔴 main RED on fmt (escalated)
+
+**Logic verified:** clippy `-D` clean · **212 tests pass** (locally) · golden voxel-hash +
+headless render byte-identical · `co=`/`pg=`/equality untouched · no engine change. The
+milestone itself is **good**: literal-record contract honored (run-length fold of *adjacent*
+identical only, chunked at `Repeat`'s 1..=9 ceiling, no inference), manual-only sourcing
+tested (autopilot/auto-collect can't pollute the trace), draft = ordinary G7 data, the
+home-row ticker doubles as discoverability, glyph-rendered per G12. The Eager pre-highlight
+correctly **split to G13b** per Decision 4 (it needs act-time target prediction + a marker
+draw — genuinely more than small). On logic alone this is a pass.
+
+**BUT — CI failed on `1e657cf` → `main` is RED.** Authoritative check (the run succeeded on
+G12 `baa4a73`, failed here): the sole failure is `cargo fmt --all --check` at
+`console.rs:2272` (a method-chain CI wraps and the committed code doesn't); clippy/test/wasm
+never ran. **Root cause: rustfmt version skew** — the builder's local rustfmt formatted the
+chain one way, CI's another, so the builder's `--check` passed while CI's failed, and its
+"fmt clean" claim was honest-but-wrong. **Escalated on the channel** with the exact wrap to
+apply + a prevention ask (pin CI's toolchain / prefer wrapped chains). **Blocks G14 until
+green.**
+
+**Process note for the calibration log:** this is the first red-main of the run. Not a
+discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
+fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
+authority; I'll verify CI green on the fix commit before clearing G14.
 
 ---
 
