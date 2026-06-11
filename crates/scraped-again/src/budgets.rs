@@ -47,6 +47,9 @@ pub const FOLIAGE_SPLAT_BUDGET: u32 = 170_000;
 pub const STRUCTURE_SPLAT_BUDGET: u32 = 4_000;
 /// Drifting wisps (E15): a hard cap on the per-frame swarm upload (a cap, not a measurement).
 pub const WISP_SPLAT_BUDGET: u32 = 64;
+/// G10 shard clusters in stream range (charter §4 rule 2 — the new consumer declares its
+/// budget): ~25 shards × ≤7 points ≈ 175 worst-case; pinned with headroom.
+pub const SHARD_SPLAT_BUDGET: u32 = 400;
 
 /// The deterministic *content* counters for one reference scene — what the renderer would be
 /// handed with the streamed set fully loaded around `pos` (camera-independent totals: culling
@@ -61,12 +64,14 @@ pub struct SceneStats {
     pub structure_meshes: u32,
     pub labels: u32,
     pub label_glyphs: u32,
+    /// G10: shard-cluster splats in stream range.
+    pub shard_splats: u32,
 }
 
 impl SceneStats {
     /// Total live splats this scene asks of the splat pipeline (+ the wisp cap).
     pub fn splats(&self) -> u32 {
-        self.foliage_splats + self.structure_points + WISP_SPLAT_BUDGET
+        self.foliage_splats + self.structure_points + self.shard_splats + WISP_SPLAT_BUDGET
     }
     /// Total triangles (terrain + solid structures).
     pub fn tris(&self) -> u32 {
@@ -79,7 +84,7 @@ impl SceneStats {
     /// One `key=value` per line — the machine-readable form the `stats` bin prints.
     pub fn report(&self, scene: &str) -> String {
         format!(
-            "scene={scene}\nchunks={}\ntriangles={}\nfoliage_splats={}\nstructure_points={}\nstructure_tris={}\nstructure_meshes={}\nlabels={}\nlabel_glyphs={}\nsplats_total={}\ntris_total={}\nmesh_draws={}\n",
+            "scene={scene}\nchunks={}\ntriangles={}\nfoliage_splats={}\nstructure_points={}\nstructure_tris={}\nstructure_meshes={}\nlabels={}\nlabel_glyphs={}\nshard_splats={}\nsplats_total={}\ntris_total={}\nmesh_draws={}\n",
             self.chunks,
             self.triangles,
             self.foliage_splats,
@@ -88,6 +93,7 @@ impl SceneStats {
             self.structure_meshes,
             self.labels,
             self.label_glyphs,
+            self.shard_splats,
             self.splats(),
             self.tris(),
             self.mesh_draws(),
@@ -130,6 +136,10 @@ pub fn scene_stats(seed: u32, pos: Vec3) -> SceneStats {
     for m in structures::inscriptions_near(seed, pos, crate::TEXT_RADIUS, ground) {
         st.labels += 1;
         st.label_glyphs += m.text.chars().count() as u32;
+    }
+    // G10: shard clusters in stream range (the new splat consumer — charter §4 rule 2).
+    for sh in crate::shards::shards_near(seed, pos, crate::SHARD_RADIUS, ground) {
+        st.shard_splats += crate::shards::splats(&sh).len() as u32;
     }
     st
 }
@@ -195,11 +205,16 @@ mod tests {
                     actual - budget.min(actual)
                 );
             }
-            // Structure points respect their consumer budget too.
+            // Per-consumer budgets hold too (charter §4 rule 2).
             assert!(
                 st.structure_points <= STRUCTURE_SPLAT_BUDGET,
                 "BUDGET BLOWN [{name}] structure_points: {} > {STRUCTURE_SPLAT_BUDGET}",
                 st.structure_points
+            );
+            assert!(
+                st.shard_splats <= SHARD_SPLAT_BUDGET,
+                "BUDGET BLOWN [{name}] shard_splats: {} > {SHARD_SPLAT_BUDGET}",
+                st.shard_splats
             );
         }
     }

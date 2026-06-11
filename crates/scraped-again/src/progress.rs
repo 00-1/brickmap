@@ -44,6 +44,58 @@ impl Stratum {
 /// Cost (in a stratum's own data) to `decode` / comprehend it (G6). Small + tunable.
 pub const DECODE_COST: u64 = 12;
 
+/// G10: the first **spend faculties** — passive, modest multipliers bought with shards.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Faculty {
+    /// Scan radius +25% / level.
+    Sensing,
+    /// Collect/beam reach +20% / level.
+    Reach,
+    /// Cruise speed +15% / level.
+    Drive,
+}
+
+impl Faculty {
+    pub const ALL: [Faculty; 3] = [Faculty::Sensing, Faculty::Reach, Faculty::Drive];
+    pub fn label(self) -> &'static str {
+        match self {
+            Faculty::Sensing => "sensing",
+            Faculty::Reach => "reach",
+            Faculty::Drive => "drive",
+        }
+    }
+    pub fn idx(self) -> usize {
+        match self {
+            Faculty::Sensing => 0,
+            Faculty::Reach => 1,
+            Faculty::Drive => 2,
+        }
+    }
+}
+
+/// Shard cost of each faculty level (G10 pinned ladder — placeholder numbers, tuned at the
+/// human pass). Level caps at [`MAX_FACULTY_LEVEL`].
+pub const FACULTY_COSTS: [u64; 3] = [25, 75, 200];
+pub const MAX_FACULTY_LEVEL: u8 = 3;
+
+/// The live multipliers a faculty loadout grants (pure; applied at exactly three call sites:
+/// scan range, collect/beam reach, cruise speed — charter §4: no plumbing sprawl).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct FacultyMults {
+    pub sensing: f32,
+    pub reach: f32,
+    pub drive: f32,
+}
+
+/// Multipliers for a set of faculty levels (pure + unit-tested).
+pub fn faculty_mults(levels: [u8; 3]) -> FacultyMults {
+    FacultyMults {
+        sensing: 1.0 + 0.25 * levels[0] as f32,
+        reach: 1.0 + 0.20 * levels[1] as f32,
+        drive: 1.0 + 0.15 * levels[2] as f32,
+    }
+}
+
 impl Stratum {
     /// Short label for the HUD readout.
     pub fn label(self) -> &'static str {
@@ -198,6 +250,13 @@ pub enum Event {
     /// G9: **discover** a block — its name was collected from a name-bearing inscription, so the
     /// console lists it (still stratum-locked until decoded).
     Discover { block: crate::console::Block },
+    /// G10: collect a world **shard** — banks its rarity yield + counts it by domain×rarity.
+    CollectShard {
+        domain: Stratum,
+        rarity: crate::shards::Rarity,
+    },
+    /// G10: **spend** the shard bank on a faculty level (gated on affordability + the level cap).
+    Spend { faculty: Faculty },
 }
 
 /// All run progress: the banked strata + the codex of finds (with a de-dup set) + the set of
@@ -215,6 +274,12 @@ pub struct Progress {
     /// implicitly always discovered — see [`Progress::is_discovered`] — so this set only carries
     /// the gated vocabulary, and pre-G9 payloads load as starter-only.
     discovered: std::collections::HashSet<crate::console::Block>,
+    /// G10: the spendable shard bank (Σ rarity yields of every shard collected, minus spends).
+    shard_bank: u64,
+    /// G10: lifetime shard pickup counts, domain × rarity (display + future domain-matched costs).
+    shard_counts: [[u32; 3]; 5],
+    /// G10: faculty levels (sensing / reach / drive), each capped at [`MAX_FACULTY_LEVEL`].
+    faculties: [u8; 3],
 }
 
 impl Progress {
@@ -313,14 +378,54 @@ impl Progress {
                 }
                 self.discovered.insert(*block)
             }
+            // G10: bank a shard (always changes state — shards are bulk currency, no dedup).
+            Event::CollectShard { domain, rarity } => {
+                self.shard_bank += rarity.yield_amount();
+                self.shard_counts[domain.byte() as usize][rarity.idx()] += 1;
+                true
+            }
+            // G10: buy the next level of a faculty — gated on the cap + affordability.
+            Event::Spend { faculty } => {
+                let lvl = self.faculties[faculty.idx()];
+                if lvl >= MAX_FACULTY_LEVEL {
+                    return false;
+                }
+                let cost = FACULTY_COSTS[lvl as usize];
+                if self.shard_bank < cost {
+                    return false;
+                }
+                self.shard_bank -= cost;
+                self.faculties[faculty.idx()] += 1;
+                true
+            }
         }
+    }
+
+    /// G10: the spendable shard bank.
+    pub fn shard_bank(&self) -> u64 {
+        self.shard_bank
+    }
+
+    /// G10: lifetime pickups for one domain (summed over rarities — the HUD per-domain line).
+    pub fn shard_count(&self, d: Stratum) -> u32 {
+        self.shard_counts[d.byte() as usize].iter().sum()
+    }
+
+    /// G10: the current faculty levels (sensing / reach / drive).
+    pub fn faculty_levels(&self) -> [u8; 3] {
+        self.faculties
+    }
+
+    /// G10: the live faculty multipliers (see [`faculty_mults`]).
+    pub fn faculties(&self) -> FacultyMults {
+        faculty_mults(self.faculties)
     }
 
     /// Encode as a `pg=<hex>` share segment (binary blob → hex; unicode- and URL-safe). The
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(4u8); // version (2 = + scanned, G3; 3 = + comprehended, G6; 4 = + discovered, G9)
+        b.push(5u8); // version (…; 4 = + discovered, G9; 5 = + shards/faculties, G10)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -358,6 +463,14 @@ impl Progress {
         disc.sort_unstable();
         b.push(disc.len() as u8);
         b.extend_from_slice(&disc);
+        // v5: the shard economy (G10) — bank, 5×3 counts, 3 faculty levels.
+        b.extend_from_slice(&self.shard_bank.to_le_bytes());
+        for row in &self.shard_counts {
+            for c in row {
+                b.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        b.extend_from_slice(&self.faculties);
         format!("pg={}", to_hex(&b))
     }
 
@@ -408,7 +521,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if !(1..=4).contains(&version) {
+    if !(1..=5).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -464,6 +577,19 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             }
         }
     }
+    // v5: the shard economy (G10; absent pre-v5 → zeroed).
+    let mut shard_bank = 0u64;
+    let mut shard_counts = [[0u32; 3]; 5];
+    let mut faculties = [0u8; 3];
+    if version >= 5 {
+        shard_bank = u64at(&mut p)?;
+        for row in &mut shard_counts {
+            for c in row.iter_mut() {
+                *c = u32::from_le_bytes(take(&mut p, 4)?.try_into().ok()?);
+            }
+        }
+        faculties.copy_from_slice(take(&mut p, 3)?);
+    }
     Some(Progress {
         strata,
         codex,
@@ -471,6 +597,9 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         scanned,
         comprehended,
         discovered,
+        shard_bank,
+        shard_counts,
+        faculties,
     })
 }
 
@@ -505,6 +634,9 @@ impl PartialEq for Progress {
             && self.scanned == other.scanned
             && self.comprehended == other.comprehended
             && self.discovered == other.discovered
+            && self.shard_bank == other.shard_bank
+            && self.shard_counts == other.shard_counts
+            && self.faculties == other.faculties
     }
 }
 
@@ -702,6 +834,78 @@ mod tests {
         let v3 = Progress::decode(&format!("pg={v3_hex}"));
         assert!(v3.is_discovered(Block::Collect)); // starters implicit
         assert!(!v3.is_discovered(Block::Seek)); // gated: undiscovered
+    }
+
+    #[test]
+    fn shards_bank_spend_and_round_trip_v5() {
+        use crate::shards::Rarity;
+        let mut p = Progress::default();
+        // Bank: 3 commons + 1 uncommon + 1 rare = 3·1 + 3 + 9 = 15; counts by domain×rarity.
+        for _ in 0..3 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Records,
+                rarity: Rarity::Common,
+            });
+        }
+        p.apply(&Event::CollectShard {
+            domain: Stratum::Relics,
+            rarity: Rarity::Uncommon,
+        });
+        p.apply(&Event::CollectShard {
+            domain: Stratum::Signals,
+            rarity: Rarity::Rare,
+        });
+        assert_eq!(p.shard_bank(), 15);
+        assert_eq!(p.shard_count(Stratum::Records), 3);
+        assert_eq!(p.shard_count(Stratum::Signals), 1);
+        // Spend: unaffordable (sensing costs 25 > 15) → no-op; bank some more and buy level 1.
+        assert!(!p.apply(&Event::Spend {
+            faculty: Faculty::Sensing
+        }));
+        for _ in 0..2 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Rites,
+                rarity: Rarity::Rare,
+            });
+        }
+        assert_eq!(p.shard_bank(), 33);
+        assert!(p.apply(&Event::Spend {
+            faculty: Faculty::Sensing
+        }));
+        assert_eq!(p.faculty_levels(), [1, 0, 0]);
+        assert_eq!(p.shard_bank(), 33 - 25);
+        // Round-trips through pg= v5; old v4-style payloads still load (zeroed economy).
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p);
+        assert_eq!(back.shard_bank(), 8);
+        assert_eq!(back.faculty_levels(), [1, 0, 0]);
+    }
+
+    #[test]
+    fn faculty_mults_scale_per_level_and_costs_escalate() {
+        let base = faculty_mults([0, 0, 0]);
+        assert_eq!(base.sensing, 1.0);
+        assert_eq!(base.reach, 1.0);
+        assert_eq!(base.drive, 1.0);
+        let maxed = faculty_mults([3, 3, 3]);
+        assert!((maxed.sensing - 1.75).abs() < 1e-6);
+        assert!((maxed.reach - 1.60).abs() < 1e-6);
+        assert!((maxed.drive - 1.45).abs() < 1e-6);
+        // The ladder escalates; the cap holds.
+        assert!(FACULTY_COSTS[0] < FACULTY_COSTS[1] && FACULTY_COSTS[1] < FACULTY_COSTS[2]);
+        let mut p = Progress::default();
+        for _ in 0..400 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Records,
+                rarity: crate::shards::Rarity::Rare,
+            });
+        }
+        for _ in 0..5 {
+            p.apply(&Event::Spend {
+                faculty: Faculty::Drive,
+            });
+        }
+        assert_eq!(p.faculty_levels()[2], MAX_FACULTY_LEVEL, "level caps at 3");
     }
 
     #[test]

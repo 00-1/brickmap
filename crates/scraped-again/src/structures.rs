@@ -159,7 +159,10 @@ fn name_pick(h: u32) -> crate::console::Block {
             table.push(b);
         }
     }
-    table[(h >> 3) as usize % table.len()]
+    // Remix so the pick is independent of the name-gate bits (the gate fixes bits of `h`;
+    // without the remix some table residues — whole blocks — were unreachable).
+    let hh = h.wrapping_mul(0x9E37_79B9) >> 7;
+    table[hh as usize % table.len()]
 }
 
 /// Compose a deterministic abstract inscription (1–2 short "words") from a cell hash: a script,
@@ -347,11 +350,18 @@ mod tests {
             assert_eq!(transliterate(b.name(), s), transliterate(b.name(), s));
             assert!(!transliterate(b.name(), s).is_empty());
         }
-        // Distinct: no two blocks' names collide (within or across scripts) — each is readable
-        // as ITS name. (The brief's collision test.)
-        let all: Vec<String> = Block::ALL
+        // Distinct: no two DIFFERENT names collide after transliteration — each reads as ITS
+        // name. (Parameterised families — scan items, spend faculties — intentionally share one
+        // family name, so distinctness is over unique names.)
+        let mut names: Vec<&str> = Block::ALL.iter().map(|b| b.name()).collect();
+        names.sort_unstable();
+        names.dedup();
+        let all: Vec<String> = names
             .iter()
-            .map(|b| transliterate(b.name(), block_script(*b)))
+            .map(|n| {
+                let b = Block::ALL.iter().find(|b| b.name() == *n).unwrap();
+                transliterate(n, block_script(*b))
+            })
             .collect();
         for i in 0..all.len() {
             for j in (i + 1)..all.len() {
@@ -416,8 +426,9 @@ mod tests {
             for b in Block::ALL {
                 assert!(
                     found.contains(&b.code()),
-                    "seed {seed}: block '{}' has no findable name within 2500 units",
-                    b.name()
+                    "seed {seed}: block '{}' (code {}) has no findable name within 2500 units",
+                    b.name(),
+                    b.code()
                 );
             }
         }

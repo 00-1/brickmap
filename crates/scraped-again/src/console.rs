@@ -30,17 +30,19 @@ use std::collections::HashSet;
 
 use crate::progress::Stratum;
 
-/// The item a `scan` block senses. v1 has only `shards` (the data sites); the parameterised
-/// form (`scan(item)`) is here so the model carries block params uniformly (G7 cleanup).
+/// The item a `scan` block senses (G10: scan is honest now — `shards` senses the typed shard
+/// items, `sites` senses inscription sites, each its own scannable).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ScanItem {
     Shards,
+    Sites,
 }
 
 impl ScanItem {
     pub fn label(self) -> &'static str {
         match self {
             ScanItem::Shards => "shards",
+            ScanItem::Sites => "sites",
         }
     }
 }
@@ -50,14 +52,23 @@ impl ScanItem {
 /// good stuff"). Recovered by comprehending **Rites**.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum MatchField {
-    /// Only rare strata (Relics + Signals).
+    /// Only rare strata (Relics + Signals) — and, for shards (G10), only rare rarity.
     Rare,
+    /// G10: only one shard **domain** (the five strata; also filters inscriptions by stratum).
+    Domain(Stratum),
 }
 
 impl MatchField {
     pub fn label(self) -> &'static str {
         match self {
             MatchField::Rare => "rare",
+            MatchField::Domain(d) => match d {
+                Stratum::Records => "records",
+                Stratum::Schematics => "schematics",
+                Stratum::Rites => "rites",
+                Stratum::Relics => "relics",
+                Stratum::Signals => "signals",
+            },
         }
     }
     /// The stratum whose comprehension recovers the `match` step.
@@ -96,28 +107,31 @@ impl Agent {
 /// modifier [`Step`]s, so this enum is exactly "things an agent can *do*".
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Block {
-    Scan(ScanItem), // sense sites of `item` in the forward cone (G3)
-    Collect,        // collect the aimed/nearest in-reach site (G1)
-    FireBeam,       // cast the survey-beam (G2)
-    Decode,         // decode/comprehend the richest affordable stratum (G6)
-    Spend,          // spend a shard on a faculty (vocabulary stub — no targets yet)
-    Goto,           // direct travel to a picked map target (vocabulary stub — no map picker yet)
-    Drift,          // aimless cinematic wander — the default autopilot
-    Seek,           // head to the nearest known-uncollected site (ship nav)
-    Circle,         // loiter / orbit the current area (ship nav)
-    Walk,           // on foot, walk to the nearest known site (foot nav — G8c)
-    Hail,           // recall the autonomous/parked ship to the walker (G8a — foot/shared)
-    RunFoot,        // cross-agent: deploy the walker to collect on foot (G8c — the expedition)
+    Scan(ScanItem),                  // sense sites of `item` in the forward cone (G3)
+    Collect,                         // collect the aimed/nearest in-reach site (G1)
+    FireBeam,                        // cast the survey-beam (G2)
+    Decode,                          // decode/comprehend the richest affordable stratum (G6)
+    Spend(crate::progress::Faculty), // spend banked shards on a faculty level (G10)
+    Goto,    // direct travel to a picked map target (vocabulary stub — no map picker yet)
+    Drift,   // aimless cinematic wander — the default autopilot
+    Seek,    // head to the nearest known-uncollected site (ship nav)
+    Circle,  // loiter / orbit the current area (ship nav)
+    Walk,    // on foot, walk to the nearest known site (foot nav — G8c)
+    Hail,    // recall the autonomous/parked ship to the walker (G8a — foot/shared)
+    RunFoot, // cross-agent: deploy the walker to collect on foot (G8c — the expedition)
 }
 
 impl Block {
     /// The full block vocabulary (G9: every one of these has a **name** findable in the world).
-    pub const ALL: [Block; 12] = [
+    pub const ALL: [Block; 15] = [
         Block::Scan(ScanItem::Shards),
+        Block::Scan(ScanItem::Sites),
         Block::Collect,
         Block::FireBeam,
         Block::Decode,
-        Block::Spend,
+        Block::Spend(crate::progress::Faculty::Sensing),
+        Block::Spend(crate::progress::Faculty::Reach),
+        Block::Spend(crate::progress::Faculty::Drive),
         Block::Goto,
         Block::Drift,
         Block::Seek,
@@ -135,7 +149,7 @@ impl Block {
             Block::Collect => "collect",
             Block::FireBeam => "beam",
             Block::Decode => "decode",
-            Block::Spend => "spend",
+            Block::Spend(_) => "spend",
             Block::Goto => "goto",
             Block::Drift => "drift",
             Block::Seek => "seek",
@@ -153,7 +167,7 @@ impl Block {
             Block::Collect => 1,
             Block::FireBeam => 2,
             Block::Decode => 3,
-            Block::Spend => 4,
+            Block::Spend(_) => 4, // the spend family shares one code (starter: never persisted)
             Block::Goto => 5,
             Block::Drift => 6,
             Block::Seek => 7,
@@ -173,11 +187,16 @@ impl Block {
         match self {
             Block::Scan(i) => match i {
                 ScanItem::Shards => "scan(shards)",
+                ScanItem::Sites => "scan(sites)",
             },
             Block::Collect => "collect",
             Block::FireBeam => "fire-beam",
             Block::Decode => "decode",
-            Block::Spend => "spend",
+            Block::Spend(f) => match f {
+                crate::progress::Faculty::Sensing => "spend(sensing)",
+                crate::progress::Faculty::Reach => "spend(reach)",
+                crate::progress::Faculty::Drive => "spend(drive)",
+            },
             Block::Goto => "goto(area)",
             Block::Drift => "drift",
             Block::Seek => "seek(uncollected)",
@@ -200,9 +219,9 @@ impl Block {
         }
     }
 
-    /// Wired to a real effect? (`spend`/`goto` are vocabulary stubs for now.)
+    /// Wired to a real effect? (`goto` is the remaining vocabulary stub.)
     pub fn wired(self) -> bool {
-        !matches!(self, Block::Spend | Block::Goto)
+        !matches!(self, Block::Goto)
     }
 
     /// Is this a navigation block (it steers an agent rather than firing an effect)?
@@ -225,7 +244,7 @@ impl Block {
             | Block::Goto
             | Block::RunFoot => Some(Agent::Ship),
             Block::FireBeam | Block::Walk => Some(Agent::Foot),
-            Block::Collect | Block::Decode | Block::Spend | Block::Hail => None, // shared
+            Block::Collect | Block::Decode | Block::Spend(_) | Block::Hail => None, // shared
         }
     }
 
@@ -280,16 +299,19 @@ fn step_for_agent(step: Step, agent: Agent) -> bool {
     }
 }
 
-/// A state the `when` trigger can test. v1: the **total banked data** (all strata).
+/// A state the `when` trigger can test: the total banked **data** (all strata), or the shard
+/// **bank** (G10) — so `when(shards ≥ N) → spend(…)` is wireable.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum State {
     Data,
+    Shards,
 }
 
 impl State {
     pub fn label(self) -> &'static str {
         match self {
             State::Data => "data",
+            State::Shards => "shards",
         }
     }
 }
@@ -302,9 +324,10 @@ pub struct Cond {
 }
 
 impl Cond {
-    fn holds(self, value: u32) -> bool {
+    fn holds(self, data: u32, shards: u32) -> bool {
         match self.state {
-            State::Data => value >= self.min,
+            State::Data => data >= self.min,
+            State::Shards => shards >= self.min,
         }
     }
 }
@@ -392,8 +415,10 @@ pub struct Act {
 pub struct Tick {
     /// Autopilot steering from a continuous nav routine (`None` ⇒ no drift routine ⇒ autopilot off).
     pub nav: Option<Block>,
-    /// A continuous routine wants to pulse the scan (the app throttles it to `scan::INTERVAL`).
+    /// A continuous routine wants to pulse the **site** scan (throttled to `scan::INTERVAL`).
     pub scan: bool,
+    /// G10: a continuous routine wants to pulse the **shard** scan (same throttle).
+    pub scan_shards: bool,
     /// Other one-shot acts to dispatch this tick (continuous non-nav/non-scan + `when`-edge fires).
     pub acts: Vec<Act>,
 }
@@ -457,6 +482,16 @@ impl Default for Console {
                     "survey",
                     Agent::Ship,
                     Trigger::Continuous,
+                    // G10 opening parity: the given survey scans inscription *sites* exactly as
+                    // it always effectively did (G3 autoscan + map pins unchanged)…
+                    vec![Step::Do(Block::Scan(ScanItem::Sites))],
+                ),
+                Routine::new(
+                    "prospect",
+                    Agent::Ship,
+                    Trigger::Continuous,
+                    // …and a fourth given scans the new typed shards, so the opening hands-off
+                    // loop collects both (brief Decision 4: two givens is fine — they're data).
                     vec![Step::Do(Block::Scan(ScanItem::Shards))],
                 ),
                 Routine::new(
@@ -468,9 +503,13 @@ impl Default for Console {
             ],
             palette: vec![
                 Block::Scan(ScanItem::Shards),
+                Block::Scan(ScanItem::Sites),
                 Block::Collect,
                 Block::FireBeam,
                 Block::Decode,
+                Block::Spend(crate::progress::Faculty::Sensing),
+                Block::Spend(crate::progress::Faculty::Reach),
+                Block::Spend(crate::progress::Faculty::Drive),
                 Block::Goto,
                 Block::Drift,
             ],
@@ -510,6 +549,7 @@ impl Console {
     pub fn vocabulary(&self, agent: Agent) -> Vec<Step> {
         let all = [
             Step::Do(Block::Scan(ScanItem::Shards)),
+            Step::Do(Block::Scan(ScanItem::Sites)),
             Step::Do(Block::Collect),
             Step::Do(Block::FireBeam),
             Step::Do(Block::Decode),
@@ -518,10 +558,17 @@ impl Console {
             Step::Do(Block::Circle),
             Step::Do(Block::Walk),
             Step::Do(Block::Goto),
-            Step::Do(Block::Spend),
+            Step::Do(Block::Spend(crate::progress::Faculty::Sensing)),
+            Step::Do(Block::Spend(crate::progress::Faculty::Reach)),
+            Step::Do(Block::Spend(crate::progress::Faculty::Drive)),
             Step::Do(Block::Hail),
             Step::Do(Block::RunFoot),
             Step::Match(MatchField::Rare),
+            Step::Match(MatchField::Domain(Stratum::Records)),
+            Step::Match(MatchField::Domain(Stratum::Schematics)),
+            Step::Match(MatchField::Domain(Stratum::Rites)),
+            Step::Match(MatchField::Domain(Stratum::Relics)),
+            Step::Match(MatchField::Domain(Stratum::Signals)),
             Step::Repeat(2),
         ];
         all.into_iter()
@@ -553,10 +600,10 @@ impl Console {
     }
 
     /// Run one interpreter tick for `agent`'s **continuous** / **when** / **on-arrive** routines,
-    /// given the current `data` (total banked strata) for `when` conditions and whether the agent
-    /// has just `arrived` at the site it's heading to. Returns this tick's [`Tick`] intents.
-    /// (`on-scan` routines fire separately, on a scan hit — see [`Console::on_scan_acts`].)
-    pub fn tick(&mut self, agent: Agent, data: u32, arrived: bool) -> Tick {
+    /// given the current `data` (total banked strata) + `shards` (the G10 bank) for `when`
+    /// conditions and whether the agent has just `arrived` at the site it's heading to. Returns
+    /// this tick's [`Tick`] intents. (`on-scan` routines fire on a scan hit — [`Console::on_scan_acts`].)
+    pub fn tick(&mut self, agent: Agent, data: u32, shards: u32, arrived: bool) -> Tick {
         let mut t = Tick::default();
         for r in &mut self.routines {
             if r.agent != agent {
@@ -571,8 +618,10 @@ impl Console {
                     for act in Self::expand(&r.body) {
                         if act.block.is_nav() {
                             t.nav = Some(act.block);
-                        } else if matches!(act.block, Block::Scan(_)) {
+                        } else if matches!(act.block, Block::Scan(ScanItem::Sites)) {
                             t.scan = true;
+                        } else if matches!(act.block, Block::Scan(ScanItem::Shards)) {
+                            t.scan_shards = true;
                         } else {
                             t.acts.push(act);
                         }
@@ -580,7 +629,7 @@ impl Console {
                 }
                 Trigger::OnScan => {} // fired on a scan hit, not per tick
                 Trigger::When(c) => {
-                    let sat = c.holds(data);
+                    let sat = c.holds(data, shards);
                     if sat && !r.armed {
                         t.acts.extend(Self::expand(&r.body)); // rising edge → fire once
                     }
@@ -780,13 +829,20 @@ impl Console {
                 state: State::Data,
                 min: 10,
             }),
+            Trigger::When(Cond {
+                state: State::Shards,
+                min: 25,
+            }),
             Trigger::OnArrive,
         ];
-        // Compare by discriminant so the current `When(min)` matches the `When` slot.
+        // Match the current trigger by `when`-STATE (min is user-set, so compare the state, not
+        // the value), else by discriminant — so both `when` kinds are reachable in the cycle.
+        let cur_t = self.routines[r].trigger;
         let cur = kinds
             .iter()
-            .position(|k| {
-                std::mem::discriminant(k) == std::mem::discriminant(&self.routines[r].trigger)
+            .position(|k| match (k, &cur_t) {
+                (Trigger::When(a), Trigger::When(b)) => a.state == b.state,
+                _ => std::mem::discriminant(k) == std::mem::discriminant(&cur_t),
             })
             .unwrap_or(0) as i32;
         let n = kinds.len() as i32;
@@ -800,10 +856,17 @@ impl Console {
             return;
         }
         let cur = self.routines[r].body[s];
-        // Find the current step in the vocabulary by *kind* (so a Repeat(5) matches the Repeat slot).
+        // Find the current step in the vocabulary by full value first (so parameterised families
+        // — scan items, spend faculties, match domains — cycle through their variants), falling
+        // back to *kind* (so a Repeat(5) still matches the Repeat slot).
         let pos = vocab
             .iter()
-            .position(|v| std::mem::discriminant(v) == std::mem::discriminant(&cur))
+            .position(|v| *v == cur)
+            .or_else(|| {
+                vocab
+                    .iter()
+                    .position(|v| std::mem::discriminant(v) == std::mem::discriminant(&cur))
+            })
             .unwrap_or(0) as i32;
         let n = vocab.len() as i32;
         self.routines[r].body[s] = vocab[(((pos + i) % n + n) % n) as usize];
@@ -836,10 +899,13 @@ impl Console {
     fn step_code(s: Step) -> String {
         match s {
             Step::Do(Block::Scan(ScanItem::Shards)) => "S".into(),
+            Step::Do(Block::Scan(ScanItem::Sites)) => "T".into(),
             Step::Do(Block::Collect) => "C".into(),
             Step::Do(Block::FireBeam) => "B".into(),
             Step::Do(Block::Decode) => "D".into(),
-            Step::Do(Block::Spend) => "p".into(),
+            Step::Do(Block::Spend(crate::progress::Faculty::Sensing)) => "p".into(),
+            Step::Do(Block::Spend(crate::progress::Faculty::Reach)) => "P".into(),
+            Step::Do(Block::Spend(crate::progress::Faculty::Drive)) => "q".into(),
             Step::Do(Block::Goto) => "g".into(),
             Step::Do(Block::Drift) => "d".into(),
             Step::Do(Block::Seek) => "k".into(),
@@ -848,6 +914,16 @@ impl Console {
             Step::Do(Block::Hail) => "H".into(),
             Step::Do(Block::RunFoot) => "R".into(),
             Step::Match(MatchField::Rare) => "m".into(),
+            Step::Match(MatchField::Domain(d)) => format!(
+                "M{}",
+                match d {
+                    Stratum::Records => '0',
+                    Stratum::Schematics => '1',
+                    Stratum::Rites => '2',
+                    Stratum::Relics => '3',
+                    Stratum::Signals => '4',
+                }
+            ),
             Step::Repeat(n) => format!("r{n}"),
         }
     }
@@ -858,10 +934,13 @@ impl Console {
         while let Some(c) = it.next() {
             let step = match c {
                 'S' => Step::Do(Block::Scan(ScanItem::Shards)),
+                'T' => Step::Do(Block::Scan(ScanItem::Sites)),
                 'C' => Step::Do(Block::Collect),
                 'B' => Step::Do(Block::FireBeam),
                 'D' => Step::Do(Block::Decode),
-                'p' => Step::Do(Block::Spend),
+                'p' => Step::Do(Block::Spend(crate::progress::Faculty::Sensing)),
+                'P' => Step::Do(Block::Spend(crate::progress::Faculty::Reach)),
+                'q' => Step::Do(Block::Spend(crate::progress::Faculty::Drive)),
                 'g' => Step::Do(Block::Goto),
                 'd' => Step::Do(Block::Drift),
                 'k' => Step::Do(Block::Seek),
@@ -870,6 +949,16 @@ impl Console {
                 'H' => Step::Do(Block::Hail),
                 'R' => Step::Do(Block::RunFoot),
                 'm' => Step::Match(MatchField::Rare),
+                'M' => {
+                    let d = match it.next() {
+                        Some('1') => Stratum::Schematics,
+                        Some('2') => Stratum::Rites,
+                        Some('3') => Stratum::Relics,
+                        Some('4') => Stratum::Signals,
+                        _ => Stratum::Records, // '0' / missing
+                    };
+                    Step::Match(MatchField::Domain(d))
+                }
                 'r' => {
                     let mut num = String::new();
                     while let Some(d) = it.peek().filter(|d| d.is_ascii_digit()) {
@@ -889,7 +978,11 @@ impl Console {
         match t {
             Trigger::Continuous => "c".into(),
             Trigger::OnScan => "s".into(),
-            Trigger::When(c) => format!("w:{}", c.min),
+            // `w:{min}` = when(data) (the pre-G10 form, kept); `wS:{min}` = when(shards).
+            Trigger::When(c) => match c.state {
+                State::Data => format!("w:{}", c.min),
+                State::Shards => format!("wS:{}", c.min),
+            },
             Trigger::OnArrive => "a".into(),
         }
     }
@@ -899,7 +992,11 @@ impl Console {
             Some('s') => Trigger::OnScan,
             Some('a') => Trigger::OnArrive,
             Some('w') => Trigger::When(Cond {
-                state: State::Data,
+                state: if s.starts_with("wS") {
+                    State::Shards
+                } else {
+                    State::Data // the pre-G10 `w:` form
+                },
                 min: s
                     .split(':')
                     .nth(1)
@@ -1071,16 +1168,19 @@ mod tests {
     #[test]
     fn given_routines_are_plain_data() {
         let c = Console::default();
-        // Three givens, all ordinary instances (no per-name behaviour anywhere).
-        assert_eq!(c.routines.len(), 3);
+        // Four givens (G10 added `prospect`), all ordinary instances (no per-name behaviour).
+        assert_eq!(c.routines.len(), 4);
         let drift = &c.routines[0];
         assert_eq!(drift.name, "drift");
         assert!(drift.is_nav());
         assert_eq!(drift.trigger, Trigger::Continuous);
         let survey = &c.routines[1];
         assert_eq!(survey.trigger, Trigger::Continuous);
-        assert_eq!(survey.body, vec![Step::Do(Block::Scan(ScanItem::Shards))]);
-        let collect = &c.routines[2];
+        assert_eq!(survey.body, vec![Step::Do(Block::Scan(ScanItem::Sites))]); // opening parity
+        let prospect = &c.routines[2];
+        assert_eq!(prospect.trigger, Trigger::Continuous);
+        assert_eq!(prospect.body, vec![Step::Do(Block::Scan(ScanItem::Shards))]);
+        let collect = &c.routines[3];
         assert_eq!(collect.trigger, Trigger::OnScan);
         assert_eq!(collect.body, vec![Step::Do(Block::Collect)]);
     }
@@ -1088,7 +1188,7 @@ mod tests {
     #[test]
     fn interpreter_runs_the_givens() {
         let mut c = Console::default();
-        let t = c.tick(Agent::Ship, 0, false);
+        let t = c.tick(Agent::Ship, 0, 0, false);
         // drift → nav steering; survey → scan request; collect is on-scan (not in the tick).
         assert_eq!(t.nav, Some(Block::Drift));
         assert!(t.scan);
@@ -1107,7 +1207,7 @@ mod tests {
     fn disabling_drift_drops_the_nav_intent() {
         let mut c = Console::default();
         c.toggle_routine(0); // drift off
-        let t = c.tick(Agent::Ship, 0, false);
+        let t = c.tick(Agent::Ship, 0, 0, false);
         assert_eq!(t.nav, None); // no continuous nav routine ⇒ autopilot off
         assert!(t.scan); // survey still scans
     }
@@ -1117,7 +1217,7 @@ mod tests {
         let mut c = Console::default();
         c.unlocked.insert(Stratum::Rites); // recover match()
                                            // Author the collect routine to "match(rare) → collect".
-        c.routines[2].body = vec![Step::Match(MatchField::Rare), Step::Do(Block::Collect)];
+        c.routines[3].body = vec![Step::Match(MatchField::Rare), Step::Do(Block::Collect)];
         assert_eq!(
             c.on_scan_acts(Agent::Ship),
             vec![Act {
@@ -1154,8 +1254,8 @@ mod tests {
             }),
             vec![Step::Do(Block::Decode)],
         ));
-        assert!(c.tick(Agent::Ship, 5, false).acts.is_empty()); // below threshold
-        let fired = c.tick(Agent::Ship, 12, false); // crosses ⇒ fires once
+        assert!(c.tick(Agent::Ship, 5, 0, false).acts.is_empty()); // below threshold
+        let fired = c.tick(Agent::Ship, 12, 0, false); // crosses ⇒ fires once
         assert_eq!(
             fired.acts,
             vec![Act {
@@ -1163,9 +1263,9 @@ mod tests {
                 filter: None
             }]
         );
-        assert!(c.tick(Agent::Ship, 12, false).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
-        c.tick(Agent::Ship, 0, false); // drop below ⇒ re-arm
-        assert!(!c.tick(Agent::Ship, 20, false).acts.is_empty()); // crosses again ⇒ fires
+        assert!(c.tick(Agent::Ship, 12, 0, false).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
+        c.tick(Agent::Ship, 0, 0, false); // drop below ⇒ re-arm
+        assert!(!c.tick(Agent::Ship, 20, 0, false).acts.is_empty()); // crosses again ⇒ fires
     }
 
     #[test]
@@ -1178,13 +1278,13 @@ mod tests {
             Trigger::OnArrive,
             vec![Step::Do(Block::Decode)],
         ));
-        assert!(c.tick(Agent::Ship, 0, false).acts.is_empty()); // not arrived
-        let fired = c.tick(Agent::Ship, 0, true); // reaches a site → fires once
+        assert!(c.tick(Agent::Ship, 0, 0, false).acts.is_empty()); // not arrived
+        let fired = c.tick(Agent::Ship, 0, 0, true); // reaches a site → fires once
         assert!(fired.acts.iter().any(|a| a.block == Block::Decode));
-        assert!(c.tick(Agent::Ship, 0, true).acts.is_empty()); // still there ⇒ no re-fire
-        c.tick(Agent::Ship, 0, false); // leaves ⇒ re-arm
-        assert!(!c.tick(Agent::Ship, 0, true).acts.is_empty()); // arrives again ⇒ fires
-                                                                // The trigger round-trips through `co=`.
+        assert!(c.tick(Agent::Ship, 0, 0, true).acts.is_empty()); // still there ⇒ no re-fire
+        c.tick(Agent::Ship, 0, 0, false); // leaves ⇒ re-arm
+        assert!(!c.tick(Agent::Ship, 0, 0, true).acts.is_empty()); // arrives again ⇒ fires
+                                                                   // The trigger round-trips through `co=`.
         let mut back = Console::default();
         back.restore(&c.encode());
         assert_eq!(back.routines, c.routines);
@@ -1194,7 +1294,7 @@ mod tests {
     fn create_insert_remove_reorder() {
         let mut c = Console::default();
         let i = c.create_routine(Agent::Ship);
-        assert_eq!(c.routines.len(), 4);
+        assert_eq!(c.routines.len(), 5);
         assert_eq!(c.view, View::Edit(i));
         assert!(c.routines[i].body.is_empty());
         // Insert a step (cursor on the trigger row → inserts at front).
@@ -1276,7 +1376,7 @@ mod tests {
         c.open_editor(1);
         c.delete_routine(1);
         assert_eq!(c.view, View::Home);
-        assert_eq!(c.routines.len(), 2);
+        assert_eq!(c.routines.len(), 3);
     }
 
     #[test]
@@ -1301,10 +1401,28 @@ mod tests {
         let mut back = Console::default();
         back.restore(&s);
         assert_eq!(back.routines, c.routines);
-        // Lenient: no co= leaves the givens.
+        // G10: a shards-gated spend routine round-trips too (new step codes).
+        let mut c2 = Console::default();
+        c2.routines.push(Routine::new(
+            "auto-spend",
+            Agent::Ship,
+            Trigger::When(Cond {
+                state: State::Shards,
+                min: 25,
+            }),
+            vec![
+                Step::Do(Block::Spend(crate::progress::Faculty::Reach)),
+                Step::Do(Block::Scan(ScanItem::Sites)),
+                Step::Match(MatchField::Domain(Stratum::Relics)),
+            ],
+        ));
+        let mut back2 = Console::default();
+        back2.restore(&c2.encode());
+        assert_eq!(back2.routines, c2.routines);
+        // Lenient: no co= leaves the givens (4 since G10's `prospect`).
         let mut d = Console::default();
         d.restore("s=1&x=2");
-        assert_eq!(d.routines.len(), 3);
+        assert_eq!(d.routines.len(), 4);
         assert_eq!(d.routines[0].body, vec![Step::Do(Block::Drift)]);
     }
 

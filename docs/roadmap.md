@@ -793,6 +793,19 @@ stratum decoded → insertable) replacing "decode unlocks the whole stratum at o
   round-trip + v3 compat, console tri-state. 192 tests; golden voxel-hash unchanged; no engine
   change.
 
+### ✨ G10 — Typed shards (the collectible currency) ✅ &nbsp;→ [`milestones/G10-typed-shards.md`](milestones/G10-typed-shards.md)
+Shards become **real world items**: seed-scattered on their own grid, **5 domains** (the strata,
+script-tinted) × **3 rarities** (~85/13/2, yield 1/3/9, rare = a visible glint), streamed +
+rendered as small emissive splat clusters, sensed by an honest **`scan(shards)`** (`scan(sites)`
+now names the inscription scan; the given `survey` keeps sites — **opening parity** — and a new
+given `prospect` scans shards), collected by **every** route (T / beam-path / routine
+auto-collect, `match` filtering by **rarity + domain**), banked + counted (`pg=` v5; HUD
+readout), and **spent**: `spend(sensing|reach|drive)` — 3 levels, 25/75/200 — with effects as
+pure tested multipliers at exactly three sites (scan range / collect reach / cruise speed);
+wireable via the new `when(shards ≥ N)`. The M10 gates count + gate the new splat consumer.
+199 tests; golden voxel-hash unchanged; no engine change. *(Session-only per-item respawn +
+economy numbers flagged for the tuning pass — see the brief's as-built.)*
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear

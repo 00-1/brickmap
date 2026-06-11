@@ -48,6 +48,8 @@ pub mod weather;
 pub mod touch;
 // Performance budgets + reference-scene CI gates (M10) — the charter's regression anchor.
 pub mod budgets;
+// Typed shards (G10): the collectible upgrade currency (domains × rarities), world-scattered.
+pub mod shards;
 // Decipherment lexicon (G6): a seeded grammar that renders a comprehended script as words.
 pub mod lexicon;
 // The curated colour ramps (one per biome) — art-direction the engine doesn't carry.
@@ -145,6 +147,8 @@ struct App {
     nav_intent: Option<console::Block>,
     /// G7: a continuous routine asked to scan this frame (the app throttles it to `scan::INTERVAL`).
     scan_wanted: bool,
+    /// G10: a continuous routine asked to scan **shards** this frame (same throttle).
+    scan_shards_wanted: bool,
     /// G8a: the **autonomous ship**'s own heading clock + heading + scan cadence, used while you're
     /// on foot and the cruiser flies its routine independently (separate from the camera's).
     ship_t: f32,
@@ -261,6 +265,12 @@ struct App {
     touch_pressed: Option<(touch::Region, f32)>,
     /// G9: the most recent block-name discovery + when, for the transient HUD announce.
     last_discovery: Option<(console::Block, f32)>,
+    /// G10: the streamed-in shard items near the camera, the session's collected cells (bulk
+    /// currency — not persisted per-item; the *bank* persists), and a rebuild flag.
+    shards: Vec<shards::Shard>,
+    shards_taken: HashSet<(i32, i32)>,
+    shards_dirty: bool,
+    shard_splats: Vec<foliage::SplatInstance>,
     /// cpal doom-drone output (E16). `None` if no audio device. Desktop + Android.
     #[cfg(not(target_arch = "wasm32"))]
     audio: Option<audio_native::AudioEngine>,
@@ -515,12 +525,14 @@ impl App {
     /// serializable `progress::Event`/`apply` seam; banks its stratum + records it in the codex.
     fn collect_aimed(&mut self) {
         self.collect_aimed_where(|_| true);
+        self.collect_shards_in_reach(None); // G10: a manual collect grabs nearby shards too
     }
 
     /// As [`collect_aimed`], but only considering sites that pass `keep` (the G5 `match` filter
     /// for the auto-collect path; manual `T` passes everything).
     fn collect_aimed_where(&mut self, keep: impl Fn(&progress::Collectible) -> bool) {
-        const REACH: f32 = 60.0; // how far a collect pick carries
+        const REACH: f32 = 60.0; // base collect-pick carry (G10: × the `reach` faculty)
+        let reach = REACH * self.progress.faculties().reach;
         const AIM_RADIUS: f32 = 3.0; // forgiving perpendicular tolerance (glyphs are ~1u tall)
         let origin = self.camera.position;
         let dir = self.camera.forward();
@@ -532,7 +544,7 @@ impl App {
             }
             let v = Vec3::from(c.pos) - origin;
             let t = v.dot(dir);
-            if t <= 0.0 || t > REACH {
+            if t <= 0.0 || t > reach {
                 continue; // behind us / out of reach
             }
             if (v - dir * t).length() <= AIM_RADIUS && t < best_t {
@@ -653,6 +665,21 @@ impl App {
         for b in named {
             self.discover(Some(b));
         }
+        // G10: the beam sweeps shards along its path too (all collect routes pick up shards).
+        let on_beam: Vec<shards::Shard> = self
+            .shards
+            .iter()
+            .filter(|sh| !self.shards_taken.contains(&sh.cell) && beam::on_path(sh.pos, b.a, b.b))
+            .copied()
+            .collect();
+        for sh in on_beam {
+            self.shards_taken.insert(sh.cell);
+            self.shards_dirty = true;
+            self.progress.apply(&progress::Event::CollectShard {
+                domain: sh.domain,
+                rarity: sh.rarity,
+            });
+        }
         self.beam = Some(b);
         // On foot, attach to the fresh beam as a rail (ride it to escape pits/cliffs — and
         // casting mid-fall re-attaches, saving you).
@@ -669,7 +696,7 @@ impl App {
         let now = self.time;
         self.flicks.retain(|f| !f.dead(now)); // prune spent flicks every frame
                                               // Driven by the interpreter (G7): scan only while a continuous routine asks + piloting.
-        if self.mode != Mode::Pilot || !self.scan_wanted {
+        if self.mode != Mode::Pilot || !(self.scan_wanted || self.scan_shards_wanted) {
             return;
         }
         self.scan_timer += dt;
@@ -677,7 +704,13 @@ impl App {
             return;
         }
         self.scan_timer = 0.0;
-        self.scan_pulse();
+        if self.scan_wanted {
+            self.scan_pulse();
+        }
+        // G10: the shard scan shares the cadence but is its own scannable (`scan(shards)`).
+        if self.scan_shards_wanted {
+            self.shard_pulse();
+        }
     }
 
     /// One scan pulse (`scan(shards)` block) from the player's vantage. Reused by the piloted
@@ -700,7 +733,12 @@ impl App {
             .iter()
             .filter(|c| {
                 !self.progress.is_scanned(c.find_id)
-                    && scan::in_cone(Vec3::from(c.pos), cam, fwd, scan::RANGE)
+                    && scan::in_cone(
+                        Vec3::from(c.pos),
+                        cam,
+                        fwd,
+                        scan::RANGE * self.progress.faculties().sensing, // G10 `sensing`
+                    )
             })
             .map(|c| (c.find_id, c.pos))
             .collect();
@@ -757,7 +795,49 @@ impl App {
                     progress::Stratum::Relics | progress::Stratum::Signals
                 )
             }),
+            // G10: domain filter — only inscriptions of that stratum's script.
+            Some(console::MatchField::Domain(d)) => {
+                self.collect_nearby_where(move |c| progress::stratum_of(c.script) == d)
+            }
             None => self.collect_nearby_where(|_| true),
+        }
+        // G10: the auto-collect also sweeps in-reach shards, honouring the same filter
+        // (`rare` = rare rarity; `domain` = that domain only).
+        self.collect_shards_in_reach(filter);
+    }
+
+    /// G10: collect every uncollected shard within the hands-off reach, honouring an optional
+    /// `match` filter. Banks each through `Event::CollectShard` (counts + the spend bank).
+    fn collect_shards_in_reach(&mut self, filter: Option<console::MatchField>) {
+        let reach = 45.0 * self.progress.faculties().reach; // same generous auto reach (G7)
+        let origin = self.camera.position;
+        let taken: Vec<shards::Shard> = self
+            .shards
+            .iter()
+            .filter(|sh| {
+                !self.shards_taken.contains(&sh.cell)
+                    && (sh.pos - origin).length_squared() <= reach * reach
+                    && match filter {
+                        Some(console::MatchField::Rare) => sh.rarity == shards::Rarity::Rare,
+                        Some(console::MatchField::Domain(d)) => sh.domain == d,
+                        None => true,
+                    }
+            })
+            .copied()
+            .collect();
+        for sh in taken {
+            self.shards_taken.insert(sh.cell);
+            self.shards_dirty = true;
+            self.progress.apply(&progress::Event::CollectShard {
+                domain: sh.domain,
+                rarity: sh.rarity,
+            });
+            log::info!(
+                "shard +{} ({} {})",
+                sh.rarity.yield_amount(),
+                sh.rarity.label(),
+                sh.domain.label()
+            );
         }
     }
 
@@ -849,6 +929,7 @@ impl App {
             console::Block::Decode => self.decode_action(),
             console::Block::Hail => self.hail_ship(), // G8a: recall the autonomous ship
             console::Block::RunFoot => self.start_expedition(), // G8c: deploy the walker
+            console::Block::Spend(f) => self.spend_action(f), // G10: buy a faculty level
             other => log::info!("block {}: not available yet", other.label()),
         }
     }
@@ -1035,6 +1116,93 @@ impl App {
             .map(|c| Vec3::from(c.pos))
     }
 
+    /// G10: `spend(faculty)` — buy the next level if the bank affords it (the event is gated).
+    fn spend_action(&mut self, f: progress::Faculty) {
+        let lvl = self.progress.faculty_levels()[f.idx()];
+        if self.progress.apply(&progress::Event::Spend { faculty: f }) {
+            log::info!("spend: {} → level {}", f.label(), lvl + 1);
+        } else {
+            log::info!(
+                "spend {}: need {} shards (bank {}) or at cap",
+                f.label(),
+                progress::FACULTY_COSTS
+                    .get(lvl as usize)
+                    .copied()
+                    .unwrap_or(0),
+                self.progress.shard_bank()
+            );
+        }
+    }
+
+    /// G10: one **shard-scan** pulse — if any uncollected shard sits in the forward cone, the
+    /// agent's `on-scan` routines fire (their `collect` acts sweep in-reach shards via
+    /// [`App::dispatch_collect`]). A couple of cool flicks give the scan its visible tick.
+    fn shard_pulse(&mut self) {
+        let cam = self.camera.position;
+        let fwd = self.camera.forward();
+        let range = scan::RANGE * self.progress.faculties().sensing;
+        let found: Vec<Vec3> = self
+            .shards
+            .iter()
+            .filter(|sh| {
+                !self.shards_taken.contains(&sh.cell) && scan::in_cone(sh.pos, cam, fwd, range)
+            })
+            .map(|sh| sh.pos)
+            .take(2)
+            .collect();
+        if found.is_empty() {
+            return;
+        }
+        let nose = cam + fwd * 1.5;
+        for p in &found {
+            self.flicks.push(scan::Flick {
+                from: nose,
+                to: *p,
+                born: self.time,
+            });
+        }
+        let agent = if self.mode == Mode::Walk {
+            console::Agent::Foot
+        } else {
+            console::Agent::Ship
+        };
+        for act in self.console.on_scan_acts(agent) {
+            if let console::Block::Collect = act.block {
+                self.collect_shards_in_reach(act.filter);
+            }
+        }
+    }
+
+    /// G10: refresh the streamed shard set around the camera (cheap — a few dozen cell hashes)
+    /// and re-upload its splats when the set or the taken-set changed.
+    fn update_shards(&mut self) {
+        let seed = self.seed;
+        let ground =
+            |x: f32, z: f32| worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32;
+        let fresh = shards::shards_near(seed, self.camera.position, SHARD_RADIUS, ground);
+        let key = (
+            fresh.len(),
+            fresh.first().map(|s| s.cell),
+            self.shards_taken.len(),
+        );
+        let prev = (
+            self.shards.len(),
+            self.shards.first().map(|s| s.cell),
+            self.shards_taken.len(),
+        );
+        self.shards = fresh;
+        if key != prev || self.shards_dirty {
+            self.shards_dirty = false;
+            let pts: Vec<foliage::SplatInstance> = self
+                .shards
+                .iter()
+                .filter(|sh| !self.shards_taken.contains(&sh.cell))
+                .flat_map(shards::splats)
+                .collect();
+            self.shard_splats = pts;
+        }
+    }
+
     /// G5 `seek`: the nearest known-uncollected site to steer the ship toward, if any.
     fn seek_target(&self) -> Option<Vec3> {
         self.nearest_site_to(self.camera.position)
@@ -1054,7 +1222,7 @@ impl App {
     fn strata_hud(&self) -> String {
         let s = &self.progress.strata;
         format!(
-            "REC {} · SCH {} · RIT {} · REL {} · SIG {}   known {} · found {}   [T collect · J codex · O console]",
+            "REC {} · SCH {} · RIT {} · REL {} · SIG {}   known {} · found {}   shards {} (lv {}/{}/{})   [T collect · J codex · O console]",
             s.records,
             s.schematics,
             s.rites,
@@ -1062,6 +1230,10 @@ impl App {
             s.signals,
             self.progress.known_count(),
             self.progress.collected_count(),
+            self.progress.shard_bank(), // G10: the spendable bank
+            self.progress.faculty_levels()[0],
+            self.progress.faculty_levels()[1],
+            self.progress.faculty_levels()[2],
         )
     }
 
@@ -1352,6 +1524,7 @@ impl App {
             self.nav_intent,
             self.seek_target(),
             self.seed,
+            AUTO_FLY_SPEED * self.progress.faculties().drive, // G10 `drive`
             dt,
         );
         self.ship_angle = angle;
@@ -1425,7 +1598,8 @@ impl App {
     /// ship-commanded expedition (`run(foot)`) takes precedence when active (handled by the caller).
     fn advance_away_walker(&mut self, dt: f32, data: u32) {
         let arrived = self.arrived_at(self.walker_pos);
-        let foot = self.console.tick(console::Agent::Foot, data, arrived);
+        let bank = self.progress.shard_bank().min(u32::MAX as u64) as u32;
+        let foot = self.console.tick(console::Agent::Foot, data, bank, arrived);
         if foot.nav == Some(console::Block::Walk) {
             if let Some(t) = self.nearest_site_to(self.walker_pos) {
                 self.walker_pos = walk_toward(self.walker_pos, t, WALK_SPEED, dt);
@@ -2276,10 +2450,12 @@ impl ApplicationHandler<AppEvent> for App {
                     // the old named-accessor hacks: `nav` steers the autopilot, `scan` gates the
                     // auto-scan, one-shot acts (continuous non-nav + `when`-edge fires) dispatch now.
                     let data = self.progress.strata.total().min(u32::MAX as u64) as u32;
+                    let bank = self.progress.shard_bank().min(u32::MAX as u64) as u32;
                     let arrived = self.ship_arrived();
-                    let tick = self.console.tick(console::Agent::Ship, data, arrived);
+                    let tick = self.console.tick(console::Agent::Ship, data, bank, arrived);
                     self.nav_intent = tick.nav;
                     self.scan_wanted = tick.scan;
+                    self.scan_shards_wanted = tick.scan_shards;
                     for act in tick.acts {
                         match act.block {
                             console::Block::FireBeam => self.cast_beam(),
@@ -2287,6 +2463,7 @@ impl ApplicationHandler<AppEvent> for App {
                             console::Block::Collect => self.dispatch_collect(act.filter),
                             console::Block::Hail => self.hail_ship(),
                             console::Block::RunFoot => self.start_expedition(), // G8c cross-agent
+                            console::Block::Spend(f) => self.spend_action(f), // when(shards)→spend
                             // A `when`-fired nav block engages the autopilot.
                             b if b.is_nav() => self.auto_fly = true,
                             _ => {}
@@ -2300,9 +2477,9 @@ impl ApplicationHandler<AppEvent> for App {
                     let mut foot_nav = None;
                     if self.mode == Mode::Walk {
                         let walker_arrived = self.arrived_at(self.camera.position);
-                        let foot = self
-                            .console
-                            .tick(console::Agent::Foot, data, walker_arrived);
+                        let foot =
+                            self.console
+                                .tick(console::Agent::Foot, data, bank, walker_arrived);
                         foot_nav = foot.nav;
                         for act in foot.acts {
                             match act.block {
@@ -2310,6 +2487,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 console::Block::Decode => self.decode_action(),
                                 console::Block::Hail => self.hail_ship(),
                                 console::Block::FireBeam => self.cast_beam(),
+                                console::Block::Spend(f) => self.spend_action(f),
                                 _ => {}
                             }
                         }
@@ -2344,6 +2522,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 self.nav_intent,
                                 self.seek_target(),
                                 self.seed,
+                                AUTO_FLY_SPEED * self.progress.faculties().drive, // G10 `drive`
                                 dt,
                             );
                             self.auto_fly_angle = angle;
@@ -2466,7 +2645,11 @@ impl ApplicationHandler<AppEvent> for App {
                     Vec::new()
                 };
                 if let Some(state) = self.state.as_mut() {
-                    state.set_creature_points(&self.creatures.points_n(wisp_n));
+                    // E15 wisps + G10 shard clusters share the per-frame points upload (both
+                    // small + bounded; a dedicated buffer if shard counts ever grow).
+                    let mut live_pts = self.creatures.points_n(wisp_n);
+                    live_pts.extend(self.shard_splats.iter().copied());
+                    state.set_creature_points(&live_pts);
                     state.set_ship(ship_shown, ship_pos, 0.0);
                 }
                 // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
@@ -2514,6 +2697,8 @@ impl ApplicationHandler<AppEvent> for App {
                     self.beam = None;
                 }
                 self.autoscan(dt);
+                // G10: stream the shard set around the camera (cheap; splats re-merged below).
+                self.update_shards();
                 let mut overlay_verts = self
                     .beam
                     .map(|b| b.ribbon(self.camera.position, self.time))
@@ -2918,6 +3103,7 @@ fn run_event_loop(event_loop: EventLoop<AppEvent>) {
 /// seek the given `seek_target` / circle), then track cruise height over terrain. Pure (terrain via
 /// the seeded `worldgen::height`), so it's shared by the piloted autopilot **and** the autonomous
 /// away-ship, and is unit-testable without a GPU. Returns the new `(pos, angle)`.
+#[allow(clippy::too_many_arguments)] // a flat nav-step signature beats a one-off args struct
 fn autopilot_step(
     pos: Vec3,
     angle: f32,
@@ -2925,6 +3111,7 @@ fn autopilot_step(
     nav: Option<console::Block>,
     seek_target: Option<Vec3>,
     seed: u32,
+    speed: f32, // cruise speed (G10: AUTO_FLY_SPEED × the `drive` faculty)
     dt: f32,
 ) -> (Vec3, f32) {
     // Drift heading: a slow, smooth **fbm** of incommensurate sines (per-seed phase) so the turn
@@ -2956,7 +3143,7 @@ fn autopilot_step(
     };
     let angle = angle + turn * dt;
     let dir = Vec3::new(angle.cos(), 0.0, angle.sin());
-    let mut pos = pos + dir * (AUTO_FLY_SPEED * dt);
+    let mut pos = pos + dir * (speed * dt);
     let ground = worldgen::height(pos.x.floor() as i32, pos.z.floor() as i32, seed) as f32;
     let target_y = ground + CRUISE_HEIGHT;
     pos.y += (target_y - pos.y) * (dt * 1.2).min(1.0);
@@ -3037,6 +3224,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         auto_fly_t: 0.0,
         nav_intent: Some(console::Block::Drift),
         scan_wanted: true,
+        scan_shards_wanted: true,
         ship_t: 0.0,
         ship_angle: 0.0,
         ship_scan_timer: 0.0,
@@ -3098,6 +3286,10 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         touch_seen: false,
         touch_pressed: None,
         last_discovery: None,
+        shards: Vec::new(),
+        shards_taken: HashSet::new(),
+        shards_dirty: false,
+        shard_splats: Vec::new(),
         // Start the drone on the world seed so the dirge matches the world (desktop + Android;
         // a no-op None if there's no audio device). Web starts audio from the page on first tap.
         #[cfg(not(target_arch = "wasm32"))]
@@ -3329,6 +3521,8 @@ const CRUISE_HEIGHT: f32 = 22.0;
 /// (so you have to land first); you re-enter when on foot within this horizontal distance.
 const CRUISER_EXIT_ALT: f32 = 9.0;
 const CRUISER_ENTER_DIST: f32 = 11.0;
+/// G10: how far around the camera shard items stream (world units). Conservative (charter §4).
+const SHARD_RADIUS: f32 = 130.0;
 /// D9: touch right-slider → yaw look-delta scale (per-frame; full deflection ≈ a brisk turn).
 /// A pinned v1 default — on-device sensitivity is the deferred human feel-tuning.
 const TOUCH_TURN: f32 = 7.0;
@@ -3810,7 +4004,16 @@ mod tests {
         let (mut saw_left, mut saw_right) = (false, false);
         for i in 0..2000 {
             let t = i as f32 * 0.1;
-            let (np, na) = autopilot_step(pos, angle, t, Some(console::Block::Drift), None, 7, 0.1);
+            let (np, na) = autopilot_step(
+                pos,
+                angle,
+                t,
+                Some(console::Block::Drift),
+                None,
+                7,
+                AUTO_FLY_SPEED,
+                0.1,
+            );
             let d = na - angle;
             if d > 1e-4 {
                 saw_right = true;
@@ -3832,8 +4035,16 @@ mod tests {
         // G8a: a drift step moves the ship forward (~AUTO_FLY_SPEED·dt horizontally) and pulls it
         // toward cruise height. Shared by the piloted autopilot + the autonomous away-ship.
         let start = Vec3::new(0.0, 200.0, 0.0);
-        let (pos, _angle) =
-            autopilot_step(start, 0.0, 0.0, Some(console::Block::Drift), None, 7, 0.1);
+        let (pos, _angle) = autopilot_step(
+            start,
+            0.0,
+            0.0,
+            Some(console::Block::Drift),
+            None,
+            7,
+            AUTO_FLY_SPEED,
+            0.1,
+        );
         let horiz = ((pos.x - start.x).powi(2) + (pos.z - start.z).powi(2)).sqrt();
         assert!(horiz > 1.0, "ship should travel horizontally: {horiz}");
         assert!(
@@ -3856,6 +4067,7 @@ mod tests {
             Some(console::Block::Seek),
             Some(target),
             7,
+            AUTO_FLY_SPEED,
             0.1,
         );
         assert!(
@@ -3874,6 +4086,7 @@ mod tests {
             Some(console::Block::Circle),
             None,
             7,
+            AUTO_FLY_SPEED,
             0.2,
         );
         assert!(angle.abs() > 0.05, "circle should turn steadily: {angle}");
