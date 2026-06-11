@@ -1,0 +1,122 @@
+# Game depth — the deepening plan (2026-06-11)
+
+> The plan for making *Scraped Again* **deep**, now that the machinery is built. The block
+> substrate (G4–G8) is a real interpreter + editor + two agents; what's thin is the *decision
+> space* — vocabulary, economy, legibility, and the long arc. This doc turns the design spine
+> ([`game-mechanics.md`](game-mechanics.md), [`game-system.md`](game-system.md)) plus the
+> research ([`research-automation-depth.md`](research-automation-depth.md), P-numbers below;
+> [`research-decipherment.md`](research-decipherment.md)) into a dispatchable milestone
+> pipeline. Open forks the human must call live in [`open-questions.md`](open-questions.md).
+
+## 1. The depth thesis
+
+Depth = **decisions that stay interesting**, and for this game they come from five places:
+
+1. **A growing vocabulary that restructures play** — not +% upgrades. Each new block
+   (especially control/meta) reopens every old routine (P11, P13). G9 makes acquiring it
+   exploration-driven.
+2. **An economy with real scarcities** — typed/rare currency (G10), capacities, queues —
+   so filters, budgets, and priorities have something to decide *about* (P1, P2).
+3. **Legibility** — you can only love a machine you can read. Telemetry, live step
+   highlights, "why is this idle?" (P20). The genre's highest-leverage UI.
+4. **Two asymmetric agents negotiating through the world** — handshakes the player authors
+   both sides of (P18, P19).
+5. **An endgame of self-directed optimization** — conflicting metrics, authored bands, no
+   fail states (P5, P6) — plus the witnessing arc: operator → author → overseer (P16),
+   which is also the melancholy theme made mechanical.
+
+**Standing audits** (apply to every milestone below):
+- *Scarcity audit:* every newly automatable loop must surface a new visible bottleneck (P1).
+- *Copy-paste audit:* new content/regions must not be served by last region's routine
+  unchanged (P7).
+- *No-dead-blocks audit:* primitives stay load-bearing inside late routines (P14).
+- *Optionality audit:* the wiring depth stays skippable; the core completes naively (P4).
+- *Perf charter:* every streamed layer + splat consumer follows
+  [`performance.md`](performance.md) §4.
+
+## 2. The dispatch pipeline (this run)
+
+In dispatch order. G9 in flight; M10/G10 staged; G11+ briefed-on-demand from the sketches
+below (each gets a full brief just before dispatch, per the two-layer planning norm).
+
+### G9 — Names in the world (block discovery) — *dispatched*
+Inscriptions carry block names; collect → discover (listed, locked); decode → unlock.
+Exploration drives vocabulary. *(Brief: [`milestones/G9-block-name-discovery.md`](milestones/G9-block-name-discovery.md).)*
+
+### M10 — Perf telemetry & budget gates — *staged (engine guardrail before content)*
+Frame-cost counters + CI budget tests, so the content milestones below can't silently eat
+the weak-hardware headroom. *(Brief: [`milestones/M10-perf-telemetry.md`](milestones/M10-perf-telemetry.md).)*
+
+### G10 — Typed shards — *staged*
+5 domains × 3 rarities, world-scattered, auto-collectible, first spend faculties. Makes
+`match`/`priority` matter. *(Brief: [`milestones/G10-typed-shards.md`](milestones/G10-typed-shards.md).)*
+
+### G11 — Routine telemetry ("the machine answers why") — *sketch*
+The P20 milestone; pure game-side, mostly console UI + interpreter instrumentation.
+- Per-routine counters: fires, yields (by what it collected), last-trigger time; live
+  **step highlight** while a routine runs; a routine **state line**: `running` /
+  `waiting: <trigger>` / `blocked: <reason>` (reach, nothing-in-range, locked step,
+  cargo-full once G14 lands) — the one-tap "why".
+- HUD: the **one lit goal** (P17): nearest almost-done thing (a threshold at 87%, an
+  affordable faculty, an undecoded stratum with data banked). One line, never a quest log.
+- Console home shows per-routine yield/hr once enough samples exist (`—` before that).
+- *Why now:* every later economy/agent milestone becomes debuggable + lovable through this.
+
+### G12 — Record-to-program — *sketch*
+The P9 on-ramp, very on-brand (the dead console remembers your hands).
+- Manual block presses (and beam-collects/scans they map to) append to a rolling per-agent
+  **action memory** (last ~10).
+- In the console: **"trace → routine"** — creates a draft routine from the memory (collapse
+  repeats into `repeat`, drop nav noise), opened in the existing editor for pruning.
+- The draft is ordinary G7 data; zero new runtime semantics. Discoverability: the console
+  shows the trace filling as you act (a faint ticker — expose-the-tech).
+
+### G13 — Subroutines, templates & nested steps — *sketch*
+The P10 tedium-killers + the deferred "nested/grouped steps" polish, folded together.
+- `run(routine)` extended to **same-agent** calls (it exists cross-agent since G8c); cycle
+  guard (a routine can't call into a loop — static check at insert time).
+- **Duplicate routine** in the editor; later "template" if duplication proves common.
+- **Nested step groups**: `repeat`/`if` bodies can contain groups (the G7 model already has
+  `Vec<Step>` bodies — surface editing them in the cursor UI without becoming a tree IDE;
+  one nesting level is probably enough, pin that).
+
+### G14 — Scarcities & the economy shape — *sketch; some forks gated on the human*
+The P1/P13 milestone — gives the automation something to strain against.
+- **Carry/buffer capacity**: walker carry cap + ship buffer cap (asymmetric, P19); collect
+  blocks when full; `when(buffer ≥ %)` becomes meaningful; a `deposit`/cache verb (the
+  first handshake primitive, P18).
+- **Decode becomes a process**: decoding takes banked data + time (a queue the interpreter
+  works through), so automated collection floods it and `priority`/`budget` finally bite.
+- **`when` states expansion** (the deferred polish): shards, buffer %, in-range, decode-queue.
+- **Cost pacing**: faculty costs + decode costs paced against the G9 discovery cadence
+  (vocabulary events break walls — P13). Numbers are placeholders; feel-tuning is the
+  human pass.
+- *Fork-gated bits* (don't build until answered): shard↔strata consolidation; gradual
+  shard-fill vs spend; domain-matched costs (see open-questions).
+
+### G15 — Handshakes & the expedition economy — *sketch*
+P18 made real on the G8 expedition: caches the walker fills and the ship collects
+(coordination via world state only, no direct agent RPC); failed-handoff vignettes (the
+walker waiting at an empty drop — visible, melancholy, legible); per-agent routine-slot
+asymmetry (P19) introduced as a *discovered* world property, not a menu number (P12).
+
+### G16+ — the sketched horizon (briefed when reached)
+- **Transient world events** (P15): passing signals, aurora windows; `when(event)`;
+  routines catch 60%, presence catches 100%.
+- **Routine metrics & authored bands** (P5/P6): yield/hr · cost-per-unit · block-count
+  against "crude / sound / cunning / uncanny" bands. Needs G11 telemetry + G14 costs.
+- **Region conditions** (P7): biome-level operating conditions (interference, tides) that
+  invalidate copy-paste routines. Pairs with E8 vertical stacks / new world content.
+- **The witnessing arc** (P16): act emphasis shifts operator → author → overseer; mostly
+  free (it emerges from the ladder) — needs a design pass in game-mechanics, not a system.
+- **Decipherment deepening**: hypothesis→confirmation on names, script comprehension
+  stages, lexicon surfacing — fed by [`research-decipherment.md`](research-decipherment.md)
+  and heavily fork-gated on the human's answers.
+
+## 3. What this run does NOT build
+
+- A 2D node canvas (linear step-lists are a design commitment, not a budget cut — P10).
+- Prestige/reset mechanics (wrong tone; vocabulary events are our walls — P13).
+- Numeric +% upgrade trees beyond the modest faculties (hedonic treadmill — anti-patterns).
+- Multiplayer/N1, new engine render features (unless a game milestone needs a generic
+  primitive, per the M9 seam discipline).
