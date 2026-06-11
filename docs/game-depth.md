@@ -56,7 +56,7 @@ The P20 milestone; pure game-side, mostly console UI + interpreter instrumentati
 - Per-routine counters: fires, yields (by what it collected), last-trigger time; live
   **step highlight** while a routine runs; a routine **state line**: `running` /
   `waiting: <trigger>` / `blocked: <reason>` (reach, nothing-in-range, locked step,
-  cargo-full once G14 lands) — the one-tap "why".
+  cargo-full once G15 lands) — the one-tap "why".
 - HUD: the **one lit goal** (P17): nearest almost-done thing (a threshold at 87%, an
   affordable faculty, an undecoded stratum with data banked). One line, never a quest log.
 - **State triggers render as live gauges** (`when/while(shards ≥ 50)` shows `37/50` on the
@@ -65,7 +65,13 @@ The P20 milestone; pure game-side, mostly console UI + interpreter instrumentati
 - Console home shows per-routine yield/hr once enough samples exist (`—` before that).
 - *Why now:* every later economy/agent milestone becomes debuggable + lovable through this.
 
-### G12 — Record-to-program — *sketch (research-updated)*
+### G12 — Glyph console (de-Anglicization) — *dispatched (2026-06-11)*
+Block identity renders as its glyph-name (stratum script) everywhere — palette, rows,
+codex, discovery toast — so the console reads as the dead machine's own language; function
+learned by clicking (the human's "unreadable names" decision, §A). Structural UI stays
+minimal-English. *(Brief: [`milestones/G12-glyph-console.md`](milestones/G12-glyph-console.md).)*
+
+### G13 — Record-to-program — *sketch (research-updated)*
 The P9 on-ramp, very on-brand (the dead console remembers your hands). The PBD literature
 ([`research-block-language.md`](research-block-language.md): Eager, Lieberman post-mortems)
 pins the contract: **record literally, generalize manually** — silently-inferred intent is
@@ -81,7 +87,7 @@ what killed every programming-by-demonstration system.
 - The draft is ordinary G7 data; zero new runtime semantics. Discoverability: the console
   shows the trace filling as you act (a faint ticker — expose-the-tech).
 
-### G13 — Subroutines, templates & nested steps — *sketch (research-updated)*
+### G14 — Subroutines, templates & nested steps — *sketch (research-updated)*
 The P10 tedium-killers + the deferred "nested/grouped steps" polish, folded together. The
 tiny-language research adds two requirements ([`research-block-language.md`](research-block-language.md)):
 **no seams** (Steele — a player's named routine must appear in the palette looking exactly
@@ -95,7 +101,7 @@ is forbidden, make it a parameter).
   `Vec<Step>` bodies — surface editing them in the cursor UI without becoming a tree IDE;
   one nesting level is probably enough, pin that).
 
-### G14 — Comprehension-as-research (the unified economy) — *human-endorsed model (2026-06-11); pacing TBD*
+### G15 — Comprehension-as-research (the unified economy) — *human-endorsed model (2026-06-11)*
 The reframe the human proposed and endorsed: **discovery + shards + decode are ONE pipe.**
 Find a block's glyph-name in the world → it becomes a **research target** (locked); your
 auto-collected **shards** are poured into it until research completes → the block is
@@ -133,7 +139,7 @@ the old decode economy, and resolves several forks at once:
 - **Note:** G10 already shipped bank-then-spend faculties — so this milestone partly
   *retrofits* G10's `spend` into the research model. Frame as evolution, keep `pg=` compat.
 
-### G15a — Lexicon v2: statistical honesty — *sketch; fork-FREE (buildable any time)*
+### G16a — Lexicon v2: statistical honesty — *sketch; fork-FREE (buildable any time)*
 The one Archive-tranche piece gated on nothing: make the seeded lexicon's output pass the
 tests pattern-hunting players will run ([`research-linguistics.md`](research-linguistics.md)
 §2 checklist): Zipf rank-frequency, Heaps' law, 3–4 bits/char conditional entropy, Zipf
@@ -143,7 +149,7 @@ test-pure-logic norm). Plus the corpus-shape rules: some long texts, structured
 name+logogram+numeral lists, one recurring ritual frame for Rites. Slots anywhere in the
 queue; pure logic, golden-neutral (content-keyed like G9).
 
-### G15 — Handshakes & the expedition economy — *sketch*
+### G16 — Handshakes & the expedition economy — *sketch*
 P18 made real on the G8 expedition: caches the walker fills and the ship collects
 (coordination via world state only, no direct agent RPC); failed-handoff vignettes (the
 walker waiting at an empty drop — visible, melancholy, legible); per-agent routine-slot
@@ -153,7 +159,7 @@ asymmetry (P19) introduced as a *discovered* world property, not a menu number (
 - **Transient world events** (P15): passing signals, aurora windows; `when(event)`;
   routines catch 60%, presence catches 100%.
 - **Routine metrics & authored bands** (P5/P6): yield/hr · cost-per-unit · block-count
-  against "crude / sound / cunning / uncanny" bands. Needs G11 telemetry + G14 costs.
+  against "crude / sound / cunning / uncanny" bands. Needs G11 telemetry + G15 costs.
 - **Region conditions** (P7): biome-level operating conditions (interference, tides) that
   invalidate copy-paste routines. Pairs with E8 vertical stacks / new world content.
 - **The witnessing arc** (P16): act emphasis shifts operator → author → overseer; mostly

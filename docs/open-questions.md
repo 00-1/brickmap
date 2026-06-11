@@ -44,7 +44,7 @@ investment (morphemic name design across five scripts + a compose-a-name picker 
 balance implications: a clever player skips the gating), and it partially *replaces* the
 decode-unlocks economy rather than adding to it. My take: it's the most exciting idea in
 the research, and the right time to decide is after you've played G9 — but it changes how
-much we should invest in the decode-economy (G14) in the meantime, hence asking now.
+much we should invest in the decode-economy (G15) in the meantime, hence asking now.
 
 ## B. The shard model (G10 ships pinned defaults — veto any)
 
@@ -66,7 +66,7 @@ You decided: shards exist, auto-collectible, types + rarities. Four sub-forks I 
 ## C. How numeric should the upgrade layer be?  ✅ RESOLVED (2026-06-11) by the research-economy model
 
 The human's "find words → research blocks → add shards to unlock/upgrade" reframe
-(recorded in [`game-depth.md`](game-depth.md) G14) settles this: progression is
+(recorded in [`game-depth.md`](game-depth.md) G15) settles this: progression is
 **vocabulary funded by shard-research**, not a +% layer; faculties fold into the same pipe
 as ordinary research targets; numbers serve unlocking verbs. Forks B.1 (shards = research
 substrate, not a sixth currency), B.2 (gradual fill, pacing TBD in prose), and B.3

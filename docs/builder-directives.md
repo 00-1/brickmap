@@ -44,44 +44,34 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-11 (NEW RUN: G9 block-name discovery)
+## CURRENT DIRECTIVE — 2026-06-11 (queue drained → G12 glyph console)
 
-**This run is dispatched incrementally**: the babysitter is mid-planning and will post each
-milestone here as it's ready. When you finish G9 and no new directive is up yet, that is **not**
-a pause — re-arm your watcher and stand by; more is coming (G10 typed shards is being planned
-now). Wind down only when this channel says the run is over.
+**The published queue G9 → M10 → G10 → G11 → M11 is fully built, green, and reviewed**
+(see [`agent-review.md`](agent-review.md)). New work, dispatched by the babysitter:
 
-- **G9 — Names in the world (block discovery)** — build per
-  [`milestones/G9-block-name-discovery.md`](milestones/G9-block-name-discovery.md) (copy it to
-  `main` to build). The human-decided direction: a deterministic minority of in-world
-  inscriptions carry **block names** (rendered in the block's stratum's script, stable
-  transliteration); **collecting one discovers the block** in the console (listed, dimmed,
-  stratum-locked); the existing decode then unlocks it — a **two-stage gate** replacing
-  "decode unlocks the whole stratum at once." Starter set pre-discovered (opening unchanged);
-  colossus monument labels name the deep Relics/Signals-tier blocks. All collect routes
-  (T / beam / auto-collect) discover. Pinned defaults in the brief — follow them; the
-  "must-comprehend-script-to-read-names" variant is a human fork, **don't** build it.
-- Game-side only (no engine change expected); golden voxel-hash must stay unchanged; if a
-  golden *image* covers inscription content, update it intentionally once, noted.
-- **The queue is now published** (briefs staged on this branch — chain straight through,
-  re-reading this channel before each): **G9 → M10 → G10 → G11 → M11.**
-  - **M10 — perf telemetry & budget gates** ([`milestones/M10-perf-telemetry.md`](milestones/M10-perf-telemetry.md))
-    — engine frame-cost counters + CI budget tests; deliberately *before* G10 so the gates
-    exist before the next streamed-content layer.
-  - **G10 — typed shards** ([`milestones/G10-typed-shards.md`](milestones/G10-typed-shards.md))
-    — 5 domains × 3 rarities, world-scattered, auto-collectible, first spend faculties.
-    Mind the **opening-parity** requirement (sites stay auto-collected).
-  - **G11 — routine telemetry** ([`milestones/G11-routine-telemetry.md`](milestones/G11-routine-telemetry.md))
-    — per-routine state/counters, live step highlight, the HUD "one lit goal".
-  - **M11 — render hygiene** ([`milestones/M11-render-hygiene.md`](milestones/M11-render-hygiene.md))
-    — the vendor-doc engine pass: upload-path audit (a measured-upstream hitch class),
-    render-target usage-flag audit, discard draw-order discipline, dissolve-fade
-    quantization, uniform-section fast path. **All byte-identical/unit-verifiable here**;
-    an audit that finds the code already clean is a recorded pass, not a failure.
-  - The wider plan these come from: [`game-depth.md`](game-depth.md) +
-    [`performance.md`](performance.md) (its §4 rules apply to G10's shard layer), now
-    backed by a deep research pass (`docs/research-*.md` — six new docs). G12+ are
-    sketched in game-depth; briefs will land here — don't pre-build past M11.
+- **G12 — Glyph console (de-Anglicization)** — build per
+  [`milestones/G12-glyph-console.md`](milestones/G12-glyph-console.md) (copy to `main`).
+  **Human decision (recorded):** block names stay **unreadable — no English layer at all**.
+  Render block identity as its **glyph-name** (the G9 `transliterate` output, in the block's
+  stratum script) everywhere player-facing: palette, routine rows, selected-detail, codex,
+  the discovery toast. Function is learned by **clicking and observing** — no English
+  tooltip. **Structural/meta UI stays minimal-English** (numbers, gauges `37/50`, `×fires`,
+  the `▶` marker, state glosses like `waiting`/`blocked`, faculty levels) — that's the
+  machine's *instrumentation*; its *vocabulary* is the dead language. Parameters render
+  glyph for world-vocabulary items, numeric for quantities. **Docs in lockstep:** update
+  `game-system.md` §1/§6 and any `game-mechanics.md` readable-name lines (blocks are
+  glyph-named, learned by clicking). Pinned defaults in the brief — veto only on a genuine
+  fork. Golden voxel-hash unchanged (console/HUD aren't in it); headless console A/B
+  (opt-in flag) shows glyphs; codecs/equality untouched (only *rendering* changes).
+- **Then stand by** — do not wind down. The next tranche (G13 record-to-program, G14
+  subroutines, then the comprehension-as-research economy G15 and the Archive groundwork)
+  is being briefed; directives will land here. The research backing it all is in
+  `docs/research-*.md` and the plan in [`game-depth.md`](game-depth.md).
+
+### Why G12 now
+Block names being unreadable is a settled design decision; the longer G9/G11's English
+labels live in the console/HUD, the more labelled surfaces accrete to convert later. This
+is the cheap moment. (The superseded knowledge-gate / derive-a-name verb is NOT needed.)
 
 ---
 
@@ -198,6 +188,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-11** — queue (G9→M10→G10→G11→M11) **fully drained, all green/reviewed**. **New directive: G12 — glyph console (de-Anglicization)** — block names render as stratum-script glyphs everywhere player-facing; learn-by-clicking; structural UI stays minimal-English; docs (game-system §1/§6) in lockstep. Human decision: names unreadable, no English layer.
 - **2026-06-11** — **NEW RUN (incremental dispatch).** D10 ✅ (verified rendered). **New
   directive: G9 — block-name discovery** (in-world inscriptions carry block names; collect →
   discover → decode unlocks; two-stage gate; starter pre-discovered; brief on this branch).
