@@ -44,69 +44,27 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## 🐛 BUG FOUND (fix + regression-assert in D11) — share-link extreme-coords crash — 2026-06-11
+## CURRENT DIRECTIVE — 2026-06-12 (D11 + bug-fixes done → G17 handshakes)
 
-The parallel adversarial bug-hunt finished. **One genuinely serious, game-reachable crash**
-(babysitter-verified independently) + one cosmetic. Fix the crash (interleave with D11) and
-**encode each as a D11 regression assert**.
+**D11 (E2E play harness) is complete + reviewed** (`ac55d10` — shared-tick property held;
+the babysitter ran the `#[ignore]` render sweep locally: passes; the harness already caught
++ you fixed a latent `vnoise` overflow). **BUG1/BUG2 fixed + asserted** (`42ddbbf`). The
+testing mandate is delivered. New work — the last fork-free depth milestone:
 
-### BUG 1 — CRASH (severity: high; reachable via the E12 share-link headline feature)
-A crafted/garbage share link with an **extreme-but-finite** camera coordinate (e.g.
-`#v=1&s=1&z=300000000000`) overflows world streaming on the **first frame** → debug panic
-`attempt to add with overflow` (release: wraps to garbage cell math). **Verified** (code +
-arithmetic): `share::set_f32` (`share.rs:84`) only guards `is_finite()` — no magnitude clamp —
-so z=3e11 reaches `Camera::new`; then `(cam.z / CELL).floor() as i32` **saturates to
-`i32::MAX`** and `ccz + reach` overflows in the cell loops:
-- `shards.rs` `shards_near` (~`:83`, `(ccz - reach)..=(ccz + reach)`) — overflows at cam.z ≳ 1e11
-- `structures.rs` `inscriptions_near` (~`:252`, same pattern) — and `colossi_near` shares it
-**Fix (do both — boundary + defense-in-depth):**
-1. **Clamp share-link pos** to a sane world bound in `share::set_f32`/decode (extreme coords
-   are never legitimate input) — the primary fix at the trust boundary.
-2. **Saturating/checked cell math** in `shards_near` / `inscriptions_near` / `colossi_near`
-   (clamp `ccx`/`ccz`, or `saturating_add(reach)`), so *any* extreme cam coord — not only the
-   share link — can't overflow streaming.
-3. **D11 regression assert:** a share-link with extreme coords decodes + first-frame-streams
-   without panic; the `*_near` fns are panic-free at huge `cam` coords.
-
-### BUG 2 — COSMETIC (severity: low; not gameplay)
-`screenshot out.png 0 0` panics (wgpu zero-size-texture validation). CLI misuse only. Cheap
-guard: reject 0 width/height with a clean error in the `screenshot` bin. Low priority — fold
-into D11 or a cleanup commit; don't let it block.
-
-### What HELD UP (the hunt's coverage — reassuring)
-Full progression (6 seeds), research-economy edge cases (off-domain/maxed/mid-fill-switch),
-routines + cycle-guard + scoped-group register, two-agent expedition, **persistence
-round-trip + 5000-input codec fuzz (all graceful)**, determinism, a 40k-tick soak (no
-panic/NaN/overflow), render robustness. The core loop is robust; this is a defensive-input
-gap at the share-link boundary, not a systemic problem.
-
----
-
-## CURRENT DIRECTIVE — 2026-06-11: D11 end-to-end harness (Archive still fork-blocked)
-
-The human asked for **autonomous end-to-end testing** — drive everything end to end and find
-problems. This is the right work *now*: G9–G16 are unit-tested + golden-hash + render-checked,
-but the **per-frame orchestration in `App` that wires the systems together over time has never
-been driven end to end**. (Archive feature milestones remain fork-blocked on the human; this is
-productive non-fork work meanwhile.)
-
-- **D11 — End-to-end play harness (headless integration + soak)** — build per
-  [`milestones/D11-e2e-harness.md`](milestones/D11-e2e-harness.md) (copy to `main`). A
-  **durable, CI-wired** harness that drives the **real** game loop headlessly and asserts
-  *integration* outcomes: a scripted seeded playthrough (discover a block → allocate →
-  domain shards fill → comprehend → author + run a routine → expedition cycle → state
-  round-trip), **persistence fidelity** (round-trip equality, v1..v5 migration, malformed →
-  graceful-not-panic), **determinism** (same seed+inputs → identical state), and a **bounded
-  seeded soak/fuzz** (no panic / NaN / overflow / unbounded growth; research progresses-or-
-  honestly-blocked). **Central design problem first:** `App` owns the GPU, so either extract
-  a **sim-core** (preferred — behaviour-preserving; golden hash unchanged) or add a
-  **headless-App** drive path; document the choice; the harness must drive the *same* tick
-  the live frame uses (no parallel re-implementation). Keep CI bounded/seeded (heavy soak
-  env-gated). Pinned defaults in the brief.
-- **Parallel:** a separate adversarial bug-hunt is running against `main` right now. Its
-  **confirmed** bugs will arrive here as fix directives — fix them, and **encode each as a
-  regression assert in D11**. So: build the harness; expect bug-fix directives to interleave.
-- After D11 + the bug-fixes: stand by for the Archive fork decision from the human.
+- **G17 — Handshakes & the expedition economy** — build per
+  [`milestones/G17-handshakes.md`](milestones/G17-handshakes.md) (copy to `main`). The two
+  agents coordinate **through the world**: walker **carry cap** (honest
+  `blocked: carry full`), **`deposit`** into a per-expedition-site **cache** (world-visible,
+  splat-budgeted), ship **cache-collect** draining it into the **canonical CollectShard
+  events** (so bank/research/credit just work and D11 covers it). `when(carry ≥ %)` /
+  `when(cache ≥ N)` states. **Value lands on ship pickup** (the handshake moves value home).
+  `deposit`/cache are **given vocabulary** (not research-gated — don't orphan the G8
+  expedition; pinned, vetoable). The old direct expedition must keep working with no cache
+  wiring (optionality). **Extend the D11 expedition scenario to the full handshake** —
+  every new system lands with integration coverage now. `pg=` v7 append-only. Pinned
+  defaults in the brief.
+- After G17: stand by — the Archive feature tranche remains fork-blocked on the human, and
+  a wind-down + human-pass update is likely next.
 
 Toolchain prevention in force; CI is the authority; keep main green.
 
@@ -256,6 +214,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-12** — D11 ✅ (harness; shared tick; sweep verified by babysitter) + BUG1/BUG2 ✅. **New directive: G17 — handshakes** (walker carry + deposit + site cache + ship drain via canonical events; when(carry/cache); D11 scenario extended; old expedition preserved). Then standby/wind-down pending the Archive fork.
 - **2026-06-11** — 🐛 bug-hunt done: **BUG 1 (high, verified)** share-link extreme-but-finite camera coord overflows i32 cell math in shards_near/inscriptions_near/colossi_near → first-frame crash; fix = clamp share pos (share.rs:84) + saturating cell math + D11 regression assert. BUG 2 (cosmetic) screenshot 0x0 panic. Core loop otherwise robust (progression/economy/persistence/codec-fuzz/determinism/40k soak all held).
 - **2026-06-11** — STANDBY lifted: human asked for **autonomous end-to-end testing**. **New directive: D11 — E2E play harness** (headless integration: scripted playthrough + persistence fidelity + determinism + bounded soak/fuzz; extract a sim-core or headless-App; CI-wired). A parallel adversarial bug-hunt is running; its confirmed bugs land as fix directives + D11 regression asserts.
 - **2026-06-11** — G16 ✅ complete (lexicon v2, four-way green). **STANDBY**: remaining Archive milestones are fork-gated; babysitter fork-checking the human before the next dispatch.
