@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `42ddbbf` (BUG1/BUG2 fixes; D11 in flight).
+**Reviewed through:** `ac55d10` (D11 — E2E play harness).
 
 ---
 
@@ -36,6 +36,45 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-12 · D11 — end-to-end headless play harness (`ac55d10`)  ✅ PASSED (verified incl. the ignored sweep; CI green)
+
+**Verified:** local fmt/clippy clean · **243 tests** · **CI ✅ · Android ✅ · Deploy ✅**
+(Desktop packaging in-flight, accepted) · golden voxel-hash unchanged + headless render
+byte-identical (the builder cmp'd against a stash-isolated baseline) · **and I ran the
+`#[ignore]` render-robustness sweep myself** (CI lacks a Vulkan adapter; my container has
+llvmpipe): **passes, 6.4 s**.
+
+**The structural call — the load-bearing property holds:** rather than the (preferred but
+invasive) sim-core extraction, the builder took the brief's sanctioned fallback: the
+`RedrawRequested` body extracted **verbatim** into one shared `App::run_frame(dt)` called by
+*both* the live window and the harness — so the harness drives the **same** tick, no
+parallel loop to drift (Decision 3, the property I cared most about). `App::headless(seed)`
+builds with `state: None` through the same `assemble_app`; GPU/window touches were already
+state-gated; `update_inscriptions` split so gameplay runs headless and only the label upload
+stays GPU-gated. Sim-core extraction correctly deferred + documented.
+
+**Coverage = the brief:** 8 tests — multi-seed plays-and-progresses; the scripted full
+progression (real-world collect → discover → allocate → fill → comprehend → legibility →
+authored routine emits Collect → expedition Deploy→Harvest→Return → share round-trip);
+determinism; persistence fidelity + graceful malformed/old payloads; bounded seeded
+soak/fuzz (heavy run env-gated `E2E_SOAK_TICKS`); u64 intake-overflow; the ignored render
+sweep. BUG1/BUG2 regression asserts carried in (the D11 contract honoured).
+
+**One fidelity tradeoff, justified + disclosed:** research-funding in the scripted test uses
+the canonical `CollectShard` event rather than shard-luck along a wander (CI determinism),
+with the live loop's world→event seam asserted separately. Right call; noted.
+
+**The harness already paid for itself:** its extreme-coord assert surfaced a *latent*
+overflow in `biome::vnoise` (lattice `+1` past `i32::MAX` saturation — beyond the BUG1
+clamp, a genuine gap in the defense-in-depth promise), fixed with wrapping lattice indices,
+byte-identical at every reachable coordinate. Exactly what the harness exists to do.
+
+**Verdict.** The run's most important infrastructure milestone, landed with the integrity
+property intact (shared tick), full coverage, CI-bounded, and a bug already caught. The
+"does it actually play?" question is now permanently guarded.
+
+---
 
 ## 2026-06-12 · BUG1 + BUG2 fixes (`42ddbbf`)  ✅ PASSED (verified + four-way green)
 
