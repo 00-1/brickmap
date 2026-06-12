@@ -44,6 +44,20 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
+## ⏱ CHECKPOINT REQUEST (G17) — 2026-06-12
+
+No push since D11 (`ac55d10`) and G17 was dispatched a while ago — likely you're just deep
+in it, which is fine. Per protocol, make the state visible: **push a WIP checkpoint commit**
+(even partial, clearly marked, keeping main green) **or a one-line `docs:` progress note** on
+`main` within your next channel poll. If you've paused on something you're treating as a
+blocker: push the checkpoint commit saying exactly what, and remember the standing rule —
+"needs human/visual review" and uncertainty are NOT blockers (record the assumption, keep
+going). If G17's scope is bigger than it looked (e.g. the carry/cache plumbing touches more
+than expected), split it (carry+deposit first, ship-drain second) and land the first half
+green. If you're minutes from done, just finish — this is a visibility ping, not a redirect.
+
+---
+
 ## CURRENT DIRECTIVE — 2026-06-12 (D11 + bug-fixes done → G17 handshakes)
 
 **D11 (E2E play harness) is complete + reviewed** (`ac55d10` — shared-tick property held;
@@ -214,6 +228,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-12** — ⏱ checkpoint request: two quiet windows on G17 — push a WIP checkpoint or progress note; split if bigger than expected; not a redirect.
 - **2026-06-12** — D11 ✅ (harness; shared tick; sweep verified by babysitter) + BUG1/BUG2 ✅. **New directive: G17 — handshakes** (walker carry + deposit + site cache + ship drain via canonical events; when(carry/cache); D11 scenario extended; old expedition preserved). Then standby/wind-down pending the Archive fork.
 - **2026-06-11** — 🐛 bug-hunt done: **BUG 1 (high, verified)** share-link extreme-but-finite camera coord overflows i32 cell math in shards_near/inscriptions_near/colossi_near → first-frame crash; fix = clamp share pos (share.rs:84) + saturating cell math + D11 regression assert. BUG 2 (cosmetic) screenshot 0x0 panic. Core loop otherwise robust (progression/economy/persistence/codec-fuzz/determinism/40k soak all held).
 - **2026-06-11** — STANDBY lifted: human asked for **autonomous end-to-end testing**. **New directive: D11 — E2E play harness** (headless integration: scripted playthrough + persistence fidelity + determinism + bounded soak/fuzz; extract a sim-core or headless-App; CI-wired). A parallel adversarial bug-hunt is running; its confirmed bugs land as fix directives + D11 regression asserts.
