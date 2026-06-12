@@ -61,6 +61,9 @@ pub mod worldgen;
 // cpal audio output (E16): desktop + **Android** (AAudio backend); web uses Web Audio.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod audio_native;
+/// D11: end-to-end headless play harness (drives the real `run_frame` loop). Test-only.
+#[cfg(test)]
+mod e2e;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
 pub mod model;
@@ -1396,9 +1399,8 @@ impl App {
     /// colossi: regenerate the in-range set each frame (cheap — string composition), and only
     /// rebuild the label textures on the GPU when the set of in-range cells actually changes.
     fn update_inscriptions(&mut self) {
-        if self.state.is_none() {
-            return;
-        }
+        // D11: build the collectible set + map markers regardless of `state` (logic); only the
+        // label *upload* at the end is GPU-gated. (Live frame unchanged — `state` is always set.)
         let seed = self.seed;
         let ground =
             |x: f32, z: f32| worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32;
@@ -2456,603 +2458,615 @@ impl ApplicationHandler<AppEvent> for App {
                     .map(|t| (now - t).as_secs_f32().min(0.1))
                     .unwrap_or(0.0);
                 self.last_frame = Some(now);
-                // E13: photo mode **pauses** the living world — every time-driven system advances
-                // on this `dt`, so zeroing it freezes sim/autopilot/expedition/animation while the
-                // free-cam (driven below on `real_dt`) + streaming + rendering keep running.
-                let dt = if self.photo_active { 0.0 } else { real_dt };
+                self.run_frame(real_dt);
+            }
+            _ => {}
+        }
+    }
 
-                // Gamepad (D7): poll the pad and feed analog move + look. The A button
-                // toggles auto-fly; any stick/look input yields auto-fly to manual (like
-                // WASD/mouse do).
-                let pad = self.pad.poll();
-                if pad.toggle_fly {
-                    self.auto_fly = !self.auto_fly;
-                }
-                // Y / triangle toggles the distance-dissolve "melt" so it's easy to see the
-                // effect with a pad in hand (the same switch as the `melt` feature toggle).
-                if pad.toggle_melt {
-                    self.toggles.melt = !self.toggles.melt;
-                }
-                // X / square opens/closes the explored map; entering centres it on the camera.
-                if pad.toggle_map {
-                    self.toggle_map();
-                }
-                // B / circle enters/exits the cruiser (E19).
-                if pad.toggle_enter {
-                    self.toggle_cruiser();
-                }
-                let stick = pad.strafe != 0.0
-                    || pad.forward != 0.0
-                    || pad.vertical != 0.0
-                    || pad.look_x != 0.0
-                    || pad.look_y != 0.0;
-                if self.map_view {
-                    // In the map: the left stick pans (chunk space); the world keeps flying
-                    // underneath, so the you-are-here dot drifts live. North (−z) is up.
-                    let sp = MAP_ZOOM * dt * 0.7;
-                    self.map_pan.0 += pad.strafe * sp;
-                    self.map_pan.1 -= pad.forward * sp;
-                } else if stick {
-                    self.auto_fly = false;
-                    self.controller
-                        .add_move(pad.strafe, pad.vertical, pad.forward);
-                    self.controller.add_look(
-                        pad.look_x * gamepad::LOOK_SPEED,
-                        pad.look_y * gamepad::LOOK_SPEED,
-                    );
-                }
-                // D9: phone touch — held sliders steer + climb/forward (onto the same controller),
-                // applied after the pad so either input source works.
-                self.apply_touch();
+    fn device_event(&mut self, _event_loop: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
+        // Raw mouse motion drives mouselook while the pointer is captured.
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if self.cursor_locked {
+                self.controller.add_look(delta.0 as f32, delta.1 as f32);
+            }
+        }
+    }
+}
 
-                // E13: photo mode pauses the world — run a free-cam only (`real_dt`), skipping the
-                // interpreter + movement entirely so nothing sim-side advances while you frame a shot.
-                if self.photo_active {
-                    self.controller.update(&mut self.camera, real_dt);
-                } else {
-                    // G7/G8b: run one interpreter tick per agent. The **ship** agent's intents replace
-                    // the old named-accessor hacks: `nav` steers the autopilot, `scan` gates the
-                    // auto-scan, one-shot acts (continuous non-nav + `when`-edge fires) dispatch now.
-                    let data = self.progress.strata.total().min(u32::MAX as u64) as u32;
-                    let bank = self.progress.shard_bank().min(u32::MAX as u64) as u32;
-                    let arrived = self.ship_arrived();
-                    self.console.set_now(self.time); // G11: drive telemetry ages/rates
-                    let tick = self.console.tick(console::Agent::Ship, data, bank, arrived);
-                    self.nav_intent = tick.nav;
-                    self.scan_wanted = tick.scan;
-                    self.scan_shards_wanted = tick.scan_shards;
-                    for act in tick.acts {
-                        match act.block {
-                            console::Block::FireBeam => self.cast_beam(),
-                            console::Block::Collect => {
-                                let (items, yields) = self.dispatch_collect(act.filter);
-                                self.console.credit(
-                                    act.routine,
-                                    items,
-                                    yields,
-                                    act.filter.is_some(),
-                                );
-                            }
-                            console::Block::Hail => self.hail_ship(),
-                            console::Block::RunFoot => self.start_expedition(), // G8c cross-agent
-                            console::Block::Spend(f) => self.spend_action(f), // when(shards)→spend
-                            // A `when`-fired nav block engages the autopilot.
-                            b if b.is_nav() => self.auto_fly = true,
-                            _ => {}
-                        }
+impl App {
+    /// D11: one frame of the **real** game loop, factored out of the `RedrawRequested` arm so
+    /// the headless harness drives the *same* tick the live window does (no parallel re-impl
+    /// that could drift from reality). The live path derives `real_dt` from the frame clock;
+    /// the harness passes a fixed step. Every GPU/window touch inside is already `state`-gated
+    /// (`if let Some(state)`), so with `state: None` this advances pure game logic and skips
+    /// the upload/render/`request_redraw` work.
+    fn run_frame(&mut self, real_dt: f32) {
+        // E13: photo mode **pauses** the living world — every time-driven system advances
+        // on this `dt`, so zeroing it freezes sim/autopilot/expedition/animation while the
+        // free-cam (driven below on `real_dt`) + streaming + rendering keep running.
+        let dt = if self.photo_active { 0.0 } else { real_dt };
+
+        // Gamepad (D7): poll the pad and feed analog move + look. The A button
+        // toggles auto-fly; any stick/look input yields auto-fly to manual (like
+        // WASD/mouse do).
+        let pad = self.pad.poll();
+        if pad.toggle_fly {
+            self.auto_fly = !self.auto_fly;
+        }
+        // Y / triangle toggles the distance-dissolve "melt" so it's easy to see the
+        // effect with a pad in hand (the same switch as the `melt` feature toggle).
+        if pad.toggle_melt {
+            self.toggles.melt = !self.toggles.melt;
+        }
+        // X / square opens/closes the explored map; entering centres it on the camera.
+        if pad.toggle_map {
+            self.toggle_map();
+        }
+        // B / circle enters/exits the cruiser (E19).
+        if pad.toggle_enter {
+            self.toggle_cruiser();
+        }
+        let stick = pad.strafe != 0.0
+            || pad.forward != 0.0
+            || pad.vertical != 0.0
+            || pad.look_x != 0.0
+            || pad.look_y != 0.0;
+        if self.map_view {
+            // In the map: the left stick pans (chunk space); the world keeps flying
+            // underneath, so the you-are-here dot drifts live. North (−z) is up.
+            let sp = MAP_ZOOM * dt * 0.7;
+            self.map_pan.0 += pad.strafe * sp;
+            self.map_pan.1 -= pad.forward * sp;
+        } else if stick {
+            self.auto_fly = false;
+            self.controller
+                .add_move(pad.strafe, pad.vertical, pad.forward);
+            self.controller.add_look(
+                pad.look_x * gamepad::LOOK_SPEED,
+                pad.look_y * gamepad::LOOK_SPEED,
+            );
+        }
+        // D9: phone touch — held sliders steer + climb/forward (onto the same controller),
+        // applied after the pad so either input source works.
+        self.apply_touch();
+
+        // E13: photo mode pauses the world — run a free-cam only (`real_dt`), skipping the
+        // interpreter + movement entirely so nothing sim-side advances while you frame a shot.
+        if self.photo_active {
+            self.controller.update(&mut self.camera, real_dt);
+        } else {
+            // G7/G8b: run one interpreter tick per agent. The **ship** agent's intents replace
+            // the old named-accessor hacks: `nav` steers the autopilot, `scan` gates the
+            // auto-scan, one-shot acts (continuous non-nav + `when`-edge fires) dispatch now.
+            let data = self.progress.strata.total().min(u32::MAX as u64) as u32;
+            let bank = self.progress.shard_bank().min(u32::MAX as u64) as u32;
+            let arrived = self.ship_arrived();
+            self.console.set_now(self.time); // G11: drive telemetry ages/rates
+            let tick = self.console.tick(console::Agent::Ship, data, bank, arrived);
+            self.nav_intent = tick.nav;
+            self.scan_wanted = tick.scan;
+            self.scan_shards_wanted = tick.scan_shards;
+            for act in tick.acts {
+                match act.block {
+                    console::Block::FireBeam => self.cast_beam(),
+                    console::Block::Collect => {
+                        let (items, yields) = self.dispatch_collect(act.filter);
+                        self.console
+                            .credit(act.routine, items, yields, act.filter.is_some());
                     }
-                    // G8b/G8c: on foot, the walker is a **second agent** — its routines run
-                    // simultaneously. The foot `walk` nav steers the walker toward known sites
-                    // (applied in the Walk movement arm below); shared acts fire (a continuous
-                    // `collect` harvests as you explore; `when … → decode`/`hail`; `on-arrive` when
-                    // the walker reaches the site it's heading to).
-                    let mut foot_nav = None;
-                    if self.mode == Mode::Walk {
-                        let walker_arrived = self.arrived_at(self.camera.position);
-                        let foot =
+                    console::Block::Hail => self.hail_ship(),
+                    console::Block::RunFoot => self.start_expedition(), // G8c cross-agent
+                    console::Block::Spend(f) => self.spend_action(f),   // when(shards)→spend
+                    // A `when`-fired nav block engages the autopilot.
+                    b if b.is_nav() => self.auto_fly = true,
+                    _ => {}
+                }
+            }
+            // G8b/G8c: on foot, the walker is a **second agent** — its routines run
+            // simultaneously. The foot `walk` nav steers the walker toward known sites
+            // (applied in the Walk movement arm below); shared acts fire (a continuous
+            // `collect` harvests as you explore; `when … → decode`/`hail`; `on-arrive` when
+            // the walker reaches the site it's heading to).
+            let mut foot_nav = None;
+            if self.mode == Mode::Walk {
+                let walker_arrived = self.arrived_at(self.camera.position);
+                let foot = self
+                    .console
+                    .tick(console::Agent::Foot, data, bank, walker_arrived);
+                foot_nav = foot.nav;
+                for act in foot.acts {
+                    match act.block {
+                        console::Block::Collect => {
+                            let (items, yields) = self.dispatch_collect(act.filter);
                             self.console
-                                .tick(console::Agent::Foot, data, bank, walker_arrived);
-                        foot_nav = foot.nav;
-                        for act in foot.acts {
-                            match act.block {
-                                console::Block::Collect => {
-                                    let (items, yields) = self.dispatch_collect(act.filter);
-                                    self.console.credit(
-                                        act.routine,
-                                        items,
-                                        yields,
-                                        act.filter.is_some(),
-                                    );
-                                }
-                                console::Block::Hail => self.hail_ship(),
-                                console::Block::FireBeam => self.cast_beam(),
-                                console::Block::Spend(f) => self.spend_action(f),
-                                _ => {}
-                            }
+                                .credit(act.routine, items, yields, act.filter.is_some());
                         }
+                        console::Block::Hail => self.hail_ship(),
+                        console::Block::FireBeam => self.cast_beam(),
+                        console::Block::Spend(f) => self.spend_action(f),
+                        _ => {}
                     }
-                    // A continuous nav routine governs the autopilot wander; without one, drift is off
-                    // (you keep manual control) — re-enabling a nav routine re-engages it (in console_confirm).
-                    if self.nav_intent.is_none() {
-                        self.auto_fly = false;
-                    }
-                    // G8c: while piloting, the walker is the autonomous **away-agent** (mirror of the
-                    // away-ship): a ship `run(foot)` expedition drives it if one is out, else its own
-                    // foot routine does (the persistent away-walker).
-                    if self.mode == Mode::Pilot {
-                        if self.expedition.active() {
-                            self.advance_expedition(dt);
-                        } else {
-                            self.advance_away_walker(dt, data);
-                        }
-                    }
-                    match self.mode {
-                        // The ship hovers in place while a `run(foot)` expedition is out.
-                        Mode::Pilot if self.auto_fly && !self.expedition.active() => {
-                            // Autopilot — cinematic travel that **wanders to new places** (not a
-                            // circle): a low-frequency, mean-zero turn rate meanders the heading in
-                            // long S-curves while always cruising onward over fresh terrain. The
-                            // steering math is shared with the autonomous away-ship (G8a).
-                            self.auto_fly_t += dt;
-                            let (pos, angle) = autopilot_step(
-                                self.camera.position,
-                                self.auto_fly_angle,
-                                self.auto_fly_t,
-                                self.nav_intent,
-                                self.seek_target(),
-                                self.seed,
-                                AUTO_FLY_SPEED * self.progress.faculties().drive, // G10 `drive`
-                                dt,
-                            );
-                            self.auto_fly_angle = angle;
-                            self.camera = Camera::new(pos, angle, AUTO_FLY_PITCH);
-                        }
-                        Mode::Pilot => {
-                            // Manual flight (free 6-DOF).
-                            self.controller.update(&mut self.camera, dt);
-                        }
-                        Mode::Walk => {
-                            // The controller drives the look + the *wanted* free-fly delta.
-                            let prev = self.camera.position;
-                            self.controller.update(&mut self.camera, dt);
-                            let mut wanted = self.camera.position;
-                            // G8c: a foot `walk` routine **auto-walks** the walker toward the nearest
-                            // known site — but only when you're not steering yourself (manual input
-                            // always wins). Combined with `on-arrive → collect`, this is the on-foot
-                            // auto-collection loop you compose.
-                            let moved = (wanted - prev).with_y(0.0).length() > 1e-4;
-                            if !moved && foot_nav == Some(console::Block::Walk) {
-                                if let Some(target) = self.seek_target() {
-                                    wanted = walk_toward(prev, target, WALK_SPEED, dt);
-                                    self.camera.position = wanted;
-                                }
-                            }
-                            // Riding the survey-beam (G2): if attached to a live beam, the wanted
-                            // movement projected onto the beam axis slides you along the rail (1-DoF,
-                            // any angle). Reaching the far end detaches; expiry drops you (gravity).
-                            let riding = self
-                                .ride_t
-                                .zip(self.beam)
-                                .filter(|(_, b)| !b.dead(self.time));
-                            if let Some((t, b)) = riding {
-                                let seg = b.b - b.a;
-                                let len = seg.length().max(1e-3);
-                                let along = (wanted - prev).dot(seg / len) / len;
-                                let nt = (t + along).clamp(0.0, 1.0);
-                                self.camera.position = b.a.lerp(b.b, nt);
-                                self.ride_t = (nt < 1.0).then_some(nt); // arrive → detach
-                            } else {
-                                // Not riding (no beam / expired): a voxel-collided walk (gravity +
-                                // animated auto-step) — so you can descend into cave-mouths, and you
-                                // *drop* when the rail fades out from under you.
-                                self.ride_t = None;
-                                let seed = self.seed;
-                                self.camera.position =
-                                    self.walker.constrain(prev, wanted, dt, |x, y, z| {
-                                        worldgen::solid_at(x, y, z, seed)
-                                    });
-                            }
-                        }
-                    }
-                } // end !photo_active (E13)
-                  // While piloting, the cruiser is wherever you are (you're in it). On foot, the
-                  // cruiser is an **autonomous agent**: it flies its own ship routine (G8a).
-                if self.mode == Mode::Pilot {
-                    self.cruiser_pos = self.camera.position;
+                }
+            }
+            // A continuous nav routine governs the autopilot wander; without one, drift is off
+            // (you keep manual control) — re-enabling a nav routine re-engages it (in console_confirm).
+            if self.nav_intent.is_none() {
+                self.auto_fly = false;
+            }
+            // G8c: while piloting, the walker is the autonomous **away-agent** (mirror of the
+            // away-ship): a ship `run(foot)` expedition drives it if one is out, else its own
+            // foot routine does (the persistent away-walker).
+            if self.mode == Mode::Pilot {
+                if self.expedition.active() {
+                    self.advance_expedition(dt);
                 } else {
-                    self.fly_autonomous_ship(dt);
+                    self.advance_away_walker(dt, data);
                 }
-                // Stream chunks in/out around the (possibly moved) camera.
-                self.stream();
-                // Stream colossal structures (E18) in/out around the camera.
-                self.update_structures();
-                // Stream in-world inscriptions (E17) in/out around the camera.
-                self.update_inscriptions();
-
-                // Reactive audio (E16): the drone breathes with the flight. Estimate speed from
-                // the camera's motion this frame and blend in altitude, so it opens up when you
-                // fly fast / high and settles when you hang still or sink into a valley.
-                let pos = self.camera.position;
-                let speed = self
-                    .audio_prev_pos
-                    .map(|p| (pos - p).length() / dt.max(1e-3))
-                    .unwrap_or(0.0);
-                self.audio_prev_pos = Some(pos);
-                let speed_n = (speed / AUTO_FLY_SPEED).clamp(0.0, 1.0);
-                let alt_n = ((pos.y - 24.0) / 90.0).clamp(0.0, 1.0);
-                let intensity = (0.5 * speed_n + 0.5 * alt_n).clamp(0.0, 1.0);
-                // E16×E9: precipitation darkens + thickens the drone (storms sound heavier).
-                let weather_amt = self.weather.intensity();
-                #[cfg(not(target_arch = "wasm32"))]
-                if let Some(a) = &self.audio {
-                    a.set_intensity(intensity);
-                    a.set_weather(weather_amt);
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    controls::set_audio_intensity(intensity);
-                    controls::set_audio_weather(weather_amt); // E16×E9 web parity
-                }
-                let _ = (intensity, weather_amt); // used per-target above
-                                                  // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
-                                                  // camera) and re-upload its points each frame so they drift through the scene.
-                self.creatures.update(dt, self.camera.position);
-                // How many motes drift is scaled by the biome at the camera (E10): misty/abyssal
-                // biomes swarm with them, barren ones are sparse. ~7 wisps at the baseline.
-                let wisp_mult =
-                    biome::at(self.camera.position.x, self.camera.position.z, self.seed).wisps;
-                let wisp_n = (7.0 * wisp_mult).round() as usize;
-                // The polygonal cruiser shows parked while you're on foot; while piloting you're
-                // inside it (hidden). Drawn over the palette in true colour (gfx).
-                let ship_shown = self.mode == Mode::Walk;
-                let ship_pos = self.cruiser_pos;
-                // D9: precompute the touch overlay line before the mutable `state` borrow below.
-                let touch_overlay = self.touch_seen.then(|| {
-                    let (lv, rv) = self.touch_slider_vals();
-                    self.touch_layout.overlay(lv, rv, self.touch_ctx())
-                });
-                // D10: precompute the visible overlay rects (empty unless a touch device is in use).
-                let touch_rects: Vec<brickmap::hud::UiRect> = if self.touch_seen {
-                    let (lv, rv) = self.touch_slider_vals();
-                    // A pressed button stays highlighted for ~0.18 s after the tap.
-                    let pressed = self
-                        .touch_pressed
-                        .filter(|(_, t)| self.time - t < 0.18)
-                        .map(|(r, _)| r);
-                    self.touch_layout.overlay_rects(lv, rv, pressed)
-                } else {
-                    Vec::new()
-                };
-                if let Some(state) = self.state.as_mut() {
-                    // E15 wisps + G10 shard clusters share the per-frame points upload (both
-                    // small + bounded; a dedicated buffer if shard counts ever grow).
-                    let mut live_pts = self.creatures.points_n(wisp_n);
-                    live_pts.extend(self.shard_splats.iter().copied());
-                    state.set_creature_points(&live_pts);
-                    state.set_ship(ship_shown, ship_pos, 0.0);
-                }
-                // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
-                self.sim(dt);
-                // Global weather (E9): advance the cycle + spawn precipitation when it's raining.
-                self.tick_weather(dt);
-                // Ambient debris bursts ahead of the camera so the flight sweeps
-                // over rising embers (there's always motion in frame).
-                self.particles
-                    .set_emitters(lead_emitters(&self.camera, self.seed));
-                self.particles.update(dt);
-                let particles = self.particles.instances();
-
-                // On the web, pull the latest dial values set by the page sliders, plus
-                // any seed change requested from the page (E12).
-                #[cfg(target_arch = "wasm32")]
-                {
-                    self.wobble = controls::wobble();
-                    self.color_steps = controls::color_steps();
-                    self.toggles = controls::toggles();
-                    let (pon, pidx, pcount, pdither) = controls::palette();
-                    self.palette_on = pon;
-                    self.palette_index = pidx;
-                    self.palette_count = pcount;
-                    self.palette_dither = pdither;
-                    self.pixel_scale = controls::pixel_scale();
-                    self.biome_mode = controls::biome_mode();
-                    if let Some(seed) = controls::take_pending_seed() {
-                        self.set_seed(seed);
-                    }
-                }
-                // The current share string for "copy link" (computed before the mutable
-                // `state` borrow below; cheap, refreshed every frame).
-                #[cfg(target_arch = "wasm32")]
-                let share_str = self.share_string();
-
-                // Explored-map prep (E10): rebuild the GPU image only when the explored set grew.
-                // `build_map_image` borrows `&self`, so it must run before the mutable `state`
-                // borrow below; the upload + uniform are pushed inside the state block.
-                self.map_anim += dt;
-                // G2 beam clock + expiry, G3 auto-scan, then build this frame's overlay verts
-                // (warm beam ribbon + cool scan flicks) before the mutable `state` borrow below.
-                self.time += dt;
-                if self.beam.is_some_and(|b| b.dead(self.time)) {
-                    self.beam = None;
-                }
-                self.autoscan(dt);
-                // G10: stream the shard set around the camera (cheap; splats re-merged below).
-                self.update_shards();
-                let mut overlay_verts = self
-                    .beam
-                    .map(|b| b.ribbon(self.camera.position, self.time))
-                    .unwrap_or_default();
-                for f in &self.flicks {
-                    overlay_verts.extend(f.ribbon(self.camera.position, self.time));
-                }
-                let map_upload = (self.map_view && self.map_dirty)
-                    .then(|| self.build_map_image())
-                    .flatten();
-                if let Some((w, h, ox, oz, _)) = &map_upload {
-                    self.map_origin = (*ox, *oz);
-                    self.map_dims = (*w, *h);
-                    self.map_dirty = false;
-                }
-
-                // Biome-driven auto mode (E10): blend the biome at the camera and drive the
-                // look + drone mix (palette below; wobble/steps/sun + audio here). Blended fields
-                // vary continuously with position, so all of it transitions smoothly.
-                let bio = self
-                    .biome_mode
-                    .then(|| biome::at(self.camera.position.x, self.camera.position.z, self.seed));
-                if let Some(b) = bio {
-                    self.wobble = b.wobble;
-                    self.color_steps = b.steps;
-                    self.biome_label = b.label();
-                    // Structure-approach wobble (E18×E10): as you near a colossus the quantization
-                    // wobble pulls toward its own extreme — some giants warp space heavily (snap →
-                    // min), others snap crisp (snap → max). Deterministic per giant from its seed;
-                    // the nearest in-range one wins, ramped by horizontal proximity.
-                    let cam = self.camera.position;
-                    let seed = self.seed;
-                    let colossi = structures::colossi_near(seed, cam, STRUCTURE_RADIUS, |x, z| {
-                        worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
-                    });
-                    let (mut best, mut target) = (0.0f32, self.wobble);
-                    for p in &colossi {
-                        // Most giants are wobble-neutral; only rare ones warp (heavy, ~1 in 6) or
-                        // still (crisp, ~1 in 6) the space around them.
-                        let t = match (p.seed >> 9) % 6 {
-                            0 => WOBBLE_HEAVY,
-                            1 => WOBBLE_CRISP,
-                            _ => continue,
-                        };
-                        let d = ((p.pos.x - cam.x).powi(2) + (p.pos.z - cam.z).powi(2)).sqrt();
-                        let prox = (1.0 - d / WOBBLE_APPROACH).clamp(0.0, 1.0);
-                        if prox > best {
-                            best = prox;
-                            target = t;
-                        }
-                    }
-                    self.wobble += (target - self.wobble) * best;
-                    // Ethereal/ink pockets are pristine: pull wobble to zero last, so it wins over
-                    // both the biome base and any nearby giant — these are untouched special areas.
-                    self.wobble += (WOBBLE_PRISTINE - self.wobble) * b.ink;
-                    // Warp audio (E18×E16): only fires once the wobble has been pulled well below
-                    // baseline (i.e. right up against a "warping" giant) — heavier, throbbing drone.
-                    let warp_amt = ((60.0 - self.wobble) / (60.0 - WOBBLE_HEAVY)).clamp(0.0, 1.0);
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if let Some(a) = &self.audio {
-                        a.set_volume(b.vol);
-                        a.set_drive(b.heavy);
-                        a.set_tone(b.murk);
-                        a.set_warp(warp_amt);
-                        a.set_ethereal(b.ink);
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        controls::set_audio_volume(b.vol);
-                        controls::set_audio_drive(b.heavy);
-                        controls::set_audio_tone(b.murk);
-                        controls::set_audio_warp(warp_amt);
-                        controls::set_audio_ethereal(b.ink);
-                    }
-                }
-                let sun_amt = match bio {
-                    Some(b) => b.sun,
-                    None => f32::from(u8::from(self.toggles.sun)),
-                };
-                // Ink amount: the rare biome ethereal-pocket fade in biome mode, else the toggle.
-                let ink_amt = match bio {
-                    Some(b) => b.ink,
-                    None => f32::from(u8::from(self.toggles.ink)),
-                };
-
-                // Camera basis for billboarding foliage splats (E6).
-                let fwd = self.camera.forward();
-                let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
-                let cam_up = cam_right.cross(fwd).normalize_or_zero();
-
-                // G1/G4 HUD overlays, computed before the mutable `state` borrow below.
-                let strata_line = self.strata_hud();
-                let codex_view = self.codex_open.then(|| self.codex_text());
-                if self.console.open {
-                    self.sync_console_unlock(); // refresh the vocabulary for the render (G6)
-                }
-                let console_view = self.console.open.then(|| self.console.render());
-
-                if let Some(state) = self.state.as_mut() {
-                    let view_proj = self.camera.view_proj(state.aspect());
-                    // Push the palette (biome-blended ramp in biome mode, else the manual
-                    // selection) + pixel scale (E10) before drawing.
-                    if let Some(b) = bio {
-                        state.set_palette_colors(&b.colors, b.count, b.dither, true);
-                    } else {
-                        // The game owns the curated set; resolve the chosen index to its ramp
-                        // and feed the engine's colour seam (it carries no palette table).
-                        let pal = &palettes::PALETTES
-                            [self.palette_index.min(palettes::PALETTES.len() - 1)];
-                        state.set_palette_colors(
-                            pal.colors,
-                            self.palette_count.max(1),
-                            self.palette_dither,
-                            self.palette_on,
-                        );
-                    }
-                    // M8a: dynamic resolution — when frames run over budget, drop the internal
-                    // render resolution (a larger divisor on top of the art-directed `pixel_scale`)
-                    // so weak hardware holds frame-rate; recovers toward the base when fast. Only
-                    // ever makes the image *chunkier* than the art base (on-thesis), never sharper.
-                    // On capable hardware `dyn_extra` stays 0 → byte-identical to before.
-                    self.dyn_extra = dyn_resolution_step(
-                        self.dyn_extra,
-                        self.frame_ms_ema,
-                        DYN_TARGET_MS,
-                        DYN_MAX_EXTRA,
-                    );
-                    state.set_pixel_scale(self.pixel_scale + self.dyn_extra);
-                    // Survey-beam (G2): feed this frame's ribbon to the engine's post-palette
-                    // overlay (empty when no beam is up).
-                    state.set_overlay(&overlay_verts);
-                    // Explored-map overlay (E10): upload a fresh image if it grew, push the
-                    // pan/zoom/you-are-here uniform, and flag it on/off for the render pass.
-                    if let Some((w, h, _, _, rgba)) = &map_upload {
-                        state.set_map_image(*w, *h, rgba);
-                    }
-                    if self.map_view {
-                        let nch = world::Section::SIZE as f32;
-                        let blink = 0.5 + 0.5 * (self.map_anim * 7.0).sin();
-                        state.set_map_uniform(&map::MapUniform {
-                            origin_dims: [
-                                self.map_origin.0 as f32,
-                                self.map_origin.1 as f32,
-                                self.map_dims.0 as f32,
-                                self.map_dims.1 as f32,
-                            ],
-                            view: [self.map_pan.0, self.map_pan.1, MAP_ZOOM, state.aspect()],
-                            user: [
-                                self.camera.position.x / nch,
-                                self.camera.position.z / nch,
-                                blink,
-                                0.0,
-                            ],
-                            // Show the cruiser marker when it's parked (you're on foot).
-                            cruiser: [
-                                self.cruiser_pos.x / nch,
-                                self.cruiser_pos.z / nch,
-                                if self.mode == Mode::Walk { 1.0 } else { 0.0 },
-                                0.0,
-                            ],
-                        });
-                    }
-                    state.set_map_active(self.map_view);
-                    // `render` handles lost/outdated/transient surfaces internally.
-                    state.render(
-                        view_proj,
+            }
+            match self.mode {
+                // The ship hovers in place while a `run(foot)` expedition is out.
+                Mode::Pilot if self.auto_fly && !self.expedition.active() => {
+                    // Autopilot — cinematic travel that **wanders to new places** (not a
+                    // circle): a low-frequency, mean-zero turn rate meanders the heading in
+                    // long S-curves while always cruising onward over fresh terrain. The
+                    // steering math is shared with the autonomous away-ship (G8a).
+                    self.auto_fly_t += dt;
+                    let (pos, angle) = autopilot_step(
                         self.camera.position,
-                        cam_right,
-                        cam_up,
-                        &particles,
-                        [self.wobble, self.color_steps],
-                        self.toggles,
-                        sun_amt,
-                        ink_amt,
-                        weather_amt, // E9: precipitation greys the horizon in (murk)
+                        self.auto_fly_angle,
+                        self.auto_fly_t,
+                        self.nav_intent,
+                        self.seek_target(),
+                        self.seed,
+                        AUTO_FLY_SPEED * self.progress.faculties().drive, // G10 `drive`
+                        dt,
                     );
-
-                    // Perf HUD (M5): smooth the frame time, refresh a few times/sec.
-                    let ms = dt * 1000.0;
-                    self.frame_ms_ema = if self.frame_ms_ema == 0.0 {
-                        ms
+                    self.auto_fly_angle = angle;
+                    self.camera = Camera::new(pos, angle, AUTO_FLY_PITCH);
+                }
+                Mode::Pilot => {
+                    // Manual flight (free 6-DOF).
+                    self.controller.update(&mut self.camera, dt);
+                }
+                Mode::Walk => {
+                    // The controller drives the look + the *wanted* free-fly delta.
+                    let prev = self.camera.position;
+                    self.controller.update(&mut self.camera, dt);
+                    let mut wanted = self.camera.position;
+                    // G8c: a foot `walk` routine **auto-walks** the walker toward the nearest
+                    // known site — but only when you're not steering yourself (manual input
+                    // always wins). Combined with `on-arrive → collect`, this is the on-foot
+                    // auto-collection loop you compose.
+                    let moved = (wanted - prev).with_y(0.0).length() > 1e-4;
+                    if !moved && foot_nav == Some(console::Block::Walk) {
+                        if let Some(target) = self.seek_target() {
+                            wanted = walk_toward(prev, target, WALK_SPEED, dt);
+                            self.camera.position = wanted;
+                        }
+                    }
+                    // Riding the survey-beam (G2): if attached to a live beam, the wanted
+                    // movement projected onto the beam axis slides you along the rail (1-DoF,
+                    // any angle). Reaching the far end detaches; expiry drops you (gravity).
+                    let riding = self
+                        .ride_t
+                        .zip(self.beam)
+                        .filter(|(_, b)| !b.dead(self.time));
+                    if let Some((t, b)) = riding {
+                        let seg = b.b - b.a;
+                        let len = seg.length().max(1e-3);
+                        let along = (wanted - prev).dot(seg / len) / len;
+                        let nt = (t + along).clamp(0.0, 1.0);
+                        self.camera.position = b.a.lerp(b.b, nt);
+                        self.ride_t = (nt < 1.0).then_some(nt); // arrive → detach
                     } else {
-                        self.frame_ms_ema * 0.9 + ms * 0.1
-                    };
-                    self.hud_timer += dt;
-                    if self.hud_timer >= 0.2 {
-                        self.hud_timer = 0.0;
-                        let s = state.stats();
-                        let fps = if self.frame_ms_ema > 0.0 {
-                            1000.0 / self.frame_ms_ema
-                        } else {
-                            0.0
-                        };
-                        let meshing = self.loader.pending_count();
-                        let mut meshing = if meshing > 0 {
-                            format!(" · meshing {meshing}")
-                        } else {
-                            String::new()
-                        };
-                        // M8a: surface dynamic-resolution when it's engaged (chunkier under load).
-                        if self.dyn_extra > 0 {
-                            meshing.push_str(&format!(" · dynres +{}", self.dyn_extra));
-                        }
-                        // E9: surface the weather when it's doing something.
-                        if self.weather.intensity() > 0.0 {
-                            meshing.push_str(&format!(" · {}", self.weather.phase().label()));
-                        }
-                        // In biome mode, show the (blended) biome name; else the manual palette.
-                        let pal = if self.biome_mode {
-                            format!(" · biome {}", self.biome_label)
-                        } else if self.palette_on {
-                            format!(
-                                " · {} {}c",
-                                palettes::PALETTES[self.palette_index].name,
-                                self.palette_count
-                            )
-                        } else {
-                            String::new()
-                        };
-                        // In biome mode the toggles are auto-driven, so don't clutter with them.
-                        let off = if self.biome_mode {
-                            String::new()
-                        } else {
-                            self.toggles.off_summary()
-                        };
-                        // Movement mode (E19): piloting (autopilot/manual) or walking.
-                        let mut mode = match self.mode {
-                            Mode::Pilot if self.auto_fly => " · cruiser:auto [E exit when low]",
-                            Mode::Pilot => " · cruiser:manual [E exit when low]",
-                            Mode::Walk if self.ride_t.is_some() => " · riding the beam",
-                            Mode::Walk => " · walking [E enter · H hail · click: survey-beam]",
-                        }
-                        .to_string();
-                        // G8c: surface the automated expedition's phase when one is running.
-                        if let Some(exp) = self.expedition.label() {
-                            mode.push_str(" · ");
-                            mode.push_str(exp);
-                        }
-                        // G9/G12: announce a fresh block-name discovery for a few seconds — the
-                        // recovered name as its glyph cluster (the event marker stays English
-                        // instrumentation; the block's *name* never does).
-                        if let Some((blk, t)) = self.last_discovery {
-                            if self.time - t < 5.0 {
-                                mode.push_str(&format!(" · NAME RECOVERED — {}", blk.glyphs()));
-                            }
-                        }
-                        // G11: the one lit goal — the single nearest-to-done thing.
-                        if let Some(goal) = self.console.lit_goal(&self.progress) {
-                            mode.push_str(&format!(" · ◆ {goal}"));
-                        }
-                        // E13: photo mode readout (paused · free-cam · FOV).
-                        if self.photo_active {
-                            mode = format!(
-                                " · PHOTO {:.0}° [WASD/look · -/= zoom · K exit]",
-                                self.camera.fov_y.to_degrees()
-                            );
-                        }
-                        // When the map is open, the HUD becomes its key + coordinates (crosshair
-                        // centre + your position), instead of the perf line.
-                        let hud = if let Some(console) = &console_view {
-                            console.clone()
-                        } else if let Some(codex) = &codex_view {
-                            codex.clone()
-                        } else if self.map_view {
-                            let nch = world::Section::SIZE as f32;
-                            let (px, pz) =
-                                (self.camera.position.x as i32, self.camera.position.z as i32);
-                            let (vx, vz) =
-                                ((self.map_pan.0 * nch) as i32, (self.map_pan.1 * nch) as i32);
-                            format!(
+                        // Not riding (no beam / expired): a voxel-collided walk (gravity +
+                        // animated auto-step) — so you can descend into cave-mouths, and you
+                        // *drop* when the rail fades out from under you.
+                        self.ride_t = None;
+                        let seed = self.seed;
+                        self.camera.position =
+                            self.walker.constrain(prev, wanted, dt, |x, y, z| {
+                                worldgen::solid_at(x, y, z, seed)
+                            });
+                    }
+                }
+            }
+        } // end !photo_active (E13)
+          // While piloting, the cruiser is wherever you are (you're in it). On foot, the
+          // cruiser is an **autonomous agent**: it flies its own ship routine (G8a).
+        if self.mode == Mode::Pilot {
+            self.cruiser_pos = self.camera.position;
+        } else {
+            self.fly_autonomous_ship(dt);
+        }
+        // Stream chunks in/out around the (possibly moved) camera.
+        self.stream();
+        // Stream colossal structures (E18) in/out around the camera.
+        self.update_structures();
+        // Stream in-world inscriptions (E17) in/out around the camera.
+        self.update_inscriptions();
+
+        // Reactive audio (E16): the drone breathes with the flight. Estimate speed from
+        // the camera's motion this frame and blend in altitude, so it opens up when you
+        // fly fast / high and settles when you hang still or sink into a valley.
+        let pos = self.camera.position;
+        let speed = self
+            .audio_prev_pos
+            .map(|p| (pos - p).length() / dt.max(1e-3))
+            .unwrap_or(0.0);
+        self.audio_prev_pos = Some(pos);
+        let speed_n = (speed / AUTO_FLY_SPEED).clamp(0.0, 1.0);
+        let alt_n = ((pos.y - 24.0) / 90.0).clamp(0.0, 1.0);
+        let intensity = (0.5 * speed_n + 0.5 * alt_n).clamp(0.0, 1.0);
+        // E16×E9: precipitation darkens + thickens the drone (storms sound heavier).
+        let weather_amt = self.weather.intensity();
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(a) = &self.audio {
+            a.set_intensity(intensity);
+            a.set_weather(weather_amt);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            controls::set_audio_intensity(intensity);
+            controls::set_audio_weather(weather_amt); // E16×E9 web parity
+        }
+        let _ = (intensity, weather_amt); // used per-target above
+                                          // Drifting wisp creatures (E15): advance the swarm (re-tethered to the live
+                                          // camera) and re-upload its points each frame so they drift through the scene.
+        self.creatures.update(dt, self.camera.position);
+        // How many motes drift is scaled by the biome at the camera (E10): misty/abyssal
+        // biomes swarm with them, barren ones are sparse. ~7 wisps at the baseline.
+        let wisp_mult = biome::at(self.camera.position.x, self.camera.position.z, self.seed).wisps;
+        let wisp_n = (7.0 * wisp_mult).round() as usize;
+        // The polygonal cruiser shows parked while you're on foot; while piloting you're
+        // inside it (hidden). Drawn over the palette in true colour (gfx).
+        let ship_shown = self.mode == Mode::Walk;
+        let ship_pos = self.cruiser_pos;
+        // D9: precompute the touch overlay line before the mutable `state` borrow below.
+        let touch_overlay = self.touch_seen.then(|| {
+            let (lv, rv) = self.touch_slider_vals();
+            self.touch_layout.overlay(lv, rv, self.touch_ctx())
+        });
+        // D10: precompute the visible overlay rects (empty unless a touch device is in use).
+        let touch_rects: Vec<brickmap::hud::UiRect> = if self.touch_seen {
+            let (lv, rv) = self.touch_slider_vals();
+            // A pressed button stays highlighted for ~0.18 s after the tap.
+            let pressed = self
+                .touch_pressed
+                .filter(|(_, t)| self.time - t < 0.18)
+                .map(|(r, _)| r);
+            self.touch_layout.overlay_rects(lv, rv, pressed)
+        } else {
+            Vec::new()
+        };
+        if let Some(state) = self.state.as_mut() {
+            // E15 wisps + G10 shard clusters share the per-frame points upload (both
+            // small + bounded; a dedicated buffer if shard counts ever grow).
+            let mut live_pts = self.creatures.points_n(wisp_n);
+            live_pts.extend(self.shard_splats.iter().copied());
+            state.set_creature_points(&live_pts);
+            state.set_ship(ship_shown, ship_pos, 0.0);
+        }
+        // Falling-sand simulation (E5): seed, step, re-mesh dirty overlay chunks.
+        self.sim(dt);
+        // Global weather (E9): advance the cycle + spawn precipitation when it's raining.
+        self.tick_weather(dt);
+        // Ambient debris bursts ahead of the camera so the flight sweeps
+        // over rising embers (there's always motion in frame).
+        self.particles
+            .set_emitters(lead_emitters(&self.camera, self.seed));
+        self.particles.update(dt);
+        let particles = self.particles.instances();
+
+        // On the web, pull the latest dial values set by the page sliders, plus
+        // any seed change requested from the page (E12).
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.wobble = controls::wobble();
+            self.color_steps = controls::color_steps();
+            self.toggles = controls::toggles();
+            let (pon, pidx, pcount, pdither) = controls::palette();
+            self.palette_on = pon;
+            self.palette_index = pidx;
+            self.palette_count = pcount;
+            self.palette_dither = pdither;
+            self.pixel_scale = controls::pixel_scale();
+            self.biome_mode = controls::biome_mode();
+            if let Some(seed) = controls::take_pending_seed() {
+                self.set_seed(seed);
+            }
+        }
+        // The current share string for "copy link" (computed before the mutable
+        // `state` borrow below; cheap, refreshed every frame).
+        #[cfg(target_arch = "wasm32")]
+        let share_str = self.share_string();
+
+        // Explored-map prep (E10): rebuild the GPU image only when the explored set grew.
+        // `build_map_image` borrows `&self`, so it must run before the mutable `state`
+        // borrow below; the upload + uniform are pushed inside the state block.
+        self.map_anim += dt;
+        // G2 beam clock + expiry, G3 auto-scan, then build this frame's overlay verts
+        // (warm beam ribbon + cool scan flicks) before the mutable `state` borrow below.
+        self.time += dt;
+        if self.beam.is_some_and(|b| b.dead(self.time)) {
+            self.beam = None;
+        }
+        self.autoscan(dt);
+        // G10: stream the shard set around the camera (cheap; splats re-merged below).
+        self.update_shards();
+        let mut overlay_verts = self
+            .beam
+            .map(|b| b.ribbon(self.camera.position, self.time))
+            .unwrap_or_default();
+        for f in &self.flicks {
+            overlay_verts.extend(f.ribbon(self.camera.position, self.time));
+        }
+        let map_upload = (self.map_view && self.map_dirty)
+            .then(|| self.build_map_image())
+            .flatten();
+        if let Some((w, h, ox, oz, _)) = &map_upload {
+            self.map_origin = (*ox, *oz);
+            self.map_dims = (*w, *h);
+            self.map_dirty = false;
+        }
+
+        // Biome-driven auto mode (E10): blend the biome at the camera and drive the
+        // look + drone mix (palette below; wobble/steps/sun + audio here). Blended fields
+        // vary continuously with position, so all of it transitions smoothly.
+        let bio = self
+            .biome_mode
+            .then(|| biome::at(self.camera.position.x, self.camera.position.z, self.seed));
+        if let Some(b) = bio {
+            self.wobble = b.wobble;
+            self.color_steps = b.steps;
+            self.biome_label = b.label();
+            // Structure-approach wobble (E18×E10): as you near a colossus the quantization
+            // wobble pulls toward its own extreme — some giants warp space heavily (snap →
+            // min), others snap crisp (snap → max). Deterministic per giant from its seed;
+            // the nearest in-range one wins, ramped by horizontal proximity.
+            let cam = self.camera.position;
+            let seed = self.seed;
+            let colossi = structures::colossi_near(seed, cam, STRUCTURE_RADIUS, |x, z| {
+                worldgen::height(x.floor() as i32, z.floor() as i32, seed) as f32
+            });
+            let (mut best, mut target) = (0.0f32, self.wobble);
+            for p in &colossi {
+                // Most giants are wobble-neutral; only rare ones warp (heavy, ~1 in 6) or
+                // still (crisp, ~1 in 6) the space around them.
+                let t = match (p.seed >> 9) % 6 {
+                    0 => WOBBLE_HEAVY,
+                    1 => WOBBLE_CRISP,
+                    _ => continue,
+                };
+                let d = ((p.pos.x - cam.x).powi(2) + (p.pos.z - cam.z).powi(2)).sqrt();
+                let prox = (1.0 - d / WOBBLE_APPROACH).clamp(0.0, 1.0);
+                if prox > best {
+                    best = prox;
+                    target = t;
+                }
+            }
+            self.wobble += (target - self.wobble) * best;
+            // Ethereal/ink pockets are pristine: pull wobble to zero last, so it wins over
+            // both the biome base and any nearby giant — these are untouched special areas.
+            self.wobble += (WOBBLE_PRISTINE - self.wobble) * b.ink;
+            // Warp audio (E18×E16): only fires once the wobble has been pulled well below
+            // baseline (i.e. right up against a "warping" giant) — heavier, throbbing drone.
+            let warp_amt = ((60.0 - self.wobble) / (60.0 - WOBBLE_HEAVY)).clamp(0.0, 1.0);
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(a) = &self.audio {
+                a.set_volume(b.vol);
+                a.set_drive(b.heavy);
+                a.set_tone(b.murk);
+                a.set_warp(warp_amt);
+                a.set_ethereal(b.ink);
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                controls::set_audio_volume(b.vol);
+                controls::set_audio_drive(b.heavy);
+                controls::set_audio_tone(b.murk);
+                controls::set_audio_warp(warp_amt);
+                controls::set_audio_ethereal(b.ink);
+            }
+        }
+        let sun_amt = match bio {
+            Some(b) => b.sun,
+            None => f32::from(u8::from(self.toggles.sun)),
+        };
+        // Ink amount: the rare biome ethereal-pocket fade in biome mode, else the toggle.
+        let ink_amt = match bio {
+            Some(b) => b.ink,
+            None => f32::from(u8::from(self.toggles.ink)),
+        };
+
+        // Camera basis for billboarding foliage splats (E6).
+        let fwd = self.camera.forward();
+        let cam_right = fwd.cross(Vec3::Y).normalize_or_zero();
+        let cam_up = cam_right.cross(fwd).normalize_or_zero();
+
+        // G1/G4 HUD overlays, computed before the mutable `state` borrow below.
+        let strata_line = self.strata_hud();
+        let codex_view = self.codex_open.then(|| self.codex_text());
+        if self.console.open {
+            self.sync_console_unlock(); // refresh the vocabulary for the render (G6)
+        }
+        let console_view = self.console.open.then(|| self.console.render());
+
+        if let Some(state) = self.state.as_mut() {
+            let view_proj = self.camera.view_proj(state.aspect());
+            // Push the palette (biome-blended ramp in biome mode, else the manual
+            // selection) + pixel scale (E10) before drawing.
+            if let Some(b) = bio {
+                state.set_palette_colors(&b.colors, b.count, b.dither, true);
+            } else {
+                // The game owns the curated set; resolve the chosen index to its ramp
+                // and feed the engine's colour seam (it carries no palette table).
+                let pal = &palettes::PALETTES[self.palette_index.min(palettes::PALETTES.len() - 1)];
+                state.set_palette_colors(
+                    pal.colors,
+                    self.palette_count.max(1),
+                    self.palette_dither,
+                    self.palette_on,
+                );
+            }
+            // M8a: dynamic resolution — when frames run over budget, drop the internal
+            // render resolution (a larger divisor on top of the art-directed `pixel_scale`)
+            // so weak hardware holds frame-rate; recovers toward the base when fast. Only
+            // ever makes the image *chunkier* than the art base (on-thesis), never sharper.
+            // On capable hardware `dyn_extra` stays 0 → byte-identical to before.
+            self.dyn_extra = dyn_resolution_step(
+                self.dyn_extra,
+                self.frame_ms_ema,
+                DYN_TARGET_MS,
+                DYN_MAX_EXTRA,
+            );
+            state.set_pixel_scale(self.pixel_scale + self.dyn_extra);
+            // Survey-beam (G2): feed this frame's ribbon to the engine's post-palette
+            // overlay (empty when no beam is up).
+            state.set_overlay(&overlay_verts);
+            // Explored-map overlay (E10): upload a fresh image if it grew, push the
+            // pan/zoom/you-are-here uniform, and flag it on/off for the render pass.
+            if let Some((w, h, _, _, rgba)) = &map_upload {
+                state.set_map_image(*w, *h, rgba);
+            }
+            if self.map_view {
+                let nch = world::Section::SIZE as f32;
+                let blink = 0.5 + 0.5 * (self.map_anim * 7.0).sin();
+                state.set_map_uniform(&map::MapUniform {
+                    origin_dims: [
+                        self.map_origin.0 as f32,
+                        self.map_origin.1 as f32,
+                        self.map_dims.0 as f32,
+                        self.map_dims.1 as f32,
+                    ],
+                    view: [self.map_pan.0, self.map_pan.1, MAP_ZOOM, state.aspect()],
+                    user: [
+                        self.camera.position.x / nch,
+                        self.camera.position.z / nch,
+                        blink,
+                        0.0,
+                    ],
+                    // Show the cruiser marker when it's parked (you're on foot).
+                    cruiser: [
+                        self.cruiser_pos.x / nch,
+                        self.cruiser_pos.z / nch,
+                        if self.mode == Mode::Walk { 1.0 } else { 0.0 },
+                        0.0,
+                    ],
+                });
+            }
+            state.set_map_active(self.map_view);
+            // `render` handles lost/outdated/transient surfaces internally.
+            state.render(
+                view_proj,
+                self.camera.position,
+                cam_right,
+                cam_up,
+                &particles,
+                [self.wobble, self.color_steps],
+                self.toggles,
+                sun_amt,
+                ink_amt,
+                weather_amt, // E9: precipitation greys the horizon in (murk)
+            );
+
+            // Perf HUD (M5): smooth the frame time, refresh a few times/sec.
+            let ms = dt * 1000.0;
+            self.frame_ms_ema = if self.frame_ms_ema == 0.0 {
+                ms
+            } else {
+                self.frame_ms_ema * 0.9 + ms * 0.1
+            };
+            self.hud_timer += dt;
+            if self.hud_timer >= 0.2 {
+                self.hud_timer = 0.0;
+                let s = state.stats();
+                let fps = if self.frame_ms_ema > 0.0 {
+                    1000.0 / self.frame_ms_ema
+                } else {
+                    0.0
+                };
+                let meshing = self.loader.pending_count();
+                let mut meshing = if meshing > 0 {
+                    format!(" · meshing {meshing}")
+                } else {
+                    String::new()
+                };
+                // M8a: surface dynamic-resolution when it's engaged (chunkier under load).
+                if self.dyn_extra > 0 {
+                    meshing.push_str(&format!(" · dynres +{}", self.dyn_extra));
+                }
+                // E9: surface the weather when it's doing something.
+                if self.weather.intensity() > 0.0 {
+                    meshing.push_str(&format!(" · {}", self.weather.phase().label()));
+                }
+                // In biome mode, show the (blended) biome name; else the manual palette.
+                let pal = if self.biome_mode {
+                    format!(" · biome {}", self.biome_label)
+                } else if self.palette_on {
+                    format!(
+                        " · {} {}c",
+                        palettes::PALETTES[self.palette_index].name,
+                        self.palette_count
+                    )
+                } else {
+                    String::new()
+                };
+                // In biome mode the toggles are auto-driven, so don't clutter with them.
+                let off = if self.biome_mode {
+                    String::new()
+                } else {
+                    self.toggles.off_summary()
+                };
+                // Movement mode (E19): piloting (autopilot/manual) or walking.
+                let mut mode = match self.mode {
+                    Mode::Pilot if self.auto_fly => " · cruiser:auto [E exit when low]",
+                    Mode::Pilot => " · cruiser:manual [E exit when low]",
+                    Mode::Walk if self.ride_t.is_some() => " · riding the beam",
+                    Mode::Walk => " · walking [E enter · H hail · click: survey-beam]",
+                }
+                .to_string();
+                // G8c: surface the automated expedition's phase when one is running.
+                if let Some(exp) = self.expedition.label() {
+                    mode.push_str(" · ");
+                    mode.push_str(exp);
+                }
+                // G9/G12: announce a fresh block-name discovery for a few seconds — the
+                // recovered name as its glyph cluster (the event marker stays English
+                // instrumentation; the block's *name* never does).
+                if let Some((blk, t)) = self.last_discovery {
+                    if self.time - t < 5.0 {
+                        mode.push_str(&format!(" · NAME RECOVERED — {}", blk.glyphs()));
+                    }
+                }
+                // G11: the one lit goal — the single nearest-to-done thing.
+                if let Some(goal) = self.console.lit_goal(&self.progress) {
+                    mode.push_str(&format!(" · ◆ {goal}"));
+                }
+                // E13: photo mode readout (paused · free-cam · FOV).
+                if self.photo_active {
+                    mode = format!(
+                        " · PHOTO {:.0}° [WASD/look · -/= zoom · K exit]",
+                        self.camera.fov_y.to_degrees()
+                    );
+                }
+                // When the map is open, the HUD becomes its key + coordinates (crosshair
+                // centre + your position), instead of the perf line.
+                let hud = if let Some(console) = &console_view {
+                    console.clone()
+                } else if let Some(codex) = &codex_view {
+                    codex.clone()
+                } else if self.map_view {
+                    let nch = world::Section::SIZE as f32;
+                    let (px, pz) = (self.camera.position.x as i32, self.camera.position.z as i32);
+                    let (vx, vz) = ((self.map_pan.0 * nch) as i32, (self.map_pan.1 * nch) as i32);
+                    format!(
                                 "MAP  seed {}\nyou x{px} z{pz}   +crosshair x{vx} z{vz}\nkey: yellow=you  amber ring=scanned (go collect)  cyan dot=text  violet=pristine  orange=cruiser\n[stick / arrows] pan    [X / N] close",
                                 self.seed,
                             )
-                        } else {
-                            format!(
+                } else {
+                    format!(
                                 "brickmap {BUILD} · {fps:.0} fps · {:.1} ms · seed {} · {}/{} chunks · {} tris · {} fx · {} splats · {} relics · {} dc · {} kB/f ÷{}{pal}{meshing}{mode}{off}\n{}",
                                 self.frame_ms_ema,
                                 self.seed,
@@ -3067,38 +3081,26 @@ impl ApplicationHandler<AppEvent> for App {
                                 s.pixel_scale,         // M10: internal-res divisor (incl. dyn-res)
                                 strata_line,
                             )
-                        };
-                        // D9: once a touch device is in use, append the on-screen control overlay
-                        // (sliders + buttons) to the HUD/text path. (Edge-strip placement + dimming
-                        // is the deferred on-device visual; this is the headless-renderable v1.)
-                        let hud = match &touch_overlay {
-                            Some(o) => format!("{hud}\n{o}"),
-                            None => hud,
-                        };
-                        // D10: the visible touch-control overlay (rects from `touch::Layout`).
-                        state.set_ui_rects(&touch_rects);
-                        // In-engine text overlay on every platform (no DOM HUD).
-                        state.set_hud(&hud);
-                        #[cfg(not(target_arch = "wasm32"))]
-                        state.window().set_title(&format!("brickmap — {hud}"));
-                        #[cfg(target_arch = "wasm32")]
-                        controls::set_current_share(&share_str); // keep copy-link fresh
-                    }
-
-                    // Drive a continuous loop so held keys animate.
-                    state.window().request_redraw();
-                }
+                };
+                // D9: once a touch device is in use, append the on-screen control overlay
+                // (sliders + buttons) to the HUD/text path. (Edge-strip placement + dimming
+                // is the deferred on-device visual; this is the headless-renderable v1.)
+                let hud = match &touch_overlay {
+                    Some(o) => format!("{hud}\n{o}"),
+                    None => hud,
+                };
+                // D10: the visible touch-control overlay (rects from `touch::Layout`).
+                state.set_ui_rects(&touch_rects);
+                // In-engine text overlay on every platform (no DOM HUD).
+                state.set_hud(&hud);
+                #[cfg(not(target_arch = "wasm32"))]
+                state.window().set_title(&format!("brickmap — {hud}"));
+                #[cfg(target_arch = "wasm32")]
+                controls::set_current_share(&share_str); // keep copy-link fresh
             }
-            _ => {}
-        }
-    }
 
-    fn device_event(&mut self, _event_loop: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
-        // Raw mouse motion drives mouselook while the pointer is captured.
-        if let DeviceEvent::MouseMotion { delta } = event {
-            if self.cursor_locked {
-                self.controller.add_look(delta.0 as f32, delta.1 as f32);
-            }
+            // Drive a continuous loop so held keys animate.
+            state.window().request_redraw();
         }
     }
 }
@@ -3288,9 +3290,38 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
     #[cfg(target_arch = "wasm32")]
     controls::init_from(&view);
 
-    let mut app = App {
+    let mut app = assemble_app(
+        view,
+        pos,
+        camera,
+        Some(event_loop.create_proxy()),
+        initial_progress(),
+    );
+    // Start the drone on the world seed so the dirge matches the world (desktop + Android; a
+    // no-op None if there's no audio device). Web starts audio from the page on first tap.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        app.audio = audio_native::AudioEngine::start(view.seed);
+    }
+    // G5: restore any saved routine edits (nav + filter) from the same share source.
+    app.console.restore(&initial_share_source());
+    app
+}
+
+/// Build the `App` value from a resolved world/view. The single construction site shared by the
+/// live entry (`build_app` — env-driven view, audio, restore) and the D11 headless harness
+/// (`App::headless` — a pure seeded world, no GPU/audio/env). Keeping the ~70-field literal in one
+/// place means the two paths can never drift. `audio` starts `None`; the live path turns it on.
+fn assemble_app(
+    view: share::ShareState,
+    pos: Vec3,
+    camera: Camera,
+    proxy: Option<EventLoopProxy<AppEvent>>,
+    progress: progress::Progress,
+) -> App {
+    App {
         state: None,
-        proxy: Some(event_loop.create_proxy()),
+        proxy,
         camera,
         controller: CameraController::new(45.0),
         particles: ParticleSystem::new(Vec::new()),
@@ -3343,8 +3374,7 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         creatures: creatures::Swarm::new(view.seed ^ 0xE15_E15, 12, pos, 80.0),
         text_cells: std::collections::HashSet::new(),
         audio_prev_pos: None,
-        // Restore collected strata + codex from the same share source as the view (G1).
-        progress: initial_progress(),
+        progress,
         collectible: Vec::new(),
         codex_open: false,
         console: console::Console::default(),
@@ -3375,14 +3405,34 @@ fn build_app(event_loop: &EventLoop<AppEvent>) -> App {
         shards_taken: HashSet::new(),
         shards_dirty: false,
         shard_splats: Vec::new(),
-        // Start the drone on the world seed so the dirge matches the world (desktop + Android;
-        // a no-op None if there's no audio device). Web starts audio from the page on first tap.
+        // Audio is off here; the live `build_app` starts the drone after assembly (headless
+        // stays silent + deterministic, no device dependence).
         #[cfg(not(target_arch = "wasm32"))]
-        audio: audio_native::AudioEngine::start(view.seed),
-    };
-    // G5: restore any saved routine edits (nav + filter) from the same share source.
-    app.console.restore(&initial_share_source());
-    app
+        audio: None,
+    }
+}
+
+impl App {
+    /// D11: construct an `App` with **no GPU/window** (`state: None`, `proxy: None`) on a fresh
+    /// seeded world — the headless integration harness drives it tick-by-tick with `run_frame`.
+    /// Pure: no env, no share-link, no audio, so a seed alone fully determines the run. The same
+    /// `assemble_app` the live entry uses, so the harness exercises the real `App`. Test-only.
+    #[cfg(test)]
+    fn headless(seed: u32) -> App {
+        let ground = worldgen::height(0, 0, seed) as f32;
+        let view = share::ShareState {
+            seed,
+            pos: [0.0, ground + CRUISE_HEIGHT, 0.0],
+            yaw: 0.0,
+            pitch: AUTO_FLY_PITCH,
+            wobble: 85.0,
+            color_steps: 4.0,
+            toggles: Toggles::default().to_mask(),
+        };
+        let pos = Vec3::from(view.pos);
+        let camera = Camera::new(pos, view.yaw, view.pitch);
+        assemble_app(view, pos, camera, None, progress::Progress::default())
+    }
 }
 
 /// Resolve the initial world/view, overriding `default` from a shared link or CLI seed.

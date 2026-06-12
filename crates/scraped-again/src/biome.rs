@@ -234,10 +234,14 @@ fn vnoise(x: f32, z: f32, seed: u32) -> f32 {
     let (xi, zi) = (x0 as i32, z0 as i32);
     let (fx, fz) = (x - x0, z - z0);
     let (sx, sz) = (fx * fx * (3.0 - 2.0 * fx), fz * fz * (3.0 - 2.0 * fz));
+    // BUG1 defense-in-depth: at an `f32::MAX`-class coord `x0 as i32` saturates to `i32::MAX`, so
+    // the lattice `+1` would overflow (D11 surfaced this). Wrap the index — byte-identical to `+1`
+    // at every reachable coordinate (the hash already mixes with `wrapping_mul`), panic-free at any.
+    let (xi1, zi1) = (xi.wrapping_add(1), zi.wrapping_add(1));
     let n00 = hash(xi, zi, seed);
-    let n10 = hash(xi + 1, zi, seed);
-    let n01 = hash(xi, zi + 1, seed);
-    let n11 = hash(xi + 1, zi + 1, seed);
+    let n10 = hash(xi1, zi, seed);
+    let n01 = hash(xi, zi1, seed);
+    let n11 = hash(xi1, zi1, seed);
     lerp(lerp(n00, n10, sx), lerp(n01, n11, sx), sz)
 }
 

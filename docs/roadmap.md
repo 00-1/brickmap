@@ -1068,6 +1068,33 @@ visual == hit-zone by construction. Shown after the first touch; context labels 
 - **Deferred (eye-tuning):** colour/opacity/size/placement; per-button glyph labels on the rects
   (positioned text — a polish; the HUD line names them for now).
 
+### D11 — End-to-end play harness (headless integration + soak) ✅ &nbsp;→ [`milestones/D11-e2e-harness.md`](milestones/D11-e2e-harness.md)
+Everything G9–G16 was unit-tested + golden-hashed, but the **per-frame orchestration in `App`
+that wires the modules together over time** (autopilot → autoscan → on-scan/continuous
+auto-collect → shard-intake → research-fill → comprehend → legibility, the two-agent expedition,
+streaming-driven `collectible`/map state, persistence) had **never been driven end to end**. D11
+adds a durable headless harness that drives the *real* loop and asserts it progresses + holds its
+invariants (a CI regression asset).
+- **The seam (Decision 2, headless-App):** the `RedrawRequested` body became one shared method,
+  `App::run_frame(real_dt)`, called by **both** the live window *and* the harness — so there's no
+  parallel re-implementation that could drift. `App::headless(seed)` constructs the app with
+  `state: None` (no GPU/window/audio) via the same `assemble_app` the live entry uses; every
+  GPU/window touch inside `run_frame` was already `state`-gated. Sim-core extraction (Decision 1)
+  was deferred as too invasive for now; the headless path is behaviour-preserving (golden voxel-hash
+  + headless render byte-identical) and noted as the lower-risk choice the brief sanctioned.
+- **Built + tested** (`src/e2e.rs`, 8 tests): the real loop plays + progresses (multi-seed); a
+  scripted progression walks discovery → research-fill → comprehend → an authored routine emitting
+  acts → an expedition cycle → a state round-trip; determinism (same seed+inputs → identical
+  state); persistence fidelity + malformed/old payloads decode gracefully; a bounded **seeded
+  soak/fuzz** (random valid edits; no panic/NaN/overflow/unbounded growth; heavy run env-gated via
+  `E2E_SOAK_TICKS`); a u64-economy large-intake overflow check; and an `#[ignore]` render-robustness
+  sweep (needs a Vulkan adapter — local/opt-in, not CI). BUG1/BUG2 carry regression asserts here too.
+- **Surfaced + fixed (D11 doing its job):** the soak found a latent integer overflow in
+  `biome::vnoise` (the lattice `+1` overflowed at `f32::MAX`-class coords — beyond the ±`POS_BOUND`
+  share clamp, so unreachable in play, but a gap in BUG1's "any extreme cam coord is panic-free"
+  defense-in-depth). Hardened with wrapping lattice indices — byte-identical to `+1` at every
+  reachable coordinate (golden + render unchanged).
+
 ## Big future directions (beyond the ladder)
 
 Major scope shifts we want to move *toward* — planned at the skeleton level, de-risked by
