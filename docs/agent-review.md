@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `90ec1e0` (G16 — lexicon v2; Archive tranche begun).
+**Reviewed through:** `42ddbbf` (BUG1/BUG2 fixes; D11 in flight).
 
 ---
 
@@ -36,6 +36,27 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-12 · BUG1 + BUG2 fixes (`42ddbbf`)  ✅ PASSED (verified + four-way green)
+
+**Verified:** local fmt/clippy clean · **236 tests** · **CI ✅ · Android ✅ · Desktop ✅ ·
+Deploy ✅** · golden voxel-hash + headless byte-identical (saturating bounds identical at
+normal coords) · **BUG2 repro driven live**: `screenshot out.png 0 0` now prints a clean
+error + exit 2 (was a wgpu validation panic).
+
+**BUG1 (the share-link extreme-coords crash) fixed at both layers, exactly per the
+directive:** the trust boundary (`share::set_pos` clamps decoded x/y/z to ±1e7 — extreme
+coords are never legitimate; the other share floats keep the plain finite guard, correctly)
+**and** defense-in-depth (`shards_near` / `colossi_near` / `inscriptions_near` use
+saturating cell bounds, so *any* extreme cam coord is panic-free, not just share-link ones).
+Regression asserts cover: extreme coords clamp + decode, legit coords pass through, and the
+`*_near` fns at huge/MAX/MIN cam positions. These asserts are the down-payment on the D11
+contract (encode every confirmed bug).
+
+**Verdict.** The game-reachable crash in the E12 headline feature is closed cleanly, with
+the right layering and tests. D11 (the harness proper) continues.
+
+---
 
 ## 2026-06-11 · G16 — lexicon v2 (statistical honesty) (`90ec1e0`)  ✅ PASSED (verified incl. metrics; four-way green)
 
