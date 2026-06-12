@@ -1,9 +1,11 @@
 # Human-verification pass (end-of-run)
 
-After the unattended build run wound down (all non-blocked **systems** built + green —
-176 tests, independently re-run; see [`agent-review.md`](agent-review.md)), what's left needs
-a **human** or **hardware**. The babysitter did the part it *can* (a headless render pass);
-the rest is two checklists below — **hardware** and **look & feel**.
+After the unattended build runs wound down (all non-blocked **systems** built + green —
+**243 tests** at the 2026-06-12 run's end, independently re-run; see
+[`agent-review.md`](agent-review.md)), what's left needs a **human** or **hardware**. The
+babysitter did the part it *can* (headless render passes + the D11 E2E harness, which now
+drives the real loop in CI); the rest is the checklists below — **hardware**, the original
+**look & feel** list, and the **2026-06-11/12 run's new items** (Checklist 3).
 
 > **How to look:** the live web preview auto-deploys from `main` →
 > <https://00-1.github.io/brickmap/latest/> (already current). Or run a native build
@@ -82,6 +84,44 @@ whether they **look/feel right**, and tuning. Each: *look at · the call · note
 - [ ] **Cruiser** — the redesigned faceted dart: does it read well in flight?
 
 ---
+
+## Checklist 3 — THE 2026-06-11/12 RUN (G9–G17: discovery, economy, console depth)
+
+The new gameplay arc. Systems are built + green + E2E-tested headlessly (D11); you're
+judging **feel, pacing, and legibility**. Best on the web preview or a native run.
+
+**The core loop (the big one — play ~20 minutes hands-off-ish):**
+- [ ] **G9/G12 — names in the world, glyphs in the console.** Fly until you spot a
+      name-bearing inscription; collect it; the console lists the block as glyphs. Does the
+      world↔console recognition *land* (you recognise the cluster you saw carved)? Is
+      pure-glyph + learn-by-clicking intriguing or impenetrable? (Fallback if impenetrable:
+      an after-use gloss — flagged, not built.)
+- [ ] **G10 — shards.** Do the domain-tinted clusters read well (density, rare glints)?
+      Too busy / too sparse?
+- [ ] **G15 — research.** Click a discovered block to allocate it; watch the fill as
+      shards arrive. Does allocate-and-fill *feel* like research? Pacing: too fast/slow
+      (numbers are placeholders — report what feels right)? Is the lit-goal (`◆`) helpful?
+- [ ] **G11 — telemetry.** Open the console while routines run: do the state lines
+      (`running`/`waiting`/`blocked: …`), counters, and the live step highlight make the
+      machine legible? Anything that claims to run while visibly doing nothing?
+- [ ] **G13 — trace → routine.** Do a few manual collects, then turn the trace into a
+      routine. Does the ticker make the feature discoverable? Is the draft what you'd expect?
+- [ ] **G14 — subroutines/groups.** Author a `run(other-routine)` + a repeat-group in the
+      editor. Usable with cursor + steppers? The `G`-descend/`O`-back navigation OK?
+- [ ] **G17 — the handshake** *(once landed)*: wire walker deposit + ship pickup; watch a
+      full cache cycle. Does the failed-handoff state read as a legible vignette?
+
+**Carried look-and-feel edges (from reviews, deliberate scope calls):**
+- [ ] Routine names + faculty names render **English** (author labels / instrumentation) —
+      right call, or should givens be glyphs too?
+- [ ] Discovery toast wording ("NAME RECOVERED" + glyphs) — instrumentation-English OK?
+- [ ] G16 — ambient inscriptions are now statistically-honest nonsense; does the ambient
+      text still *feel* right at a glance (it should look unchanged-ish)?
+
+**Standing items that gained new relevance:**
+- [ ] Touch (D9/D10) over the new console depth (allocate, group-editing) on a phone.
+- [ ] Autopilot wander (the original item 1) — now also: does `prospect` (shard scanning)
+      visibly do its job as you fly?
 
 ## After you review
 
