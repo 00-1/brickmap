@@ -15,6 +15,10 @@ fn main() {
     if args.first().map(String::as_str) == Some("palettes") {
         let width: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(960);
         let height: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(720);
+        if width == 0 || height == 0 {
+            eprintln!("screenshot: width and height must be > 0 (got {width}x{height})");
+            std::process::exit(2);
+        }
         scraped_again::headless::capture_view(
             width,
             height,
@@ -76,6 +80,12 @@ fn main() {
         .unwrap_or_else(|| "screenshot.png".to_string());
     let width: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(960);
     let height: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(720);
+    // BUG2 (adversarial hunt): a 0 width/height reached wgpu's zero-size-texture validation
+    // panic. Reject it with a clean error instead.
+    if width == 0 || height == 0 {
+        eprintln!("screenshot: width and height must be > 0 (got {width}x{height})");
+        std::process::exit(2);
+    }
 
     // Optional camera override: 6 trailing floats = eye xyz + target xyz.
     let (eye, target) = if args.len() >= 9 {

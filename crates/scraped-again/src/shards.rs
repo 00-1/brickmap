@@ -78,10 +78,13 @@ pub fn shards_near(
     ground: impl Fn(f32, f32) -> f32,
 ) -> Vec<Shard> {
     let reach = (radius / CELL).ceil() as i32 + 1;
+    // BUG1 defense-in-depth: an extreme cam coord saturates the float→i32 cast to i32::MAX,
+    // so the loop bounds must saturate too or `cc ± reach` overflows (share.rs clamps the
+    // share-link boundary; this guards every other caller).
     let (ccx, ccz) = ((cam.x / CELL).floor() as i32, (cam.z / CELL).floor() as i32);
     let mut out = Vec::new();
-    for cz in (ccz - reach)..=(ccz + reach) {
-        for cx in (ccx - reach)..=(ccx + reach) {
+    for cz in ccz.saturating_sub(reach)..=ccz.saturating_add(reach) {
+        for cx in ccx.saturating_sub(reach)..=ccx.saturating_add(reach) {
             let h = hash(cx, cz, seed.wrapping_add(0x5AAD_0000));
             if (h & 0xFFFF) as f32 / 65536.0 >= PRESENCE {
                 continue;
@@ -214,5 +217,15 @@ mod tests {
         assert!(r[0].size > c[0].size, "rare points are larger");
         // Deterministic per cell.
         assert_eq!(splats(&mk(Rarity::Rare))[0].offset, r[0].offset);
+    }
+
+    /// BUG1 regression: huge cam coords (the float→i32 cast saturates to i32::MAX) must not
+    /// overflow the cell loops — saturating bounds keep this panic-free.
+    #[test]
+    fn extreme_cam_coords_dont_overflow() {
+        let g = |_x: f32, _z: f32| 0.0;
+        for v in [3.0e11_f32, -3.0e11, f32::MAX, f32::MIN] {
+            let _ = shards_near(1337, Vec3::new(v, 40.0, v), 130.0, g);
+        }
     }
 }

@@ -35,10 +35,12 @@ pub fn colossi_near(
     ground: impl Fn(f32, f32) -> f32,
 ) -> Vec<Placement> {
     let reach = (radius / CELL).ceil() as i32 + 1;
+    // BUG1 defense-in-depth: extreme cam coords saturate the float→i32 cast, so the loop
+    // bounds saturate too (share.rs clamps the share-link boundary; this guards the rest).
     let (ccx, ccz) = ((cam.x / CELL).floor() as i32, (cam.z / CELL).floor() as i32);
     let mut out = Vec::new();
-    for cz in (ccz - reach)..=(ccz + reach) {
-        for cx in (ccx - reach)..=(ccx + reach) {
+    for cz in ccz.saturating_sub(reach)..=ccz.saturating_add(reach) {
+        for cx in ccx.saturating_sub(reach)..=ccx.saturating_add(reach) {
             let h = hash(cx, cz, seed);
             // Jitter the anchor within the cell so they don't sit on a visible lattice.
             let jx = ((h >> 16) & 0xFF) as f32 / 255.0;
@@ -244,13 +246,14 @@ pub fn inscriptions_near(
     ground: impl Fn(f32, f32) -> f32,
 ) -> Vec<Inscription> {
     let reach = (radius / ICELL).ceil() as i32 + 1;
+    // BUG1 defense-in-depth: saturating bounds (see `colossi_near`).
     let (ccx, ccz) = (
         (cam.x / ICELL).floor() as i32,
         (cam.z / ICELL).floor() as i32,
     );
     let mut out = Vec::new();
-    for cz in (ccz - reach)..=(ccz + reach) {
-        for cx in (ccx - reach)..=(ccx + reach) {
+    for cz in ccz.saturating_sub(reach)..=ccz.saturating_add(reach) {
+        for cx in ccx.saturating_sub(reach)..=ccx.saturating_add(reach) {
             let h = hash(cx ^ 0x1111, cz ^ 0x2222, seed.wrapping_add(0x7E47_0000));
             let jx = ((h >> 16) & 0xFF) as f32 / 255.0;
             let jz = ((h >> 24) & 0xFF) as f32 / 255.0;
@@ -515,6 +518,17 @@ mod tests {
             assert!(!m.text.is_empty());
             // Floated above the supplied ground height.
             assert!(m.pos.y > 12.0);
+        }
+    }
+
+    /// BUG1 regression: huge cam coords must not overflow the colossi/inscription cell loops.
+    #[test]
+    fn extreme_cam_coords_dont_overflow_structures() {
+        let g = |_x: f32, _z: f32| 0.0;
+        for v in [3.0e11_f32, -3.0e11, f32::MAX, f32::MIN] {
+            let cam = Vec3::new(v, 40.0, v);
+            let _ = colossi_near(1337, cam, 420.0, g);
+            let _ = inscriptions_near(1337, cam, 90.0, g);
         }
     }
 }

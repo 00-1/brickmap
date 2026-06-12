@@ -62,9 +62,9 @@ impl ShareState {
                         saw_seed = true;
                     }
                 }
-                "x" => set_f32(&mut out.pos[0], v),
-                "y" => set_f32(&mut out.pos[1], v),
-                "z" => set_f32(&mut out.pos[2], v),
+                "x" => set_pos(&mut out.pos[0], v),
+                "y" => set_pos(&mut out.pos[1], v),
+                "z" => set_pos(&mut out.pos[2], v),
                 "yaw" => set_f32(&mut out.yaw, v),
                 "pit" => set_f32(&mut out.pitch, v),
                 "w" => set_f32(&mut out.wobble, v),
@@ -85,6 +85,21 @@ fn set_f32(slot: &mut f32, v: &str) {
     if let Ok(f) = v.parse::<f32>() {
         if f.is_finite() {
             *slot = f;
+        }
+    }
+}
+
+/// BUG1 (adversarial hunt, 2026-06-11): a crafted share link with an **extreme-but-finite**
+/// coordinate (e.g. `z=3e11`) used to reach first-frame streaming, where `(z / CELL) as i32`
+/// saturates to `i32::MAX` and the cell loops' `cc + reach` overflowed. The share link is a
+/// trust boundary: clamp positions to a generous world bound here (no legitimate play ever
+/// approaches it; the `*_near` streamers also saturate as defense-in-depth).
+pub const POS_BOUND: f32 = 1.0e7;
+
+fn set_pos(slot: &mut f32, v: &str) {
+    if let Ok(f) = v.parse::<f32>() {
+        if f.is_finite() {
+            *slot = f.clamp(-POS_BOUND, POS_BOUND);
         }
     }
 }
@@ -234,5 +249,19 @@ mod tests {
         );
         // A leap day.
         assert_eq!(date_utc_from_unix_secs(1_582_934_400), "2020-02-29");
+    }
+
+    /// BUG1 regression (adversarial hunt 2026-06-11): an extreme-but-finite share coordinate
+    /// (z=3e11) used to overflow first-frame streaming. Positions are clamped at this boundary.
+    #[test]
+    fn extreme_share_coords_are_clamped() {
+        let st = ShareState::decode("#v=1&s=1&z=300000000000", default()).expect("decodes");
+        assert!(st.pos[2].abs() <= POS_BOUND, "z clamped: {}", st.pos[2]);
+        let st = ShareState::decode("#v=1&s=1&x=-1e30&y=1e20", default()).expect("decodes");
+        assert!(st.pos[0].abs() <= POS_BOUND && st.pos[1].abs() <= POS_BOUND);
+        // Legitimate coords pass through untouched.
+        let st = ShareState::decode("#v=1&s=1&x=123.5&z=-456", default()).expect("decodes");
+        assert_eq!(st.pos[0], 123.5);
+        assert_eq!(st.pos[2], -456.0);
     }
 }
