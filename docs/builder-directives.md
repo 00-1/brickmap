@@ -44,43 +44,29 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## ⏱ CHECKPOINT REQUEST (G17) — 2026-06-12
+## CURRENT DIRECTIVE — 2026-06-16: WIND DOWN (run complete; standby for the human)
 
-No push since D11 (`ac55d10`) and G17 was dispatched a while ago — likely you're just deep
-in it, which is fine. Per protocol, make the state visible: **push a WIP checkpoint commit**
-(even partial, clearly marked, keeping main green) **or a one-line `docs:` progress note** on
-`main` within your next channel poll. If you've paused on something you're treating as a
-blocker: push the checkpoint commit saying exactly what, and remember the standing rule —
-"needs human/visual review" and uncertainty are NOT blockers (record the assumption, keep
-going). If G17's scope is bigger than it looked (e.g. the carry/cache plumbing touches more
-than expected), split it (carry+deposit first, ship-drain second) and land the first half
-green. If you're minutes from done, just finish — this is a visibility ping, not a redirect.
+**G17 is complete + four-way CI green** (`7da9cdb`) — completing the **automation-depth
+pipeline G9→G17** (block-name discovery → typed shards → research economy → routine telemetry
+→ record-to-program → subroutines/nested groups → expedition handshakes), on top of the glyph
+console (G12), the M10/M11 engine guardrails, the D11 E2E harness, and the bug-hunt fixes.
+Every milestone of this run is built, green, CI-confirmed, E2E-covered. The G17 checkpoint
+request is satisfied (it landed in the pre-approved 2-part split).
 
----
+**This is a legitimate wind-down, not a pause.** Everything still open is **not buildable
+unattended** — gated on the human or on hardware:
+- **Archive feature tranche** (hypothesis/uncertainty layer, Leiden display, cartouches,
+  proto-language, prosopography, sensing ladder) — **fork-blocked** on the human's design
+  decisions (open-questions §D/§A/§E). Do NOT start it.
+- **Feel/pacing tuning** (research pacing + cost numbers, glyph-console readability, shard
+  density, autopilot/prospect feel, audio by ear, the G15 block-levels "levels=verbs") —
+  **needs the human's eyes/ears** (human-verification Checklist 3).
+- **Hardware-gated:** M8b profiling (Iris Xe / Pixel-6a) + the M7 far-LOD it gates; D5
+  browser; D7/D8 device verification; N1 server.
 
-## CURRENT DIRECTIVE — 2026-06-12 (D11 + bug-fixes done → G17 handshakes)
-
-**D11 (E2E play harness) is complete + reviewed** (`ac55d10` — shared-tick property held;
-the babysitter ran the `#[ignore]` render sweep locally: passes; the harness already caught
-+ you fixed a latent `vnoise` overflow). **BUG1/BUG2 fixed + asserted** (`42ddbbf`). The
-testing mandate is delivered. New work — the last fork-free depth milestone:
-
-- **G17 — Handshakes & the expedition economy** — build per
-  [`milestones/G17-handshakes.md`](milestones/G17-handshakes.md) (copy to `main`). The two
-  agents coordinate **through the world**: walker **carry cap** (honest
-  `blocked: carry full`), **`deposit`** into a per-expedition-site **cache** (world-visible,
-  splat-budgeted), ship **cache-collect** draining it into the **canonical CollectShard
-  events** (so bank/research/credit just work and D11 covers it). `when(carry ≥ %)` /
-  `when(cache ≥ N)` states. **Value lands on ship pickup** (the handshake moves value home).
-  `deposit`/cache are **given vocabulary** (not research-gated — don't orphan the G8
-  expedition; pinned, vetoable). The old direct expedition must keep working with no cache
-  wiring (optionality). **Extend the D11 expedition scenario to the full handshake** —
-  every new system lands with integration coverage now. `pg=` v7 append-only. Pinned
-  defaults in the brief.
-- After G17: stand by — the Archive feature tranche remains fork-blocked on the human, and
-  a wind-down + human-pass update is likely next.
-
-Toolchain prevention in force; CI is the authority; keep main green.
+**STANDBY.** Keep `main` green; no new feature work. If genuinely idle, only *non-fork,
+non-feel* hardening is acceptable (test robustness, doc tidy). Resume on a new directive here.
+Clean run — thank you.
 
 ---
 
@@ -228,6 +214,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-16** — G17 ✅ four-way green → **automation arc G9→G17 complete**. **WIND DOWN / STANDBY**: all remaining work is fork-blocked (Archive) or human/hardware-gated (feel pass, M8b). Builder to standby; next move is the human's play-pass + Archive fork.
 - **2026-06-12** — ⏱ checkpoint request: two quiet windows on G17 — push a WIP checkpoint or progress note; split if bigger than expected; not a redirect.
 - **2026-06-12** — D11 ✅ (harness; shared tick; sweep verified by babysitter) + BUG1/BUG2 ✅. **New directive: G17 — handshakes** (walker carry + deposit + site cache + ship drain via canonical events; when(carry/cache); D11 scenario extended; old expedition preserved). Then standby/wind-down pending the Archive fork.
 - **2026-06-11** — 🐛 bug-hunt done: **BUG 1 (high, verified)** share-link extreme-but-finite camera coord overflows i32 cell math in shards_near/inscriptions_near/colossi_near → first-frame crash; fix = clamp share pos (share.rs:84) + saturating cell math + D11 regression assert. BUG 2 (cosmetic) screenshot 0x0 panic. Core loop otherwise robust (progression/economy/persistence/codec-fuzz/determinism/40k soak all held).

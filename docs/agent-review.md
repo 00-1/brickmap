@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `ac55d10` (D11 — E2E play harness).
+**Reviewed through:** `7da9cdb` (G17 — handshakes; automation arc complete).
 
 ---
 
@@ -36,6 +36,37 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-16 · G17 — handshakes & expedition economy (`dc190a2` + `7da9cdb`)  ✅ PASSED — automation arc complete
+
+**Verified:** local fmt/clippy clean · **248 tests** · **CI ✅ · Android ✅ · Desktop ✅ ·
+Deploy ✅** · golden voxel-hash + headless render byte-identical (stash cmp). The 4 handshake
+tests (incl. the **two D11 E2E scenarios** — full carry→deposit→ship-drain→bank/credit, and
+the loop running with a cache) all green — the harness covering a new system on arrival,
+exactly as intended.
+
+**Clean two-part split** (took the pre-approved checkpoint split): 1/2 walker carry
+(`CARRY_CAP`=8, the first per-agent scarcity) + `deposit` + per-site cache + `State::{Carry,
+Cache}` + honest `blocked: carry/cache full`; 2/2 the ship `drain_cache_if_near` →
+**canonical `CollectShard` events** (so bank/research/credit all flow through the existing
+path — the value lands on ship pickup) + the budgeted world-visible cache marker (the
+honest failed-handoff vignette). **All four pinned decisions honoured**; the simple direct
+expedition is untouched when no `deposit` is wired (optionality audit — P4). `pg=` v7
+append-only, old payloads load empty.
+
+**Verdict.** The two agents now coordinate through world state, both sides player-authored —
+the research's strongest two-agent finding (P18), built right. **This completes the
+automation-depth pipeline G9→G17** (discovery → research economy → telemetry →
+record-to-program → subroutines/groups → handshakes), plus M10/M11 guardrails, D11 harness,
+and the bug-hunt fixes. Every milestone of the run is green, CI-confirmed, and
+E2E-covered.
+
+**STEER: wind down.** What remains is **fork-blocked (the Archive tranche — human's call) or
+human/hardware-gated (the play-pass + M8b)**. The binding constraint is no longer building —
+it's a human playing it. Builder → standby; next move is the human's Checklist-3 play
+session + the Archive fork. (See the wind-down note in builder-directives.)
+
+---
 
 ## 2026-06-12 · D11 — end-to-end headless play harness (`ac55d10`)  ✅ PASSED (verified incl. the ignored sweep; CI green)
 
