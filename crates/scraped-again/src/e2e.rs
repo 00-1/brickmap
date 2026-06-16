@@ -245,6 +245,93 @@ fn scripted_progression_discover_research_author_expedition_roundtrip() {
 }
 
 // ----------------------------------------------------------------------------------------------
+// 2b) G17 — the expedition **handshake** end to end: the walker fills its carry (capped), deposits
+//     into the world cache, the ship drains the cache home, and the value banks + credits research
+//     through the canonical events. Driven through the real App dispatch helpers.
+// ----------------------------------------------------------------------------------------------
+
+#[test]
+fn handshake_carry_deposit_ship_drain_banks_value() {
+    use crate::progress::CARRY_CAP;
+    let mut app = App::headless(1337);
+
+    // The walker collects until its carry caps — the honest per-agent scarcity (foot `collect`
+    // routes shards into carry via the real dispatch helper; value is NOT banked yet).
+    for _ in 0..CARRY_CAP {
+        app.progress.carry_shard(Stratum::Relics, Rarity::Common);
+    }
+    assert!(app.progress.carry_is_full());
+    assert_eq!(
+        app.progress.shard_bank(),
+        0,
+        "carry is in transit, not banked"
+    );
+
+    // `deposit` (the real App dispatch effect) moves the carry into the cache + places its marker.
+    let moved = app.deposit_carry();
+    assert_eq!(moved, CARRY_CAP);
+    assert_eq!(app.progress.cache_count(), CARRY_CAP);
+    assert_eq!(app.progress.carry_count(), 0);
+    assert!(
+        app.cache_pos.is_some(),
+        "the deposit placed a world cache marker"
+    );
+    assert!(
+        !app.cache_marker_splats().is_empty(),
+        "a non-empty cache renders a (budgeted) marker"
+    );
+    assert!(
+        app.cache_marker_splats().len() <= super::CACHE_MARKER_CAP,
+        "the marker stays within its splat budget"
+    );
+
+    // The ship lands near the cache and `collect`s — the drain banks the haul home (Decision 2:
+    // value lands on ship pickup) via canonical CollectShard events.
+    app.cruiser_pos = app.cache_pos.unwrap();
+    let before = app.progress.shard_bank();
+    let (items, yields) = app.drain_cache_if_near();
+    assert_eq!(items, CARRY_CAP, "the ship drained the whole cache");
+    assert!(
+        yields > 0 && app.progress.shard_bank() > before,
+        "value banked on pickup"
+    );
+    assert_eq!(app.progress.shard_count(Stratum::Relics), CARRY_CAP);
+    assert_eq!(app.progress.cache_count(), 0);
+    assert!(
+        app.cache_pos.is_none(),
+        "an emptied cache clears its marker"
+    );
+    assert!(
+        app.cache_marker_splats().is_empty(),
+        "no marker once the cache is empty"
+    );
+}
+
+#[test]
+fn handshake_funds_research_and_loop_runs_with_a_cache() {
+    use crate::progress::{Faculty, ResearchTarget};
+    let mut app = App::headless(7);
+    // A faculty under research draws from any domain — the drained cache should fill it.
+    app.progress
+        .allocate(ResearchTarget::Faculty(Faculty::Drive));
+    for _ in 0..crate::progress::CARRY_CAP {
+        app.progress.carry_shard(Stratum::Signals, Rarity::Rare);
+    }
+    app.deposit_carry();
+    app.cruiser_pos = app.cache_pos.unwrap();
+    app.drain_cache_if_near();
+    let (filled, _cost) = app
+        .progress
+        .research_progress(ResearchTarget::Faculty(Faculty::Drive));
+    assert!(
+        filled > 0 || app.progress.faculty_levels()[Faculty::Drive.idx()] > 0,
+        "the drained cache fed the active research (canonical credit path)"
+    );
+    // The live loop ticks cleanly with a (now-empty) cache + handshake wiring in place.
+    drive(&mut app, 200);
+}
+
+// ----------------------------------------------------------------------------------------------
 // 3) Determinism — same seed + same scripted inputs → identical state (the E12 promise at the
 //    economy/world level, not just voxels).
 // ----------------------------------------------------------------------------------------------

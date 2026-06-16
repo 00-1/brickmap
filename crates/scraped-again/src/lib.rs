@@ -166,6 +166,10 @@ struct App {
     /// The deployed walker's world position + the site it's collecting (while an expedition runs).
     walker_pos: Vec3,
     expedition_target: Option<Vec3>,
+    /// G17: where the expedition **cache** sits (the deposit/landing point) — the world-visible
+    /// drop the walker fills and the ship drains. Session state (placement UX is later); set when
+    /// an expedition deploys or the walker first deposits. The *contents* persist in `pg=` v7.
+    cache_pos: Option<Vec3>,
     /// Movement mode (E19): piloting the cruiser (fly — autopilot or manual) vs walking on foot.
     mode: Mode,
     /// The cruiser's world position: tracks the camera while piloting; where it's parked once you
@@ -828,6 +832,10 @@ impl App {
         // G10: the auto-collect also sweeps in-reach shards, honouring the same filter
         // (`rare` = rare rarity; `domain` = that domain only).
         self.collect_shards_in_reach(filter);
+        // G17: a ship `collect` near the expedition cache also **drains it home** — the handshake's
+        // payoff (the walker's carried shards finally bank). Unfiltered (the cache is already the
+        // sorted haul); counts toward this act's credit.
+        self.drain_cache_if_near();
         let items = self.progress.collected_count() as u32 + self.progress.shard_total_count()
             - before_items;
         let yields = self.progress.strata.total() + self.progress.shard_bank() - before_yield;
@@ -907,12 +915,91 @@ impl App {
     fn deposit_carry(&mut self) -> u32 {
         let moved = self.progress.deposit();
         if moved > 0 {
+            // The cache materialises where the walker drops it (if an expedition hasn't already
+            // placed one) — so an on-foot deposit is world-visible + drainable too.
+            self.cache_pos.get_or_insert(self.walker_pos);
             log::info!(
                 "deposit → cache (+{moved}; cache now {})",
                 self.progress.cache_count()
             );
         }
         moved
+    }
+
+    /// G17: the **ship** side of the handshake — when the cruiser's `collect` fires within reach of
+    /// the cache, drain it home: each cached shard becomes a canonical [`progress::Event::CollectShard`]
+    /// so the bank, the active research fill, and routine credit all flow (the value lands here,
+    /// Decision 2). Returns `(items, yields)` drained (0 if no cache / out of reach / empty). Once
+    /// emptied, the marker clears.
+    fn drain_cache_if_near(&mut self) -> (u32, u64) {
+        let Some(cache_pos) = self.cache_pos else {
+            return (0, 0);
+        };
+        if self.progress.cache_count() == 0 {
+            return (0, 0);
+        }
+        // The hauler's generous collect reach (× the `reach` faculty) — "lands near the cache".
+        let reach = 60.0 * self.progress.faculties().reach;
+        if (self.cruiser_pos - cache_pos).length() > reach {
+            return (0, 0);
+        }
+        let before = self.progress.shard_bank();
+        let shards = self.progress.drain_cache();
+        let items = shards.len() as u32;
+        for (domain, rarity) in shards {
+            self.progress
+                .apply(&progress::Event::CollectShard { domain, rarity });
+        }
+        if self.progress.cache_count() == 0 {
+            self.cache_pos = None; // emptied → the marker clears
+        }
+        let yields = self.progress.shard_bank() - before;
+        if items > 0 {
+            log::info!("ship drained cache → +{items} shards (+{yields} banked)");
+        }
+        (items, yields)
+    }
+
+    /// G17: the cache's world marker — a small emissive splat cluster at `cache_pos` whose size
+    /// grows (capped) with how full the cache is, so a stranded/accumulating cache reads at a
+    /// glance (the honest failed-handoff vignette). Empty when there's no cache. Charter rule 2:
+    /// the point count is hard-capped ([`CACHE_MARKER_CAP`]) — a tiny, bounded consumer.
+    fn cache_marker_splats(&self) -> Vec<foliage::SplatInstance> {
+        let Some(pos) = self.cache_pos else {
+            return Vec::new();
+        };
+        let count = self.progress.cache_count();
+        if count == 0 {
+            return Vec::new();
+        }
+        let n = (3 + count as usize).min(CACHE_MARKER_CAP);
+        let glow = 1.3;
+        let tint = [0.95 * glow, 0.85 * glow, 0.45 * glow]; // warm amber "stash" beacon
+        let mut h = (pos.x as i32 as u32).wrapping_mul(0x9E37_79B1) ^ 0x0CAC_4E00;
+        let mut rng = move || {
+            h ^= h << 13;
+            h ^= h >> 17;
+            h ^= h << 5;
+            (h & 0xFFFF) as f32 / 65536.0
+        };
+        (0..n)
+            .map(|i| {
+                // A tight cluster low to the ground, with one taller "plume" point so it reads as a
+                // marker, not scatter.
+                let up = if i == 0 { 2.2 } else { rng() * 1.1 };
+                foliage::SplatInstance {
+                    offset: [
+                        pos.x + (rng() - 0.5) * 1.6,
+                        pos.y + up,
+                        pos.z + (rng() - 0.5) * 1.6,
+                    ],
+                    size: 0.38,
+                    color: tint,
+                    sway: rng() * std::f32::consts::TAU,
+                    alpha: 1.0,
+                }
+            })
+            .collect()
     }
 
     /// G17: one **foot** `collect` act around `origin` — bank the nearest in-reach inscription
@@ -1722,6 +1809,7 @@ impl App {
             return;
         };
         self.expedition_target = Some(target);
+        self.cache_pos = Some(target); // G17: the cache spawns at the expedition site (Decision 3)
         self.walker_pos = self.ship_pos();
         self.expedition.start();
         log::info!("run(foot): deploying the walker");
@@ -2852,11 +2940,15 @@ impl App {
         } else {
             Vec::new()
         };
+        // G17: the world-visible cache marker (a tiny budgeted emissive cluster at the drop) —
+        // computed before the mutable `state` borrow below.
+        let cache_marker = self.cache_marker_splats();
         if let Some(state) = self.state.as_mut() {
-            // E15 wisps + G10 shard clusters share the per-frame points upload (both
-            // small + bounded; a dedicated buffer if shard counts ever grow).
+            // E15 wisps + G10 shard clusters + G17 cache marker share the per-frame points upload
+            // (all small + bounded; a dedicated buffer if counts ever grow).
             let mut live_pts = self.creatures.points_n(wisp_n);
             live_pts.extend(self.shard_splats.iter().copied());
+            live_pts.extend(cache_marker);
             state.set_creature_points(&live_pts);
             state.set_ship(ship_shown, ship_pos, 0.0);
         }
@@ -3461,6 +3553,7 @@ fn assemble_app(
         expedition: expedition::Expedition::default(),
         walker_pos: pos,
         expedition_target: None,
+        cache_pos: None,
         mode: Mode::Pilot, // start in the cruiser, on autopilot (the watchable default)
         cruiser_pos: pos,
         walker: player::Walker::default(),
@@ -3779,6 +3872,8 @@ const AUTO_FLY_SPEED: f32 = 26.0;
 const AUTO_FLY_PITCH: f32 = -0.22;
 /// Foot auto-walk speed (G8c) — the `walk` nav steers the walker toward known sites at this rate.
 const WALK_SPEED: f32 = 10.0;
+/// G17: hard cap on the cache marker's splat count (charter rule 2 — a bounded point consumer).
+const CACHE_MARKER_CAP: usize = 14;
 
 /// The demo world: a procedurally-generated noise-terrain world (M3). Used by the
 /// native headless renderer (a fixed scene); the live app streams instead.

@@ -92,11 +92,31 @@ roadmap G17.
 
 ## Acceptance checklist
 
-- [ ] Walker carry (cap, honest `blocked: carry full`), `deposit` → cache, ship
+- [x] Walker carry (cap, honest `blocked: carry full`), `deposit` → cache, ship
       cache-collect → canonical events (bank/research/credit flow); old expedition still
       works with no cache wiring.
-- [ ] `when(carry ≥ %)` / `when(cache ≥ N)`; glyph-named blocks; cache world-marker
+- [x] `when(carry ≥ %)` / `when(cache ≥ N)`; glyph-named blocks; cache world-marker
       (budgeted).
-- [ ] `pg=` v7 append-only round-trip; old payloads load.
-- [ ] D11 scenario extended to the full handshake; golden voxel-hash unchanged; CI green;
+- [x] `pg=` v7 append-only round-trip; old payloads load.
+- [x] D11 scenario extended to the full handshake; golden voxel-hash unchanged; CI green;
       boundary intact; roadmap G17.
+
+## How it landed (2026-06-16, two green commits)
+
+**1/2 (`dc190a2`) — the walker side + the language + storage.** `progress`: `carry`/`cache`
+domain×rarity tallies held in transit; `CARRY_CAP` = 8; `carry_shard` (honest-blocks at the cap),
+`deposit`, `drain_cache`; `pg=` v7 (old payloads load empty). `console`: `Block::Deposit` (foot,
+**given** — Decision 1), `State::{Carry, Cache}` + `when(carry ≥ %)` / `when(cache ≥ N)` (threaded
+through `tick`/`Cond::holds`, the editor cycle, and the `co=` codec), `BlockReason::{CarryFull,
+CacheFull}` + `note_blocked`. Foot `collect` routes shards into carry at every dispatch site (Walk,
+away-walker, expedition harvest, on-scan); finds still bank immediately.
+
+**2/2 (this commit) — the ship side + the payoff.** `drain_cache_if_near`: a ship `collect` within
+the hauler's reach of the cache drains it home via canonical `CollectShard` events (value lands —
+Decision 2; bank + research fill + routine credit all flow). `cache_pos` (session) is placed at the
+expedition site / first deposit and cleared when the cache empties; the world-visible marker is a
+budgeted emissive cluster (`CACHE_MARKER_CAP` = 14) that grows with the cache. The D11 harness gains
+two handshake tests (full carry → deposit → ship-drain → bank/credit; the loop runs with a cache),
+plus a console codec/vocab/edge test. **Decisions honoured:** 1 given vocab, 2 value-on-pickup, 3
+one auto-spawned cache, 4 carry cap 8. The simple direct expedition is untouched when no `deposit`
+is wired (optionality). Golden voxel-hash + headless render byte-identical; boundary intact.

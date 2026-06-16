@@ -2489,6 +2489,67 @@ mod tests {
         assert!(c.vocabulary(Agent::Ship).contains(&Step::Do(Block::Seek)));
     }
 
+    /// G17: `deposit` is a **foot-only, given** block (insertable without research, never offered
+    /// to the ship); `when(carry)` / `when(cache)` triggers and a `deposit` step round-trip the
+    /// `co=` codec; and `when(carry/cache)` conditions resolve against the threaded referents.
+    #[test]
+    fn handshake_vocab_states_and_codec() {
+        let c = Console::default();
+        // deposit is foot vocabulary (given — no discovery/research), and not ship vocabulary.
+        assert!(c
+            .vocabulary(Agent::Foot)
+            .contains(&Step::Do(Block::Deposit)));
+        assert!(!c
+            .vocabulary(Agent::Ship)
+            .contains(&Step::Do(Block::Deposit)));
+        assert!(
+            Block::Deposit.required().is_none(),
+            "deposit is a given (Decision 1)"
+        );
+        assert_eq!(Block::Deposit.agent(), Some(Agent::Foot));
+
+        // A foot routine `when(carry ≥ 100) → deposit` round-trips through `co=`.
+        let mut a = Console::default();
+        let i = a.create_routine(Agent::Foot);
+        a.routines[i].trigger = Trigger::When(Cond {
+            state: State::Carry,
+            min: 100,
+        });
+        a.routines[i].body = vec![Step::Do(Block::Deposit)];
+        // …and a ship routine `when(cache ≥ 8) → collect` (the drain side).
+        let j = a.create_routine(Agent::Ship);
+        a.routines[j].trigger = Trigger::When(Cond {
+            state: State::Cache,
+            min: 8,
+        });
+        a.routines[j].body = vec![Step::Do(Block::Collect)];
+        let mut back = Console::default();
+        back.restore(&format!("s=1&{}", a.encode()));
+        assert_eq!(
+            back.encode(),
+            a.encode(),
+            "handshake routines round-trip co="
+        );
+
+        // The carry/cache `when` edges fire on their referents (data/shards untouched).
+        let mut t = Console::default();
+        let k = t.create_routine(Agent::Foot);
+        t.routines[k].trigger = Trigger::When(Cond {
+            state: State::Carry,
+            min: 100,
+        });
+        t.routines[k].body = vec![Step::Do(Block::Deposit)];
+        assert!(
+            t.tick(Agent::Foot, 0, 0, 50, 0, false).acts.is_empty(),
+            "carry 50% < 100% → no deposit"
+        );
+        let fired = t.tick(Agent::Foot, 0, 0, 100, 0, false);
+        assert!(
+            fired.acts.iter().any(|act| act.block == Block::Deposit),
+            "carry full → deposit fires"
+        );
+    }
+
     #[test]
     fn discovery_states_absent_dimmed_insertable() {
         // G9: the three console visibility states for a gated block (`seek`).
