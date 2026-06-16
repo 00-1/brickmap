@@ -937,6 +937,25 @@ byte-identical; no engine change. **Scope fenced to statistical honesty + corpus
 proto-language / display-grammar / cartouches / sensing-ladder are later fork-gated Archive
 milestones.
 
+### ✨ G17 — Handshakes & the expedition economy 🛠 &nbsp;→ [`milestones/G17-handshakes.md`](milestones/G17-handshakes.md)
+The last fork-free automation-depth milestone: the two agents stop sharing a magic pocket and
+**coordinate through the world** — the walker fills a **cache** the ship empties, both sides
+player-authored, failed handoffs visible as honest state (not errors). Built in two halves.
+- **🛠 1/2 (landed) — the walker side + the language + storage.** `progress`: a **carry cap**
+  ([`CARRY_CAP`] = 8, the first per-agent scarcity) and a per-site **cache**, both domain×rarity
+  shard tallies held *in transit* (outside the bank/research until ship pickup — Decision 2);
+  `carry_shard` (honest-blocks when full), `deposit` (carry→cache), `drain_cache` (→ canonical
+  `CollectShard` events). `console`: `Block::Deposit` (foot, **given** vocabulary — Decision 1,
+  so the G8 expedition isn't orphaned), `State::{Carry, Cache}` referents for `when(carry ≥ %)` /
+  `when(cache ≥ N)`, and honest `BlockReason::{CarryFull, CacheFull}`. Foot `collect` now sweeps
+  shards into the carry (banks on the ship's drain) at every foot dispatch site; unique finds
+  still bank immediately. `pg=` **v7** append-only (old payloads load with empty stores). The old
+  direct expedition keeps working with no cache wiring (optionality). Pure model + persistence
+  fully unit-tested; golden voxel-hash + render unchanged.
+- **⏳ 2/2 (next) — the ship side + the payoff.** Ship `collect` near a cache drains it home
+  (value lands), the world-visible cache marker (budgeted splat), and the D11 expedition scenario
+  extended to assert the full fill → deposit → drain → credit handshake.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear

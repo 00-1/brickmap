@@ -192,7 +192,7 @@ fn scripted_progression_discover_research_author_expedition_roundtrip() {
     app.console.routines[rid].body = vec![console::Step::Do(console::Block::Collect)];
     app.console.routines[rid].enabled = true;
     app.sync_console_unlock();
-    let tick = app.console.tick(console::Agent::Ship, 0, 0, false);
+    let tick = app.console.tick(console::Agent::Ship, 0, 0, 0, 0, false);
     assert!(
         tick.acts
             .iter()

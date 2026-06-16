@@ -143,11 +143,12 @@ pub enum Block {
     Walk,    // on foot, walk to the nearest known site (foot nav — G8c)
     Hail,    // recall the autonomous/parked ship to the walker (G8a — foot/shared)
     RunFoot, // cross-agent: deploy the walker to collect on foot (G8c — the expedition)
+    Deposit, // G17: foot — empty the walker's carry into the site cache (the expedition handshake)
 }
 
 impl Block {
     /// The full block vocabulary (G9: every one of these has a **name** findable in the world).
-    pub const ALL: [Block; 15] = [
+    pub const ALL: [Block; 16] = [
         Block::Scan(ScanItem::Shards),
         Block::Scan(ScanItem::Sites),
         Block::Collect,
@@ -163,6 +164,7 @@ impl Block {
         Block::Walk,
         Block::Hail,
         Block::RunFoot,
+        Block::Deposit,
     ];
 
     /// The block's bare **name** (no parameter sugar) — what an in-world name-inscription spells
@@ -181,6 +183,7 @@ impl Block {
             Block::Walk => "walk",
             Block::Hail => "hail",
             Block::RunFoot => "runfoot",
+            Block::Deposit => "deposit",
         }
     }
 
@@ -199,6 +202,7 @@ impl Block {
             Block::Walk => 9,
             Block::Hail => 10,
             Block::RunFoot => 11,
+            Block::Deposit => 12,
         }
     }
 
@@ -228,6 +232,7 @@ impl Block {
             Block::Walk => "walk(uncollected)",
             Block::Hail => "hail",
             Block::RunFoot => "run(foot)",
+            Block::Deposit => "deposit",
         }
     }
 
@@ -303,7 +308,7 @@ impl Block {
             | Block::Circle
             | Block::Goto
             | Block::RunFoot => Some(Agent::Ship),
-            Block::FireBeam | Block::Walk => Some(Agent::Foot),
+            Block::FireBeam | Block::Walk | Block::Deposit => Some(Agent::Foot),
             Block::Collect | Block::Decode | Block::Spend(_) | Block::Hail => None, // shared
         }
     }
@@ -412,6 +417,11 @@ fn step_for_agent(step: &Step, agent: Agent) -> bool {
 pub enum State {
     Data,
     Shards,
+    /// G17: the walker's carry as a **percentage** of its cap (`when(carry ≥ %)`) — the foot side
+    /// of the handshake (`when(carry full) → deposit`).
+    Carry,
+    /// G17: the site cache **count** (`when(cache ≥ N)`) — the ship side (`when(cache ≥ N) → goto`).
+    Cache,
 }
 
 impl State {
@@ -419,6 +429,8 @@ impl State {
         match self {
             State::Data => "data",
             State::Shards => "shards",
+            State::Carry => "carry",
+            State::Cache => "cache",
         }
     }
 }
@@ -431,11 +443,16 @@ pub struct Cond {
 }
 
 impl Cond {
-    fn holds(self, data: u32, shards: u32) -> bool {
-        match self.state {
-            State::Data => data >= self.min,
-            State::Shards => shards >= self.min,
-        }
+    /// Does the condition hold? `carry` is the walker carry **percentage** (0..=100), `cache` the
+    /// site cache **count** — the G17 handshake referents alongside data + the shard bank.
+    fn holds(self, data: u32, shards: u32, carry: u32, cache: u32) -> bool {
+        let cur = match self.state {
+            State::Data => data,
+            State::Shards => shards,
+            State::Carry => carry,
+            State::Cache => cache,
+        };
+        cur >= self.min
     }
 }
 
@@ -471,6 +488,12 @@ pub enum BlockReason {
     NoMatch,
     /// The body contains a step that isn't unlocked (discovered + decoded) yet.
     LockedStep,
+    /// G17: the walker's carry is full — `collect` can't take more until it `deposit`s (the honest
+    /// expedition-handshake state, not an error).
+    CarryFull,
+    /// G17: the walker is waiting at a non-empty cache for the ship to drain it (the broken-handoff
+    /// vignette as honest state).
+    CacheFull,
 }
 
 impl BlockReason {
@@ -479,6 +502,8 @@ impl BlockReason {
             BlockReason::NothingInReach => "nothing in reach",
             BlockReason::NoMatch => "no match",
             BlockReason::LockedStep => "locked step",
+            BlockReason::CarryFull => "carry full",
+            BlockReason::CacheFull => "cache full",
         }
     }
 }
@@ -845,6 +870,7 @@ impl Console {
             Step::Do(Block::Spend(crate::progress::Faculty::Drive)),
             Step::Do(Block::Hail),
             Step::Do(Block::RunFoot),
+            Step::Do(Block::Deposit), // G17: foot-only (agent-filtered below)
             Step::Match(MatchField::Rare),
             Step::Match(MatchField::Domain(Stratum::Records)),
             Step::Match(MatchField::Domain(Stratum::Schematics)),
@@ -1033,7 +1059,15 @@ impl Console {
     /// given the current `data` (total banked strata) + `shards` (the G10 bank) for `when`
     /// conditions and whether the agent has just `arrived` at the site it's heading to. Returns
     /// this tick's [`Tick`] intents. (`on-scan` routines fire on a scan hit — [`Console::on_scan_acts`].)
-    pub fn tick(&mut self, agent: Agent, data: u32, shards: u32, arrived: bool) -> Tick {
+    pub fn tick(
+        &mut self,
+        agent: Agent,
+        data: u32,
+        shards: u32,
+        carry: u32,
+        cache: u32,
+        arrived: bool,
+    ) -> Tick {
         let mut t = Tick::default();
         let now = self.now;
         let all = self.snapshot(); // G14: callee bodies for `run` resolution (read-only)
@@ -1075,7 +1109,7 @@ impl Console {
                 }
                 Trigger::OnScan => {} // fired on a scan hit, not per tick
                 Trigger::When(c) => {
-                    let sat = c.holds(data, shards);
+                    let sat = c.holds(data, shards, carry, cache);
                     if sat && !r.armed {
                         fired = true;
                         // rising edge → fire once
@@ -1142,6 +1176,15 @@ impl Console {
             } else {
                 BlockReason::NothingInReach
             });
+        }
+    }
+
+    /// G17: stamp a routine's live state with an honest block `reason` the app evaluated after the
+    /// tick (e.g. `collect` hit a full carry, `deposit`/`goto` waited on a full/empty cache) — the
+    /// handshake's legible "why nothing's happening" without inventing a diagnosis (G11).
+    pub fn note_blocked(&mut self, routine: usize, reason: BlockReason) {
+        if let Some(r) = self.routines.get_mut(routine) {
+            r.stats.state = RState::Blocked(reason);
         }
     }
 
@@ -1527,6 +1570,15 @@ impl Console {
                 state: State::Shards,
                 min: 25,
             }),
+            // G17: the handshake referents — carry % (foot side) and cache count (ship side).
+            Trigger::When(Cond {
+                state: State::Carry,
+                min: 100,
+            }),
+            Trigger::When(Cond {
+                state: State::Cache,
+                min: 8,
+            }),
             Trigger::OnArrive,
         ];
         // Match the current trigger by `when`-STATE (min is user-set, so compare the state, not
@@ -1621,6 +1673,7 @@ impl Console {
             Step::Do(Block::Walk) => "W".into(),
             Step::Do(Block::Hail) => "H".into(),
             Step::Do(Block::RunFoot) => "R".into(),
+            Step::Do(Block::Deposit) => "e".into(), // G17: dEposit
             Step::Match(MatchField::Rare) => "m".into(),
             Step::Match(MatchField::Domain(d)) => format!(
                 "M{}",
@@ -1681,6 +1734,7 @@ impl Console {
                 'W' => Step::Do(Block::Walk),
                 'H' => Step::Do(Block::Hail),
                 'R' => Step::Do(Block::RunFoot),
+                'e' => Step::Do(Block::Deposit), // G17
                 'm' => Step::Match(MatchField::Rare),
                 'M' => {
                     let d = match it.next() {
@@ -1765,10 +1819,12 @@ impl Console {
         match t {
             Trigger::Continuous => "c".into(),
             Trigger::OnScan => "s".into(),
-            // `w:{min}` = when(data) (the pre-G10 form, kept); `wS:{min}` = when(shards).
+            // `w:{min}` = when(data) (the pre-G10 form, kept); `wS` = shards; `wY`/`wK` = carry/cache.
             Trigger::When(c) => match c.state {
                 State::Data => format!("w:{}", c.min),
                 State::Shards => format!("wS:{}", c.min),
+                State::Carry => format!("wY:{}", c.min),
+                State::Cache => format!("wK:{}", c.min),
             },
             Trigger::OnArrive => "a".into(),
         }
@@ -1781,6 +1837,10 @@ impl Console {
             Some('w') => Trigger::When(Cond {
                 state: if s.starts_with("wS") {
                     State::Shards
+                } else if s.starts_with("wY") {
+                    State::Carry
+                } else if s.starts_with("wK") {
+                    State::Cache
                 } else {
                     State::Data // the pre-G10 `w:` form
                 },
@@ -1894,6 +1954,8 @@ impl Console {
         // 1. `when` thresholds approaching their trigger (skip already-satisfied ones).
         let data = p.strata.total() as f32;
         let shards = p.shard_bank() as f32;
+        let carry = p.carry_pct() as f32;
+        let cache = p.cache_count() as f32;
         for r in self.routines.iter().filter(|r| r.enabled) {
             if let Trigger::When(c) = r.trigger {
                 if c.min == 0 || r.armed {
@@ -1902,6 +1964,8 @@ impl Console {
                 let cur = match c.state {
                     State::Data => data,
                     State::Shards => shards,
+                    State::Carry => carry,
+                    State::Cache => cache,
                 };
                 let pct = cur / c.min as f32;
                 if pct < 1.0 {
@@ -2164,7 +2228,7 @@ mod tests {
     #[test]
     fn interpreter_runs_the_givens() {
         let mut c = Console::default();
-        let t = c.tick(Agent::Ship, 0, 0, false);
+        let t = c.tick(Agent::Ship, 0, 0, 0, 0, false);
         // drift → nav steering; survey → scan request; collect is on-scan (not in the tick).
         assert_eq!(t.nav, Some(Block::Drift));
         assert!(t.scan);
@@ -2184,7 +2248,7 @@ mod tests {
     fn disabling_drift_drops_the_nav_intent() {
         let mut c = Console::default();
         c.toggle_routine(0); // drift off
-        let t = c.tick(Agent::Ship, 0, 0, false);
+        let t = c.tick(Agent::Ship, 0, 0, 0, 0, false);
         assert_eq!(t.nav, None); // no continuous nav routine ⇒ autopilot off
         assert!(t.scan); // survey still scans
     }
@@ -2234,8 +2298,8 @@ mod tests {
             }),
             vec![Step::Do(Block::Decode)],
         ));
-        assert!(c.tick(Agent::Ship, 5, 0, false).acts.is_empty()); // below threshold
-        let fired = c.tick(Agent::Ship, 12, 0, false); // crosses ⇒ fires once
+        assert!(c.tick(Agent::Ship, 5, 0, 0, 0, false).acts.is_empty()); // below threshold
+        let fired = c.tick(Agent::Ship, 12, 0, 0, 0, false); // crosses ⇒ fires once
         assert_eq!(
             fired.acts,
             vec![Act {
@@ -2244,9 +2308,9 @@ mod tests {
                 routine: 4, // the appended when-routine
             }]
         );
-        assert!(c.tick(Agent::Ship, 12, 0, false).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
-        c.tick(Agent::Ship, 0, 0, false); // drop below ⇒ re-arm
-        assert!(!c.tick(Agent::Ship, 20, 0, false).acts.is_empty()); // crosses again ⇒ fires
+        assert!(c.tick(Agent::Ship, 12, 0, 0, 0, false).acts.is_empty()); // still high ⇒ no re-fire (edge, not level)
+        c.tick(Agent::Ship, 0, 0, 0, 0, false); // drop below ⇒ re-arm
+        assert!(!c.tick(Agent::Ship, 20, 0, 0, 0, false).acts.is_empty()); // crosses again ⇒ fires
     }
 
     #[test]
@@ -2259,13 +2323,13 @@ mod tests {
             Trigger::OnArrive,
             vec![Step::Do(Block::Decode)],
         ));
-        assert!(c.tick(Agent::Ship, 0, 0, false).acts.is_empty()); // not arrived
-        let fired = c.tick(Agent::Ship, 0, 0, true); // reaches a site → fires once
+        assert!(c.tick(Agent::Ship, 0, 0, 0, 0, false).acts.is_empty()); // not arrived
+        let fired = c.tick(Agent::Ship, 0, 0, 0, 0, true); // reaches a site → fires once
         assert!(fired.acts.iter().any(|a| a.block == Block::Decode));
-        assert!(c.tick(Agent::Ship, 0, 0, true).acts.is_empty()); // still there ⇒ no re-fire
-        c.tick(Agent::Ship, 0, 0, false); // leaves ⇒ re-arm
-        assert!(!c.tick(Agent::Ship, 0, 0, true).acts.is_empty()); // arrives again ⇒ fires
-                                                                   // The trigger round-trips through `co=`.
+        assert!(c.tick(Agent::Ship, 0, 0, 0, 0, true).acts.is_empty()); // still there ⇒ no re-fire
+        c.tick(Agent::Ship, 0, 0, 0, 0, false); // leaves ⇒ re-arm
+        assert!(!c.tick(Agent::Ship, 0, 0, 0, 0, true).acts.is_empty()); // arrives again ⇒ fires
+                                                                         // The trigger round-trips through `co=`.
         let mut back = Console::default();
         back.restore(&c.encode());
         assert_eq!(back.routines, c.routines);
@@ -2558,7 +2622,7 @@ mod tests {
         let mut c = Console::default();
         // Disabled.
         c.toggle_routine(0); // drift off
-        c.tick(Agent::Ship, 0, 0, false);
+        c.tick(Agent::Ship, 0, 0, 0, 0, false);
         assert_eq!(c.routines[0].stats.state, RState::Disabled);
         // Continuous + enabled → running, fires count, step highlight on its Do.
         assert_eq!(c.routines[1].stats.state, RState::Running); // survey
@@ -2575,13 +2639,13 @@ mod tests {
             vec![Step::Do(Block::Decode)],
         ));
         let wi = c.routines.len() - 1;
-        c.tick(Agent::Ship, 5, 0, false);
+        c.tick(Agent::Ship, 5, 0, 0, 0, false);
         assert_eq!(c.routines[wi].stats.state, RState::Waiting);
-        c.tick(Agent::Ship, 12, 0, false);
+        c.tick(Agent::Ship, 12, 0, 0, 0, false);
         assert_eq!(c.routines[wi].stats.state, RState::Running);
         // A locked step → blocked(locked step), honestly, regardless of trigger.
         c.routines[wi].body = vec![Step::Do(Block::Seek)]; // undiscovered + undecoded
-        c.tick(Agent::Ship, 0, 0, false);
+        c.tick(Agent::Ship, 0, 0, 0, 0, false);
         assert_eq!(
             c.routines[wi].stats.state,
             RState::Blocked(BlockReason::LockedStep)
@@ -2591,19 +2655,19 @@ mod tests {
     #[test]
     fn telemetry_credit_and_blocked_reasons() {
         let mut c = Console::default();
-        c.tick(Agent::Ship, 0, 0, false); // survey runs
-                                          // Credit accrues items + yields to the routine.
+        c.tick(Agent::Ship, 0, 0, 0, 0, false); // survey runs
+                                                // Credit accrues items + yields to the routine.
         c.credit(1, 3, 12, false);
         assert_eq!(c.routines[1].stats.items, 3);
         assert_eq!(c.routines[1].stats.yields, 12);
         // A zero outcome downgrades a running routine to the honest reason.
-        c.tick(Agent::Ship, 0, 0, false);
+        c.tick(Agent::Ship, 0, 0, 0, 0, false);
         c.credit(1, 0, 0, false);
         assert_eq!(
             c.routines[1].stats.state,
             RState::Blocked(BlockReason::NothingInReach)
         );
-        c.tick(Agent::Ship, 0, 0, false);
+        c.tick(Agent::Ship, 0, 0, 0, 0, false);
         c.credit(1, 0, 0, true);
         assert_eq!(
             c.routines[1].stats.state,
@@ -2616,11 +2680,11 @@ mod tests {
         // `—` (None) until ~10 s of window data; a real rate after.
         let mut c = Console::default();
         c.set_now(100.0);
-        c.tick(Agent::Ship, 0, 0, false); // opens the window at 100.0
+        c.tick(Agent::Ship, 0, 0, 0, 0, false); // opens the window at 100.0
         c.credit(1, 1, 10, false);
         assert_eq!(c.routines[1].stats.rate_per_hour(c.now), None); // no time elapsed
         c.set_now(130.0); // 30 s later
-        c.tick(Agent::Ship, 0, 0, false);
+        c.tick(Agent::Ship, 0, 0, 0, 0, false);
         c.credit(1, 2, 20, false);
         let r = c.routines[1].stats.rate_per_hour(c.now).unwrap();
         assert!(
@@ -2761,7 +2825,7 @@ mod tests {
         c.record_manual(Agent::Ship, Block::Scan(ScanItem::Sites));
         c.record_manual(Agent::Ship, Block::Collect);
         let i = c.trace_to_routine(Agent::Ship).expect("draft built");
-        let t = c.tick(Agent::Ship, 0, 0, false);
+        let t = c.tick(Agent::Ship, 0, 0, 0, 0, false);
         assert!(t.scan, "the recorded scan step requests a site scan");
         assert!(
             t.acts
@@ -2789,7 +2853,7 @@ mod tests {
         c.routines[m].name = "main".into();
         c.routines[m].body = vec![Step::Match(MatchField::Rare), Step::Run(pid)];
         c.view = View::Home;
-        let t = c.tick(Agent::Ship, 0, 0, false);
+        let t = c.tick(Agent::Ship, 0, 0, 0, 0, false);
         let collect = t
             .acts
             .iter()
@@ -2840,7 +2904,7 @@ mod tests {
         let bid = c.routines[b].id;
         c.routines[a].body = vec![Step::Run(bid), Step::Do(Block::Decode)];
         c.routines[b].body = vec![Step::Run(aid), Step::Do(Block::Decode)];
-        let t = c.tick(Agent::Ship, 0, 0, false); // must terminate
+        let t = c.tick(Agent::Ship, 0, 0, 0, 0, false); // must terminate
         assert!(t.acts.len() < 100, "bounded by the cycle/depth guard");
     }
 
@@ -2889,7 +2953,7 @@ mod tests {
         assert_eq!(old.routines.len(), 1);
         assert_eq!(old.routines[0].body, vec![Step::Run(99)]);
         assert_eq!(old.step_render(&Step::Run(99)), "run(?)");
-        let t = old.tick(Agent::Ship, 0, 0, false);
+        let t = old.tick(Agent::Ship, 0, 0, 0, 0, false);
         assert!(t.acts.is_empty(), "dangling run is a failsoft no-op");
     }
 
@@ -2910,7 +2974,7 @@ mod tests {
             Step::Do(Block::Decode),
         ];
         c.view = View::Home;
-        let t = c.tick(Agent::Ship, 0, 0, false);
+        let t = c.tick(Agent::Ship, 0, 0, 0, 0, false);
         let collects: Vec<_> = t
             .acts
             .iter()

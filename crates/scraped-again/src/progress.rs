@@ -79,6 +79,11 @@ impl Faculty {
 pub const FACULTY_COSTS: [u64; 3] = [25, 75, 200];
 pub const MAX_FACULTY_LEVEL: u8 = 3;
 
+/// G17: the walker's **carry cap** — the total shards it can hold in transit before `deposit`
+/// (the first real per-agent scarcity; the ship is the uncapped hauler). Placeholder; the feel
+/// pass tunes it (brief Decision 4).
+pub const CARRY_CAP: u32 = 8;
+
 /// G15: what research can target — a discovered **block** (→ comprehend it, G15a) or a **faculty**
 /// (→ level it, G15b). The unified research pipe (no separate bank-then-spend subsystem).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -329,6 +334,13 @@ pub struct Progress {
     shard_counts: [[u32; 3]; 5],
     /// G10: faculty levels (sensing / reach / drive), each capped at [`MAX_FACULTY_LEVEL`].
     faculties: [u8; 3],
+    /// G17: the **expedition handshake** — shards *in transit*, held outside `shard_bank`/research
+    /// until the ship drains the cache home (Decision 2: value lands on ship pickup). `carry` is
+    /// what the walker holds (capped at [`CARRY_CAP`] total — its `deposit` moves it to `cache`);
+    /// `cache` is the per-site drop-point the walker fills and the ship empties. Both are
+    /// domain×rarity counts (same shape as `shard_counts`). One cache v1 (Decision 3).
+    carry: [[u32; 3]; 5],
+    cache: [[u32; 3]; 5],
 }
 
 impl Progress {
@@ -566,11 +578,74 @@ impl Progress {
         faculty_mults(self.faculties)
     }
 
+    // ---- G17: the expedition handshake (carry → deposit → cache → ship drain) ----------------
+
+    /// How many shards the walker is currently carrying (in transit, not yet banked).
+    pub fn carry_count(&self) -> u32 {
+        self.carry.iter().flatten().sum()
+    }
+
+    /// How many shards sit in the site cache (deposited, awaiting the ship).
+    pub fn cache_count(&self) -> u32 {
+        self.cache.iter().flatten().sum()
+    }
+
+    /// G17: the carry as a **percentage** of [`CARRY_CAP`] (for `when(carry ≥ %)`). Clamps at 100.
+    pub fn carry_pct(&self) -> u32 {
+        (self.carry_count() * 100 / CARRY_CAP.max(1)).min(100)
+    }
+
+    /// G17: is the walker's carry full? (A further `collect` is then honestly `blocked: carry full`.)
+    pub fn carry_is_full(&self) -> bool {
+        self.carry_count() >= CARRY_CAP
+    }
+
+    /// G17: the walker collects one shard into its **carry** (does **not** bank — value lands on the
+    /// ship's cache drain, Decision 2). Returns `false` when the carry is full (the honest block),
+    /// so the caller can report `blocked: carry full` and leave the shard in the world.
+    pub fn carry_shard(&mut self, domain: Stratum, rarity: crate::shards::Rarity) -> bool {
+        if self.carry_is_full() {
+            return false;
+        }
+        self.carry[domain.byte() as usize][rarity.idx()] += 1;
+        true
+    }
+
+    /// G17: `deposit` — move the walker's whole carry into the site cache (carry → cache; clears
+    /// carry). Returns the number of shards moved (0 if the carry was empty — an honest no-op).
+    pub fn deposit(&mut self) -> u32 {
+        let mut moved = 0;
+        for d in 0..5 {
+            for r in 0..3 {
+                self.cache[d][r] += self.carry[d][r];
+                moved += self.carry[d][r];
+                self.carry[d][r] = 0;
+            }
+        }
+        moved
+    }
+
+    /// G17: drain the cache to a flat list of `(domain, rarity)` shards (ship pickup); clears the
+    /// cache. The caller applies one canonical [`Event::CollectShard`] per shard, so the bank,
+    /// research fill, and routine credit all flow through the existing path (D11 covers it).
+    pub fn drain_cache(&mut self) -> Vec<(Stratum, crate::shards::Rarity)> {
+        let mut out = Vec::new();
+        for d in 0..5 {
+            for r in 0..3 {
+                for _ in 0..self.cache[d][r] {
+                    out.push((Stratum::from_byte(d as u8), crate::shards::Rarity::ALL[r]));
+                }
+                self.cache[d][r] = 0;
+            }
+        }
+        out
+    }
+
     /// Encode as a `pg=<hex>` share segment (binary blob → hex; unicode- and URL-safe). The
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(6u8); // version (…; 4 = + discovered G9; 5 = + shards/faculties G10; 6 = + research G15)
+        b.push(7u8); // version (…; 5 = + shards/faculties G10; 6 = + research G15; 7 = + carry/cache G17)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -630,6 +705,14 @@ impl Progress {
             b.push(code);
             b.extend_from_slice(&amt.to_le_bytes());
         }
+        // v7: the G17 expedition handshake — shards in transit (carry, then cache), 5×3 counts each.
+        for store in [&self.carry, &self.cache] {
+            for row in store {
+                for c in row {
+                    b.extend_from_slice(&c.to_le_bytes());
+                }
+            }
+        }
         format!("pg={}", to_hex(&b))
     }
 
@@ -680,7 +763,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if !(1..=6).contains(&version) {
+    if !(1..=7).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -775,6 +858,18 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             research_filled.insert(code, amt);
         }
     }
+    // v7: the G17 carry + cache stores (absent pre-v7 → empty; the handshake just starts fresh).
+    let mut carry = [[0u32; 3]; 5];
+    let mut cache = [[0u32; 3]; 5];
+    if version >= 7 {
+        for store in [&mut carry, &mut cache] {
+            for row in store.iter_mut() {
+                for c in row.iter_mut() {
+                    *c = u32::from_le_bytes(take(&mut p, 4)?.try_into().ok()?);
+                }
+            }
+        }
+    }
     Some(Progress {
         strata,
         codex,
@@ -788,6 +883,8 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         comprehended_blocks,
         active_research,
         research_filled,
+        carry,
+        cache,
     })
 }
 
@@ -828,6 +925,8 @@ impl PartialEq for Progress {
             && self.comprehended_blocks == other.comprehended_blocks
             && self.active_research == other.active_research
             && self.research_filled == other.research_filled
+            && self.carry == other.carry
+            && self.cache == other.cache
     }
 }
 
@@ -1246,6 +1345,83 @@ mod tests {
         });
         let back = Progress::decode(&p2.encode());
         assert_eq!(back, p2, "faculty research round-trips through pg=");
+    }
+
+    /// G17: the walker carries shards (capped), `deposit` moves carry → cache, the ship drain
+    /// returns the cached shards for banking. Value is held *in transit* (not banked) until drain.
+    #[test]
+    fn carry_deposit_cache_and_drain() {
+        use crate::shards::Rarity;
+        let mut p = Progress::default();
+        assert_eq!(p.carry_count(), 0);
+        assert!(!p.carry_is_full());
+        // Carry up to the cap; the cap then blocks further carry (the honest `carry full`).
+        for i in 0..CARRY_CAP {
+            assert!(p.carry_shard(Stratum::Relics, Rarity::Common), "carry #{i}");
+        }
+        assert!(p.carry_is_full());
+        assert_eq!(p.carry_pct(), 100);
+        assert!(
+            !p.carry_shard(Stratum::Relics, Rarity::Common),
+            "a full carry blocks further collect"
+        );
+        // Carry is in transit — nothing banked yet (Decision 2: value lands on ship pickup).
+        assert_eq!(p.shard_bank(), 0);
+        assert_eq!(p.shard_total_count(), 0);
+        // Deposit moves the whole carry into the cache; carry empties.
+        assert_eq!(p.deposit(), CARRY_CAP);
+        assert_eq!(p.carry_count(), 0);
+        assert_eq!(p.cache_count(), CARRY_CAP);
+        assert_eq!(p.deposit(), 0, "an empty carry deposits nothing");
+        // The ship drains the cache → canonical CollectShard events bank + count it.
+        let drained = p.drain_cache();
+        assert_eq!(drained.len() as u32, CARRY_CAP);
+        assert_eq!(p.cache_count(), 0);
+        for (domain, rarity) in drained {
+            p.apply(&Event::CollectShard { domain, rarity });
+        }
+        assert_eq!(
+            p.shard_bank(),
+            CARRY_CAP as u64 * Rarity::Common.yield_amount()
+        );
+        assert_eq!(p.shard_count(Stratum::Relics), CARRY_CAP);
+    }
+
+    /// G17: carry + cache survive the `pg=` v7 round-trip; pre-v7 payloads load with empty stores.
+    #[test]
+    fn handshake_round_trips_v7_and_old_payloads_load_empty() {
+        use crate::shards::Rarity;
+        let mut p = Progress::default();
+        p.carry_shard(Stratum::Records, Rarity::Common);
+        p.carry_shard(Stratum::Signals, Rarity::Rare);
+        p.deposit(); // → cache
+        p.carry_shard(Stratum::Schematics, Rarity::Uncommon); // some still in carry
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p, "carry + cache round-trip through pg= v7");
+        assert_eq!(back.carry_count(), 1);
+        assert_eq!(back.cache_count(), 2);
+        // A pre-v7 (v6) blob still loads — the handshake stores just come back empty.
+        let mut q = Progress::default();
+        q.apply(&Event::CollectShard {
+            domain: Stratum::Records,
+            rarity: Rarity::Common,
+        });
+        let v6_hex = {
+            let mut b = q.encode().strip_prefix("pg=").unwrap().to_string();
+            // Rebuild as a v6 blob by truncating the v7 carry/cache tail (120 bytes = 240 hex).
+            b.truncate(b.len() - 240);
+            let mut bytes = super::from_hex(&b).unwrap();
+            bytes[0] = 6; // stamp version 6
+            super::to_hex(&bytes)
+        };
+        let v6 = Progress::decode(&format!("pg={v6_hex}"));
+        assert_eq!(v6.carry_count(), 0);
+        assert_eq!(v6.cache_count(), 0);
+        assert_eq!(
+            v6.shard_count(Stratum::Records),
+            1,
+            "v6 economy still loads"
+        );
     }
 
     #[test]

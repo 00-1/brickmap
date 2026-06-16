@@ -780,10 +780,23 @@ impl App {
             for act in self.console.on_scan_acts(agent) {
                 self.console.note_scan_fire(act.routine); // G11: the hit fired this routine
                 match act.block {
+                    console::Block::Collect if agent == console::Agent::Foot => {
+                        // G17: a foot on-scan collect carries shards (banks on the ship's drain).
+                        let (items, full) = self.foot_collect_act(self.camera.position, act.filter);
+                        self.console
+                            .credit(act.routine, items, items as u64, act.filter.is_some());
+                        if full {
+                            self.console
+                                .note_blocked(act.routine, console::BlockReason::CarryFull);
+                        }
+                    }
                     console::Block::Collect => {
                         let (items, yields) = self.dispatch_collect(act.filter);
                         self.console
                             .credit(act.routine, items, yields, act.filter.is_some());
+                    }
+                    console::Block::Deposit => {
+                        self.deposit_carry();
                     }
                     console::Block::FireBeam => self.cast_beam(),
                     _ => {}
@@ -854,6 +867,68 @@ impl App {
                 sh.domain.label()
             );
         }
+    }
+
+    /// G17: the **foot** shard collect — sweep in-reach shards (around `origin`) into the walker's
+    /// **carry** (capped) instead of banking them; the value rides the cache home and banks on the
+    /// ship's drain (Decision 2). Honours the `match` filter. Returns `(carried, blocked_full)` so
+    /// the caller credits G11 honestly (`blocked: carry full` when the cap stops further pickup).
+    fn carry_collect(&mut self, origin: Vec3, filter: Option<console::MatchField>) -> (u32, bool) {
+        let reach = 45.0 * self.progress.faculties().reach; // the same generous foot reach (G7/G10)
+        let taken: Vec<shards::Shard> = self
+            .shards
+            .iter()
+            .filter(|sh| {
+                !self.shards_taken.contains(&sh.cell)
+                    && (sh.pos - origin).length_squared() <= reach * reach
+                    && match filter {
+                        Some(console::MatchField::Rare) => sh.rarity == shards::Rarity::Rare,
+                        Some(console::MatchField::Domain(d)) => sh.domain == d,
+                        None => true,
+                    }
+            })
+            .copied()
+            .collect();
+        let (mut carried, mut blocked_full) = (0u32, false);
+        for sh in taken {
+            if !self.progress.carry_shard(sh.domain, sh.rarity) {
+                blocked_full = true; // carry cap reached — leave the rest in the world (honest block)
+                break;
+            }
+            self.shards_taken.insert(sh.cell);
+            self.shards_dirty = true;
+            carried += 1;
+        }
+        (carried, blocked_full)
+    }
+
+    /// G17: `deposit` (foot) — empty the walker's carry into the site cache (the handshake's first
+    /// half). Returns how many shards moved (0 = nothing to deposit, an honest no-op).
+    fn deposit_carry(&mut self) -> u32 {
+        let moved = self.progress.deposit();
+        if moved > 0 {
+            log::info!(
+                "deposit → cache (+{moved}; cache now {})",
+                self.progress.cache_count()
+            );
+        }
+        moved
+    }
+
+    /// G17: one **foot** `collect` act around `origin` — bank the nearest in-reach inscription
+    /// (unique finds, as on foot today) and sweep in-reach shards into the walker's **carry** (the
+    /// handshake currency; capped). Returns `(items, blocked_full)` — `items` = finds banked +
+    /// shards carried (for G11 credit), `blocked_full` = the carry cap stopped further pickup.
+    fn foot_collect_act(
+        &mut self,
+        origin: Vec3,
+        filter: Option<console::MatchField>,
+    ) -> (u32, bool) {
+        let before = self.progress.collected_count() as u32;
+        self.collect_nearest_to(origin); // a unique find banks immediately (not cache currency)
+        let finds = self.progress.collected_count() as u32 - before;
+        let (carried, blocked_full) = self.carry_collect(origin, filter);
+        (finds + carried, blocked_full)
     }
 
     /// G6: refresh which blocks the console offers from what's been comprehended (the growing
@@ -1660,7 +1735,10 @@ impl App {
     fn advance_away_walker(&mut self, dt: f32, data: u32) {
         let arrived = self.arrived_at(self.walker_pos);
         let bank = self.progress.shard_bank().min(u32::MAX as u64) as u32;
-        let foot = self.console.tick(console::Agent::Foot, data, bank, arrived);
+        let (carry, cache) = (self.progress.carry_pct(), self.progress.cache_count());
+        let foot = self
+            .console
+            .tick(console::Agent::Foot, data, bank, carry, cache, arrived);
         if foot.nav == Some(console::Block::Walk) {
             if let Some(t) = self.nearest_site_to(self.walker_pos) {
                 self.walker_pos = walk_toward(self.walker_pos, t, WALK_SPEED, dt);
@@ -1674,12 +1752,22 @@ impl App {
         }
         let walker_pos = self.walker_pos;
         for act in foot.acts {
-            // hail/fire-beam are no-ops for the off-screen walker; only collect acts.
-            if act.block == console::Block::Collect {
-                let before = self.progress.collected_count() as u32;
-                self.collect_nearest_to(walker_pos);
-                let items = self.progress.collected_count() as u32 - before;
-                self.console.credit(act.routine, items, items as u64, false);
+            // hail/fire-beam are no-ops for the off-screen walker; collect carries shards (G17),
+            // deposit empties the carry into the cache.
+            match act.block {
+                console::Block::Collect => {
+                    let (items, full) = self.foot_collect_act(walker_pos, act.filter);
+                    self.console
+                        .credit(act.routine, items, items as u64, act.filter.is_some());
+                    if full {
+                        self.console
+                            .note_blocked(act.routine, console::BlockReason::CarryFull);
+                    }
+                }
+                console::Block::Deposit => {
+                    self.deposit_carry();
+                }
+                _ => {}
             }
         }
     }
@@ -1716,9 +1804,10 @@ impl App {
         let home = (self.walker_pos - ship).with_y(0.0).length() < BOARD;
         let prev = self.expedition.phase;
         let now = self.expedition.advance(at_site, home, dt);
-        // On entering Harvest, the walker collects the ground-level find the ship couldn't reach.
+        // On entering Harvest, the walker harvests the site: the ground-level find the ship
+        // couldn't reach, plus in-reach shards into its carry (G17 — banked on the ship's drain).
         if prev != expedition::Phase::Harvest && now == expedition::Phase::Harvest {
-            self.collect_nearest_to(self.walker_pos);
+            self.foot_collect_act(self.walker_pos, None);
         }
     }
 
@@ -2543,7 +2632,10 @@ impl App {
             let bank = self.progress.shard_bank().min(u32::MAX as u64) as u32;
             let arrived = self.ship_arrived();
             self.console.set_now(self.time); // G11: drive telemetry ages/rates
-            let tick = self.console.tick(console::Agent::Ship, data, bank, arrived);
+            let (carry, cache) = (self.progress.carry_pct(), self.progress.cache_count());
+            let tick = self
+                .console
+                .tick(console::Agent::Ship, data, bank, carry, cache, arrived);
             self.nav_intent = tick.nav;
             self.scan_wanted = tick.scan;
             self.scan_shards_wanted = tick.scan_shards;
@@ -2571,16 +2663,36 @@ impl App {
             let mut foot_nav = None;
             if self.mode == Mode::Walk {
                 let walker_arrived = self.arrived_at(self.camera.position);
-                let foot = self
-                    .console
-                    .tick(console::Agent::Foot, data, bank, walker_arrived);
+                let (carry, cache) = (self.progress.carry_pct(), self.progress.cache_count());
+                let foot = self.console.tick(
+                    console::Agent::Foot,
+                    data,
+                    bank,
+                    carry,
+                    cache,
+                    walker_arrived,
+                );
                 foot_nav = foot.nav;
                 for act in foot.acts {
                     match act.block {
                         console::Block::Collect => {
-                            let (items, yields) = self.dispatch_collect(act.filter);
-                            self.console
-                                .credit(act.routine, items, yields, act.filter.is_some());
+                            // G17: on foot, `collect` carries shards (banks on the ship's cache
+                            // drain) + banks the unique finds; a full carry is honest-blocked.
+                            let origin = self.camera.position; // in Walk mode the camera *is* the walker
+                            let (items, full) = self.foot_collect_act(origin, act.filter);
+                            self.console.credit(
+                                act.routine,
+                                items,
+                                items as u64,
+                                act.filter.is_some(),
+                            );
+                            if full {
+                                self.console
+                                    .note_blocked(act.routine, console::BlockReason::CarryFull);
+                            }
+                        }
+                        console::Block::Deposit => {
+                            self.deposit_carry();
                         }
                         console::Block::Hail => self.hail_ship(),
                         console::Block::FireBeam => self.cast_beam(),
