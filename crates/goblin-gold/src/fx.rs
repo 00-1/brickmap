@@ -46,14 +46,28 @@ pub struct Spark {
 }
 
 /// Spawn a gold burst at (`anchor_x`, `anchor_y`) and run the engine particle system for a fixed
-/// slice, returning the live sparks in screen space. `pos_scale` maps world units → px (the
-/// shower radius) and `size_scale` sizes each fleck. Deterministic in `seed`.
+/// slice (30 steps — caught mid-arc), returning the live sparks in screen space. `pos_scale` maps
+/// world units → px (the shower radius) and `size_scale` sizes each fleck. Deterministic in
+/// `seed` — this is the variant the golden captures.
 pub fn celebrate(
     anchor_x: f32,
     anchor_y: f32,
     pos_scale: f32,
     size_scale: f32,
     seed: u32,
+) -> Vec<Spark> {
+    celebrate_steps(anchor_x, anchor_y, pos_scale, size_scale, seed, 30)
+}
+
+/// As [`celebrate`], but simulate `steps` of the engine particle system (1/120 s each) so the
+/// live app can *animate* the burst by feeding elapsed time → step count.
+pub fn celebrate_steps(
+    anchor_x: f32,
+    anchor_y: f32,
+    pos_scale: f32,
+    size_scale: f32,
+    seed: u32,
+    steps: u32,
 ) -> Vec<Spark> {
     let mut sys = ParticleSystem::new(vec![]); // no auto-emitters: we seed the burst ourselves
     let mut rng = seed | 1;
@@ -75,9 +89,8 @@ pub fn celebrate(
         let warm = 0.85 + rand() * 0.15;
         sys.spawn(Vec3::ZERO, vel, Vec3::new(1.0, warm, 0.7), life, size);
     }
-    // Simulate a fixed slice so the burst is caught mid-arc (deterministic — no wall clock).
     let dt = 1.0 / 120.0;
-    for _ in 0..30 {
+    for _ in 0..steps {
         sys.update(dt);
     }
     // Position spread reads as a wide shower; spark *size* is its own (smaller) scale so flecks

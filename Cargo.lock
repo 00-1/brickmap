@@ -1018,14 +1018,18 @@ name = "goblin-gold"
 version = "0.0.1"
 dependencies = [
  "ab_glyph",
+ "android_logger",
  "brickmap",
  "bytemuck",
+ "env_logger",
  "glam",
+ "log",
  "png",
  "pollster",
  "serde",
  "serde_json",
  "wgpu",
+ "winit",
 ]
 
 [[package]]

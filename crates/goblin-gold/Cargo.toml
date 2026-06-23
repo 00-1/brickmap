@@ -3,13 +3,15 @@ name = "goblin-gold"
 version = "0.0.1"
 edition = "2021"
 rust-version = "1.94"
-description = "Goblin Gold on brickmap — spike. Mini-gate #1: a legible font path (baked AA TTF atlas) + a headless prose-render proof."
+description = "Goblin Gold on brickmap — spike. Drill + keypad + engine-native FX on the brickmap render engine; a native APK proving the re-platform."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/00-1/brickmap"
 
+# `cdylib` is what cargo-apk packages (the Android `android_main` lives in `app.rs`); the
+# `rlib` lets the prototype bins + tests reuse the crate.
 [lib]
 name = "goblin_gold"
-crate-type = ["rlib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Pure-Rust TrueType rasteriser (coverage AA) — the font path under test.
@@ -29,6 +31,39 @@ png = "0.17"
 # particle system) rather than porting fxgl.js, so the FX moment is engine-native + verifiable.
 brickmap = { path = "../brickmap" }
 glam = "0.33"
+# The windowed runtime (mini-gate #4): a real wgpu surface + input loop (desktop + the Android APK).
+winit = "0.30"
+log = "0.4"
+
+# Desktop-only (native, not Android): env_logger for the desktop run path.
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+env_logger = "0.11"
+
+# Android-only (mini-gate #4 APK): the native-activity winit backend + logcat logging.
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30", features = ["android-native-activity"] }
+android_logger = "0.14"
+
+# cargo-apk packaging (mini-gate #4): builds a sideloadable, debug-signed APK from this crate's
+# `cdylib` + `android_main`. Locally: `cargo install cargo-apk` then `cargo apk build --release
+# --lib`; CI does the same (see .github/workflows/android.yml). The package id is DISTINCT from
+# the `scraped-again` demo and the halves Capacitor experiment — these are separate apps.
+[package.metadata.android]
+package = "dev.brickmap.goblingold"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 34
+
+[package.metadata.android.application]
+label = "Goblin Gold"
+
+# Self-signed sideload key (the committed `release.keystore`) so successive sideloaded builds
+# update in place. Same key as the engine demo — apps are distinguished by package id, not key.
+[package.metadata.android.signing.release]
+path = "release.keystore"
+keystore_password = "brickmap"
 
 # The font-prototype tool (mini-gate #1 evidence generator). Native only.
 [[bin]]

@@ -1,11 +1,17 @@
 name: Android APK
 
-# Native Android app (D4): a sideloadable, debug-signed APK built from the crate's
-# cdylib + `android_main` via cargo-apk. Downloadable as a workflow artifact (and a
-# Release asset on v* tags). Built blind in CI — the human installs + verifies on a phone.
+# Native Android apps (D4): sideloadable, debug-signed APKs built from each crate's
+# cdylib + `android_main` via cargo-apk. Downloadable as workflow artifacts (and Release
+# assets on the rolling `dev` tag). Built blind in CI — the human installs + verifies on a
+# phone.
+#
+# A matrix builds every shippable crate:
+#   - scraped-again  — the engine demo game (voxel world).
+#   - goblin-gold    — the BRICKMAP-GG1 spike (drill + keypad + FX, no voxel world).
+# Each has a DISTINCT android package id, so both install side by side on one device.
 #
 # Runs on src/Cargo changes to main (so the build is exercised as the code evolves),
-# on demand, and on tags. Tighten to dispatch+tags once it's reliably green.
+# on demand, and on tags.
 on:
   workflow_dispatch:
   push:
@@ -27,8 +33,16 @@ permissions:
 
 jobs:
   apk:
-    name: build arm64 APK
+    name: build arm64 APK (${{ matrix.crate }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - crate: scraped-again
+            label: Scraped Again
+          - crate: goblin-gold
+            label: Goblin Gold
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +69,7 @@ jobs:
         # signing.release). Run from the crate dir so cargo-apk reads its manifest +
         # `[package.metadata.android]` and resolves the keystore path; the build still
         # outputs to the shared workspace `target/` at the repo root.
-        working-directory: crates/scraped-again
+        working-directory: crates/${{ matrix.crate }}
         env:
           ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
@@ -64,10 +78,13 @@ jobs:
       - name: Align, re-sign (v1+v2+v3) + stage the APK
         id: apk
         shell: bash
+        env:
+          CRATE: ${{ matrix.crate }}
         run: |
           set -euo pipefail
-          # Prefer cargo-apk's final output under */apk/, else any apk.
-          apk="$(find target -path '*/apk/*.apk' | head -n1 || true)"
+          # Prefer cargo-apk's final output under */apk/, else any apk for this crate.
+          apk="$(find target -path '*/apk/*.apk' | grep -i "${CRATE//-/_}\|${CRATE}" | head -n1 || true)"
+          [ -z "$apk" ] && apk="$(find target -path '*/apk/*.apk' | head -n1 || true)"
           [ -z "$apk" ] && apk="$(find target -name '*.apk' | head -n1 || true)"
           if [ -z "$apk" ]; then echo "no APK produced"; exit 1; fi
           echo "cargo-apk produced: $apk"
@@ -75,14 +92,13 @@ jobs:
           echo "build-tools: $BT"
           # zipalign + apksigner re-sign (v1+v2+v3) with the committed sideload key, so
           # the APK installs on modern Android and successive builds update in place.
-          # The filename carries the short SHA so you can tell builds apart (and aren't
-          # served a cached old one).
+          # The filename carries the crate + short SHA so builds are distinguishable.
           sha="$(git rev-parse --short HEAD)"
-          out="scraped-again-${sha}-android-arm64.apk"
+          out="${CRATE}-${sha}-android-arm64.apk"
           mkdir -p dist
           "$BT/zipalign" -f -p 4 "$apk" aligned.apk
           "$BT/apksigner" sign \
-            --ks crates/scraped-again/release.keystore --ks-pass pass:brickmap \
+            --ks "crates/${CRATE}/release.keystore" --ks-pass pass:brickmap \
             --ks-key-alias brickmap --key-pass pass:brickmap \
             --out "dist/$out" aligned.apk
           "$BT/apksigner" verify --verbose "dist/$out"
@@ -97,16 +113,19 @@ jobs:
           path: dist/${{ steps.apk.outputs.name }}
           if-no-files-found: error
 
-      # Keep the rolling `dev` release tidy: drop the previous APK(s) before adding the
-      # new SHA-named one, so the Releases page shows exactly one current APK.
-      - name: Prune old APKs from the dev release
+      # Keep the rolling `dev` release tidy: drop the previous APK(s) FOR THIS CRATE before
+      # adding the new SHA-named one, so the Releases page shows exactly one current APK per
+      # crate (the two crates' assets coexist — each prunes only its own prefix).
+      - name: Prune old APKs (this crate) from the dev release
         env:
           GH_TOKEN: ${{ github.token }}
+          CRATE: ${{ matrix.crate }}
         run: |
           repo="${{ github.repository }}"
           rel="$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/$repo/releases/tags/dev" || true)"
-          ids="$(printf '%s' "$rel" | jq -r '.assets[]? | select(.name|endswith(".apk")) | .id' 2>/dev/null || true)"
+          ids="$(printf '%s' "$rel" | jq -r --arg c "$CRATE" \
+            '.assets[]? | select(.name|startswith($c)) | select(.name|endswith(".apk")) | .id' 2>/dev/null || true)"
           for id in $ids; do
             echo "deleting old asset $id"
             curl -s -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
@@ -125,6 +144,6 @@ jobs:
           files: dist/${{ steps.apk.outputs.name }}
           body: |
             Auto-built from `main` @ `${{ steps.apk.outputs.sha }}`. **Android:** sideloadable
-            release APK — enable "install from unknown sources" and tap to install. Updates
-            in place (stable signing key). The filename + release title carry the build SHA;
-            the in-app HUD shows it too.
+            release APKs — enable "install from unknown sources" and tap to install. Each crate
+            (`scraped-again`, `goblin-gold`) has a distinct package id, so both install side by
+            side. Updates in place (stable signing key). The filename + title carry the build SHA.
