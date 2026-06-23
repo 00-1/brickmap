@@ -1018,7 +1018,9 @@ name = "goblin-gold"
 version = "0.0.1"
 dependencies = [
  "ab_glyph",
+ "brickmap",
  "bytemuck",
+ "glam",
  "png",
  "pollster",
  "serde",

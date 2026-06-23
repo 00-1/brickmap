@@ -1,12 +1,17 @@
-//! A tiny 2-D **painter** (engine-candidate): clear a background, fill flat rects, and draw
-//! anti-aliased text (the [`crate::text`] atlas), through the real wgpu path → a PNG. One
-//! unified pipeline: every quad samples a coverage texture (a glyph for text, a 1×1 white
-//! texel for rects) and multiplies it into the vertex alpha. Native-only (the on-device/web
-//! render is the same wgpu; this proves the pixels headless on a software adapter).
+//! A tiny **headless 2-D painter** (engine-candidate) + a **golden-diff layer**: clear a
+//! background, fill flat rects, draw anti-aliased text (the [`crate::text`] atlas), optionally
+//! recolour the finished frame through the engine's **palette dither** recipe
+//! ([`brickmap::palette::PalettePass`] — Bayer 4×4 over a curated ramp), all through the real
+//! wgpu path → a PNG. One unified scene pipeline: every quad samples a coverage texture (a glyph
+//! for text, a 1×1 white texel for rects) and multiplies it into the vertex alpha.
 //!
-//! Data-free + game-agnostic — the reusable 2-D UI surface that later sinks into `bm-render`.
+//! Native-only (the on-device/web render is the same wgpu; this proves the pixels headless on a
+//! software adapter). The golden helpers ([`rgba_from_png`], [`diff`], [`matches`]) are pure CPU
+//! so a golden-image test's *comparator* runs in CI without a GPU, while the GPU render that
+//! produces the candidate frame runs under lavapipe.
 
 use crate::text::{Atlas, Quad};
+use brickmap::palette::PalettePass;
 use std::mem::size_of;
 use std::sync::mpsc;
 use wgpu::util::DeviceExt;
@@ -50,7 +55,18 @@ struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @l
 }
 "#;
 
+/// Scene format (the quad pipeline draws into this). Sampleable, so the palette pass can read it.
 const FMT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+/// Palettised output format. sRGB so the engine's `srgb_to_linear` ramp lands as authored — the
+/// palette pass is built for an sRGB target (see `palette.wgsl`).
+const SRGB: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+/// One drawable run (a vertex buffer + the coverage texture it samples).
+struct Drawable {
+    bind: wgpu::BindGroup,
+    vbuf: wgpu::Buffer,
+    n: u32,
+}
 
 /// A headless 2-D painter holding the device + pipeline + a 1×1 white texel (for rects).
 pub struct Painter {
@@ -252,16 +268,15 @@ impl Painter {
         })
     }
 
-    /// Paint `rects` then `texts` over a cleared `bg`, at `width`×`height`, to a PNG at `path`.
-    pub fn paint(
+    /// Build one drawable per run (rects in their own white-texel run, then a run per text atlas).
+    /// Returns the drawables + the atlas textures that must outlive the render pass.
+    fn build_drawables(
         &self,
         width: u32,
         height: u32,
-        bg: [f32; 3],
         rects: &[RectRun],
         texts: &[TextRun<'_>],
-        path: &str,
-    ) {
+    ) -> (Vec<Drawable>, Vec<wgpu::Texture>) {
         let to_ndc = |px: f32, py: f32| {
             [
                 px / width as f32 * 2.0 - 1.0,
@@ -314,14 +329,7 @@ impl Painter {
             });
         };
 
-        // One drawable per run, in order: rects (white texel) first, then text (glyph atlas).
-        struct Drawable {
-            bind: wgpu::BindGroup,
-            vbuf: wgpu::Buffer,
-            n: u32,
-        }
         let mut drawables: Vec<Drawable> = Vec::new();
-
         if !rects.is_empty() {
             let mut v = Vec::with_capacity(rects.len() * 6);
             for r in rects {
@@ -362,55 +370,54 @@ impl Painter {
             });
             atlas_texs.push(tex);
         }
+        (drawables, atlas_texs)
+    }
 
-        let target = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("target"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: FMT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
+    /// Record the scene (clear `bg`, then every drawable in order) into `view`.
+    fn record_scene(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        bg: [f32; 3],
+        drawables: &[Drawable],
+    ) {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("ui-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: bg[0] as f64,
+                        g: bg[1] as f64,
+                        b: bg[2] as f64,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
         });
-        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ui-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg[0] as f64,
-                            g: bg[1] as f64,
-                            b: bg[2] as f64,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            for d in &drawables {
-                pass.set_bind_group(0, &d.bind, &[]);
-                pass.set_vertex_buffer(0, d.vbuf.slice(..));
-                pass.draw(0..d.n, 0..1);
-            }
+        pass.set_pipeline(&self.pipeline);
+        for d in drawables {
+            pass.set_bind_group(0, &d.bind, &[]);
+            pass.set_vertex_buffer(0, d.vbuf.slice(..));
+            pass.draw(0..d.n, 0..1);
         }
-        // Readback → PNG (256-byte row alignment).
+    }
+
+    /// Copy `target` back to CPU as tightly-packed RGBA8 (`width*height*4`).
+    fn read_target(
+        &self,
+        target: &wgpu::Texture,
+        width: u32,
+        height: u32,
+        mut encoder: wgpu::CommandEncoder,
+    ) -> Vec<u8> {
         let unpadded_bpr = width * 4;
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let padded_bpr = unpadded_bpr.div_ceil(align) * align;
@@ -422,7 +429,7 @@ impl Painter {
         });
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
-                texture: &target,
+                texture: target,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -457,14 +464,231 @@ impl Painter {
         }
         drop(data);
         readback.unmap();
+        rgba
+    }
 
-        let file = std::fs::File::create(path).expect("create png");
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
-        enc.set_color(png::ColorType::Rgba);
-        enc.set_depth(png::BitDepth::Eight);
-        enc.write_header()
-            .expect("png header")
-            .write_image_data(&rgba)
-            .expect("png data");
+    /// Paint `rects` then `texts` over a cleared `bg`, at `width`×`height`, to a PNG at `path`.
+    pub fn paint(
+        &self,
+        width: u32,
+        height: u32,
+        bg: [f32; 3],
+        rects: &[RectRun],
+        texts: &[TextRun<'_>],
+        path: &str,
+    ) {
+        let (drawables, _keep) = self.build_drawables(width, height, rects, texts);
+        let target = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: FMT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        self.record_scene(&mut encoder, &view, bg, &drawables);
+        let rgba = self.read_target(&target, width, height, encoder);
+        write_png(path, width, height, &rgba);
+    }
+
+    /// Render the scene, then recolour it through the engine's **palette dither** recipe
+    /// ([`PalettePass`]: luminance → the curated `ramp`, Bayer 4×4 by `dither`), to an sRGB
+    /// target. Returns the readback RGBA (so a golden test can diff it); writes a PNG too if
+    /// `path` is `Some`. This is the engine-native FX look — NOT a port of the web `fxgl.js`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_palettized(
+        &self,
+        width: u32,
+        height: u32,
+        bg: [f32; 3],
+        rects: &[RectRun],
+        texts: &[TextRun<'_>],
+        ramp: &[[f32; 3]],
+        count: u32,
+        dither: f32,
+        path: Option<&str>,
+    ) -> Vec<u8> {
+        let (drawables, _keep) = self.build_drawables(width, height, rects, texts);
+        let scene = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("fx-scene"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: FMT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let scene_view = scene.create_view(&wgpu::TextureViewDescriptor::default());
+        let target = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("fx-target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: SRGB,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let pal = PalettePass::new(&self.device, SRGB);
+        pal.set_colors(&self.queue, ramp, count, dither, true);
+        let pal_bg = pal.make_bind_group(&self.device, &scene_view);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        self.record_scene(&mut encoder, &scene_view, bg, &drawables);
+        pal.render(&mut encoder, &pal_bg, &target_view);
+        let rgba = self.read_target(&target, width, height, encoder);
+        if let Some(p) = path {
+            write_png(p, width, height, &rgba);
+        }
+        rgba
+    }
+}
+
+/// Write tightly-packed RGBA8 to a PNG.
+pub fn write_png(path: &str, width: u32, height: u32, rgba: &[u8]) {
+    let file = std::fs::File::create(path).expect("create png");
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.set_compression(png::Compression::Best); // dithered frames compress poorly — squeeze hard
+    enc.write_header()
+        .expect("png header")
+        .write_image_data(rgba)
+        .expect("png data");
+}
+
+// ── golden-diff layer ──────────────────────────────────────────────────────────────────────
+// Pure CPU, so a golden-image test's *comparator* runs in CI without a GPU.
+
+/// Decode a PNG to `(width, height, RGBA8)`.
+pub fn rgba_from_png(path: &str) -> (u32, u32, Vec<u8>) {
+    let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
+    let decoder = png::Decoder::new(std::io::BufReader::new(file));
+    let mut reader = decoder.read_info().expect("png info");
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).expect("png frame");
+    buf.truncate(info.buffer_size());
+    // Normalise to RGBA8 (the painter always writes RGBA8, but be defensive).
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => buf,
+        png::ColorType::Rgb => buf
+            .chunks(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
+        other => panic!("unsupported golden colour type {other:?}"),
+    };
+    (info.width, info.height, rgba)
+}
+
+/// Result of comparing two equal-length RGBA8 buffers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DiffStats {
+    /// Pixels with any channel differing by more than the tolerance.
+    pub changed: usize,
+    /// The largest single-channel absolute difference seen.
+    pub max_delta: u8,
+    /// Total pixel count.
+    pub total: usize,
+}
+
+/// Per-pixel diff of two RGBA8 buffers: a pixel counts as `changed` if any channel differs by
+/// more than `tol`. Panics if the buffers differ in length (a size mismatch is a hard fail).
+pub fn diff(a: &[u8], b: &[u8], tol: u8) -> DiffStats {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "golden size mismatch ({} vs {} bytes)",
+        a.len(),
+        b.len()
+    );
+    let mut changed = 0usize;
+    let mut max_delta = 0u8;
+    for (pa, pb) in a.chunks_exact(4).zip(b.chunks_exact(4)) {
+        let mut pixel_changed = false;
+        for k in 0..4 {
+            let d = pa[k].abs_diff(pb[k]);
+            max_delta = max_delta.max(d);
+            if d > tol {
+                pixel_changed = true;
+            }
+        }
+        if pixel_changed {
+            changed += 1;
+        }
+    }
+    DiffStats {
+        changed,
+        max_delta,
+        total: a.len() / 4,
+    }
+}
+
+/// True if `a` matches `b` within tolerance: no more than `max_fraction` of pixels differ by
+/// more than `tol` per channel (a small allowance for software-rasteriser jitter).
+pub fn matches(a: &[u8], b: &[u8], tol: u8, max_fraction: f32) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let d = diff(a, b, tol);
+    (d.changed as f32) <= max_fraction * d.total as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The comparator has teeth: identical buffers match; an injected block of changed pixels is
+    // counted and breaks the match. (Pure — no GPU; this is the CI-safe half of the golden test.)
+    #[test]
+    fn diff_detects_an_injected_change() {
+        let base = vec![10u8; 64 * 64 * 4];
+        assert!(
+            matches(&base, &base, 0, 0.0),
+            "a buffer must match itself exactly"
+        );
+
+        let mut perturbed = base.clone();
+        // Tint an 8×8 block bright — a regression the diff must catch.
+        for y in 0..8 {
+            for x in 0..8 {
+                let i = (y * 64 + x) * 4;
+                perturbed[i] = 250;
+            }
+        }
+        let d = diff(&base, &perturbed, 8);
+        assert_eq!(d.changed, 64, "the 8×8 block (64 px) must be flagged");
+        assert_eq!(d.max_delta, 240);
+        assert!(
+            !matches(&base, &perturbed, 8, 0.001),
+            "a 64-px change must fail a tight match"
+        );
+    }
+
+    #[test]
+    fn size_mismatch_never_matches() {
+        assert!(!matches(&[0u8; 16], &[0u8; 32], 255, 1.0));
     }
 }

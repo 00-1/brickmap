@@ -25,6 +25,10 @@ serde_json = "1"
 wgpu = "29"
 pollster = "0.4"
 png = "0.17"
+# The engine facade — mini-gate #3 reuses bm-render's OWN recipes (palette dither + the CPU
+# particle system) rather than porting fxgl.js, so the FX moment is engine-native + verifiable.
+brickmap = { path = "../brickmap" }
+glam = "0.33"
 
 # The font-prototype tool (mini-gate #1 evidence generator). Native only.
 [[bin]]
@@ -35,3 +39,8 @@ path = "src/bin/font_proto.rs"
 [[bin]]
 name = "drill_proto"
 path = "src/bin/drill_proto.rs"
+
+# The correct-answer FX prototype + golden blesser (mini-gate #3 evidence). Native only.
+[[bin]]
+name = "fx_proto"
+path = "src/bin/fx_proto.rs"

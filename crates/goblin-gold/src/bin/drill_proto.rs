@@ -15,8 +15,8 @@
 
 use ab_glyph::FontRef;
 use goblin_gold::drill::{Drill, Mark};
+use goblin_gold::headless::{Painter, RectRun, TextRun};
 use goblin_gold::keypad::{Key, Keypad};
-use goblin_gold::render::{Painter, RectRun, TextRun};
 use goblin_gold::text::Atlas;
 
 const BG: [f32; 3] = [20.0 / 255.0, 12.0 / 255.0, 34.0 / 255.0]; // GG deep violet

@@ -10,7 +10,7 @@
 //!         cargo run -p goblin-gold --bin font_proto -- <out_dir>
 
 use ab_glyph::FontRef;
-use goblin_gold::render::{Painter, TextRun};
+use goblin_gold::headless::{Painter, TextRun};
 use goblin_gold::text::Atlas;
 
 const BG: [f32; 3] = [20.0 / 255.0, 12.0 / 255.0, 34.0 / 255.0]; // GG deep violet panel
