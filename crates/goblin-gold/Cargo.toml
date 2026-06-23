@@ -1,0 +1,29 @@
+[package]
+name = "goblin-gold"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.94"
+description = "Goblin Gold on brickmap — spike. Mini-gate #1: a legible font path (baked AA TTF atlas) + a headless prose-render proof."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/00-1/brickmap"
+
+[lib]
+name = "goblin_gold"
+crate-type = ["rlib"]
+
+[dependencies]
+# Pure-Rust TrueType rasteriser (coverage AA) — the font path under test.
+ab_glyph = "0.2"
+bytemuck = { version = "1", features = ["derive"] }
+
+# Native-only prototype tooling: the headless wgpu render of laid-out prose → PNG.
+# (The web/APK render is the same wgpu path; this proves the pixels on a software adapter.)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wgpu = "29"
+pollster = "0.4"
+png = "0.17"
+
+# The font-prototype tool (mini-gate #1 evidence generator). Native only.
+[[bin]]
+name = "font_proto"
+path = "src/bin/font_proto.rs"
