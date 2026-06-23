@@ -19,6 +19,10 @@ winit = "0.30"
 log = "0.4"
 # Tiny public-domain 8x8 bitmap font for the in-engine text/HUD overlays.
 font8x8 = "0.3"
+# Pure-Rust TrueType rasteriser — the engine's legible **prose** text service (`text2d`): bake a
+# face to an anti-aliased coverage atlas for crisp reading-size UI/menu text (the bitmap font8x8
+# is fine for HUD numbers but marginal for paragraphs). The game supplies the font face as data.
+ab_glyph = "0.2"
 # Cross-platform monotonic clock (std::time on native, performance.now on web).
 web-time = "1"
 

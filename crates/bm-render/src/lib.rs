@@ -25,6 +25,7 @@ pub mod particles;
 pub mod post;
 pub mod ship;
 pub mod text;
+pub mod text2d;
 pub mod textures;
 
 /// WGSL sources for the two pipelines the headless render-to-PNG tool rebuilds inline

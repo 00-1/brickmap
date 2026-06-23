@@ -296,6 +296,7 @@ dependencies = [
 name = "bm-render"
 version = "0.0.1"
 dependencies = [
+ "ab_glyph",
  "bm-core",
  "bm-mesh",
  "bm-scene",

@@ -20,6 +20,10 @@
 
 pub mod drill;
 pub mod keypad;
+
+// The text path is the engine's `bm-render::text2d` service (re-exported); native-only because
+// goblin-gold only depends on the engine facade off-wasm.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod text;
 
 #[cfg(not(target_arch = "wasm32"))]
