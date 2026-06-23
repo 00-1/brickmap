@@ -120,19 +120,28 @@ impl Gfx {
             .expect("device");
 
         let caps = surface.get_capabilities(&adapter);
+        // Prefer an sRGB surface format (so the palette ramp lands as authored); fall back
+        // defensively rather than index `[0]` blind — an empty caps list must not panic.
         let format = caps
             .formats
             .iter()
             .copied()
             .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
+            .or_else(|| caps.formats.first().copied())
+            .unwrap_or(wgpu::TextureFormat::Rgba8UnormSrgb);
+        let alpha_mode = caps
+            .alpha_modes
+            .first()
+            .copied()
+            .unwrap_or(wgpu::CompositeAlphaMode::Auto);
+        log::info!("goblin-gold surface: {w}x{h} fmt={format:?} alpha={alpha_mode:?}");
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: w,
             height: h,
             present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode: caps.alpha_modes[0],
+            alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
@@ -855,6 +864,26 @@ fn init_logging() {
     );
     #[cfg(not(target_os = "android"))]
     let _ = env_logger::try_init();
+
+    // Route panics through the log. The default Rust panic handler writes to **stderr**, which
+    // Android does NOT capture — so a `panic → abort` force-close shows no cause in `adb logcat`.
+    // This hook logs the payload + location at ERROR (→ logcat via android_logger) BEFORE the
+    // default handler aborts, so the exact failing `expect`/`unwrap` is named on the next launch.
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let loc = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "<unknown location>".to_string());
+        let msg = info
+            .payload()
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| info.payload().downcast_ref::<String>().map(|s| s.as_str()))
+            .unwrap_or("<non-string panic payload>");
+        log::error!("goblin-gold PANIC at {loc}: {msg}");
+        default(info);
+    }));
 }
 
 /// Desktop entry point: build the event loop and run the drill app.
