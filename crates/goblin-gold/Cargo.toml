@@ -15,6 +15,9 @@ crate-type = ["rlib"]
 # Pure-Rust TrueType rasteriser (coverage AA) — the font path under test.
 ab_glyph = "0.2"
 bytemuck = { version = "1", features = ["derive"] }
+# Consume the T229 content data seam (parity vectors / mode metadata). Data, not code.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Native-only prototype tooling: the headless wgpu render of laid-out prose → PNG.
 # (The web/APK render is the same wgpu path; this proves the pixels on a software adapter.)
@@ -27,3 +30,8 @@ png = "0.17"
 [[bin]]
 name = "font_proto"
 path = "src/bin/font_proto.rs"
+
+# The keypad+drill prototype (mini-gate #2 evidence generator). Native only.
+[[bin]]
+name = "drill_proto"
+path = "src/bin/drill_proto.rs"

@@ -58,6 +58,12 @@ pub struct Quad {
 impl Atlas {
     /// Bake the printable ASCII range of `font` at `px` into a single coverage atlas.
     pub fn bake(font: &FontRef<'_>, px: f32) -> Atlas {
+        Self::bake_chars(font, px, "")
+    }
+
+    /// Bake printable ASCII PLUS any `extra` chars (e.g. keypad glyphs `✓ ⌫ ×`) at `px`.
+    /// Non-ASCII `extra` chars the face lacks are silently skipped so callers can fall back.
+    pub fn bake_chars(font: &FontRef<'_>, px: f32, extra: &str) -> Atlas {
         let scaled = font.as_scaled(PxScale::from(px));
         let ascent = scaled.ascent();
         let descent = scaled.descent();
@@ -74,11 +80,21 @@ impl Atlas {
             advance: f32,
             cov: Vec<u8>,
         }
+        let mut chars: Vec<char> = (0x20u8..0x7f).map(|c| c as char).collect();
+        for c in extra.chars() {
+            if !chars.contains(&c) {
+                chars.push(c);
+            }
+        }
         let mut raws: Vec<Raw> = Vec::new();
-        for code in 0x20u8..0x7f {
-            let ch = code as char;
-            let advance = scaled.h_advance(font.glyph_id(ch));
-            let glyph: Glyph = font.glyph_id(ch).with_scale(px);
+        for ch in chars {
+            let gid = font.glyph_id(ch);
+            // skip non-ASCII `extra` chars the face doesn't have (notdef) → caller falls back
+            if ch as u32 > 0x7e && gid.0 == 0 {
+                continue;
+            }
+            let advance = scaled.h_advance(gid);
+            let glyph: Glyph = gid.with_scale(px);
             if let Some(outlined) = font.outline_glyph(glyph) {
                 let b = outlined.px_bounds();
                 let w = b.width().ceil().max(0.0) as u32;
@@ -190,7 +206,12 @@ impl Atlas {
 
     /// Width (px) of a single word (no wrapping) — used by the wrapper.
     fn word_width(&self, word: &str) -> f32 {
-        word.chars()
+        self.text_width(word)
+    }
+
+    /// Advance width (px) of `text` on one line — handy for centring a label in a box.
+    pub fn text_width(&self, text: &str) -> f32 {
+        text.chars()
             .map(|c| {
                 self.glyphs
                     .get(&c)

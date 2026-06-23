@@ -1021,6 +1021,8 @@ dependencies = [
  "bytemuck",
  "png",
  "pollster",
+ "serde",
+ "serde_json",
  "wgpu",
 ]
 
