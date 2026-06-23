@@ -351,6 +351,12 @@ impl Painter {
 
         let mut atlas_texs: Vec<wgpu::Texture> = Vec::new();
         for run in texts {
+            // A text run with no glyphs (e.g. an empty string, or chars absent from the atlas)
+            // yields an empty vertex Vec — `create_buffer_init` panics on a zero-length slice, so
+            // skip it. (This is the class of bug that crashed the live APK on the first frame.)
+            if run.quads.is_empty() {
+                continue;
+            }
             let tex = self.upload_coverage(run.atlas.width, run.atlas.height, &run.atlas.coverage);
             let mut v = Vec::with_capacity(run.quads.len() * 6);
             for q in &run.quads {
@@ -477,6 +483,20 @@ impl Painter {
         texts: &[TextRun<'_>],
         path: &str,
     ) {
+        let rgba = self.paint_rgba(width, height, bg, rects, texts);
+        write_png(path, width, height, &rgba);
+    }
+
+    /// As [`paint`](Self::paint), but return the readback RGBA (no palette pass) so a golden test
+    /// can diff the plain scene — and exercise empty/edge runs without writing a file.
+    pub fn paint_rgba(
+        &self,
+        width: u32,
+        height: u32,
+        bg: [f32; 3],
+        rects: &[RectRun],
+        texts: &[TextRun<'_>],
+    ) -> Vec<u8> {
         let (drawables, _keep) = self.build_drawables(width, height, rects, texts);
         let target = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("target"),
@@ -497,8 +517,7 @@ impl Painter {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         self.record_scene(&mut encoder, &view, bg, &drawables);
-        let rgba = self.read_target(&target, width, height, encoder);
-        write_png(path, width, height, &rgba);
+        self.read_target(&target, width, height, encoder)
     }
 
     /// Render the scene, then recolour it through the engine's **palette dither** recipe

@@ -20,6 +20,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
 
 use crate::drill::{Drill, Mark};
+use crate::headless::{RectRun, TextRun};
 use crate::keypad::{Key, Keypad};
 use crate::text::{Atlas, Quad};
 
@@ -58,22 +59,8 @@ struct Vertex {
     rgba: [f32; 4],
 }
 
-/// A filled rect (pixel coords, top-left origin).
-#[derive(Clone, Copy)]
-struct Rect {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    rgba: [f32; 4],
-}
-
-/// A run of glyph quads sharing one atlas + colour.
-struct Text<'a> {
-    atlas: &'a Atlas,
-    quads: Vec<Quad>,
-    rgba: [f32; 4],
-}
+// The live render consumes the SAME [`RectRun`]/[`TextRun`] the headless painter does, so the
+// drill-frame builder ([`drill_frame`]) is shared by the on-device path AND the golden test.
 
 /// GPU surface state: device/queue/surface + the quad pipeline and the palette present pass.
 struct Gfx {
@@ -304,8 +291,8 @@ impl Gfx {
     /// pass — passthrough normally, or the gold Bayer dither while `fx_ramp` is `Some` (the bloom).
     fn render(
         &mut self,
-        rects: &[Rect],
-        texts: &[Text<'_>],
+        rects: &[RectRun],
+        texts: &[TextRun<'_>],
         fx_ramp: Option<(&[[f32; 3]], u32, f32)>,
     ) {
         let (w, h) = (self.config.width as f32, self.config.height as f32);
@@ -379,6 +366,12 @@ impl Gfx {
         }
         let mut keep: Vec<wgpu::Texture> = Vec::new();
         for t in texts {
+            // Skip empty runs — an empty string (or chars absent from the atlas) yields zero
+            // quads, and `create_buffer_init` panics on a zero-length slice. This is the exact
+            // crash that force-closed the APK on the drill's first frame (empty answer box).
+            if t.quads.is_empty() {
+                continue;
+            }
             let tex = self.upload_coverage(t.atlas);
             let mut v = Vec::with_capacity(t.quads.len() * 6);
             for q in &t.quads {
@@ -526,8 +519,9 @@ fn make_scene(
     (scene, view)
 }
 
-/// Baked atlases sized to the current window (re-baked on resize).
-struct Fonts {
+/// Baked atlases sized to the current window (re-baked on resize). Public so the golden test can
+/// render the same drill frame the device does (via [`drill_frame`]).
+pub struct Fonts {
     head: Atlas,
     q: Atlas,
     body: Atlas,
@@ -535,7 +529,7 @@ struct Fonts {
 }
 
 impl Fonts {
-    fn bake(font: &FontRef<'_>, h: f32) -> Fonts {
+    pub fn bake(font: &FontRef<'_>, h: f32) -> Fonts {
         Fonts {
             head: Atlas::bake(font, (h * 0.045).clamp(20.0, 120.0)),
             q: Atlas::bake(font, (h * 0.044).clamp(20.0, 120.0)),
@@ -612,192 +606,221 @@ impl App {
     }
 
     fn draw(&mut self) {
-        let Some(gfx) = self.gfx.as_mut() else { return };
-        let Some(fonts) = self.fonts.as_ref() else {
+        if self.gfx.is_none() || self.fonts.is_none() {
             return;
+        }
+        let (w, h) = {
+            let gfx = self.gfx.as_ref().unwrap();
+            (gfx.config.width as f32, gfx.config.height as f32)
         };
-        let (w, h) = (gfx.config.width as f32, gfx.config.height as f32);
-        let cx = w / 2.0;
-        let margin = w * 0.06;
-        let col_w = w - margin * 2.0;
-
-        // FX window state.
         let fx_t = self.fx_start.map(|s| s.elapsed().as_secs_f32());
         let fx_active = matches!(fx_t, Some(t) if t < FX_SECS);
-
-        let mut rects: Vec<Rect> = Vec::new();
-        let mut texts: Vec<Text> = Vec::new();
-
-        // Heading + progress.
-        let (q, _hh) = fonts
-            .head
-            .layout(&self.drill.name, margin, h * 0.035, col_w);
-        texts.push(Text {
-            atlas: &fonts.head,
-            quads: q,
-            rgba: GOLD,
-        });
-        let prog = format!("{} / {}", self.drill.solved(), self.drill.len());
-        let pw = fonts.body.text_width(&prog);
-        let (q, _hh) = fonts
-            .body
-            .layout(&prog, w - margin - pw, h * 0.05, pw + 4.0);
-        texts.push(Text {
-            atlas: &fonts.body,
-            quads: q,
-            rgba: DIM,
-        });
-
-        // Question card.
-        let cy = h * 0.16;
-        let ch = h * 0.16;
-        rects.push(Rect {
-            x: margin,
-            y: cy,
-            w: col_w,
-            h: ch,
-            rgba: [GOLD[0], GOLD[1], GOLD[2], 0.5],
-        });
-        rects.push(Rect {
-            x: margin + 3.0,
-            y: cy + 3.0,
-            w: col_w - 6.0,
-            h: ch - 6.0,
-            rgba: PANEL,
-        });
-        let label = format!("Half of {}", self.drill.prompt());
-        texts.push(Text {
-            atlas: &fonts.q,
-            quads: centered(&fonts.q, &label, cx, cy, ch),
-            rgba: GOLD,
-        });
-
-        // Answer box — frame colour reflects the last verdict.
-        let (frame_col, ink) = match self.drill.last_mark() {
-            Some(Mark::Right) => (GREEN, GREEN),
-            Some(Mark::Wrong) => (RED, RED),
-            None => (DIM, BODY),
-        };
-        let by = h * 0.35;
-        let bh = h * 0.085;
-        let bw = col_w * 0.7;
-        let bx = cx - bw / 2.0;
-        rects.push(Rect {
-            x: bx,
-            y: by,
-            w: bw,
-            h: bh,
-            rgba: frame_col,
-        });
-        rects.push(Rect {
-            x: bx + 3.0,
-            y: by + 3.0,
-            w: bw - 6.0,
-            h: bh - 6.0,
-            rgba: [28.0 / 255.0, 18.0 / 255.0, 44.0 / 255.0, 1.0],
-        });
-        let shown = if self.drill.typed().is_empty() {
-            "·".to_string()
+        let fx = if fx_active {
+            Some((self.fx_seed, fx_t.unwrap()))
         } else {
-            self.drill.typed().to_string()
+            None
         };
-        texts.push(Text {
-            atlas: &fonts.q,
-            quads: centered(&fonts.q, &shown, cx, by, bh),
-            rgba: ink,
-        });
 
-        // Verdict banner.
-        let (msg, col) = match self.drill.last_mark() {
-            Some(Mark::Right) => ("Correct!", GREEN),
-            Some(Mark::Wrong) => ("Try again", RED),
-            None => ("Tap the digits, then Enter", DIM),
-        };
-        let mw = fonts.body.text_width(msg);
-        let (q, _hh) = fonts.body.layout(msg, cx - mw / 2.0, h * 0.46, mw + 4.0);
-        texts.push(Text {
-            atlas: &fonts.body,
-            quads: q,
-            rgba: col,
-        });
-
-        // Keypad.
-        let back_label = if fonts.key.glyphs.contains_key(&'⌫') {
-            "⌫"
-        } else {
-            "<"
-        };
-        let mut key_quads: Vec<Quad> = Vec::new();
-        for cell in &self.keypad.cells {
-            let is_enter = cell.key == Key::Enter;
-            rects.push(Rect {
-                x: cell.x,
-                y: cell.y,
-                w: cell.w,
-                h: cell.h,
-                rgba: if is_enter { GOLD } else { KEYBG },
-            });
-            if is_enter {
-                let qd = centered(&fonts.key, "Enter", cell.x + cell.w / 2.0, cell.y, cell.h);
-                texts.push(Text {
-                    atlas: &fonts.key,
-                    quads: qd,
-                    rgba: INK,
-                });
-                continue;
-            }
-            let s = match cell.key {
-                Key::Digit(d) => ((b'0' + d) as char).to_string(),
-                Key::Dot => ".".to_string(),
-                Key::Back => back_label.to_string(),
-                Key::Enter => unreachable!(),
-            };
-            key_quads.extend(centered(
-                &fonts.key,
-                &s,
-                cell.x + cell.w / 2.0,
-                cell.y,
-                cell.h,
-            ));
-        }
-        texts.push(Text {
-            atlas: &fonts.key,
-            quads: key_quads,
-            rgba: BODY,
-        });
-
-        // FX: an animated gold spark burst over the answer (engine particle system).
-        if let Some(t) = fx_t {
-            if fx_active {
-                let steps = (t * 120.0) as u32 + 4;
-                for s in crate::fx::celebrate_steps(
-                    cx,
-                    by + bh * 0.4,
-                    w * 0.05,
-                    w * 0.012,
-                    self.fx_seed,
-                    steps,
-                ) {
-                    rects.push(Rect {
-                        x: s.x - s.size / 2.0,
-                        y: s.y - s.size / 2.0,
-                        w: s.size,
-                        h: s.size,
-                        rgba: s.rgba,
-                    });
-                }
-            }
-        }
-
+        // Build the frame from the SHARED builder, then hand it to the surface renderer. `texts`
+        // borrows `self.fonts`; `self.gfx` is a separate field, so the mutable borrow is disjoint.
+        let fonts = self.fonts.as_ref().unwrap();
+        let (rects, texts) = drill_frame(&self.drill, &self.keypad, fonts, w, h, fx);
         let fx_ramp = fx_active.then_some((
             &crate::fx::GOLD_RAMP[..],
             crate::fx::GOLD_RAMP.len() as u32,
             crate::fx::FX_DITHER,
         ));
-        // Borrow split: `texts` borrows `self.fonts`, `gfx` is a separate field.
-        let gfx = self.gfx.as_mut().unwrap();
-        gfx.render(&rects, &texts, fx_ramp);
+        self.gfx.as_mut().unwrap().render(&rects, &texts, fx_ramp);
     }
+}
+
+/// Build the drill-screen frame (rects + text runs) for the current state, sized to `w`×`h`.
+/// Shared by the on-device renderer ([`Gfx::render`]) AND the headless golden test, so the exact
+/// frame the phone shows is the one self-verified offscreen. `fx = Some((seed, elapsed))` adds the
+/// animated gold spark burst. NOTE: text runs may be **empty** (e.g. a blank answer box on the
+/// first frame) — the renderer skips empty runs (the bug that crashed the APK), so this is safe.
+pub fn drill_frame<'a>(
+    drill: &Drill,
+    keypad: &Keypad,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+    fx: Option<(u32, f32)>,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let cx = w / 2.0;
+    let margin = w * 0.06;
+    let col_w = w - margin * 2.0;
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+
+    // Heading + progress.
+    let (q, _hh) = fonts.head.layout(&drill.name, margin, h * 0.035, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: q,
+        rgba: GOLD,
+    });
+    let prog = format!("{} / {}", drill.solved(), drill.len());
+    let pw = fonts.body.text_width(&prog);
+    let (q, _hh) = fonts
+        .body
+        .layout(&prog, w - margin - pw, h * 0.05, pw + 4.0);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: DIM,
+    });
+
+    // Question card.
+    let cy = h * 0.16;
+    let ch = h * 0.16;
+    rects.push(RectRun {
+        x: margin,
+        y: cy,
+        w: col_w,
+        h: ch,
+        rgba: [GOLD[0], GOLD[1], GOLD[2], 0.5],
+    });
+    rects.push(RectRun {
+        x: margin + 3.0,
+        y: cy + 3.0,
+        w: col_w - 6.0,
+        h: ch - 6.0,
+        rgba: PANEL,
+    });
+    let label = format!("Half of {}", drill.prompt());
+    texts.push(TextRun {
+        atlas: &fonts.q,
+        quads: centered(&fonts.q, &label, cx, cy, ch),
+        rgba: GOLD,
+    });
+
+    // Answer box — frame colour reflects the last verdict; the value is the typed string (which is
+    // EMPTY on the first frame → an empty text run, exercised by the renderer's empty-run guard).
+    let (frame_col, ink) = match drill.last_mark() {
+        Some(Mark::Right) => (GREEN, GREEN),
+        Some(Mark::Wrong) => (RED, RED),
+        None => (DIM, BODY),
+    };
+    let by = h * 0.35;
+    let bh = h * 0.085;
+    let bw = col_w * 0.7;
+    let bx = cx - bw / 2.0;
+    rects.push(RectRun {
+        x: bx,
+        y: by,
+        w: bw,
+        h: bh,
+        rgba: frame_col,
+    });
+    rects.push(RectRun {
+        x: bx + 3.0,
+        y: by + 3.0,
+        w: bw - 6.0,
+        h: bh - 6.0,
+        rgba: [28.0 / 255.0, 18.0 / 255.0, 44.0 / 255.0, 1.0],
+    });
+    texts.push(TextRun {
+        atlas: &fonts.q,
+        quads: centered(&fonts.q, drill.typed(), cx, by, bh),
+        rgba: ink,
+    });
+
+    // Verdict banner.
+    let (msg, col) = match drill.last_mark() {
+        Some(Mark::Right) => ("Correct!", GREEN),
+        Some(Mark::Wrong) => ("Try again", RED),
+        None => ("Tap the digits, then Enter", DIM),
+    };
+    let mw = fonts.body.text_width(msg);
+    let (q, _hh) = fonts.body.layout(msg, cx - mw / 2.0, h * 0.46, mw + 4.0);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: col,
+    });
+
+    // Keypad.
+    let back_label = if fonts.key.glyphs.contains_key(&'⌫') {
+        "⌫"
+    } else {
+        "<"
+    };
+    let mut key_quads: Vec<Quad> = Vec::new();
+    for cell in &keypad.cells {
+        let is_enter = cell.key == Key::Enter;
+        rects.push(RectRun {
+            x: cell.x,
+            y: cell.y,
+            w: cell.w,
+            h: cell.h,
+            rgba: if is_enter { GOLD } else { KEYBG },
+        });
+        if is_enter {
+            let qd = centered(&fonts.key, "Enter", cell.x + cell.w / 2.0, cell.y, cell.h);
+            texts.push(TextRun {
+                atlas: &fonts.key,
+                quads: qd,
+                rgba: INK,
+            });
+            continue;
+        }
+        let s = match cell.key {
+            Key::Digit(d) => ((b'0' + d) as char).to_string(),
+            Key::Dot => ".".to_string(),
+            Key::Back => back_label.to_string(),
+            Key::Enter => unreachable!(),
+        };
+        key_quads.extend(centered(
+            &fonts.key,
+            &s,
+            cell.x + cell.w / 2.0,
+            cell.y,
+            cell.h,
+        ));
+    }
+    texts.push(TextRun {
+        atlas: &fonts.key,
+        quads: key_quads,
+        rgba: BODY,
+    });
+
+    // FX: an animated gold spark burst over the answer (engine particle system).
+    if let Some((seed, t)) = fx {
+        let steps = (t * 120.0) as u32 + 4;
+        for s in crate::fx::celebrate_steps(cx, by + bh * 0.4, w * 0.05, w * 0.012, seed, steps) {
+            rects.push(RectRun {
+                x: s.x - s.size / 2.0,
+                y: s.y - s.size / 2.0,
+                w: s.size,
+                h: s.size,
+                rgba: s.rgba,
+            });
+        }
+    }
+
+    (rects, texts)
+}
+
+/// Fixed dims for the initial-drill golden (portrait; tall enough for the bottom keypad).
+pub const DRILL_W: u32 = 540;
+pub const DRILL_H: u32 = 1000;
+
+/// Render the **INITIAL drill frame** (empty answer box, no FX) through the headless painter —
+/// the exact state that force-closed the APK on device (empty answer → empty text run). Shared by
+/// the golden blesser (`fx_proto`) and the golden test, so both produce identical pixels; running
+/// it at all proves the empty-run guard prevents the panic. Returns the readback RGBA.
+pub fn render_initial_drill(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let drill = Drill::from_seam("halves");
+    let margin = w * 0.06;
+    let kp_w = w - margin * 2.0;
+    let kp_h = h * 0.46;
+    let kp_y = h - kp_h - margin;
+    let keypad = Keypad::layout(margin, kp_y, kp_w, kp_h, w * 0.018);
+    let (rects, texts) = drill_frame(&drill, &keypad, &fonts, w, h, None);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
 impl ApplicationHandler for App {

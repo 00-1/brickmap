@@ -9,6 +9,7 @@
 //!       GG_BLESS=1 VK_ICD_FILENAMES=... cargo run -p goblin-gold --bin fx_proto -- <out_dir>
 
 use ab_glyph::FontRef;
+use goblin_gold::app;
 use goblin_gold::fx::{self, Variant};
 use goblin_gold::headless::{write_png, Painter};
 
@@ -35,10 +36,22 @@ fn main() {
         println!("wrote {p}");
     }
 
+    // The INITIAL drill frame (empty answer box, no FX) — the state that crashed on device.
+    let drill_rgba = app::render_initial_drill(&painter, &font);
+    let drill_shot = format!("{out_dir}/gg-drill-initial.png");
+    write_png(&drill_shot, app::DRILL_W, app::DRILL_H, &drill_rgba);
+    println!("wrote {drill_shot}");
+
     if std::env::var("GG_BLESS").is_ok() {
-        let golden = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/fx-correct.png");
         std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens")).ok();
+        let golden = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/fx-correct.png");
         write_png(golden, fx::W, fx::H, &rgba);
         println!("BLESSED golden {golden}");
+        let dg = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/goldens/drill-initial.png"
+        );
+        write_png(dg, app::DRILL_W, app::DRILL_H, &drill_rgba);
+        println!("BLESSED golden {dg}");
     }
 }

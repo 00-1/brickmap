@@ -12,6 +12,10 @@
 use goblin_gold::headless::{diff, matches, rgba_from_png};
 
 const GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/fx-correct.png");
+const DRILL_GOLDEN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/goldens/drill-initial.png"
+);
 
 /// Pure: the committed golden, compared against a copy with one tinted block, must be flagged as
 /// changed — so the golden guard genuinely catches a regression (and isn't a no-op). No GPU.
@@ -97,5 +101,46 @@ fn fx_moment_matches_golden_and_regressions_do_not() {
         "a collapsed palette must fail the golden, but only {} / {} px differed",
         db.changed,
         db.total
+    );
+}
+
+/// Pure: the committed INITIAL-drill golden decodes and self-matches. This golden exists because
+/// the live `app.rs` first frame (empty answer box → an empty text run) was the untested state
+/// that crashed the APK; capturing it locks the fix against regression.
+#[test]
+fn initial_drill_golden_is_present_and_self_consistent() {
+    let (w, h, g) = rgba_from_png(DRILL_GOLDEN);
+    assert!(
+        w == goblin_gold::app::DRILL_W && h == goblin_gold::app::DRILL_H,
+        "golden dims {w}x{h}"
+    );
+    assert!(
+        matches(&g, &g, 0, 0.0),
+        "the initial-drill golden must match itself"
+    );
+}
+
+/// GPU (run under lavapipe with `--ignored`): re-render the INITIAL drill frame — the empty-answer
+/// state that crashed the device — and assert it (a) does NOT panic on the empty text run and (b)
+/// matches the committed golden. This is the on-device crash, reproduced and guarded headlessly.
+#[test]
+#[ignore = "needs a Vulkan adapter (lavapipe); run with --ignored"]
+fn initial_drill_frame_renders_and_matches_golden() {
+    use ab_glyph::FontRef;
+    use goblin_gold::app::render_initial_drill;
+    use goblin_gold::headless::Painter;
+
+    let (_w, _h, golden) = rgba_from_png(DRILL_GOLDEN);
+    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let painter = Painter::new();
+    // Before the fix this call panicked ("buffer slices can not be empty") on the empty answer run.
+    let frame = render_initial_drill(&painter, &font);
+    let d = diff(&frame, &golden, 6);
+    assert!(
+        matches(&frame, &golden, 6, 0.001),
+        "initial drill frame drifted from the golden: {} / {} px changed (max Δ {})",
+        d.changed,
+        d.total,
+        d.max_delta
     );
 }
