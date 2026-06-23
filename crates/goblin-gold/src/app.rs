@@ -23,20 +23,8 @@ use crate::drill::{Drill, Mark};
 use crate::headless::{RectRun, TextRun};
 use crate::keypad::{Key, Keypad};
 use crate::text::{Atlas, Quad};
-
-const SHADER: &str = r#"
-struct VsIn { @location(0) pos: vec2<f32>, @location(1) uv: vec2<f32>, @location(2) rgba: vec4<f32> };
-struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) rgba: vec4<f32> };
-@vertex fn vs(in: VsIn) -> VsOut {
-    var o: VsOut; o.pos = vec4<f32>(in.pos, 0.0, 1.0); o.uv = in.uv; o.rgba = in.rgba; return o;
-}
-@group(0) @binding(0) var cov: texture_2d<f32>;
-@group(0) @binding(1) var samp: sampler;
-@fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
-    let a = textureSample(cov, samp, in.uv).r;
-    return vec4<f32>(in.rgba.rgb, in.rgba.a * a);
-}
-"#;
+// The on-screen UI surface draws the engine's `ui2d` primitives with the engine's quad shader.
+use brickmap::ui2d::UI_SHADER as SHADER;
 
 const BG: [f32; 3] = [20.0 / 255.0, 12.0 / 255.0, 34.0 / 255.0];
 const PANEL: [f32; 4] = [34.0 / 255.0, 22.0 / 255.0, 54.0 / 255.0, 1.0];

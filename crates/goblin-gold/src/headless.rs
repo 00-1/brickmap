@@ -10,28 +10,14 @@
 //! so a golden-image test's *comparator* runs in CI without a GPU, while the GPU render that
 //! produces the candidate frame runs under lavapipe.
 
-use crate::text::{Atlas, Quad};
 use brickmap::palette::PalettePass;
+// The UI draw primitives + quad shader are the engine's `bm-render::ui2d` service; re-export the
+// primitives so existing `goblin_gold::headless::{RectRun, TextRun}` call sites are unchanged.
+use brickmap::ui2d::UI_SHADER as SHADER;
+pub use brickmap::ui2d::{RectRun, TextRun};
 use std::mem::size_of;
 use std::sync::mpsc;
 use wgpu::util::DeviceExt;
-
-/// A run of text: its atlas, the laid-out glyph quads, and an RGBA colour (0..1).
-pub struct TextRun<'a> {
-    pub atlas: &'a Atlas,
-    pub quads: Vec<Quad>,
-    pub rgba: [f32; 4],
-}
-
-/// A filled rectangle (pixel coords, top-left origin) with an RGBA colour (0..1).
-#[derive(Clone, Copy)]
-pub struct RectRun {
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-    pub rgba: [f32; 4],
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -40,20 +26,6 @@ struct Vertex {
     uv: [f32; 2],
     rgba: [f32; 4],
 }
-
-const SHADER: &str = r#"
-struct VsIn { @location(0) pos: vec2<f32>, @location(1) uv: vec2<f32>, @location(2) rgba: vec4<f32> };
-struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) rgba: vec4<f32> };
-@vertex fn vs(in: VsIn) -> VsOut {
-    var o: VsOut; o.pos = vec4<f32>(in.pos, 0.0, 1.0); o.uv = in.uv; o.rgba = in.rgba; return o;
-}
-@group(0) @binding(0) var cov: texture_2d<f32>;
-@group(0) @binding(1) var samp: sampler;
-@fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
-    let a = textureSample(cov, samp, in.uv).r;   // glyph coverage, or 1.0 for the white rect texel
-    return vec4<f32>(in.rgba.rgb, in.rgba.a * a);
-}
-"#;
 
 /// Scene format (the quad pipeline draws into this). Sampleable, so the palette pass can read it.
 const FMT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;

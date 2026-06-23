@@ -15,14 +15,18 @@
 //!
 //! [`headless`] is the shared headless 2-D painter (text + rects + the palette-dither post) and
 //! the golden-diff comparator used by the prototype bins/tests; [`app`] is the on-device runtime.
-//! Nothing here touches the engine's voxel half; the UI/text/FX pieces are written game-side but
-//! data-free + one-way so they sink into `bm-render` as engine services later.
+//! Post-GO (full port): the UI/text/FX pieces are **banked into the engine** — text →
+//! `bm-render::text2d`, the keypad + 2-D UI primitives → `bm-render::ui2d`, save →
+//! `bm-platform::save` — and re-exported here so the game consumes engine services. Nothing here
+//! touches the engine's voxel half.
 
+// The keypad + legible-text paths are engine services (`bm-render::ui2d` / `::text2d`), re-exported
+// here; the drill consumes the keypad. Native-only because goblin-gold only depends on the engine
+// facade off-wasm (and is only ever built native/Android — the web app is `scraped-again`).
+#[cfg(not(target_arch = "wasm32"))]
 pub mod drill;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod keypad;
-
-// The text path is the engine's `bm-render::text2d` service (re-exported); native-only because
-// goblin-gold only depends on the engine facade off-wasm.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod text;
 

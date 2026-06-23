@@ -17,7 +17,7 @@ pub use {bm_core, bm_mesh, bm_platform, bm_render, bm_scene, bm_world};
 pub use bm_mesh::{mesh, visibility};
 pub use bm_platform::{gamepad, save, touch};
 pub use bm_render::{
-    foliage, gfx, hud, map, overlay, palette, particles, post, ship, text, text2d, textures,
+    foliage, gfx, hud, map, overlay, palette, particles, post, ship, text, text2d, textures, ui2d,
 };
 pub use bm_scene::scene;
 pub use bm_world::{edit, noise, sim, world, WorldGen};

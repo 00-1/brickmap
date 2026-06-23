@@ -27,6 +27,7 @@ pub mod ship;
 pub mod text;
 pub mod text2d;
 pub mod textures;
+pub mod ui2d;
 
 /// WGSL sources for the two pipelines the headless render-to-PNG tool rebuilds inline
 /// (it lives in the app crate and can't `include_wgsl!` shaders that now live here).
