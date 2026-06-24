@@ -36,6 +36,10 @@ pub mod text;
 pub mod progression;
 pub mod transforms;
 
+// Phase 3: the metagame over the T230/T232 data — the collector ladder (and, incrementally, arena
+// / events / save). Pure logic; data-driven from the synced `content/gg1/` export.
+pub mod collector;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod app;
 #[cfg(not(target_arch = "wasm32"))]

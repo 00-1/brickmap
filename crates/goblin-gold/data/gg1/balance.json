@@ -1,0 +1,928 @@
+{
+  "_note": "GG1 tuning constants. Combat/hero data from the live modules; gold tuning extracted from gg1/dev/main.js (NO spending — earn/hoard/display only, T26). Cross-refs: per-mode masterSecs → modes.json; Collector reward ladder → collectibles.json.",
+  "gold": {
+    "source": "gg1/dev/main.js",
+    "spending": "none",
+    "scalars": {
+      "HOARD_G": 2.5,
+      "GOLD_EMPTY": 500,
+      "GOLD_FULL": 1000000000000000
+    },
+    "magnitudeSuffixes": [
+      "",
+      "K",
+      "M",
+      "B",
+      "T",
+      "Qa",
+      "Qi",
+      "Sx",
+      "Sp",
+      "Oc",
+      "No",
+      "Dc",
+      "Ud",
+      "Dd",
+      "Td",
+      "Qad"
+    ],
+    "firstTimeBonuses": {
+      "mastery": 50,
+      "topic100": 100
+    },
+    "formulas": {
+      "questionGold": "function questionGold(target, dt, combo, mult){ return (2 + Math.max(0, Math.round(target - dt))) * (1 + combo * 0.1) * mult; }",
+      "roundBonusGold": "function roundBonusGold(score, rankIdx, mult){ return (score + rankIdx * 2) * mult; }",
+      "tierGold": "function tierGold(n, mult){ return Math.round(10 * (1 + n / 10)) * mult; }",
+      "goldMult": "function goldMult(col){\n    const items = C.CATALOG.filter(it => col[it.id]).length;\n    let mastered = 0, tiers = 0;\n    for(const k in col){ if(k.indexOf(\"mastery:\") === 0) mastered++; else if(/^tier:\\d+$/.test(k)) tiers++; }\n    const heroes = window.Heroes ? window.Heroes.HEROES.filter(h => window.Heroes.isHeroUnlocked(h, col)).length : 0;\n    const base = 1 + items * 0.05 + mastered * 0.5 + heroes * 0.5 + tiers * 1;\n    return base * hoardMult(col);\n  }",
+      "hoardMult": "function hoardMult(col){ return Math.pow(HOARD_G, bossesDefeated(col)); }",
+      "hoardLevel": "function hoardLevel(gold){ gold = Math.max(0, gold || 0); return Math.max(0, Math.min(1, (Math.log10(1 + gold) - HOARD_LO) / HOARD_SPAN)); }"
+    }
+  },
+  "enemies": {
+    "source": "gg1/dev/enemies.js",
+    "tierCount": 120,
+    "regionSize": 12,
+    "tiers": [
+      {
+        "n": 1,
+        "name": "Goblin Warren Runt",
+        "type": "Brawn",
+        "def": 11
+      },
+      {
+        "n": 2,
+        "name": "Goblin Warren Sentry",
+        "type": "Arcane",
+        "def": 12
+      },
+      {
+        "n": 3,
+        "name": "Goblin Warren Brute",
+        "type": "Cunning",
+        "def": 12
+      },
+      {
+        "n": 4,
+        "name": "Goblin Warren Raider",
+        "type": "Brawn",
+        "def": 13
+      },
+      {
+        "n": 5,
+        "name": "Goblin Warren Warden",
+        "type": "Arcane",
+        "def": 13
+      },
+      {
+        "n": 6,
+        "name": "Goblin Warren Champion",
+        "type": "Cunning",
+        "def": 14
+      },
+      {
+        "n": 7,
+        "name": "Goblin Warren Reaver",
+        "type": "Brawn",
+        "def": 15
+      },
+      {
+        "n": 8,
+        "name": "Goblin Warren Dread",
+        "type": "Arcane",
+        "def": 16
+      },
+      {
+        "n": 9,
+        "name": "Goblin Warren Warlord",
+        "type": "Cunning",
+        "def": 16
+      },
+      {
+        "n": 10,
+        "name": "Goblin Warren Overlord",
+        "type": "Brawn",
+        "def": 17
+      },
+      {
+        "n": 11,
+        "name": "Goblin Warren Tyrant",
+        "type": "Arcane",
+        "def": 18
+      },
+      {
+        "n": 12,
+        "name": "Goblin King",
+        "type": "Brawn",
+        "def": 19
+      },
+      {
+        "n": 13,
+        "name": "Gallowmarch Runt",
+        "type": "Brawn",
+        "def": 20
+      },
+      {
+        "n": 14,
+        "name": "Gallowmarch Sentry",
+        "type": "Arcane",
+        "def": 21
+      },
+      {
+        "n": 15,
+        "name": "Gallowmarch Brute",
+        "type": "Cunning",
+        "def": 22
+      },
+      {
+        "n": 16,
+        "name": "Gallowmarch Raider",
+        "type": "Brawn",
+        "def": 23
+      },
+      {
+        "n": 17,
+        "name": "Gallowmarch Warden",
+        "type": "Arcane",
+        "def": 24
+      },
+      {
+        "n": 18,
+        "name": "Gallowmarch Champion",
+        "type": "Cunning",
+        "def": 26
+      },
+      {
+        "n": 19,
+        "name": "Gallowmarch Reaver",
+        "type": "Brawn",
+        "def": 27
+      },
+      {
+        "n": 20,
+        "name": "Gallowmarch Dread",
+        "type": "Arcane",
+        "def": 28
+      },
+      {
+        "n": 21,
+        "name": "Gallowmarch Warlord",
+        "type": "Cunning",
+        "def": 30
+      },
+      {
+        "n": 22,
+        "name": "Gallowmarch Overlord",
+        "type": "Brawn",
+        "def": 31
+      },
+      {
+        "n": 23,
+        "name": "Gallowmarch Tyrant",
+        "type": "Arcane",
+        "def": 33
+      },
+      {
+        "n": 24,
+        "name": "The Highwayman",
+        "type": "Arcane",
+        "def": 35
+      },
+      {
+        "n": 25,
+        "name": "Gloamwood Runt",
+        "type": "Brawn",
+        "def": 36
+      },
+      {
+        "n": 26,
+        "name": "Gloamwood Sentry",
+        "type": "Arcane",
+        "def": 38
+      },
+      {
+        "n": 27,
+        "name": "Gloamwood Brute",
+        "type": "Cunning",
+        "def": 40
+      },
+      {
+        "n": 28,
+        "name": "Gloamwood Raider",
+        "type": "Brawn",
+        "def": 42
+      },
+      {
+        "n": 29,
+        "name": "Gloamwood Warden",
+        "type": "Arcane",
+        "def": 44
+      },
+      {
+        "n": 30,
+        "name": "Gloamwood Champion",
+        "type": "Cunning",
+        "def": 47
+      },
+      {
+        "n": 31,
+        "name": "Gloamwood Reaver",
+        "type": "Brawn",
+        "def": 49
+      },
+      {
+        "n": 32,
+        "name": "Gloamwood Dread",
+        "type": "Arcane",
+        "def": 51
+      },
+      {
+        "n": 33,
+        "name": "Gloamwood Warlord",
+        "type": "Cunning",
+        "def": 54
+      },
+      {
+        "n": 34,
+        "name": "Gloamwood Overlord",
+        "type": "Brawn",
+        "def": 57
+      },
+      {
+        "n": 35,
+        "name": "Gloamwood Tyrant",
+        "type": "Arcane",
+        "def": 60
+      },
+      {
+        "n": 36,
+        "name": "Old Mother Bramble",
+        "type": "Cunning",
+        "def": 63
+      },
+      {
+        "n": 37,
+        "name": "Haunted Marsh Runt",
+        "type": "Brawn",
+        "def": 66
+      },
+      {
+        "n": 38,
+        "name": "Haunted Marsh Sentry",
+        "type": "Arcane",
+        "def": 69
+      },
+      {
+        "n": 39,
+        "name": "Haunted Marsh Brute",
+        "type": "Cunning",
+        "def": 73
+      },
+      {
+        "n": 40,
+        "name": "Haunted Marsh Raider",
+        "type": "Brawn",
+        "def": 77
+      },
+      {
+        "n": 41,
+        "name": "Haunted Marsh Warden",
+        "type": "Arcane",
+        "def": 80
+      },
+      {
+        "n": 42,
+        "name": "Haunted Marsh Champion",
+        "type": "Cunning",
+        "def": 85
+      },
+      {
+        "n": 43,
+        "name": "Haunted Marsh Reaver",
+        "type": "Brawn",
+        "def": 89
+      },
+      {
+        "n": 44,
+        "name": "Haunted Marsh Dread",
+        "type": "Arcane",
+        "def": 93
+      },
+      {
+        "n": 45,
+        "name": "Haunted Marsh Warlord",
+        "type": "Cunning",
+        "def": 98
+      },
+      {
+        "n": 46,
+        "name": "Haunted Marsh Overlord",
+        "type": "Brawn",
+        "def": 103
+      },
+      {
+        "n": 47,
+        "name": "Haunted Marsh Tyrant",
+        "type": "Arcane",
+        "def": 108
+      },
+      {
+        "n": 48,
+        "name": "Gurgle, King of the Bog",
+        "type": "Brawn",
+        "def": 114
+      },
+      {
+        "n": 49,
+        "name": "Frostpeak Caverns Runt",
+        "type": "Brawn",
+        "def": 120
+      },
+      {
+        "n": 50,
+        "name": "Frostpeak Caverns Sentry",
+        "type": "Arcane",
+        "def": 126
+      },
+      {
+        "n": 51,
+        "name": "Frostpeak Caverns Brute",
+        "type": "Cunning",
+        "def": 132
+      },
+      {
+        "n": 52,
+        "name": "Frostpeak Caverns Raider",
+        "type": "Brawn",
+        "def": 139
+      },
+      {
+        "n": 53,
+        "name": "Frostpeak Caverns Warden",
+        "type": "Arcane",
+        "def": 146
+      },
+      {
+        "n": 54,
+        "name": "Frostpeak Caverns Champion",
+        "type": "Cunning",
+        "def": 154
+      },
+      {
+        "n": 55,
+        "name": "Frostpeak Caverns Reaver",
+        "type": "Brawn",
+        "def": 161
+      },
+      {
+        "n": 56,
+        "name": "Frostpeak Caverns Dread",
+        "type": "Arcane",
+        "def": 170
+      },
+      {
+        "n": 57,
+        "name": "Frostpeak Caverns Warlord",
+        "type": "Cunning",
+        "def": 178
+      },
+      {
+        "n": 58,
+        "name": "Frostpeak Caverns Overlord",
+        "type": "Brawn",
+        "def": 187
+      },
+      {
+        "n": 59,
+        "name": "Frostpeak Caverns Tyrant",
+        "type": "Arcane",
+        "def": 197
+      },
+      {
+        "n": 60,
+        "name": "The Frost Jarl",
+        "type": "Arcane",
+        "def": 207
+      },
+      {
+        "n": 61,
+        "name": "Drownholm Runt",
+        "type": "Brawn",
+        "def": 218
+      },
+      {
+        "n": 62,
+        "name": "Drownholm Sentry",
+        "type": "Arcane",
+        "def": 229
+      },
+      {
+        "n": 63,
+        "name": "Drownholm Brute",
+        "type": "Cunning",
+        "def": 240
+      },
+      {
+        "n": 64,
+        "name": "Drownholm Raider",
+        "type": "Brawn",
+        "def": 253
+      },
+      {
+        "n": 65,
+        "name": "Drownholm Warden",
+        "type": "Arcane",
+        "def": 265
+      },
+      {
+        "n": 66,
+        "name": "Drownholm Champion",
+        "type": "Cunning",
+        "def": 279
+      },
+      {
+        "n": 67,
+        "name": "Drownholm Reaver",
+        "type": "Brawn",
+        "def": 293
+      },
+      {
+        "n": 68,
+        "name": "Drownholm Dread",
+        "type": "Arcane",
+        "def": 308
+      },
+      {
+        "n": 69,
+        "name": "Drownholm Warlord",
+        "type": "Cunning",
+        "def": 324
+      },
+      {
+        "n": 70,
+        "name": "Drownholm Overlord",
+        "type": "Brawn",
+        "def": 340
+      },
+      {
+        "n": 71,
+        "name": "Drownholm Tyrant",
+        "type": "Arcane",
+        "def": 358
+      },
+      {
+        "n": 72,
+        "name": "Bonecaller",
+        "type": "Cunning",
+        "def": 376
+      },
+      {
+        "n": 73,
+        "name": "Cinderwaste Runt",
+        "type": "Brawn",
+        "def": 395
+      },
+      {
+        "n": 74,
+        "name": "Cinderwaste Sentry",
+        "type": "Arcane",
+        "def": 415
+      },
+      {
+        "n": 75,
+        "name": "Cinderwaste Brute",
+        "type": "Cunning",
+        "def": 437
+      },
+      {
+        "n": 76,
+        "name": "Cinderwaste Raider",
+        "type": "Brawn",
+        "def": 459
+      },
+      {
+        "n": 77,
+        "name": "Cinderwaste Warden",
+        "type": "Arcane",
+        "def": 482
+      },
+      {
+        "n": 78,
+        "name": "Cinderwaste Champion",
+        "type": "Cunning",
+        "def": 507
+      },
+      {
+        "n": 79,
+        "name": "Cinderwaste Reaver",
+        "type": "Brawn",
+        "def": 533
+      },
+      {
+        "n": 80,
+        "name": "Cinderwaste Dread",
+        "type": "Arcane",
+        "def": 560
+      },
+      {
+        "n": 81,
+        "name": "Cinderwaste Warlord",
+        "type": "Cunning",
+        "def": 581
+      },
+      {
+        "n": 82,
+        "name": "Cinderwaste Overlord",
+        "type": "Brawn",
+        "def": 581
+      },
+      {
+        "n": 83,
+        "name": "Cinderwaste Tyrant",
+        "type": "Arcane",
+        "def": 585
+      },
+      {
+        "n": 84,
+        "name": "Cindermaw",
+        "type": "Brawn",
+        "def": 585
+      },
+      {
+        "n": 85,
+        "name": "Stormspire Runt",
+        "type": "Brawn",
+        "def": 592
+      },
+      {
+        "n": 86,
+        "name": "Stormspire Sentry",
+        "type": "Arcane",
+        "def": 592
+      },
+      {
+        "n": 87,
+        "name": "Stormspire Brute",
+        "type": "Cunning",
+        "def": 592
+      },
+      {
+        "n": 88,
+        "name": "Stormspire Raider",
+        "type": "Brawn",
+        "def": 592
+      },
+      {
+        "n": 89,
+        "name": "Stormspire Warden",
+        "type": "Arcane",
+        "def": 603
+      },
+      {
+        "n": 90,
+        "name": "Stormspire Champion",
+        "type": "Cunning",
+        "def": 603
+      },
+      {
+        "n": 91,
+        "name": "Stormspire Reaver",
+        "type": "Brawn",
+        "def": 603
+      },
+      {
+        "n": 92,
+        "name": "Stormspire Dread",
+        "type": "Arcane",
+        "def": 603
+      },
+      {
+        "n": 93,
+        "name": "Stormspire Warlord",
+        "type": "Cunning",
+        "def": 603
+      },
+      {
+        "n": 94,
+        "name": "Stormspire Overlord",
+        "type": "Brawn",
+        "def": 603
+      },
+      {
+        "n": 95,
+        "name": "Stormspire Tyrant",
+        "type": "Arcane",
+        "def": 618
+      },
+      {
+        "n": 96,
+        "name": "Voltan, Lord of Storms",
+        "type": "Arcane",
+        "def": 618
+      },
+      {
+        "n": 97,
+        "name": "Dragon's Roost Runt",
+        "type": "Brawn",
+        "def": 618
+      },
+      {
+        "n": 98,
+        "name": "Dragon's Roost Sentry",
+        "type": "Arcane",
+        "def": 622
+      },
+      {
+        "n": 99,
+        "name": "Dragon's Roost Brute",
+        "type": "Cunning",
+        "def": 622
+      },
+      {
+        "n": 100,
+        "name": "Dragon's Roost Raider",
+        "type": "Brawn",
+        "def": 622
+      },
+      {
+        "n": 101,
+        "name": "Dragon's Roost Warden",
+        "type": "Arcane",
+        "def": 626
+      },
+      {
+        "n": 102,
+        "name": "Dragon's Roost Champion",
+        "type": "Cunning",
+        "def": 626
+      },
+      {
+        "n": 103,
+        "name": "Dragon's Roost Reaver",
+        "type": "Brawn",
+        "def": 626
+      },
+      {
+        "n": 104,
+        "name": "Dragon's Roost Dread",
+        "type": "Arcane",
+        "def": 637
+      },
+      {
+        "n": 105,
+        "name": "Dragon's Roost Warlord",
+        "type": "Cunning",
+        "def": 637
+      },
+      {
+        "n": 106,
+        "name": "Dragon's Roost Overlord",
+        "type": "Brawn",
+        "def": 637
+      },
+      {
+        "n": 107,
+        "name": "Dragon's Roost Tyrant",
+        "type": "Arcane",
+        "def": 644
+      },
+      {
+        "n": 108,
+        "name": "the Elder Wyrm",
+        "type": "Cunning",
+        "def": 644
+      },
+      {
+        "n": 109,
+        "name": "The Void Throne Runt",
+        "type": "Brawn",
+        "def": 644
+      },
+      {
+        "n": 110,
+        "name": "The Void Throne Sentry",
+        "type": "Arcane",
+        "def": 658
+      },
+      {
+        "n": 111,
+        "name": "The Void Throne Brute",
+        "type": "Cunning",
+        "def": 658
+      },
+      {
+        "n": 112,
+        "name": "The Void Throne Raider",
+        "type": "Brawn",
+        "def": 658
+      },
+      {
+        "n": 113,
+        "name": "The Void Throne Warden",
+        "type": "Arcane",
+        "def": 658
+      },
+      {
+        "n": 114,
+        "name": "The Void Throne Champion",
+        "type": "Cunning",
+        "def": 658
+      },
+      {
+        "n": 115,
+        "name": "The Void Throne Reaver",
+        "type": "Brawn",
+        "def": 658
+      },
+      {
+        "n": 116,
+        "name": "The Void Throne Dread",
+        "type": "Arcane",
+        "def": 662
+      },
+      {
+        "n": 117,
+        "name": "The Void Throne Warlord",
+        "type": "Cunning",
+        "def": 662
+      },
+      {
+        "n": 118,
+        "name": "The Void Throne Overlord",
+        "type": "Brawn",
+        "def": 662
+      },
+      {
+        "n": 119,
+        "name": "The Void Throne Tyrant",
+        "type": "Arcane",
+        "def": 669
+      },
+      {
+        "n": 120,
+        "name": "The Void Sovereign",
+        "type": "Arcane",
+        "def": 893
+      }
+    ]
+  },
+  "heroes": {
+    "source": "gg1/dev/heroes.js",
+    "stats": [
+      "power",
+      "guard",
+      "speed",
+      "focus"
+    ],
+    "roster": [
+      {
+        "id": "bram",
+        "name": "Brannon",
+        "type": "Brawn",
+        "base": {
+          "power": 14,
+          "guard": 12,
+          "speed": 6,
+          "focus": 6
+        },
+        "unlockHint": "Finish your first round"
+      },
+      {
+        "id": "greta",
+        "name": "Valeska",
+        "type": "Brawn",
+        "base": {
+          "power": 16,
+          "guard": 10,
+          "speed": 5,
+          "focus": 7
+        },
+        "unlockHint": "Finish 3 topics"
+      },
+      {
+        "id": "tovar",
+        "name": "Ser Aldric",
+        "type": "Brawn",
+        "base": {
+          "power": 12,
+          "guard": 16,
+          "speed": 5,
+          "focus": 5
+        },
+        "unlockHint": "Master any topic"
+      },
+      {
+        "id": "mo",
+        "name": "Magnar",
+        "type": "Brawn",
+        "base": {
+          "power": 18,
+          "guard": 8,
+          "speed": 7,
+          "focus": 5
+        },
+        "unlockHint": "Reach the Dark Wizard rank"
+      },
+      {
+        "id": "wisp",
+        "name": "Wisp",
+        "type": "Arcane",
+        "base": {
+          "power": 7,
+          "guard": 6,
+          "speed": 10,
+          "focus": 15
+        },
+        "unlockHint": "Collect 25 items"
+      },
+      {
+        "id": "mira",
+        "name": "Maerwen",
+        "type": "Arcane",
+        "base": {
+          "power": 6,
+          "guard": 8,
+          "speed": 9,
+          "focus": 17
+        },
+        "unlockHint": "Earn a flawless round in 3 modes"
+      },
+      {
+        "id": "nim",
+        "name": "Emrys",
+        "type": "Arcane",
+        "base": {
+          "power": 8,
+          "guard": 10,
+          "speed": 7,
+          "focus": 14
+        },
+        "unlockHint": "Reach 100% on a topic"
+      },
+      {
+        "id": "zeph",
+        "name": "Aerin",
+        "type": "Arcane",
+        "base": {
+          "power": 9,
+          "guard": 6,
+          "speed": 13,
+          "focus": 13
+        },
+        "unlockHint": "Reach the Archmage rank"
+      },
+      {
+        "id": "pip",
+        "name": "Pocket",
+        "type": "Cunning",
+        "base": {
+          "power": 8,
+          "guard": 6,
+          "speed": 16,
+          "focus": 9
+        },
+        "unlockHint": "Earn a Lightning speed bracket"
+      },
+      {
+        "id": "vex",
+        "name": "Vesh",
+        "type": "Cunning",
+        "base": {
+          "power": 10,
+          "guard": 7,
+          "speed": 15,
+          "focus": 8
+        },
+        "unlockHint": "Finish a round in every mode"
+      },
+      {
+        "id": "sela",
+        "name": "Selwen",
+        "type": "Cunning",
+        "base": {
+          "power": 9,
+          "guard": 9,
+          "speed": 14,
+          "focus": 9
+        },
+        "unlockHint": "Collect 75 items"
+      },
+      {
+        "id": "roon",
+        "name": "Rendel",
+        "type": "Cunning",
+        "base": {
+          "power": 11,
+          "guard": 8,
+          "speed": 17,
+          "focus": 7
+        },
+        "unlockHint": "Defeat enemy tier 10"
+      }
+    ]
+  },
+  "crossRefs": {
+    "masterSecs": "content/gg1/modes.json — per-mode `masterSecs`",
+    "collectorLadder": "content/gg1/collectibles.json — `collectorLadder` (tier reward thresholds)"
+  }
+}
