@@ -27,8 +27,14 @@
 pub mod drill;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod keypad;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod text;
+
+// Phase 2: the GG1 question transforms (proven vs the T229 parity vectors) + the unlock-chain /
+// mastery progression, re-implemented in Rust. Pure logic (serde_json only) — no engine dep.
+pub mod progression;
+pub mod transforms;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod app;
