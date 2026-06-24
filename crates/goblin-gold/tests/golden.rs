@@ -24,6 +24,9 @@ const COLLECTION_GOLDEN: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/collection.png");
 const LADDER_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/ladder.png");
 const RESULTS_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/results.png");
+const HEROES_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/heroes.png");
+const EVENTS_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/events.png");
+const ITEMS_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/items.png");
 
 /// Pure: the committed golden, compared against a copy with one tinted block, must be flagged as
 /// changed — so the golden guard genuinely catches a regression (and isn't a no-op). No GPU.
@@ -262,6 +265,46 @@ fn ladder_renders_and_matches_golden() {
         d.total,
         d.max_delta
     );
+}
+
+/// Pure: the three metagame drill-down goldens decode + self-match.
+#[test]
+fn drilldown_goldens_are_present_and_self_consistent() {
+    for path in [HEROES_GOLDEN, EVENTS_GOLDEN, ITEMS_GOLDEN] {
+        let (w, h, g) = rgba_from_png(path);
+        assert!(
+            w == goblin_gold::app::DRILL_W && h == goblin_gold::app::DRILL_H,
+            "golden {path} dims {w}x{h}"
+        );
+        assert!(matches(&g, &g, 0, 0.0), "{path} must match itself");
+    }
+}
+
+/// GPU (`--ignored`, lavapipe): re-render each drill-down and assert it matches its golden.
+#[test]
+#[ignore = "needs a Vulkan adapter (lavapipe); run with --ignored"]
+fn drilldowns_render_and_match_goldens() {
+    use ab_glyph::FontRef;
+    use goblin_gold::app::{render_events, render_heroes, render_items};
+    use goblin_gold::headless::Painter;
+
+    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let painter = Painter::new();
+    for (golden_path, frame) in [
+        (HEROES_GOLDEN, render_heroes(&painter, &font)),
+        (EVENTS_GOLDEN, render_events(&painter, &font)),
+        (ITEMS_GOLDEN, render_items(&painter, &font)),
+    ] {
+        let (_w, _h, golden) = rgba_from_png(golden_path);
+        let d = diff(&frame, &golden, 6);
+        assert!(
+            matches(&frame, &golden, 6, 0.001),
+            "{golden_path} drifted: {} / {} px changed (max Δ {})",
+            d.changed,
+            d.total,
+            d.max_delta
+        );
+    }
 }
 
 /// Pure: the committed Results-screen golden decodes + self-matches.

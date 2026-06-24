@@ -559,6 +559,12 @@ enum Screen {
     Ladder,
     /// The end-of-round results summary (rank, awards, time, gold).
     Results,
+    /// The hero roster detail (effective stats).
+    Heroes,
+    /// The daily-events detail.
+    Events,
+    /// The items-by-category detail.
+    Items,
 }
 
 /// The full-width bottom button shared by Select ("Collection") and Collection ("Back"): its rect.
@@ -730,12 +736,21 @@ impl App {
             Screen::Collection => {
                 if hit_bottom_button(w, h, x, y) {
                     self.screen = Screen::Select;
-                } else if collection_row_at(w, h, x, y) == Some(1) {
-                    // The Collector row drills into the ladder detail.
-                    self.screen = Screen::Ladder;
+                } else if let Some(row) = collection_row_at(w, h, x, y) {
+                    // Every stat row drills into its detail (owner: "nothing clickable").
+                    // Rows: 0 Items · 1 Collector · 2 Topics · 3 Heroes · 4 Events · 5 Gold.
+                    self.screen = match row {
+                        0 => Screen::Items,
+                        1 => Screen::Ladder,
+                        2 => Screen::Select, // topics live on the topic-select screen
+                        3 => Screen::Heroes,
+                        4 => Screen::Events,
+                        _ => Screen::Collection, // Gold has no detail (yet)
+                    };
                 }
             }
-            Screen::Ladder => {
+            // The drill-down screens return to the Collection via their Back button.
+            Screen::Ladder | Screen::Heroes | Screen::Events | Screen::Items => {
                 if hit_bottom_button(w, h, x, y) {
                     self.screen = Screen::Collection;
                 }
@@ -809,6 +824,18 @@ impl App {
                     // Defensive: no outcome (shouldn't happen) → an empty frame.
                     None => (Vec::new(), Vec::new()),
                 };
+                (r, t, None)
+            }
+            Screen::Heroes => {
+                let (r, t) = heroes_frame(&self.save, fonts, w, h);
+                (r, t, None)
+            }
+            Screen::Events => {
+                let (r, t) = events_frame(&self.save, fonts, w, h);
+                (r, t, None)
+            }
+            Screen::Items => {
+                let (r, t) = items_frame(&self.save, fonts, w, h);
                 (r, t, None)
             }
             Screen::Select => {
@@ -1438,6 +1465,184 @@ pub fn render_results(painter: &crate::headless::Painter, font: &FontRef<'_>) ->
         total_time: 14.2,
     };
     let (rects, texts) = results_frame(&outcome, &fonts, w, h);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+/// A generic scrolling-free **list** screen — heading + subtitle + a panel row per `(left, right,
+/// colour)` (auto-sized to fit) + a Back button. Shared by the Heroes/Events/Items drill-downs.
+fn list_screen<'a>(
+    title: &str,
+    subtitle: &str,
+    rows: &[(String, String, [f32; 4])],
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.06;
+    let col_w = w - margin * 2.0;
+
+    let (q, _hh) = fonts.head.layout(title, margin, h * 0.04, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: q,
+        rgba: GOLD,
+    });
+    if !subtitle.is_empty() {
+        let (q, _hh) = fonts.body.layout(subtitle, margin, h * 0.105, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: DIM,
+        });
+    }
+
+    let n = rows.len().max(1);
+    let (area_top, area_bot, gap) = (h * 0.155, h * 0.895, h * 0.008);
+    let row_h = ((area_bot - area_top) / n as f32 - gap).clamp(h * 0.022, h * 0.06);
+    // A denser list drops to the small face so the labels still fit.
+    let font = if row_h < h * 0.038 {
+        &fonts.tiny
+    } else {
+        &fonts.body
+    };
+    for (i, (left, right, color)) in rows.iter().enumerate() {
+        let ry = area_top + i as f32 * (row_h + gap);
+        rects.push(RectRun {
+            x: margin,
+            y: ry,
+            w: col_w,
+            h: row_h,
+            rgba: PANEL,
+        });
+        let ty = ry + row_h / 2.0 - 0.59 * font.px;
+        let (lq, _) = font.layout(left, margin + col_w * 0.05, ty, col_w);
+        texts.push(TextRun {
+            atlas: font,
+            quads: lq,
+            rgba: *color,
+        });
+        let vw = font.text_width(right);
+        let (vq, _) = font.layout(right, margin + col_w * 0.95 - vw, ty, vw + 4.0);
+        texts.push(TextRun {
+            atlas: font,
+            quads: vq,
+            rgba: BODY,
+        });
+    }
+
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    (rects, texts)
+}
+
+/// The **Heroes** roster drill-down: each hero with its type and effective stats (base + the boosts
+/// of everything collected — the catalogue→Arena bridge).
+pub fn heroes_frame<'a>(
+    save: &Save,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let keys: Vec<&str> = save.collected.keys().map(String::as_str).collect();
+    let rows: Vec<(String, String, [f32; 4])> = crate::arena::roster()
+        .into_iter()
+        .map(|hero| {
+            let s = crate::arena::hero_stats(&hero.id, keys.iter().copied()).unwrap_or(hero.base);
+            (
+                format!("{} ({:?})", hero.name, hero.kind),
+                format!("P{} G{} S{} F{}", s.power, s.guard, s.speed, s.focus),
+                GOLD,
+            )
+        })
+        .collect();
+    list_screen("Heroes", "the Arena roster", &rows, fonts, w, h)
+}
+
+/// The **Events** drill-down: the 14 daily events, those with a reward earned shown in green.
+pub fn events_frame<'a>(
+    save: &Save,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let keys: Vec<&str> = save.collected.keys().map(String::as_str).collect();
+    let touched: std::collections::HashSet<String> = crate::events::touched(keys.iter().copied())
+        .into_iter()
+        .map(|e| e.id)
+        .collect();
+    let evs = crate::events::events();
+    let rows: Vec<(String, String, [f32; 4])> = evs
+        .iter()
+        .map(|e| {
+            let got = touched.contains(&e.id);
+            (
+                e.name.clone(),
+                if got {
+                    "earned".into()
+                } else {
+                    "locked".into()
+                },
+                if got { GREEN } else { DIM },
+            )
+        })
+        .collect();
+    let sub = format!("{} / {} earned", touched.len(), evs.len());
+    list_screen("Daily Events", &sub, &rows, fonts, w, h)
+}
+
+/// The **Items** drill-down: the catalogue by category — how many of each the player owns.
+pub fn items_frame<'a>(
+    save: &Save,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    use std::collections::BTreeMap;
+    let owned: std::collections::HashSet<String> = save.collected.keys().cloned().collect();
+    // Count owned vs total per category in one pass over the catalogue.
+    let mut total: BTreeMap<String, u32> = BTreeMap::new();
+    let mut have: BTreeMap<String, u32> = BTreeMap::new();
+    for c in crate::catalogue::catalog() {
+        let cat = format!("{:?}", c.cat);
+        *total.entry(cat.clone()).or_default() += 1;
+        if owned.contains(&c.id) {
+            *have.entry(cat).or_default() += 1;
+        }
+    }
+    let rows: Vec<(String, String, [f32; 4])> = total
+        .iter()
+        .map(|(cat, &t)| {
+            let h_ = *have.get(cat).unwrap_or(&0);
+            (
+                cat.clone(),
+                format!("{h_} / {t}"),
+                if h_ > 0 { GOLD } else { DIM },
+            )
+        })
+        .collect();
+    let owned_total: u32 = have.values().sum();
+    let sub = format!("{} / {} collected", owned_total, crate::catalogue::total());
+    list_screen("Items", &sub, &rows, fonts, w, h)
+}
+
+/// Headless renders for the drill-down goldens (the representative sample save).
+pub fn render_heroes(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = heroes_frame(&sample_save(), &fonts, w, h);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+pub fn render_events(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = events_frame(&sample_save(), &fonts, w, h);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+pub fn render_items(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = items_frame(&sample_save(), &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 

@@ -66,6 +66,30 @@ fn main() {
     write_png(&results_shot, app::DRILL_W, app::DRILL_H, &results_rgba);
     println!("wrote {results_shot}");
 
+    // The metagame drill-downs.
+    let heroes_rgba = app::render_heroes(&painter, &font);
+    write_png(
+        &format!("{out_dir}/gg-heroes.png"),
+        app::DRILL_W,
+        app::DRILL_H,
+        &heroes_rgba,
+    );
+    let events_rgba = app::render_events(&painter, &font);
+    write_png(
+        &format!("{out_dir}/gg-events.png"),
+        app::DRILL_W,
+        app::DRILL_H,
+        &events_rgba,
+    );
+    let items_rgba = app::render_items(&painter, &font);
+    write_png(
+        &format!("{out_dir}/gg-items.png"),
+        app::DRILL_W,
+        app::DRILL_H,
+        &items_rgba,
+    );
+    println!("wrote heroes/events/items");
+
     if std::env::var("GG_BLESS").is_ok() {
         std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens")).ok();
         for (name, w, h, data) in [
@@ -75,6 +99,9 @@ fn main() {
             ("collection.png", app::DRILL_W, app::DRILL_H, &coll_rgba),
             ("ladder.png", app::DRILL_W, app::DRILL_H, &ladder_rgba),
             ("results.png", app::DRILL_W, app::DRILL_H, &results_rgba),
+            ("heroes.png", app::DRILL_W, app::DRILL_H, &heroes_rgba),
+            ("events.png", app::DRILL_W, app::DRILL_H, &events_rgba),
+            ("items.png", app::DRILL_W, app::DRILL_H, &items_rgba),
         ] {
             let path = format!(
                 concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/{}"),
