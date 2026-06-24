@@ -548,6 +548,21 @@ enum Screen {
     Select,
     /// A drill round for the chosen topic.
     Drill,
+    /// The metagame summary: what's been collected, the collector ladder, heroes, events.
+    Collection,
+}
+
+/// The full-width bottom button shared by Select ("Collection") and Collection ("Back"): its rect.
+fn bottom_button(w: f32, h: f32) -> (f32, f32, f32, f32) {
+    let bw = w * 0.6;
+    let bh = h * 0.055;
+    ((w - bw) / 2.0, h * 0.915, bw, bh)
+}
+
+/// Whether (`px`,`py`) hits the shared bottom button.
+fn hit_bottom_button(w: f32, h: f32, px: f32, py: f32) -> bool {
+    let (bx, by, bw, bh) = bottom_button(w, h);
+    px >= bx && px < bx + bw && py >= by && py < by + bh
 }
 
 /// The live app: the topic graph + player progression, the current screen/drill, fonts, the FX
@@ -671,8 +686,16 @@ impl App {
         };
         match self.screen {
             Screen::Select => {
-                if let Some(id) = topic_at(&self.modes, &self.progress, w, h, x, y) {
+                // The bottom button opens the Collection; otherwise a topic row starts a drill.
+                if hit_bottom_button(w, h, x, y) {
+                    self.screen = Screen::Collection;
+                } else if let Some(id) = topic_at(&self.modes, &self.progress, w, h, x, y) {
                     self.start_drill(&id);
+                }
+            }
+            Screen::Collection => {
+                if hit_bottom_button(w, h, x, y) {
+                    self.screen = Screen::Select;
                 }
             }
             Screen::Drill => {
@@ -710,6 +733,10 @@ impl App {
         };
         let fonts = self.fonts.as_ref().unwrap();
         let (rects, texts, fx_ramp) = match self.screen {
+            Screen::Collection => {
+                let (r, t) = collection_frame(&self.save, fonts, w, h);
+                (r, t, None)
+            }
             Screen::Select => {
                 let (r, t) = topic_select_frame(&self.modes, &self.progress, fonts, w, h);
                 (r, t, None)
@@ -1010,6 +1037,122 @@ pub fn topic_select_frame<'a>(
             rgba: col,
         });
     }
+
+    // The bottom button into the Collection (metagame) screen.
+    push_button(&mut rects, &mut texts, fonts, "Collection", w, h);
+    (rects, texts)
+}
+
+/// Draw the shared bottom button (a gold bar with a dark inked label).
+fn push_button<'a>(
+    rects: &mut Vec<RectRun>,
+    texts: &mut Vec<TextRun<'a>>,
+    fonts: &'a Fonts,
+    label: &str,
+    w: f32,
+    h: f32,
+) {
+    let (bx, by, bw, bh) = bottom_button(w, h);
+    rects.push(RectRun {
+        x: bx,
+        y: by,
+        w: bw,
+        h: bh,
+        rgba: GOLD,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.key,
+        quads: centered(&fonts.key, label, bx + bw / 2.0, by, bh),
+        rgba: INK,
+    });
+}
+
+/// Build the **Collection** (metagame summary) screen from the save: items collected vs the
+/// catalogue, the collector ladder's reached tier, topics initiated/mastered, the hero roster, and
+/// events touched. Shared by the on-device renderer + the golden.
+pub fn collection_frame<'a>(
+    save: &Save,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.06;
+    let col_w = w - margin * 2.0;
+
+    let keys: Vec<&str> = save.collected.keys().map(String::as_str).collect();
+    let items = crate::catalogue::earned(keys.iter().copied()).len() as u32;
+    let total = crate::catalogue::total();
+    let ladder = crate::collector::earned(items);
+    // The highest collector tier reached, else a hint toward the first one (ASCII — the baked atlas
+    // has no em-dash).
+    let tier = ladder.last().map(|t| t.name.clone()).unwrap_or_else(|| {
+        crate::collector::ladder()
+            .first()
+            .map(|t| format!("next at {}", t.n))
+            .unwrap_or_else(|| "none yet".to_string())
+    });
+    let count_pre = |p: &str| keys.iter().filter(|k| k.starts_with(p)).count();
+    let modes = progression::modes().len();
+    let events_touched = crate::events::touched(keys.iter().copied()).len();
+    let heroes = crate::arena::roster().len();
+
+    let (q, _hh) = fonts.head.layout("Collection", margin, h * 0.05, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    // Labelled stat rows.
+    let rows = [
+        ("Items".to_string(), format!("{items} / {total}")),
+        ("Collector".to_string(), tier),
+        (
+            "Topics".to_string(),
+            format!(
+                "{}/{} played · {} mastered",
+                count_pre("init:"),
+                modes,
+                count_pre("mastery:")
+            ),
+        ),
+        ("Heroes".to_string(), format!("{heroes} in the roster")),
+        ("Events".to_string(), format!("{events_touched} / 14")),
+        ("Gold".to_string(), format!("{}", save.gold as u64)),
+    ];
+    let top = h * 0.18;
+    let row_h = h * 0.085;
+    let gap = h * 0.02;
+    for (i, (label, value)) in rows.iter().enumerate() {
+        let ry = top + i as f32 * (row_h + gap);
+        rects.push(RectRun {
+            x: margin,
+            y: ry,
+            w: col_w,
+            h: row_h,
+            rgba: PANEL,
+        });
+        let ty = ry + row_h / 2.0 - 0.59 * fonts.body.px;
+        let (lq, _) = fonts.body.layout(label, margin + col_w * 0.05, ty, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: lq,
+            rgba: DIM,
+        });
+        let vw = fonts.body.text_width(value);
+        let (vq, _) = fonts
+            .body
+            .layout(value, margin + col_w * 0.95 - vw, ty, vw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: vq,
+            rgba: BODY,
+        });
+    }
+
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
@@ -1039,6 +1182,40 @@ pub fn render_topic_select(painter: &crate::headless::Painter, font: &FontRef<'_
     let modes = progression::modes();
     let progress = progression::Progress::default();
     let (rects, texts) = topic_select_frame(&modes, &progress, &fonts, w, h);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+/// A representative save for the Collection golden — a player who's made some progress, so earned
+/// and not-yet-earned both show.
+fn sample_save() -> Save {
+    let mut s = Save::default();
+    for (i, k) in [
+        "init:halves",
+        "mastery:halves",
+        "flawless:halves",
+        "init:times",
+        "rank:goblin",
+        "rank:kobold",
+        "speed:halves:0",
+        "collector:25",
+        "event:bondfire-night",
+    ]
+    .iter()
+    .enumerate()
+    {
+        s.mark(*k, 1000 + i as u64);
+    }
+    s.gold = 1234.0;
+    s
+}
+
+/// Render the **Collection** screen for a representative save, headless. Shared by the golden
+/// blesser + golden test.
+pub fn render_collection(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let save = sample_save();
+    let (rects, texts) = collection_frame(&save, &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 

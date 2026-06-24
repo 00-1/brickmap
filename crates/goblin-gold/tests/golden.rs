@@ -20,6 +20,8 @@ const SELECT_GOLDEN: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/goldens/topic-select.png"
 );
+const COLLECTION_GOLDEN: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/collection.png");
 
 /// Pure: the committed golden, compared against a copy with one tinted block, must be flagged as
 /// changed — so the golden guard genuinely catches a regression (and isn't a no-op). No GPU.
@@ -180,6 +182,43 @@ fn topic_select_renders_and_matches_golden() {
     assert!(
         matches(&frame, &golden, 6, 0.001),
         "topic-select drifted from the golden: {} / {} px changed (max Δ {})",
+        d.changed,
+        d.total,
+        d.max_delta
+    );
+}
+
+/// Pure: the committed Collection-screen golden decodes + self-matches. (Phase 3 metagame surface.)
+#[test]
+fn collection_golden_is_present_and_self_consistent() {
+    let (w, h, g) = rgba_from_png(COLLECTION_GOLDEN);
+    assert!(
+        w == goblin_gold::app::DRILL_W && h == goblin_gold::app::DRILL_H,
+        "golden dims {w}x{h}"
+    );
+    assert!(
+        matches(&g, &g, 0, 0.0),
+        "the collection golden must match itself"
+    );
+}
+
+/// GPU (`--ignored`, lavapipe): re-render the Collection screen for the representative save and
+/// assert it matches the committed golden — the metagame surface, guarded.
+#[test]
+#[ignore = "needs a Vulkan adapter (lavapipe); run with --ignored"]
+fn collection_renders_and_matches_golden() {
+    use ab_glyph::FontRef;
+    use goblin_gold::app::render_collection;
+    use goblin_gold::headless::Painter;
+
+    let (_w, _h, golden) = rgba_from_png(COLLECTION_GOLDEN);
+    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let painter = Painter::new();
+    let frame = render_collection(&painter, &font);
+    let d = diff(&frame, &golden, 6);
+    assert!(
+        matches(&frame, &golden, 6, 0.001),
+        "collection drifted from the golden: {} / {} px changed (max Δ {})",
         d.changed,
         d.total,
         d.max_delta

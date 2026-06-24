@@ -48,12 +48,19 @@ fn main() {
     write_png(&sel_shot, app::DRILL_W, app::DRILL_H, &sel_rgba);
     println!("wrote {sel_shot}");
 
+    // The Collection (metagame summary) screen for a representative save.
+    let coll_rgba = app::render_collection(&painter, &font);
+    let coll_shot = format!("{out_dir}/gg-collection.png");
+    write_png(&coll_shot, app::DRILL_W, app::DRILL_H, &coll_rgba);
+    println!("wrote {coll_shot}");
+
     if std::env::var("GG_BLESS").is_ok() {
         std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens")).ok();
         for (name, w, h, data) in [
             ("fx-correct.png", fx::W, fx::H, &rgba),
             ("drill-initial.png", app::DRILL_W, app::DRILL_H, &drill_rgba),
             ("topic-select.png", app::DRILL_W, app::DRILL_H, &sel_rgba),
+            ("collection.png", app::DRILL_W, app::DRILL_H, &coll_rgba),
         ] {
             let path = format!(
                 concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/{}"),
