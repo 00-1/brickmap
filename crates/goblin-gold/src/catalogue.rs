@@ -42,6 +42,15 @@ pub enum Category {
     Events,
 }
 
+/// A collectible's Arena boost: owning it lifts one hero's one stat by `amount` (see
+/// [`crate::arena`]). Every catalogue entry carries one.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Boost {
+    pub hero: String,
+    pub stat: String,
+    pub amount: i64,
+}
+
 /// One catalogue entry. `id` doubles as the save's `collected` key (the keystone).
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct Collectible {
@@ -61,6 +70,9 @@ pub struct Collectible {
     /// Momentum threshold (momentum-milestone entries only).
     #[serde(default)]
     pub momentum: Option<u32>,
+    /// The Arena stat boost this item grants (every entry has one).
+    #[serde(default)]
+    pub boost: Option<Boost>,
 }
 
 #[derive(Deserialize)]
