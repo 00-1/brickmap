@@ -117,6 +117,25 @@ pub fn loot_for(n: u32) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The enemy types fielded at tier `n` (for the Arena screen's tier header).
+pub fn foe_kinds(n: u32) -> Vec<Kind> {
+    parse()
+        .enemy_teams
+        .get(&n.to_string())
+        .map(|team| team.iter().map(|f| f.kind).collect())
+        .unwrap_or_default()
+}
+
+/// The next tier to fight = one past the highest cleared `tier:n` key (capped at the ladder top).
+pub fn next_tier<'a>(collected: impl IntoIterator<Item = &'a str>) -> u32 {
+    let max_cleared = collected
+        .into_iter()
+        .filter_map(|k| k.strip_prefix("tier:").and_then(|n| n.parse::<u32>().ok()))
+        .max()
+        .unwrap_or(0);
+    (max_cleared + 1).min(tier_count())
+}
+
 /// A hero's **effective** stats for the Arena: base + catalogue boosts (the existing
 /// [`crate::arena::hero_stats`] bridge) + the combat loot boosts of every owned `loot:*` id.
 /// `None` for an unknown hero id.

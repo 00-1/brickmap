@@ -13,7 +13,7 @@
 use crate::progression::{self, Progress};
 use brickmap::save::Store;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 /// The save slot key under which the blob lives in the [`Store`].
 pub const SLOT: &str = "gg1";
@@ -54,6 +54,25 @@ pub struct RoundOutcome {
     pub total: u32,
     /// Total time across the round (seconds).
     pub total_time: f64,
+}
+
+/// The result of one Arena battle — what the Arena screen shows after a fight.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ArenaOutcome {
+    /// The tier fought (1-based).
+    pub tier: u32,
+    /// Did the party win?
+    pub win: bool,
+    /// Rounds the battle took.
+    pub rounds: u32,
+    /// Heroes still standing at the end.
+    pub heroes_alive: usize,
+    /// Gold paid out (0 on a loss; already accrued into the save on a win).
+    pub gold_earned: u64,
+    /// Loot ids granted this win (empty on a loss).
+    pub loot: Vec<String>,
+    /// Whether clearing this tier finished a region (a boss fell).
+    pub region_cleared: bool,
 }
 
 /// The persisted game state: the central `collected` keystone plus the loose top-level fields.
@@ -217,6 +236,54 @@ impl Save {
         }
     }
 
+    /// Fight the **next** Arena tier (one past the highest cleared) with `party` (≤3 hero ids),
+    /// resolving the battle via [`crate::combat::team_battle`]. On a win, grant `tier:<n>` + the
+    /// tier's loot into the keystone and accrue the `tierGold` payoff; on a loss, nothing changes.
+    /// Returns the outcome (`None` only if the tier has no enemy team — shouldn't happen in-range).
+    ///
+    /// The gold multiplier reuses the same owned-collectible policy as [`Save::award_round`]
+    /// (`items` + `mastered`); the `heroes`/`tiers`/`bosses` contributions are a documented
+    /// simplification pending a structured **hero-unlock** export (the export carries hero unlocks
+    /// only as prose hints today). The win/loss itself is fully vector-proven in [`crate::combat`].
+    pub fn resolve_arena(&mut self, party: &[&str], ts: u64) -> Option<ArenaOutcome> {
+        let tier = crate::combat::next_tier(self.collected.keys().map(String::as_str));
+        // Resolve the fight first (immutable borrow of `collected`), then grant (mutable).
+        let result = {
+            let keys: HashSet<&str> = self.collected.keys().map(String::as_str).collect();
+            crate::combat::team_battle(party, tier, &keys)?
+        };
+        let (mut gold_earned, mut loot, mut region_cleared) = (0u64, Vec::new(), false);
+        if result.win {
+            self.mark(format!("tier:{tier}"), ts);
+            for id in crate::combat::loot_for(tier) {
+                self.mark(id.clone(), ts);
+                loot.push(id);
+            }
+            region_cleared = crate::arena::is_boss(tier);
+            // tierGold(n, goldMult(collected)) — post-grant counts; same mult policy as award_round.
+            let mastered = self
+                .collected
+                .keys()
+                .filter(|k| k.starts_with("mastery:"))
+                .count() as u32;
+            let items =
+                crate::catalogue::earned(self.collected.keys().map(String::as_str)).len() as u32;
+            let mult = crate::gold::gold_mult(items, mastered, 0, 0, 0);
+            let g = crate::gold::tier_gold(tier, mult);
+            gold_earned = g.floor() as u64;
+            self.gold += g;
+        }
+        Some(ArenaOutcome {
+            tier,
+            win: result.win,
+            rounds: result.rounds,
+            heroes_alive: result.heroes_alive,
+            gold_earned,
+            loot,
+            region_cleared,
+        })
+    }
+
     /// Load the save from `store` (slot [`SLOT`]); a fresh [`Save::default`] if absent or corrupt
     /// (a torn blob shouldn't brick the game — it starts over rather than refusing to launch).
     pub fn load(store: &dyn Store) -> Save {
@@ -376,6 +443,37 @@ mod tests {
             again.newly.is_empty(),
             "already-collected keys aren't re-awarded: {:?}",
             again.newly
+        );
+    }
+
+    #[test]
+    fn resolving_an_arena_win_grants_the_tier_loot_and_gold() {
+        // A fully-collected party (every catalogue item owned → maxed effective stats) crushes the
+        // first tier, so the win path is exercised: tier:1 + its loot are marked and gold accrues.
+        let mut s = Save::default();
+        for c in crate::catalogue::catalog() {
+            s.mark(c.id, 1);
+        }
+        let before_gold = s.gold;
+        let out = s
+            .resolve_arena(&["mo", "roon", "zeph"], 1000)
+            .expect("tier 1 has a team");
+        assert_eq!(out.tier, 1);
+        assert!(out.win, "a maxed party should clear tier 1");
+        assert!(s.has("tier:1"), "the cleared tier is marked");
+        for id in &out.loot {
+            assert!(s.has(id), "granted loot {id} is marked");
+        }
+        assert_eq!(
+            out.gold_earned > 0,
+            s.gold > before_gold,
+            "gold accrues on a win"
+        );
+        assert!(s.gold > before_gold, "a win pays gold");
+        // The next fight targets the next tier (progression advances off the keystone).
+        assert_eq!(
+            crate::combat::next_tier(s.collected.keys().map(String::as_str)),
+            2
         );
     }
 
