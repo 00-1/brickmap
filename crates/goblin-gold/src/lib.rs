@@ -48,6 +48,10 @@ pub mod catalogue;
 // (the catalogue → fight bridge). Pure logic; data-driven.
 pub mod arena;
 
+// Daily events: the 14-event rotation (reward keys + the 14-day UTC cycle structure). Pure logic;
+// data-driven from the `Events` collectibles.
+pub mod events;
+
 // The save model (the central `collected` keystone + gold/last-mode), persisted through the engine
 // `bm-platform::save` Store seam. Native-gated like the other engine-facade consumers.
 #[cfg(not(target_arch = "wasm32"))]
