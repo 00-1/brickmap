@@ -6,9 +6,10 @@
 //! from the data-free [`goblin_gold::keypad::Keypad`] widget. The verdict (right/wrong) is the
 //! real model's — we drive it with key presses, then snapshot the screen state.
 //!
-//! Three states are captured: a fresh question mid-entry, a correct (green) answer, and a
-//! wrong (red) one. The on-device/web render is the same wgpu pipeline, so at 1:1 these pixels
-//! equal the phone's.
+//! Three states are captured: a fresh question mid-entry, a correct (green) **auto-accepted**
+//! answer, and a **skipped** one (the action bar reveals the answer). GG1 has no wrong state — the
+//! answer auto-checks as you type. The on-device/web render is the same wgpu pipeline, so at 1:1
+//! these pixels equal the phone's.
 //!
 //! Run:  VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
 //!         cargo run -p goblin-gold --bin drill_proto -- <out_dir>
@@ -27,7 +28,6 @@ const GOLD: [f32; 4] = [1.0, 214.0 / 255.0, 110.0 / 255.0, 1.0];
 const BODY: [f32; 4] = [232.0 / 255.0, 228.0 / 255.0, 244.0 / 255.0, 1.0];
 const DIM: [f32; 4] = [150.0 / 255.0, 140.0 / 255.0, 172.0 / 255.0, 1.0];
 const GREEN: [f32; 4] = [120.0 / 255.0, 222.0 / 255.0, 142.0 / 255.0, 1.0];
-const RED: [f32; 4] = [240.0 / 255.0, 116.0 / 255.0, 116.0 / 255.0, 1.0];
 
 const W: u32 = 1080;
 const H: u32 = 1920;
@@ -69,35 +69,30 @@ fn main() {
         total: d.len(),
     };
 
-    // State B — a correct answer (green). Snapshot before submit clears the box.
+    // State B — a correct answer (green). Typing the value auto-accepts (no submit key); show the
+    // value that triggered it.
     let mut d = Drill::from_seam("halves");
     let label_b = format!("Half of {}", d.prompt());
     let correct = format!("{}", d.expected());
     for c in correct.chars() {
         d.press(Keypad::key_for_char(c).expect("digit/dot"));
     }
-    let typed_b = d.typed().to_string();
-    d.press(Key::Enter);
     let shot_b = Shot {
         label: label_b,
-        typed: typed_b,
-        mark: d.last_mark(),
+        typed: correct,
+        mark: d.last_mark(), // Mark::Right (auto-accepted on the final digit)
         solved: d.solved(),
         total: d.len(),
     };
 
-    // State C — a wrong answer (red). The model marks Wrong and keeps the typed text.
+    // State C — a skip. The action bar reveals the answer and moves on (counts as a skip).
     let mut d = Drill::from_seam("halves");
     let label_c = format!("Half of {}", d.prompt());
-    for c in "99".chars() {
-        d.press(Keypad::key_for_char(c).unwrap());
-    }
-    let typed_c = d.typed().to_string();
-    d.press(Key::Enter);
+    d.press(Key::Enter); // the bottom bar is SKIP
     let shot_c = Shot {
         label: label_c,
-        typed: typed_c,
-        mark: d.last_mark(),
+        typed: d.revealed().unwrap_or("").to_string(),
+        mark: d.last_mark(), // Mark::Skipped
         solved: d.solved(),
         total: d.len(),
     };
@@ -116,7 +111,7 @@ fn main() {
     for (shot, file) in [
         (&shot_a, "gg-drill-entry.png"),
         (&shot_b, "gg-drill-correct.png"),
-        (&shot_c, "gg-drill-wrong.png"),
+        (&shot_c, "gg-drill-skip.png"),
     ] {
         let path = format!("{out_dir}/{file}");
         render(&painter, &atlases, &name, &tag, shot, &path);
@@ -204,10 +199,10 @@ fn render(painter: &Painter, a: &Atlases, name: &str, tag: &str, shot: &Shot, pa
         rgba: GOLD,
     });
 
-    // Answer box — frame colour reflects the verdict.
+    // Answer box — frame colour reflects the verdict (no wrong state).
     let (frame, ink) = match shot.mark {
         Some(Mark::Right) => (GREEN, GREEN),
-        Some(Mark::Wrong) => (RED, RED),
+        Some(Mark::Skipped) => (DIM, DIM),
         None => (DIM, BODY),
     };
     let box_y = 620.0;
@@ -237,11 +232,11 @@ fn render(painter: &Painter, a: &Atlases, name: &str, tag: &str, shot: &Shot, pa
         rgba: ink,
     });
 
-    // Verdict banner.
+    // Verdict banner (no wrong state — it auto-checks; the action bar skips).
     let (msg, colour) = match shot.mark {
         Some(Mark::Right) => ("Correct!", GREEN),
-        Some(Mark::Wrong) => ("Try again", RED),
-        None => ("Tap the digits, then Enter", DIM),
+        Some(Mark::Skipped) => ("Skipped", DIM),
+        None => ("Tap the digits — it checks itself", DIM),
     };
     let mw = a.banner.text_width(msg);
     let (q, _h) = a.banner.layout(msg, cx - mw / 2.0, 800.0, mw + 4.0);
@@ -272,7 +267,7 @@ fn render(painter: &Painter, a: &Atlases, name: &str, tag: &str, shot: &Shot, pa
             rgba: fill,
         });
         if is_enter {
-            continue; // Enter label is inked dark on gold — its own run below
+            continue; // the action bar (Skip) label is inked dark on gold — its own run below
         }
         let s = match cell.key {
             Key::Digit(d) => ((b'0' + d) as char).to_string(),
@@ -287,9 +282,9 @@ fn render(painter: &Painter, a: &Atlases, name: &str, tag: &str, shot: &Shot, pa
         quads: key_quads,
         rgba: BODY,
     });
-    // Enter label (dark on gold).
+    // Action-bar label (Skip, dark on gold).
     if let Some(enter) = kp.cells.iter().find(|c| c.key == Key::Enter) {
-        let q = centered(a.key, "Enter", enter.x + enter.w / 2.0, enter.y, enter.h);
+        let q = centered(a.key, "Skip", enter.x + enter.w / 2.0, enter.y, enter.h);
         texts.push(TextRun {
             atlas: a.key,
             quads: q,

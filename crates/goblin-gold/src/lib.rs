@@ -47,10 +47,14 @@ pub mod save;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod app;
+// Android immersive-sticky fullscreen (hide the system bars) — reached over JNI from the
+// native-activity side, since cargo-apk packages no Java of ours to set a theme.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod fx;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
+#[cfg(target_os = "android")]
+pub mod immersive;
 
 /// The font under test (Instrument Sans, OFL — see `assets/InstrumentSans-OFL.txt`).
 pub const FONT_INSTRUMENT_SANS: &[u8] = include_bytes!("../assets/InstrumentSans-Regular.ttf");

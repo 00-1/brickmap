@@ -39,10 +39,17 @@ log = "0.4"
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
 env_logger = "0.11"
 
-# Android-only (mini-gate #4 APK): the native-activity winit backend + logcat logging.
+# Android-only (mini-gate #4 APK): the native-activity winit backend + logcat logging. `jni` +
+# `ndk-context` (both already in the tree via android-activity) drive the immersive-fullscreen
+# setup (`immersive.rs`) — hide the status + nav bars so they don't overlay the drill.
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { version = "0.30", features = ["android-native-activity"] }
 android_logger = "0.14"
+# jni 0.21's classic `JNIEnv` API (string method/signature lookups). Pinned to 0.21 deliberately:
+# android-activity pulls the rewritten 0.22.x, but we only need raw-pointer VM access (from
+# ndk-context), so the two coexist without entanglement.
+jni = "0.21"
+ndk-context = "0.1"
 
 # cargo-apk packaging (mini-gate #4): builds a sideloadable, debug-signed APK from this crate's
 # `cdylib` + `android_main`. Locally: `cargo install cargo-apk` then `cargo apk build --release

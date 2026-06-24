@@ -2,7 +2,8 @@
 //! pixel box; **no game/topic literals**, so any game (or menu) can lay it out and route taps. The
 //! renderer chooses each key's glyph; it may fall back from `✓`/`⌫` to ASCII if the face lacks them.
 
-/// A logical key. `Back` deletes a char; `Enter` submits.
+/// A logical key. `Back` deletes a char; `Enter` is the full-width **action bar** — the game
+/// decides what it does (submit, skip, next…); the widget only reports the press.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Key {
     Digit(u8),

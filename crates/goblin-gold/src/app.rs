@@ -35,7 +35,6 @@ const GOLD: [f32; 4] = [1.0, 214.0 / 255.0, 110.0 / 255.0, 1.0];
 const BODY: [f32; 4] = [232.0 / 255.0, 228.0 / 255.0, 244.0 / 255.0, 1.0];
 const DIM: [f32; 4] = [150.0 / 255.0, 140.0 / 255.0, 172.0 / 255.0, 1.0];
 const GREEN: [f32; 4] = [120.0 / 255.0, 222.0 / 255.0, 142.0 / 255.0, 1.0];
-const RED: [f32; 4] = [240.0 / 255.0, 116.0 / 255.0, 116.0 / 255.0, 1.0];
 
 /// How long the FX bloom plays after a correct answer.
 const FX_SECS: f32 = 0.9;
@@ -614,19 +613,20 @@ impl App {
     /// list — where any newly-unlocked topics now appear.
     fn finish_round(&mut self) {
         let total = self.drill.as_ref().map(|d| d.len() as u32).unwrap_or(0);
+        // Answered = solved (skipped questions don't count): initiation needs ≥ half answered, and
+        // mastery needs zero skips, so the skip count feeds straight into progression.
+        let answered = self.drill.as_ref().map(|d| d.solved()).unwrap_or(0);
         let secs = self
             .round_start
             .map(|s| s.elapsed().as_secs_f64())
             .unwrap_or(f64::INFINITY);
         if let Some(id) = self.current.clone() {
             if let Some(m) = self.modes.iter().find(|m| m.id == id).cloned() {
-                // No skips reach here (a round only completes by answering every question), so
-                // answered == total; initiation always, mastery iff within masterSecs·total.
                 self.progress.record_run(
                     &m,
                     &progression::RunResult {
                         total,
-                        answered: total,
+                        answered,
                         total_time_secs: secs,
                     },
                 );
@@ -654,13 +654,16 @@ impl App {
                 let mut done = false;
                 if let Some(d) = self.drill.as_mut() {
                     if let Some(key) = self.keypad.hit(x, y) {
+                        // GG1 auto-accepts on the keypress that completes the answer (no submit
+                        // key), so fire the celebration whenever a press just solved a question.
+                        let before = d.solved();
                         d.press(key);
-                        if key == Key::Enter && d.last_mark() == Some(Mark::Right) {
+                        if d.solved() > before {
                             self.fx_start = Some(Instant::now());
                             self.fx_seed ^= d.solved().wrapping_mul(2_654_435_761);
                         }
                     }
-                    done = d.solved() as usize >= d.len();
+                    done = d.is_complete();
                 }
                 if done {
                     self.finish_round();
@@ -774,9 +777,11 @@ pub fn drill_frame<'a>(
     // EMPTY on the first frame → an empty text run, exercised by the renderer's empty-run guard).
     let (frame_col, ink) = match drill.last_mark() {
         Some(Mark::Right) => (GREEN, GREEN),
-        Some(Mark::Wrong) => (RED, RED),
+        Some(Mark::Skipped) => (DIM, DIM),
         None => (DIM, BODY),
     };
+    // On a skip the box shows the revealed answer; otherwise the typed string.
+    let box_text = drill.revealed().unwrap_or_else(|| drill.typed());
     let by = h * 0.35;
     let bh = h * 0.085;
     let bw = col_w * 0.7;
@@ -797,15 +802,16 @@ pub fn drill_frame<'a>(
     });
     texts.push(TextRun {
         atlas: &fonts.q,
-        quads: centered(&fonts.q, drill.typed(), cx, by, bh),
+        quads: centered(&fonts.q, box_text, cx, by, bh),
         rgba: ink,
     });
 
-    // Verdict banner.
+    // Verdict banner. There's no wrong state — the answer auto-checks as you type; the action bar
+    // skips (revealing the answer).
     let (msg, col) = match drill.last_mark() {
         Some(Mark::Right) => ("Correct!", GREEN),
-        Some(Mark::Wrong) => ("Try again", RED),
-        None => ("Tap the digits, then Enter", DIM),
+        Some(Mark::Skipped) => ("Skipped", DIM),
+        None => ("Tap the digits — it checks itself", DIM),
     };
     let mw = fonts.body.text_width(msg);
     let (q, _hh) = fonts.body.layout(msg, cx - mw / 2.0, h * 0.46, mw + 4.0);
@@ -832,7 +838,8 @@ pub fn drill_frame<'a>(
             rgba: if is_enter { GOLD } else { KEYBG },
         });
         if is_enter {
-            let qd = centered(&fonts.key, "Enter", cell.x + cell.w / 2.0, cell.y, cell.h);
+            // The action bar is SKIP (GG1 has no submit key — answers auto-accept).
+            let qd = centered(&fonts.key, "Skip", cell.x + cell.w / 2.0, cell.y, cell.h);
             texts.push(TextRun {
                 atlas: &fonts.key,
                 quads: qd,
@@ -1012,6 +1019,10 @@ pub fn render_topic_select(painter: &crate::headless::Painter, font: &FontRef<'_
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        // Re-assert immersive-sticky fullscreen on every resume — the system clears the flags when
+        // the window loses focus, so a one-shot at startup wouldn't survive an app switch.
+        #[cfg(target_os = "android")]
+        crate::immersive::enable();
         if self.gfx.is_some() {
             return; // resumed after suspend (mobile) — surface is rebuilt on Resized
         }
