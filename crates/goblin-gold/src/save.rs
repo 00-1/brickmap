@@ -103,19 +103,28 @@ impl Save {
     /// ([`crate::earning::award`]), and mark every awarded key (keeping the earliest `ts`). Returns
     /// the keys **newly** collected this round (for a "you earned…" toast).
     ///
-    /// Per-question solve/spark aren't awarded here yet — the live drill doesn't time individual
-    /// questions, so `qmap` is empty; everything else (ranks, init, flawless, speed, mastery, and the
-    /// games/modes/flawless meta) is awarded from the round aggregates. In the auto-accept drill
-    /// every accepted answer is correct, so `score == answered` and `mistakes == total − answered`.
+    /// `solves` is the per-question outcome — `(prompt, seconds)` for each question solved this round
+    /// — which drives the solve/spark awards (a clean solve earns `solve:<mode>:<prompt>`, and under
+    /// 1.5s also `spark:…`). In the auto-accept drill every accepted answer is correct, so
+    /// `score == answered`, `mistakes == total − answered`, and every solve is clean (`miss == 0`).
     pub fn award_round(
         &mut self,
         mode: &progression::Mode,
         run: &progression::RunResult,
+        solves: &[(String, f64)],
         ts: u64,
     ) -> Vec<String> {
         self.games += 1;
         let count_prefix =
             |p: &str| self.collected.keys().filter(|k| k.starts_with(p)).count() as u32;
+        let qmap = solves
+            .iter()
+            .map(|(prompt, t)| crate::earning::QSolve {
+                prompt: prompt.clone(),
+                miss: 0,
+                t: *t,
+            })
+            .collect();
         let ctx = crate::earning::Ctx {
             mode_id: &mode.id,
             master_secs: mode.master_secs,
@@ -123,7 +132,7 @@ impl Save {
             answered: run.answered,
             score: run.answered,
             total_time: run.total_time_secs,
-            qmap: Vec::new(),
+            qmap,
             stats: crate::earning::RunStats {
                 games: self.games as u32,
                 modes_cleared: count_prefix("init:"),
@@ -252,7 +261,9 @@ mod tests {
         };
         let mut s = Save::default();
 
-        // A perfect, fast, clean round earns init/flawless/mastery + ranks + speed brackets.
+        // A perfect, fast, clean round earns init/flawless/mastery + ranks + speed brackets, plus
+        // solve/spark for the timed questions (a real halves prompt, solved fast).
+        let solves = vec![("3".to_string(), 0.5)];
         let added = s.award_round(
             &mode,
             &RunResult {
@@ -260,10 +271,15 @@ mod tests {
                 answered: 10,
                 total_time_secs: 0.0,
             },
+            &solves,
             1000,
         );
         assert!(s.has("init:halves") && s.has("flawless:halves") && s.has("mastery:halves"));
         assert!(s.has("rank:goblin") && s.has("speed:halves:0"));
+        assert!(
+            s.has("solve:halves:3") && s.has("spark:halves:3"),
+            "a clean, fast solve earns solve + spark"
+        );
         assert_eq!(s.games, 1);
         assert!(added.contains(&"init:halves".to_string()));
         // The save is the source of truth for progression.
@@ -277,6 +293,7 @@ mod tests {
                 answered: 10,
                 total_time_secs: 0.0,
             },
+            &solves,
             2000,
         );
         assert_eq!(s.games, 2);

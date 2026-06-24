@@ -584,6 +584,10 @@ struct App {
     drill: Option<Drill>,
     current: Option<String>,
     round_start: Option<Instant>,
+    /// When the current question appeared (for per-question solve/spark timing).
+    q_start: Option<Instant>,
+    /// This round's solved questions: `(prompt, seconds)` — feeds the solve/spark awards.
+    solves: Vec<(String, f64)>,
     keypad: Keypad,
     cursor: (f32, f32),
     fx_start: Option<Instant>,
@@ -611,6 +615,8 @@ impl App {
             drill: None,
             current: None,
             round_start: None,
+            q_start: None,
+            solves: Vec::new(),
             keypad: Keypad::layout(0.0, 0.0, 1.0, 1.0, 0.0),
             cursor: (0.0, 0.0),
             fx_start: None,
@@ -634,7 +640,10 @@ impl App {
     fn start_drill(&mut self, id: &str) {
         self.drill = Some(Drill::from_topic(id));
         self.current = Some(id.to_string());
-        self.round_start = Some(Instant::now());
+        let now = Instant::now();
+        self.round_start = Some(now);
+        self.q_start = Some(now);
+        self.solves = Vec::new();
         self.fx_start = None;
         self.screen = Screen::Drill;
     }
@@ -664,7 +673,7 @@ impl App {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0);
-                self.save.award_round(&m, &run, ts);
+                self.save.award_round(&m, &run, &self.solves, ts);
                 self.save.last_mode = Some(m.id.clone());
                 self.progress = self.save.progress();
                 if let Some(store) = &self.store {
@@ -675,6 +684,8 @@ impl App {
         self.drill = None;
         self.current = None;
         self.round_start = None;
+        self.q_start = None;
+        self.solves = Vec::new();
         self.fx_start = None;
         self.screen = Screen::Select;
     }
@@ -703,12 +714,26 @@ impl App {
                 if let Some(d) = self.drill.as_mut() {
                     if let Some(key) = self.keypad.hit(x, y) {
                         // GG1 auto-accepts on the keypress that completes the answer (no submit
-                        // key), so fire the celebration whenever a press just solved a question.
-                        let before = d.solved();
+                        // key). Capture the current prompt before the press advances the question.
+                        let prompt = d.prompt().to_string();
+                        let before_solved = d.solved();
+                        let before_consumed = d.consumed();
                         d.press(key);
-                        if d.solved() > before {
-                            self.fx_start = Some(Instant::now());
-                            self.fx_seed ^= d.solved().wrapping_mul(2_654_435_761);
+                        if d.consumed() > before_consumed {
+                            // A question was resolved (solved or skipped); the next one's timer
+                            // starts now.
+                            if d.solved() > before_solved {
+                                // A clean solve — record its time for the solve/spark awards…
+                                let t = self
+                                    .q_start
+                                    .map(|s| s.elapsed().as_secs_f64())
+                                    .unwrap_or(0.0);
+                                self.solves.push((prompt, t));
+                                // …and fire the celebration.
+                                self.fx_start = Some(Instant::now());
+                                self.fx_seed ^= d.solved().wrapping_mul(2_654_435_761);
+                            }
+                            self.q_start = Some(Instant::now());
                         }
                     }
                     done = d.is_complete();
