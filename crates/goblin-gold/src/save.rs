@@ -40,6 +40,9 @@ pub struct Save {
     /// The last topic the player was on (restores the topic selection); `None` on a fresh save.
     #[serde(default, rename = "mode", skip_serializing_if = "Option::is_none")]
     pub last_mode: Option<String>,
+    /// Total rounds played (the `games` running total gating the meta-milestones).
+    #[serde(default)]
+    pub games: u64,
 }
 
 /// GG1 persists `gold` as a string-float (e.g. `"125.5"`); (de)serialise our `f64` through that
@@ -94,6 +97,46 @@ impl Save {
     /// keys). The single source of truth for "what's unlocked" lives in the save, not a side table.
     pub fn progress(&self) -> Progress {
         progression::Progress::from_collected(self.collected.keys().map(String::as_str))
+    }
+
+    /// Fold a finished round into the save: bump the games counter, run the earning rule
+    /// ([`crate::earning::award`]), and mark every awarded key (keeping the earliest `ts`). Returns
+    /// the keys **newly** collected this round (for a "you earned…" toast).
+    ///
+    /// Per-question solve/spark aren't awarded here yet — the live drill doesn't time individual
+    /// questions, so `qmap` is empty; everything else (ranks, init, flawless, speed, mastery, and the
+    /// games/modes/flawless meta) is awarded from the round aggregates. In the auto-accept drill
+    /// every accepted answer is correct, so `score == answered` and `mistakes == total − answered`.
+    pub fn award_round(
+        &mut self,
+        mode: &progression::Mode,
+        run: &progression::RunResult,
+        ts: u64,
+    ) -> Vec<String> {
+        self.games += 1;
+        let count_prefix =
+            |p: &str| self.collected.keys().filter(|k| k.starts_with(p)).count() as u32;
+        let ctx = crate::earning::Ctx {
+            mode_id: &mode.id,
+            master_secs: mode.master_secs,
+            total: run.total,
+            answered: run.answered,
+            score: run.answered,
+            total_time: run.total_time_secs,
+            qmap: Vec::new(),
+            stats: crate::earning::RunStats {
+                games: self.games as u32,
+                modes_cleared: count_prefix("init:"),
+                flawless: count_prefix("flawless:"),
+            },
+        };
+        let mut added = Vec::new();
+        for k in crate::earning::award(&ctx) {
+            if self.mark(k.clone(), ts) {
+                added.push(k);
+            }
+        }
+        added
     }
 
     /// Load the save from `store` (slot [`SLOT`]); a fresh [`Save::default`] if absent or corrupt
@@ -196,6 +239,51 @@ mod tests {
         // Be lenient: a bare number also reads back.
         let parsed: Save = serde_json::from_str(r#"{"gold":3}"#).unwrap();
         assert_eq!(parsed.gold, 3.0);
+    }
+
+    #[test]
+    fn award_round_marks_earned_keys_and_counts_games() {
+        use crate::progression::{Mode, RunResult, Unlock};
+        let mode = Mode {
+            id: "halves".into(),
+            name: "Halves".into(),
+            master_secs: 5.0,
+            unlock: Unlock::Always,
+        };
+        let mut s = Save::default();
+
+        // A perfect, fast, clean round earns init/flawless/mastery + ranks + speed brackets.
+        let added = s.award_round(
+            &mode,
+            &RunResult {
+                total: 10,
+                answered: 10,
+                total_time_secs: 0.0,
+            },
+            1000,
+        );
+        assert!(s.has("init:halves") && s.has("flawless:halves") && s.has("mastery:halves"));
+        assert!(s.has("rank:goblin") && s.has("speed:halves:0"));
+        assert_eq!(s.games, 1);
+        assert!(added.contains(&"init:halves".to_string()));
+        // The save is the source of truth for progression.
+        assert!(s.progress().is_mastered("halves"));
+
+        // Replaying bumps games but re-awards nothing already owned.
+        let again = s.award_round(
+            &mode,
+            &RunResult {
+                total: 10,
+                answered: 10,
+                total_time_secs: 0.0,
+            },
+            2000,
+        );
+        assert_eq!(s.games, 2);
+        assert!(
+            again.is_empty(),
+            "already-collected keys aren't re-awarded: {again:?}"
+        );
     }
 
     #[test]

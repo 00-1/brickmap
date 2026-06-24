@@ -23,7 +23,9 @@ use crate::drill::{Drill, Mark};
 use crate::headless::{RectRun, TextRun};
 use crate::keypad::{Key, Keypad};
 use crate::progression;
+use crate::save::Save;
 use crate::text::{Atlas, Quad};
+use brickmap::save::FileStore;
 // The on-screen UI surface draws the engine's `ui2d` primitives with the engine's quad shader.
 use brickmap::ui2d::UI_SHADER as SHADER;
 
@@ -557,6 +559,12 @@ struct App {
     fonts: Option<Fonts>,
     modes: Vec<progression::Mode>,
     progress: progression::Progress,
+    /// The persisted game state (the `collected` keystone + gold + games). Round awards land here
+    /// and progression is rebuilt from it, so the save is the single source of truth.
+    save: Save,
+    /// The durable backend the save persists through (a file under the platform's data dir); `None`
+    /// if no writable dir was available — the game still runs, it just won't persist.
+    store: Option<FileStore>,
     screen: Screen,
     drill: Option<Drill>,
     current: Option<String>,
@@ -568,15 +576,22 @@ struct App {
 }
 
 impl App {
-    fn new() -> App {
+    /// Build the app, persisting the save under `data_dir` if given (the platform's writable app
+    /// directory). Loads any existing save and seeds progression from it.
+    fn new(data_dir: Option<std::path::PathBuf>) -> App {
         let font = FontRef::try_from_slice(crate::FONT_INSTRUMENT_SANS).expect("font");
+        let store = data_dir.and_then(|d| FileStore::open(d).ok());
+        let save = store.as_ref().map(|s| Save::load(s)).unwrap_or_default();
+        let progress = save.progress();
         App {
             font,
             gfx: None,
             window: None,
             fonts: None,
             modes: progression::modes(),
-            progress: progression::Progress::default(),
+            progress,
+            save,
+            store,
             screen: Screen::Select,
             drill: None,
             current: None,
@@ -622,14 +637,24 @@ impl App {
             .unwrap_or(f64::INFINITY);
         if let Some(id) = self.current.clone() {
             if let Some(m) = self.modes.iter().find(|m| m.id == id).cloned() {
-                self.progress.record_run(
-                    &m,
-                    &progression::RunResult {
-                        total,
-                        answered,
-                        total_time_secs: secs,
-                    },
-                );
+                let run = progression::RunResult {
+                    total,
+                    answered,
+                    total_time_secs: secs,
+                };
+                // Run the earning rule into the save (awards → the `collected` keystone), rebuild
+                // progression from the save (its single source of truth), remember the last topic,
+                // and persist — best-effort, so a write failure can't break play.
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                self.save.award_round(&m, &run, ts);
+                self.save.last_mode = Some(m.id.clone());
+                self.progress = self.save.progress();
+                if let Some(store) = &self.store {
+                    let _ = self.save.store(store);
+                }
             }
         }
         self.drill = None;
@@ -1111,7 +1136,9 @@ fn init_logging() {
 pub fn run() {
     init_logging();
     let event_loop = EventLoop::builder().build().expect("event loop");
-    let mut app = App::new();
+    // Persist the save under a stable per-user dir so desktop runs remember progress too.
+    let data_dir = std::env::temp_dir().join("goblin-gold");
+    let mut app = App::new(Some(data_dir));
     event_loop.run_app(&mut app).expect("run");
 }
 
@@ -1121,10 +1148,12 @@ pub fn run() {
 fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
     use winit::platform::android::EventLoopBuilderExtAndroid;
     init_logging();
+    // The app's private writable dir on device (where the save lives).
+    let data_dir = android_app.internal_data_path();
     let event_loop = EventLoop::builder()
         .with_android_app(android_app)
         .build()
         .expect("event loop");
-    let mut app = App::new();
+    let mut app = App::new(data_dir);
     event_loop.run_app(&mut app).expect("run");
 }
