@@ -1,0 +1,387 @@
+{
+ "_note": "GG1 daily Events (events.js + main.js reward tiers). Schedule + gauntlet proven by events-vectors.json.",
+ "_schedule": "Deterministic from the UTC day: epochDay = floor(now_ms / DAY_MS); index = ((epochDay % 14) + 14) % 14 → ROSTER[index] is live. Anchor: epochDay 0 (1970-01-01 UTC) = ROSTER[0]; the 14-event set recurs every 14 days. No backend/clock baked in (now is injected).",
+ "_rewards": "On finishing an event (eventTiersEarned, main.js): always grant event:<id> (participation = completion); grant event:<id>:well if score/total >= 0.7; grant event:<id>:ace if a flawless run (total>0 && score===total). score = #solved (skips never enter it; qMiss vestigial → solved == clean). Events pay NO gold — the reward IS the buff item. Live-window only: startEvent requires isLive(id).",
+ "_gauntlet": "buildGauntlet(eventId, modes): seed = (hashStr(eventId) ^ (artSeed>>>0))>>>0 → mulberry32. For each questionMix {topic,n}: pool = modes[topic].build() sorted to a TOTAL order (localeCompare numeric, tiebreak raw string), seededShuffle the indices, take n → {p,a,topic}. Then seededShuffle the combined set (themed interleave). Fully deterministic (same set every play + every recurrence). Answers come from the curated topic sets (the same {p,a} the transforms export pins).",
+ "dayMs": 86400000,
+ "rotation": 14,
+ "wellFrac": 0.7,
+ "roster": [
+  {
+   "id": "halving-moon",
+   "name": "The Halving Moon",
+   "theme": "lunar",
+   "blurb": "Under the cold moon every number must be cleft in two. Halve swiftly before the light fades.",
+   "questionMix": [
+    {
+     "topic": "halves",
+     "n": 6
+    },
+    {
+     "topic": "doubles",
+     "n": 4
+    },
+    {
+     "topic": "fractionsof",
+     "n": 3
+    }
+   ],
+   "reward": "Moonsplit Talisman",
+   "rewardWell": "Crescent Sigil",
+   "rewardAce": "Eclipse Regalia",
+   "rarity": "epic",
+   "artSeed": 1071,
+   "musicSeed": 3
+  },
+  {
+   "id": "tables-gauntlet",
+   "name": "The Tables Gauntlet",
+   "theme": "arena",
+   "blurb": "A relentless run through the times tables. Keep your nerve to the end of the gauntlet.",
+   "questionMix": [
+    {
+     "topic": "times",
+     "n": 8
+    },
+    {
+     "topic": "squares",
+     "n": 4
+    },
+    {
+     "topic": "doubles",
+     "n": 2
+    }
+   ],
+   "reward": "Gauntlet of Twelves",
+   "rewardWell": "Vambrace of Tables",
+   "rewardAce": "Champion's Gauntlets",
+   "rarity": "epic",
+   "artSeed": 227,
+   "musicSeed": 5
+  },
+  {
+   "id": "square-solstice",
+   "name": "Square Solstice",
+   "theme": "stone",
+   "blurb": "On the longest day the standing stones demand perfect squares, and nothing less.",
+   "questionMix": [
+    {
+     "topic": "squares",
+     "n": 8
+    },
+    {
+     "topic": "times",
+     "n": 4
+    }
+   ],
+   "reward": "Solstice Keystone",
+   "rewardWell": "Standing Stone Shard",
+   "rewardAce": "Sunwrought Monolith",
+   "rarity": "legendary",
+   "artSeed": 909,
+   "musicSeed": 7
+  },
+  {
+   "id": "bondfire-night",
+   "name": "Bondfire Night",
+   "theme": "fire",
+   "blurb": "Stoke the bondfire — close every gap to a hundred before the embers die.",
+   "questionMix": [
+    {
+     "topic": "bonds",
+     "n": 6
+    },
+    {
+     "topic": "bonds2",
+     "n": 4
+    },
+    {
+     "topic": "addsub",
+     "n": 3
+    }
+   ],
+   "reward": "Emberbond Ring",
+   "rewardWell": "Bonfire Brand",
+   "rewardAce": "Phoenix Bond",
+   "rarity": "epic",
+   "artSeed": 55,
+   "musicSeed": 1
+  },
+  {
+   "id": "carrying-caravan",
+   "name": "The Carrying Caravan",
+   "theme": "desert",
+   "blurb": "The caravan crosses the dunes, carrying and borrowing across every sum.",
+   "questionMix": [
+    {
+     "topic": "addsub",
+     "n": 6
+    },
+    {
+     "topic": "addsub2",
+     "n": 6
+    }
+   ],
+   "reward": "Caravan Seal",
+   "rewardWell": "Trailblazer's Compass",
+   "rewardAce": "Dunewarden's Charter",
+   "rarity": "rare",
+   "artSeed": 412,
+   "musicSeed": 2
+  },
+  {
+   "id": "decimal-tide",
+   "name": "Decimal Tide",
+   "theme": "sea",
+   "blurb": "The tide shifts every digit by a place. Ride the powers of ten.",
+   "questionMix": [
+    {
+     "topic": "placevalue",
+     "n": 6
+    },
+    {
+     "topic": "placevalue2",
+     "n": 6
+    }
+   ],
+   "reward": "Tidal Abacus",
+   "rewardWell": "Mariner's Slide-Rule",
+   "rewardAce": "Leviathan's Ledger",
+   "rarity": "epic",
+   "artSeed": 780,
+   "musicSeed": 9
+  },
+  {
+   "id": "fraction-feast",
+   "name": "The Fraction Feast",
+   "theme": "banquet",
+   "blurb": "Carve the feast into fair shares — thirds, quarters and fifths for all.",
+   "questionMix": [
+    {
+     "topic": "fractionsof",
+     "n": 6
+    },
+    {
+     "topic": "fractionsof2",
+     "n": 6
+    }
+   ],
+   "reward": "Feastmaster's Ladle",
+   "rewardWell": "Carver's Knife",
+   "rewardAce": "Bountiful Cornucopia",
+   "rarity": "epic",
+   "artSeed": 163,
+   "musicSeed": 11
+  },
+  {
+   "id": "percent-parade",
+   "name": "The Percent Parade",
+   "theme": "festival",
+   "blurb": "Banners of ten, twenty-five and fifty per cent march through the square.",
+   "questionMix": [
+    {
+     "topic": "percentages",
+     "n": 6
+    },
+    {
+     "topic": "percentages2",
+     "n": 6
+    }
+   ],
+   "reward": "Parade Medallion",
+   "rewardWell": "Herald's Banner",
+   "rewardAce": "Centurion's Standard",
+   "rarity": "epic",
+   "artSeed": 344,
+   "musicSeed": 13
+  },
+  {
+   "id": "conversion-carnival",
+   "name": "The Conversion Carnival",
+   "theme": "carnival",
+   "blurb": "At the carnival of forms, fractions become decimals and per cents at a turn.",
+   "questionMix": [
+    {
+     "topic": "fractions",
+     "n": 6
+    },
+    {
+     "topic": "percentages",
+     "n": 4
+    },
+    {
+     "topic": "fractionsof",
+     "n": 2
+    }
+   ],
+   "reward": "Carnival Cipher",
+   "rewardWell": "Shifting Mask",
+   "rewardAce": "Ringmaster's Crown",
+   "rarity": "rare",
+   "artSeed": 621,
+   "musicSeed": 6
+  },
+  {
+   "id": "doubling-derby",
+   "name": "The Doubling Derby",
+   "theme": "race",
+   "blurb": "Two by two down the home straight — double every runner to the line.",
+   "questionMix": [
+    {
+     "topic": "doubles",
+     "n": 8
+    },
+    {
+     "topic": "halves",
+     "n": 4
+    }
+   ],
+   "reward": "Derby Rosette",
+   "rewardWell": "Silver Stirrups",
+   "rewardAce": "Champion's Bridle",
+   "rarity": "rare",
+   "artSeed": 288,
+   "musicSeed": 4
+  },
+  {
+   "id": "grand-melee",
+   "name": "The Grand Melee",
+   "theme": "battle",
+   "blurb": "Every discipline at once. Only the all-rounder survives the melee.",
+   "questionMix": [
+    {
+     "topic": "halves",
+     "n": 2
+    },
+    {
+     "topic": "times",
+     "n": 2
+    },
+    {
+     "topic": "addsub",
+     "n": 2
+    },
+    {
+     "topic": "bonds",
+     "n": 2
+    },
+    {
+     "topic": "placevalue",
+     "n": 2
+    },
+    {
+     "topic": "fractionsof",
+     "n": 2
+    },
+    {
+     "topic": "percentages",
+     "n": 2
+    }
+   ],
+   "reward": "Melee Champion's Crest",
+   "rewardWell": "Duellist's Pauldron",
+   "rewardAce": "Grand Victor's Aegis",
+   "rarity": "legendary",
+   "artSeed": 1000,
+   "musicSeed": 8
+  },
+  {
+   "id": "midnight-mastery",
+   "name": "Midnight Mastery",
+   "theme": "night",
+   "blurb": "When the bell tolls twelve, only the harder second forms remain.",
+   "questionMix": [
+    {
+     "topic": "addsub2",
+     "n": 3
+    },
+    {
+     "topic": "bonds2",
+     "n": 3
+    },
+    {
+     "topic": "placevalue2",
+     "n": 3
+    },
+    {
+     "topic": "fractionsof2",
+     "n": 3
+    },
+    {
+     "topic": "percentages2",
+     "n": 3
+    }
+   ],
+   "reward": "Midnight Sigil",
+   "rewardWell": "Witching Hourglass",
+   "rewardAce": "Eclipse Crown",
+   "rarity": "legendary",
+   "artSeed": 1212,
+   "musicSeed": 10
+  },
+  {
+   "id": "quickfire-quest",
+   "name": "The Quickfire Quest",
+   "theme": "spark",
+   "blurb": "Snap recall, no hesitation — halves, doubles, tables and bonds in a blur.",
+   "questionMix": [
+    {
+     "topic": "halves",
+     "n": 4
+    },
+    {
+     "topic": "doubles",
+     "n": 4
+    },
+    {
+     "topic": "times",
+     "n": 4
+    },
+    {
+     "topic": "bonds",
+     "n": 3
+    }
+   ],
+   "reward": "Quickfire Charm",
+   "rewardWell": "Swift-Step Anklet",
+   "rewardAce": "Lightning Reliquary",
+   "rarity": "rare",
+   "artSeed": 747,
+   "musicSeed": 12
+  },
+  {
+   "id": "sages-trial",
+   "name": "The Sage's Trial",
+   "theme": "scholar",
+   "blurb": "The old sage tests the full breadth of your reasoning. Prove your mastery.",
+   "questionMix": [
+    {
+     "topic": "percentages2",
+     "n": 3
+    },
+    {
+     "topic": "fractionsof2",
+     "n": 3
+    },
+    {
+     "topic": "squares",
+     "n": 3
+    },
+    {
+     "topic": "placevalue2",
+     "n": 3
+    },
+    {
+     "topic": "fractions",
+     "n": 3
+    }
+   ],
+   "reward": "Sage's Phylactery",
+   "rewardWell": "Scholar's Astrolabe",
+   "rewardAce": "Archmage's Codex",
+   "rarity": "legendary",
+   "artSeed": 1492,
+   "musicSeed": 14
+  }
+ ]
+}
