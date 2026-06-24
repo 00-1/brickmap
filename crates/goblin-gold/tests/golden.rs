@@ -22,6 +22,7 @@ const SELECT_GOLDEN: &str = concat!(
 );
 const COLLECTION_GOLDEN: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/collection.png");
+const LADDER_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/ladder.png");
 
 /// Pure: the committed golden, compared against a copy with one tinted block, must be flagged as
 /// changed — so the golden guard genuinely catches a regression (and isn't a no-op). No GPU.
@@ -219,6 +220,43 @@ fn collection_renders_and_matches_golden() {
     assert!(
         matches(&frame, &golden, 6, 0.001),
         "collection drifted from the golden: {} / {} px changed (max Δ {})",
+        d.changed,
+        d.total,
+        d.max_delta
+    );
+}
+
+/// Pure: the committed Collector-Ladder golden decodes + self-matches.
+#[test]
+fn ladder_golden_is_present_and_self_consistent() {
+    let (w, h, g) = rgba_from_png(LADDER_GOLDEN);
+    assert!(
+        w == goblin_gold::app::DRILL_W && h == goblin_gold::app::DRILL_H,
+        "golden dims {w}x{h}"
+    );
+    assert!(
+        matches(&g, &g, 0, 0.0),
+        "the ladder golden must match itself"
+    );
+}
+
+/// GPU (`--ignored`, lavapipe): re-render the Collector Ladder (some tiers earned, some locked) and
+/// assert it matches the committed golden.
+#[test]
+#[ignore = "needs a Vulkan adapter (lavapipe); run with --ignored"]
+fn ladder_renders_and_matches_golden() {
+    use ab_glyph::FontRef;
+    use goblin_gold::app::render_ladder;
+    use goblin_gold::headless::Painter;
+
+    let (_w, _h, golden) = rgba_from_png(LADDER_GOLDEN);
+    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let painter = Painter::new();
+    let frame = render_ladder(&painter, &font);
+    let d = diff(&frame, &golden, 6);
+    assert!(
+        matches(&frame, &golden, 6, 0.001),
+        "ladder drifted from the golden: {} / {} px changed (max Δ {})",
         d.changed,
         d.total,
         d.max_delta

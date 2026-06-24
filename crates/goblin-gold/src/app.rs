@@ -550,6 +550,8 @@ enum Screen {
     Drill,
     /// The metagame summary: what's been collected, the collector ladder, heroes, events.
     Collection,
+    /// The collector ladder detail (tiers reached vs locked).
+    Ladder,
 }
 
 /// The full-width bottom button shared by Select ("Collection") and Collection ("Back"): its rect.
@@ -707,6 +709,14 @@ impl App {
             Screen::Collection => {
                 if hit_bottom_button(w, h, x, y) {
                     self.screen = Screen::Select;
+                } else if collection_row_at(w, h, x, y) == Some(1) {
+                    // The Collector row drills into the ladder detail.
+                    self.screen = Screen::Ladder;
+                }
+            }
+            Screen::Ladder => {
+                if hit_bottom_button(w, h, x, y) {
+                    self.screen = Screen::Collection;
                 }
             }
             Screen::Drill => {
@@ -760,6 +770,12 @@ impl App {
         let (rects, texts, fx_ramp) = match self.screen {
             Screen::Collection => {
                 let (r, t) = collection_frame(&self.save, fonts, w, h);
+                (r, t, None)
+            }
+            Screen::Ladder => {
+                let keys = self.save.collected.keys().map(String::as_str);
+                let items = crate::catalogue::earned(keys).len() as u32;
+                let (r, t) = ladder_frame(items, fonts, w, h);
                 (r, t, None)
             }
             Screen::Select => {
@@ -1147,9 +1163,11 @@ pub fn collection_frame<'a>(
         ("Events".to_string(), format!("{events_touched} / 14")),
         ("Gold".to_string(), format!("{}", save.gold as u64)),
     ];
-    let top = h * 0.18;
-    let row_h = h * 0.085;
-    let gap = h * 0.02;
+    let (top, row_h, gap) = (
+        h * COLLECTION_TOP_FRAC,
+        h * COLLECTION_ROW_FRAC,
+        h * COLLECTION_GAP_FRAC,
+    );
     for (i, (label, value)) in rows.iter().enumerate() {
         let ry = top + i as f32 * (row_h + gap);
         rects.push(RectRun {
@@ -1179,6 +1197,104 @@ pub fn collection_frame<'a>(
 
     push_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
+}
+
+// The Collection screen's stat-row layout (shared by the frame builder + the row hit-test).
+const COLLECTION_TOP_FRAC: f32 = 0.18;
+const COLLECTION_ROW_FRAC: f32 = 0.085;
+const COLLECTION_GAP_FRAC: f32 = 0.02;
+/// Which Collection stat row (0-based) contains (`px`,`py`), if any.
+fn collection_row_at(w: f32, h: f32, px: f32, py: f32) -> Option<usize> {
+    let margin = w * 0.06;
+    let col_w = w - margin * 2.0;
+    let (top, row_h, gap) = (
+        h * COLLECTION_TOP_FRAC,
+        h * COLLECTION_ROW_FRAC,
+        h * COLLECTION_GAP_FRAC,
+    );
+    if px < margin || px > margin + col_w {
+        return None;
+    }
+    (0..6).find(|&i| {
+        let ry = top + i as f32 * (row_h + gap);
+        py >= ry && py < ry + row_h
+    })
+}
+
+/// Build the **Collector Ladder** screen: the collect-N tiers, those reached (green) vs locked
+/// (dim), against the player's owned-item count. Reached by tapping the Collection's Collector row.
+pub fn ladder_frame<'a>(
+    items: u32,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.06;
+    let col_w = w - margin * 2.0;
+
+    let (q, _hh) = fonts
+        .head
+        .layout("Collector Ladder", margin, h * 0.04, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: q,
+        rgba: GOLD,
+    });
+    let sub = format!("{} / {} items", items, crate::catalogue::total());
+    let (q, _hh) = fonts.body.layout(&sub, margin, h * 0.105, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: DIM,
+    });
+
+    let tiers = crate::collector::ladder();
+    let top = h * 0.155;
+    let row_h = h * 0.055;
+    let gap = h * 0.008;
+    for (i, t) in tiers.iter().enumerate() {
+        let ry = top + i as f32 * (row_h + gap);
+        rects.push(RectRun {
+            x: margin,
+            y: ry,
+            w: col_w,
+            h: row_h,
+            rgba: PANEL,
+        });
+        let earned = items >= t.n;
+        let col = if earned { GREEN } else { DIM };
+        let ty = ry + row_h / 2.0 - 0.59 * fonts.body.px;
+        let (lq, _) = fonts.body.layout(&t.name, margin + col_w * 0.05, ty, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: lq,
+            rgba: col,
+        });
+        let label = format!("{} items", t.n);
+        let vw = fonts.body.text_width(&label);
+        let (vq, _) = fonts
+            .body
+            .layout(&label, margin + col_w * 0.95 - vw, ty, vw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: vq,
+            rgba: if earned { GREEN } else { BODY },
+        });
+    }
+
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    (rects, texts)
+}
+
+/// Render the **Collector Ladder** for a representative owned-count (some tiers earned, some not),
+/// headless. Shared by the golden blesser + golden test.
+pub fn render_ladder(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = ladder_frame(500, &fonts, w, h);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
 /// The id of the unlocked topic whose row contains (`px`,`py`), if any (touch routing).

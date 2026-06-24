@@ -54,6 +54,12 @@ fn main() {
     write_png(&coll_shot, app::DRILL_W, app::DRILL_H, &coll_rgba);
     println!("wrote {coll_shot}");
 
+    // The Collector Ladder detail (some tiers earned, some locked).
+    let ladder_rgba = app::render_ladder(&painter, &font);
+    let ladder_shot = format!("{out_dir}/gg-ladder.png");
+    write_png(&ladder_shot, app::DRILL_W, app::DRILL_H, &ladder_rgba);
+    println!("wrote {ladder_shot}");
+
     if std::env::var("GG_BLESS").is_ok() {
         std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens")).ok();
         for (name, w, h, data) in [
@@ -61,6 +67,7 @@ fn main() {
             ("drill-initial.png", app::DRILL_W, app::DRILL_H, &drill_rgba),
             ("topic-select.png", app::DRILL_W, app::DRILL_H, &sel_rgba),
             ("collection.png", app::DRILL_W, app::DRILL_H, &coll_rgba),
+            ("ladder.png", app::DRILL_W, app::DRILL_H, &ladder_rgba),
         ] {
             let path = format!(
                 concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/{}"),
