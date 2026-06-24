@@ -40,6 +40,11 @@ pub mod transforms;
 // / events / save). Pure logic; data-driven from the synced `content/gg1/` export.
 pub mod collector;
 
+// The save model (the central `collected` keystone + gold/last-mode), persisted through the engine
+// `bm-platform::save` Store seam. Native-gated like the other engine-facade consumers.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod save;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod app;
 #[cfg(not(target_arch = "wasm32"))]

@@ -140,6 +140,22 @@ impl Progress {
         }
     }
 
+    /// Rebuild progression from the saved central `collected` map's keys (the GG1 keystone): a
+    /// `mastery:<id>` key → mastered (+ played), an `init:<id>` key → played. Other keys (items,
+    /// events, tiers) are ignored here. Bridges [`crate::save`] → progression on load.
+    pub fn from_collected<'a>(keys: impl IntoIterator<Item = &'a str>) -> Progress {
+        let mut p = Progress::default();
+        for k in keys {
+            if let Some(id) = k.strip_prefix("mastery:") {
+                p.played.insert(id.to_string());
+                p.mastered.insert(id.to_string());
+            } else if let Some(id) = k.strip_prefix("init:") {
+                p.played.insert(id.to_string());
+            }
+        }
+        p
+    }
+
     /// Fold a finished run into progression: initiation marks the topic played; a clean+fast run
     /// also marks it mastered (mastery implies no skips → all answered → initiated).
     pub fn record_run(&mut self, m: &Mode, run: &RunResult) {
