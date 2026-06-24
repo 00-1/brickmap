@@ -38,6 +38,9 @@ log = "0.4"
 # Desktop-only (native, not Android): env_logger for the desktop run path.
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
 env_logger = "0.11"
+# Phase-4 audio playback (`audio.rs`): cross-platform output stream for the SFX + music mixer.
+# (Same crate/version `scraped-again`'s drone uses; on Linux needs libasound2-dev.)
+cpal = "0.17"
 
 # Android-only (mini-gate #4 APK): the native-activity winit backend + logcat logging. `jni` +
 # `ndk-context` (both already in the tree via android-activity) drive the immersive-fullscreen
@@ -45,6 +48,9 @@ env_logger = "0.11"
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { version = "0.30", features = ["android-native-activity"] }
 android_logger = "0.14"
+# Phase-4 audio playback (`audio.rs`): cpal's AAudio backend (min_sdk 26). Gets its JavaVM/context
+# from the android-native-activity via `ndk-context`, same as `scraped-again`'s drone.
+cpal = "0.17"
 # jni 0.21's classic `JNIEnv` API (string method/signature lookups). Pinned to 0.21 deliberately:
 # android-activity pulls the rewritten 0.22.x, but we only need raw-pointer VM access (from
 # ndk-context), so the two coexist without entanglement.

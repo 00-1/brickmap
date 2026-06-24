@@ -567,6 +567,25 @@ enum Screen {
     Items,
 }
 
+/// The current combo streak: trailing consecutive solves in the round (a skip resets it). GG1's
+/// correct-chime pitch rises with this streak.
+fn trailing_solves(steps: &[RoundStep]) -> u32 {
+    steps
+        .iter()
+        .rev()
+        .take_while(|s| matches!(s, RoundStep::Solve { .. }))
+        .count() as u32
+}
+
+/// The generative-music scene (a [`crate::synth::STYLE_IDS`] name) that backs a given screen — the
+/// arena bed on the hero roster, the menu bed everywhere else.
+fn scene_for(screen: Screen) -> &'static str {
+    match screen {
+        Screen::Heroes => "arena",
+        _ => "menu",
+    }
+}
+
 /// The full-width bottom button shared by Select ("Collection") and Collection ("Back"): its rect.
 fn bottom_button(w: f32, h: f32) -> (f32, f32, f32, f32) {
     let bw = w * 0.6;
@@ -610,6 +629,9 @@ struct App {
     cursor: (f32, f32),
     fx_start: Option<Instant>,
     fx_seed: u32,
+    /// The live audio engine (SFX + looping music bed) — `None` if no output device was available
+    /// (the game still runs silent). Started lazily on the first `resumed`.
+    audio: Option<crate::audio::Player>,
     /// The Android app handle — used to marshal the immersive-fullscreen JNI onto the UI thread.
     #[cfg(target_os = "android")]
     android_app: Option<winit::platform::android::activity::AndroidApp>,
@@ -643,6 +665,7 @@ impl App {
             cursor: (0.0, 0.0),
             fx_start: None,
             fx_seed: 0x6c1d_9e37,
+            audio: None,
             #[cfg(target_os = "android")]
             android_app: None,
         }
@@ -670,6 +693,24 @@ impl App {
         self.round_steps = Vec::new();
         self.fx_start = None;
         self.screen = Screen::Drill;
+        self.sfx(crate::sfx::Sfx::RoundStart);
+    }
+
+    /// Fire a one-shot SFX through the audio engine (a no-op when there's no output device).
+    fn sfx(&self, e: crate::sfx::Sfx) {
+        if let Some(a) = &self.audio {
+            a.play(e);
+        }
+    }
+
+    /// Set the looping music bed to match the current screen. Uses GG1's own scene names: the menu
+    /// bed under the UI/drill, the arena bed under the hero roster. (Beyond those literal names the
+    /// drill→`menu` default is a conservative creative call — GG1's in-play music is style-pickable;
+    /// the export carries no screen→scene map.) Cheap + idempotent (the player no-ops on no change).
+    fn update_audio_scene(&self) {
+        if let Some(a) = &self.audio {
+            a.set_scene(Some(scene_for(self.screen)));
+        }
     }
 
     /// Fold the finished round into progression (initiation + mastery) and return to the topic
@@ -718,6 +759,7 @@ impl App {
         } else {
             Screen::Select
         };
+        self.sfx(crate::sfx::Sfx::RoundComplete);
     }
 
     fn tap(&mut self, x: f32, y: f32) {
@@ -762,6 +804,8 @@ impl App {
             }
             Screen::Drill => {
                 let mut done = false;
+                // The per-keypress SFX, fired after the `self.drill` mutable borrow is released.
+                let mut step_sfx: Option<crate::sfx::Sfx> = None;
                 if let Some(d) = self.drill.as_mut() {
                     if let Some(key) = self.keypad.hit(x, y) {
                         // GG1 auto-accepts on the keypress that completes the answer (no submit
@@ -779,22 +823,30 @@ impl App {
                                     .map(|s| s.elapsed().as_secs_f64())
                                     .unwrap_or(0.0);
                                 self.round_steps.push(RoundStep::Solve { prompt, dt: t });
-                                // …and fire the celebration.
+                                // …and fire the celebration (FX + the combo-pitched chime).
                                 self.fx_start = Some(Instant::now());
                                 self.fx_seed ^= d.solved().wrapping_mul(2_654_435_761);
+                                let combo = trailing_solves(&self.round_steps).saturating_sub(1);
+                                step_sfx = Some(crate::sfx::Sfx::Correct { combo });
                             } else {
                                 self.round_steps.push(RoundStep::Skip);
+                                step_sfx = Some(crate::sfx::Sfx::Skip);
                             }
                             self.q_start = Some(Instant::now());
                         }
                     }
                     done = d.is_complete();
                 }
+                if let Some(e) = step_sfx {
+                    self.sfx(e);
+                }
                 if done {
                     self.finish_round();
                 }
             }
         }
+        // Keep the music bed in step with whatever screen the tap landed on.
+        self.update_audio_scene();
         if let Some(win) = &self.window {
             win.request_redraw();
         }
@@ -1728,6 +1780,12 @@ impl ApplicationHandler for App {
         self.window = Some(window);
         self.gfx = Some(gfx);
         self.relayout();
+        // Start the audio engine once (it survives suspend/resume); a device-less machine stays
+        // silent. Then set the bed for the current screen.
+        if self.audio.is_none() {
+            self.audio = crate::audio::Player::start();
+        }
+        self.update_audio_scene();
         if let Some(win) = &self.window {
             win.request_redraw();
         }

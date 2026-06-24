@@ -72,6 +72,11 @@ pub mod synth;
 // owner-by-ear; tests gate the mechanics). First cut; patch-faithful timbre is the refinement pass.
 pub mod music;
 
+// Phase 4 (audio): playback wiring — a cpal output stream that mixes the re-authored SFX + the
+// generative music bed so they're audible in the live app. Pure mixer core (tested) + cpal (device).
+#[cfg(not(target_arch = "wasm32"))]
+pub mod audio;
+
 // The save model (the central `collected` keystone + gold/last-mode), persisted through the engine
 // `bm-platform::save` Store seam. Native-gated like the other engine-facade consumers.
 #[cfg(not(target_arch = "wasm32"))]
