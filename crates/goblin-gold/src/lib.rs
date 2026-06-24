@@ -74,3 +74,12 @@ pub mod immersive;
 
 /// The font under test (Instrument Sans, OFL — see `assets/InstrumentSans-OFL.txt`).
 pub const FONT_INSTRUMENT_SANS: &[u8] = include_bytes!("../assets/InstrumentSans-Regular.ttf");
+
+/// The short git SHA captured at build time (see `build.rs`) — the build-watermark stamped on every
+/// on-device screen so screenshots are traceable.
+pub const BUILD_SHA: &str = env!("GG_BUILD_SHA");
+
+/// The build-watermark label (version + SHA), e.g. `v0.0.1 · 602f2bd`.
+pub fn build_tag() -> String {
+    format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_SHA)
+}

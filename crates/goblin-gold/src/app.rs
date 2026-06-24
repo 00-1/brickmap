@@ -37,6 +37,8 @@ const GOLD: [f32; 4] = [1.0, 214.0 / 255.0, 110.0 / 255.0, 1.0];
 const BODY: [f32; 4] = [232.0 / 255.0, 228.0 / 255.0, 244.0 / 255.0, 1.0];
 const DIM: [f32; 4] = [150.0 / 255.0, 140.0 / 255.0, 172.0 / 255.0, 1.0];
 const GREEN: [f32; 4] = [120.0 / 255.0, 222.0 / 255.0, 142.0 / 255.0, 1.0];
+/// Low-contrast build-watermark ink (a hair above the deep-violet background).
+const WATERMARK: [f32; 4] = [78.0 / 255.0, 66.0 / 255.0, 104.0 / 255.0, 1.0];
 
 /// How long the FX bloom plays after a correct answer.
 const FX_SECS: f32 = 0.9;
@@ -516,6 +518,7 @@ pub struct Fonts {
     q: Atlas,
     body: Atlas,
     key: Atlas,
+    tiny: Atlas,
 }
 
 impl Fonts {
@@ -525,6 +528,8 @@ impl Fonts {
             q: Atlas::bake(font, (h * 0.044).clamp(20.0, 120.0)),
             body: Atlas::bake(font, (h * 0.030).clamp(16.0, 80.0)),
             key: Atlas::bake_chars(font, (h * 0.034).clamp(16.0, 90.0), "✓⌫"),
+            // The build-watermark face — small, just digits/hex/punctuation.
+            tiny: Atlas::bake(font, (h * 0.018).clamp(11.0, 40.0)),
         }
     }
 }
@@ -767,7 +772,7 @@ impl App {
             (gfx.config.width as f32, gfx.config.height as f32)
         };
         let fonts = self.fonts.as_ref().unwrap();
-        let (rects, texts, fx_ramp) = match self.screen {
+        let (rects, mut texts, fx_ramp) = match self.screen {
             Screen::Collection => {
                 let (r, t) = collection_frame(&self.save, fonts, w, h);
                 (r, t, None)
@@ -800,6 +805,16 @@ impl App {
                 (r, t, ramp)
             }
         };
+        // Build watermark: a small, low-contrast SHA in the top-left corner so on-device screenshots
+        // are traceable. Drawn here (the live path → every screen) and kept out of the goldens, so
+        // they don't churn with each commit's SHA, and out of the hit-test (tap() never sees it).
+        let tag = crate::build_tag();
+        let (wq, _) = fonts.tiny.layout(&tag, w * 0.035, h * 0.012, w);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: wq,
+            rgba: WATERMARK,
+        });
         self.gfx.as_mut().unwrap().render(&rects, &texts, fx_ramp);
     }
 }
