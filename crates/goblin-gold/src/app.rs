@@ -22,6 +22,7 @@ use winit::window::{Window, WindowId};
 use crate::drill::{Drill, Mark};
 use crate::headless::{RectRun, TextRun};
 use crate::keypad::{Key, Keypad};
+use crate::progression;
 use crate::text::{Atlas, Quad};
 // The on-screen UI surface draws the engine's `ui2d` primitives with the engine's quad shader.
 use brickmap::ui2d::UI_SHADER as SHADER;
@@ -539,13 +540,28 @@ fn centered(atlas: &Atlas, text: &str, cx: f32, top: f32, h: f32) -> Vec<Quad> {
         .0
 }
 
-/// The live app: drill state + keypad + fonts + the FX timer, driving [`Gfx`].
+/// Which screen the app is showing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Screen {
+    /// The topic list (progression-gated): tap an unlocked topic to play it.
+    Select,
+    /// A drill round for the chosen topic.
+    Drill,
+}
+
+/// The live app: the topic graph + player progression, the current screen/drill, fonts, the FX
+/// timer — driving [`Gfx`]. Phase 3 drives all 46 topics, gated by [`progression`].
 struct App {
     font: FontRef<'static>,
     gfx: Option<Gfx>,
     window: Option<Arc<Window>>,
     fonts: Option<Fonts>,
-    drill: Drill,
+    modes: Vec<progression::Mode>,
+    progress: progression::Progress,
+    screen: Screen,
+    drill: Option<Drill>,
+    current: Option<String>,
+    round_start: Option<Instant>,
     keypad: Keypad,
     cursor: (f32, f32),
     fx_start: Option<Instant>,
@@ -560,7 +576,12 @@ impl App {
             gfx: None,
             window: None,
             fonts: None,
-            drill: Drill::from_seam("halves"),
+            modes: progression::modes(),
+            progress: progression::Progress::default(),
+            screen: Screen::Select,
+            drill: None,
+            current: None,
+            round_start: None,
             keypad: Keypad::layout(0.0, 0.0, 1.0, 1.0, 0.0),
             cursor: (0.0, 0.0),
             fx_start: None,
@@ -580,12 +601,70 @@ impl App {
         self.keypad = Keypad::layout(margin, kp_y, kp_w, kp_h, w * 0.018);
     }
 
+    /// Start a drill round for `id`: generate its questions and switch to the drill screen.
+    fn start_drill(&mut self, id: &str) {
+        self.drill = Some(Drill::from_topic(id));
+        self.current = Some(id.to_string());
+        self.round_start = Some(Instant::now());
+        self.fx_start = None;
+        self.screen = Screen::Drill;
+    }
+
+    /// Fold the finished round into progression (initiation + mastery) and return to the topic
+    /// list — where any newly-unlocked topics now appear.
+    fn finish_round(&mut self) {
+        let total = self.drill.as_ref().map(|d| d.len() as u32).unwrap_or(0);
+        let secs = self
+            .round_start
+            .map(|s| s.elapsed().as_secs_f64())
+            .unwrap_or(f64::INFINITY);
+        if let Some(id) = self.current.clone() {
+            if let Some(m) = self.modes.iter().find(|m| m.id == id).cloned() {
+                // No skips reach here (a round only completes by answering every question), so
+                // answered == total; initiation always, mastery iff within masterSecs·total.
+                self.progress.record_run(
+                    &m,
+                    &progression::RunResult {
+                        total,
+                        answered: total,
+                        total_time_secs: secs,
+                    },
+                );
+            }
+        }
+        self.drill = None;
+        self.current = None;
+        self.round_start = None;
+        self.fx_start = None;
+        self.screen = Screen::Select;
+    }
+
     fn tap(&mut self, x: f32, y: f32) {
-        if let Some(key) = self.keypad.hit(x, y) {
-            self.drill.press(key);
-            if key == Key::Enter && self.drill.last_mark() == Some(Mark::Right) {
-                self.fx_start = Some(Instant::now());
-                self.fx_seed ^= self.drill.solved().wrapping_mul(2_654_435_761);
+        let (w, h) = match self.gfx.as_ref() {
+            Some(g) => (g.config.width as f32, g.config.height as f32),
+            None => return,
+        };
+        match self.screen {
+            Screen::Select => {
+                if let Some(id) = topic_at(&self.modes, &self.progress, w, h, x, y) {
+                    self.start_drill(&id);
+                }
+            }
+            Screen::Drill => {
+                let mut done = false;
+                if let Some(d) = self.drill.as_mut() {
+                    if let Some(key) = self.keypad.hit(x, y) {
+                        d.press(key);
+                        if key == Key::Enter && d.last_mark() == Some(Mark::Right) {
+                            self.fx_start = Some(Instant::now());
+                            self.fx_seed ^= d.solved().wrapping_mul(2_654_435_761);
+                        }
+                    }
+                    done = d.solved() as usize >= d.len();
+                }
+                if done {
+                    self.finish_round();
+                }
             }
         }
         if let Some(win) = &self.window {
@@ -601,23 +680,30 @@ impl App {
             let gfx = self.gfx.as_ref().unwrap();
             (gfx.config.width as f32, gfx.config.height as f32)
         };
-        let fx_t = self.fx_start.map(|s| s.elapsed().as_secs_f32());
-        let fx_active = matches!(fx_t, Some(t) if t < FX_SECS);
-        let fx = if fx_active {
-            Some((self.fx_seed, fx_t.unwrap()))
-        } else {
-            None
-        };
-
-        // Build the frame from the SHARED builder, then hand it to the surface renderer. `texts`
-        // borrows `self.fonts`; `self.gfx` is a separate field, so the mutable borrow is disjoint.
         let fonts = self.fonts.as_ref().unwrap();
-        let (rects, texts) = drill_frame(&self.drill, &self.keypad, fonts, w, h, fx);
-        let fx_ramp = fx_active.then_some((
-            &crate::fx::GOLD_RAMP[..],
-            crate::fx::GOLD_RAMP.len() as u32,
-            crate::fx::FX_DITHER,
-        ));
+        let (rects, texts, fx_ramp) = match self.screen {
+            Screen::Select => {
+                let (r, t) = topic_select_frame(&self.modes, &self.progress, fonts, w, h);
+                (r, t, None)
+            }
+            Screen::Drill => {
+                let fx_t = self.fx_start.map(|s| s.elapsed().as_secs_f32());
+                let fx_active = matches!(fx_t, Some(t) if t < FX_SECS);
+                let fx = if fx_active {
+                    Some((self.fx_seed, fx_t.unwrap()))
+                } else {
+                    None
+                };
+                let d = self.drill.as_ref().expect("drill on the drill screen");
+                let (r, t) = drill_frame(d, &self.keypad, fonts, w, h, fx);
+                let ramp = fx_active.then_some((
+                    &crate::fx::GOLD_RAMP[..],
+                    crate::fx::GOLD_RAMP.len() as u32,
+                    crate::fx::FX_DITHER,
+                ));
+                (r, t, ramp)
+            }
+        };
         self.gfx.as_mut().unwrap().render(&rects, &texts, fx_ramp);
     }
 }
@@ -676,10 +762,11 @@ pub fn drill_frame<'a>(
         h: ch - 6.0,
         rgba: PANEL,
     });
-    let label = format!("Half of {}", drill.prompt());
+    // The question is the transform's prompt verbatim (e.g. "100", "3 × 7", "area 10×7"); the topic
+    // name in the heading gives it context. Generic across all 46 topics (no per-topic framing).
     texts.push(TextRun {
         atlas: &fonts.q,
-        quads: centered(&fonts.q, &label, cx, cy, ch),
+        quads: centered(&fonts.q, drill.prompt(), cx, cy, ch),
         rgba: GOLD,
     });
 
@@ -808,6 +895,118 @@ pub fn render_initial_drill(painter: &crate::headless::Painter, font: &FontRef<'
     let kp_y = h - kp_h - margin;
     let keypad = Keypad::layout(margin, kp_y, kp_w, kp_h, w * 0.018);
     let (rects, texts) = drill_frame(&drill, &keypad, &fonts, w, h, None);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+// ── topic-select screen (phase 3: drive all 46 topics, progression-gated) ─────────────────────
+
+/// Row rects for `count` topic-select rows, sized to `w`×`h` (top-down list).
+fn topic_rows(count: usize, w: f32, h: f32) -> Vec<(f32, f32, f32, f32)> {
+    let margin = w * 0.06;
+    let row_h = h * 0.075;
+    let gap = h * 0.014;
+    let top = h * 0.17;
+    (0..count)
+        .map(|i| {
+            (
+                margin,
+                top + i as f32 * (row_h + gap),
+                w - margin * 2.0,
+                row_h,
+            )
+        })
+        .collect()
+}
+
+/// Build the topic-select screen: heading + unlocked-count + a row per **unlocked** topic
+/// (mastered rows in green, others gold). Shared by the on-device renderer + the golden, so the
+/// list the phone shows is the one self-verified offscreen.
+pub fn topic_select_frame<'a>(
+    modes: &[progression::Mode],
+    progress: &progression::Progress,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.06;
+    let col_w = w - margin * 2.0;
+
+    let (q, _hh) = fonts.head.layout("Goblin Gold", margin, h * 0.05, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    let unlocked: Vec<&progression::Mode> =
+        modes.iter().filter(|m| progress.is_unlocked(m)).collect();
+    let count = format!("{} / {}", unlocked.len(), modes.len());
+    let pw = fonts.body.text_width(&count);
+    let (q, _hh) = fonts
+        .body
+        .layout(&count, w - margin - pw, h * 0.065, pw + 4.0);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: DIM,
+    });
+
+    for (m, (rx, ry, rw, rh)) in unlocked.iter().zip(topic_rows(unlocked.len(), w, h)) {
+        rects.push(RectRun {
+            x: rx,
+            y: ry,
+            w: rw,
+            h: rh,
+            rgba: PANEL,
+        });
+        let col = if progress.is_mastered(&m.id) {
+            GREEN
+        } else {
+            GOLD
+        };
+        let (q, _hh) = fonts.q.layout(
+            &m.name,
+            rx + rw * 0.06,
+            ry + rh / 2.0 - 0.59 * fonts.q.px,
+            rw,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.q,
+            quads: q,
+            rgba: col,
+        });
+    }
+    (rects, texts)
+}
+
+/// The id of the unlocked topic whose row contains (`px`,`py`), if any (touch routing).
+pub fn topic_at(
+    modes: &[progression::Mode],
+    progress: &progression::Progress,
+    w: f32,
+    h: f32,
+    px: f32,
+    py: f32,
+) -> Option<String> {
+    let unlocked: Vec<&progression::Mode> =
+        modes.iter().filter(|m| progress.is_unlocked(m)).collect();
+    topic_rows(unlocked.len(), w, h)
+        .into_iter()
+        .zip(&unlocked)
+        .find(|((rx, ry, rw, rh), _)| px >= *rx && px < rx + rw && py >= *ry && py < ry + rh)
+        .map(|(_, m)| m.id.clone())
+}
+
+/// Render the **initial topic-select** (fresh progress → only the root topic unlocked) headless.
+/// Shared by the golden blesser + golden test.
+pub fn render_topic_select(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let modes = progression::modes();
+    let progress = progression::Progress::default();
+    let (rects, texts) = topic_select_frame(&modes, &progress, &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 

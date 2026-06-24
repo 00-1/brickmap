@@ -82,6 +82,34 @@ impl Drill {
         }
     }
 
+    /// Build a drill for ANY of the 46 topics by **generating** its questions from the pool via the
+    /// phase-2 transforms ([`crate::transforms::generate`]) — the real data-driven path (vs
+    /// [`from_seam`](Self::from_seam), which replays the parity vectors). Name/tag from `modes.json`.
+    pub fn from_topic(mode_id: &str) -> Drill {
+        let modes: Vec<ModeMeta> = serde_json::from_str(MODES_JSON).expect("modes.json");
+        let meta = modes
+            .into_iter()
+            .find(|m| m.id == mode_id)
+            .unwrap_or_else(|| panic!("mode `{mode_id}` not in modes.json"));
+        let questions: Vec<Question> = crate::transforms::generate(mode_id)
+            .into_iter()
+            .map(|(prompt, answer)| Question { prompt, answer })
+            .collect();
+        assert!(
+            !questions.is_empty(),
+            "no questions generated for {mode_id}"
+        );
+        Drill {
+            name: meta.name,
+            tag: meta.tag,
+            questions,
+            idx: 0,
+            typed: String::new(),
+            last: None,
+            solved: 0,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.questions.len()
     }
@@ -157,6 +185,31 @@ mod tests {
         assert_eq!(d.name, "Halves");
         assert_eq!(d.len(), 27); // 27 deterministic {p,a} vectors
         assert!(!d.prompt().is_empty());
+    }
+
+    // Phase 3: the drill drives ALL 46 topics via the phase-2 transforms — every topic generates a
+    // non-empty question set, and every generated answer is accepted (the generated questions match
+    // the parity contract, since the transforms reproduce it).
+    #[test]
+    fn from_topic_drives_every_one_of_the_46_topics() {
+        for m in crate::progression::modes() {
+            let mut d = Drill::from_topic(&m.id);
+            assert!(!d.is_empty(), "topic {} generated no questions", m.id);
+            // Type+submit the first generated answer; it must be accepted.
+            let want = d.expected();
+            for c in format!("{want}").chars() {
+                if let Some(k) = crate::keypad::Keypad::key_for_char(c) {
+                    d.press(k);
+                }
+            }
+            d.submit();
+            assert_eq!(
+                d.last_mark(),
+                Some(Mark::Right),
+                "topic {}: generated answer {want} rejected",
+                m.id
+            );
+        }
     }
 
     // The data seam IS the correctness contract: typing each vector's expected answer must

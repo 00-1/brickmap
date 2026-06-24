@@ -42,16 +42,25 @@ fn main() {
     write_png(&drill_shot, app::DRILL_W, app::DRILL_H, &drill_rgba);
     println!("wrote {drill_shot}");
 
+    // The INITIAL topic-select (fresh progress → only the root topic unlocked).
+    let sel_rgba = app::render_topic_select(&painter, &font);
+    let sel_shot = format!("{out_dir}/gg-topic-select.png");
+    write_png(&sel_shot, app::DRILL_W, app::DRILL_H, &sel_rgba);
+    println!("wrote {sel_shot}");
+
     if std::env::var("GG_BLESS").is_ok() {
         std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens")).ok();
-        let golden = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/fx-correct.png");
-        write_png(golden, fx::W, fx::H, &rgba);
-        println!("BLESSED golden {golden}");
-        let dg = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/goldens/drill-initial.png"
-        );
-        write_png(dg, app::DRILL_W, app::DRILL_H, &drill_rgba);
-        println!("BLESSED golden {dg}");
+        for (name, w, h, data) in [
+            ("fx-correct.png", fx::W, fx::H, &rgba),
+            ("drill-initial.png", app::DRILL_W, app::DRILL_H, &drill_rgba),
+            ("topic-select.png", app::DRILL_W, app::DRILL_H, &sel_rgba),
+        ] {
+            let path = format!(
+                concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/{}"),
+                name
+            );
+            write_png(&path, w, h, data);
+            println!("BLESSED golden {path}");
+        }
     }
 }
