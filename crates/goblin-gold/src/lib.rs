@@ -52,6 +52,10 @@ pub mod arena;
 // data-driven from the `Events` collectibles.
 pub mod events;
 
+// Earning: the rule turning a finished round + running totals into awarded collectible keys,
+// re-impl'd from collectibles.js and proven vs `earning-vectors.json`. Pure logic.
+pub mod earning;
+
 // The save model (the central `collected` keystone + gold/last-mode), persisted through the engine
 // `bm-platform::save` Store seam. Native-gated like the other engine-facade consumers.
 #[cfg(not(target_arch = "wasm32"))]

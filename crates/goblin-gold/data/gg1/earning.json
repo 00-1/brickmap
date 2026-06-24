@@ -1,0 +1,189 @@
+{
+ "_note": "GG1 earning thresholds (from collectibles.js). Per-ctx award LOGIC is proven by earning-vectors.json.",
+ "initAnswerFrac": 0.5,
+ "spark": 1.5,
+ "speed": [
+  {
+   "name": "Quick",
+   "avg": 2.2,
+   "rarity": "common"
+  },
+  {
+   "name": "Swift",
+   "avg": 1.8,
+   "rarity": "uncommon"
+  },
+  {
+   "name": "Blazing",
+   "avg": 1.4,
+   "rarity": "rare"
+  },
+  {
+   "name": "Lightning",
+   "avg": 1.1,
+   "rarity": "epic"
+  }
+ ],
+ "ranks": [
+  {
+   "key": "goblin",
+   "name": "Goblin Whelp",
+   "rarity": "common"
+  },
+  {
+   "key": "kobold",
+   "name": "Kobold",
+   "rarity": "common"
+  },
+  {
+   "key": "urchin",
+   "name": "Street Urchin",
+   "rarity": "common"
+  },
+  {
+   "key": "apprentice",
+   "name": "Apprentice",
+   "rarity": "common"
+  },
+  {
+   "key": "squire",
+   "name": "Squire",
+   "rarity": "uncommon"
+  },
+  {
+   "key": "journeyman",
+   "name": "Journeyman",
+   "rarity": "uncommon"
+  },
+  {
+   "key": "adept",
+   "name": "Adept",
+   "rarity": "uncommon"
+  },
+  {
+   "key": "knight",
+   "name": "Knight",
+   "rarity": "uncommon"
+  },
+  {
+   "key": "battlemage",
+   "name": "Battle Mage",
+   "rarity": "rare"
+  },
+  {
+   "key": "warlock",
+   "name": "Warlock",
+   "rarity": "rare"
+  },
+  {
+   "key": "enchanter",
+   "name": "Enchanter",
+   "rarity": "rare"
+  },
+  {
+   "key": "sorcerer",
+   "name": "Sorcerer",
+   "rarity": "epic"
+  },
+  {
+   "key": "darkwizard",
+   "name": "Dark Wizard",
+   "rarity": "epic"
+  },
+  {
+   "key": "shadowmancer",
+   "name": "Shadowmancer",
+   "rarity": "epic"
+  },
+  {
+   "key": "necromancer",
+   "name": "Necromancer",
+   "rarity": "epic"
+  },
+  {
+   "key": "archmage",
+   "name": "Archmage",
+   "rarity": "legendary"
+  },
+  {
+   "key": "runelord",
+   "name": "Runelord",
+   "rarity": "legendary"
+  },
+  {
+   "key": "sage",
+   "name": "Sage",
+   "rarity": "legendary"
+  },
+  {
+   "key": "grandmaster",
+   "name": "Grandmaster",
+   "rarity": "legendary"
+  },
+  {
+   "key": "celestial",
+   "name": "Celestial",
+   "rarity": "legendary"
+  },
+  {
+   "key": "ascendant",
+   "name": "Ascendant",
+   "rarity": "legendary"
+  },
+  {
+   "key": "transcendent",
+   "name": "Transcendent",
+   "rarity": "legendary"
+  },
+  {
+   "key": "godhand",
+   "name": "God-Hand",
+   "rarity": "legendary"
+  }
+ ],
+ "metaGames": [
+  5,
+  25,
+  100
+ ],
+ "topicsUnlock": [
+  3,
+  8,
+  16
+ ],
+ "collectorTiers": [
+  25,
+  75,
+  150,
+  300,
+  500,
+  750,
+  1000,
+  1500,
+  1600,
+  1700,
+  1800,
+  2300
+ ],
+ "goldThresholds": [
+  1000,
+  10000,
+  100000,
+  1000000,
+  10000000,
+  100000000,
+  1000000000,
+  10000000000,
+  100000000000,
+  1000000000000,
+  1000000000000000
+ ],
+ "momentumThresholds": [
+  3,
+  7,
+  14,
+  30,
+  50,
+  75
+ ]
+}

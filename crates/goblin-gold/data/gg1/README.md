@@ -13,6 +13,12 @@ A snapshot of Goblin Gold v1's content-as-data export — the cross-repo **data 
   **collector ladder** (`collectorLadder`), and the full `catalog`. `collector.rs` reads the
   ladder; the capstone must stay strictly below `total` to stay reachable.
 - `balance.json` (T230/T232) — tuning constants: gold scalars + the Arena enemies/heroes data.
+- `earning.json` (T233) — the earning **tunables** (init fraction, spark/speed thresholds, the 23
+  ranks, gold/momentum/meta/topics/collector thresholds). The award **logic** itself is re-impl'd in
+  `earning.rs` from `collectibles.js` and proven against:
+- `earning-vectors.json` (T233) — the `{ctx → awarded keys}` behavioural contract (rank-index grid,
+  46 modes × 13 scenarios, and the collector/topics/meta/gold/momentum families). A re-impl is
+  correct iff it reproduces these (`earning.rs` does — set-equality, like the transforms test).
 
 **Sync:** regenerate in halves (`node tools/content-export.js`), then re-copy `content/gg1/*`
 here from `origin/main`. Halves' `test/content-parity.test.js` keeps the halves copy locked to the
