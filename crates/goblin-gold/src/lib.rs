@@ -60,6 +60,10 @@ pub mod earning;
 // `gold-vectors.json`. Pure logic.
 pub mod gold;
 
+// Phase 4 (audio): the sound effects re-authored from sound.js as pure sample buffers (same DSP
+// style as scraped-again's Drone). Perceptual parity is owner-by-ear; tests gate the mechanics.
+pub mod sfx;
+
 // The save model (the central `collected` keystone + gold/last-mode), persisted through the engine
 // `bm-platform::save` Store seam. Native-gated like the other engine-facade consumers.
 #[cfg(not(target_arch = "wasm32"))]

@@ -86,3 +86,8 @@ path = "src/bin/drill_proto.rs"
 [[bin]]
 name = "fx_proto"
 path = "src/bin/fx_proto.rs"
+
+# Phase-4 audio: render each SFX to a WAV for the owner's by-ear A/B-vs-web check.
+[[bin]]
+name = "sfx_proto"
+path = "src/bin/sfx_proto.rs"
