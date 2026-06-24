@@ -603,6 +603,9 @@ struct App {
     cursor: (f32, f32),
     fx_start: Option<Instant>,
     fx_seed: u32,
+    /// The Android app handle — used to marshal the immersive-fullscreen JNI onto the UI thread.
+    #[cfg(target_os = "android")]
+    android_app: Option<winit::platform::android::activity::AndroidApp>,
 }
 
 impl App {
@@ -633,6 +636,8 @@ impl App {
             cursor: (0.0, 0.0),
             fx_start: None,
             fx_seed: 0x6c1d_9e37,
+            #[cfg(target_os = "android")]
+            android_app: None,
         }
     }
 
@@ -1504,7 +1509,9 @@ impl ApplicationHandler for App {
         // Re-assert immersive-sticky fullscreen on every resume — the system clears the flags when
         // the window loses focus, so a one-shot at startup wouldn't survive an app switch.
         #[cfg(target_os = "android")]
-        crate::immersive::enable();
+        if let Some(app) = &self.android_app {
+            crate::immersive::enable(app);
+        }
         if self.gfx.is_some() {
             return; // resumed after suspend (mobile) — surface is rebuilt on Resized
         }
@@ -1608,9 +1615,11 @@ fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
     // The app's private writable dir on device (where the save lives).
     let data_dir = android_app.internal_data_path();
     let event_loop = EventLoop::builder()
-        .with_android_app(android_app)
+        .with_android_app(android_app.clone())
         .build()
         .expect("event loop");
     let mut app = App::new(data_dir);
+    // Keep the handle so `resumed` can marshal the immersive JNI onto the Java UI thread.
+    app.android_app = Some(android_app);
     event_loop.run_app(&mut app).expect("run");
 }
