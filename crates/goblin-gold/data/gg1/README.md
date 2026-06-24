@@ -25,6 +25,10 @@ A snapshot of Goblin Gold v1's content-as-data export — the cross-repo **data 
   rel for goldMult's integer power), incl. the **`roundGold`** composition vectors (`{target, mult,
   seq → total}`) that prove the LIVE per-question accrual — combo resets on a `skip`, so it must be
   accumulated as the round plays (see corrected `gold.json:_round`).
+- `synth-scores/*.json` (phase-4 audio) — the 12 generative-music **score goldens** (one per style):
+  the first 32 sixteenth-note steps as event-token lists (`p:`pad/`b:`bass/`l:`lead/`d:`drum). The
+  deterministic score generator (`synth.rs`, ported from `synth.js`) reproduces these byte-for-byte.
+  Synced from `gg1/dev/test/golden/synth_score_*.json` (GG1's own golden test).
 
 **Sync:** regenerate in halves (`node tools/content-export.js`), then re-copy `content/gg1/*`
 here from `origin/main`. Halves' `test/content-parity.test.js` keeps the halves copy locked to the

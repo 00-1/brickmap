@@ -64,6 +64,10 @@ pub mod gold;
 // style as scraped-again's Drone). Perceptual parity is owner-by-ear; tests gate the mechanics.
 pub mod sfx;
 
+// Phase 4 (audio): the generative-music SCORE generator from synth.js — vector-proven against the
+// `synth_score_*.json` goldens (the note schedule; token synthesis is the by-ear half).
+pub mod synth;
+
 // The save model (the central `collected` keystone + gold/last-mode), persisted through the engine
 // `bm-platform::save` Store seam. Native-gated like the other engine-facade consumers.
 #[cfg(not(target_arch = "wasm32"))]
