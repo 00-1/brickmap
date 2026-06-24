@@ -48,6 +48,13 @@ fn main() {
     write_png(&sel_shot, app::DRILL_W, app::DRILL_H, &sel_rgba);
     println!("wrote {sel_shot}");
 
+    // The FULLY-UNLOCKED topic-select (all 46 topics) — the worst case for layout; the multi-column
+    // grid must keep every row on-screen (phase-5 polish: a fixed row height hid late topics).
+    let selfull_rgba = app::render_topic_select_full(&painter, &font);
+    let selfull_shot = format!("{out_dir}/gg-topic-select-full.png");
+    write_png(&selfull_shot, app::DRILL_W, app::DRILL_H, &selfull_rgba);
+    println!("wrote {selfull_shot}");
+
     // The Collection (metagame summary) screen for a representative save.
     let coll_rgba = app::render_collection(&painter, &font);
     let coll_shot = format!("{out_dir}/gg-collection.png");
@@ -96,6 +103,12 @@ fn main() {
             ("fx-correct.png", fx::W, fx::H, &rgba),
             ("drill-initial.png", app::DRILL_W, app::DRILL_H, &drill_rgba),
             ("topic-select.png", app::DRILL_W, app::DRILL_H, &sel_rgba),
+            (
+                "topic-select-full.png",
+                app::DRILL_W,
+                app::DRILL_H,
+                &selfull_rgba,
+            ),
             ("collection.png", app::DRILL_W, app::DRILL_H, &coll_rgba),
             ("ladder.png", app::DRILL_W, app::DRILL_H, &ladder_rgba),
             ("results.png", app::DRILL_W, app::DRILL_H, &results_rgba),

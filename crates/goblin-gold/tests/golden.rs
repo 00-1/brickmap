@@ -20,6 +20,10 @@ const SELECT_GOLDEN: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/goldens/topic-select.png"
 );
+const SELECT_FULL_GOLDEN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/goldens/topic-select-full.png"
+);
 const COLLECTION_GOLDEN: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/collection.png");
 const LADDER_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/ladder.png");
@@ -187,6 +191,44 @@ fn topic_select_renders_and_matches_golden() {
     assert!(
         matches(&frame, &golden, 6, 0.001),
         "topic-select drifted from the golden: {} / {} px changed (max Δ {})",
+        d.changed,
+        d.total,
+        d.max_delta
+    );
+}
+
+/// Pure: the committed fully-unlocked topic-select golden decodes + self-matches. (Phase-5 polish:
+/// the multi-column grid that fits all 46 topics on-screen.)
+#[test]
+fn topic_select_full_golden_is_present_and_self_consistent() {
+    let (w, h, g) = rgba_from_png(SELECT_FULL_GOLDEN);
+    assert!(
+        w == goblin_gold::app::DRILL_W && h == goblin_gold::app::DRILL_H,
+        "golden dims {w}x{h}"
+    );
+    assert!(
+        matches(&g, &g, 0, 0.0),
+        "the fully-unlocked topic-select golden must match itself"
+    );
+}
+
+/// GPU (`--ignored`, lavapipe): re-render the topic-select with all 46 topics unlocked and assert it
+/// matches the committed golden — the phase-5 multi-column grid, guarded against layout drift.
+#[test]
+#[ignore = "needs a Vulkan adapter (lavapipe); run with --ignored"]
+fn topic_select_full_renders_and_matches_golden() {
+    use ab_glyph::FontRef;
+    use goblin_gold::app::render_topic_select_full;
+    use goblin_gold::headless::Painter;
+
+    let (_w, _h, golden) = rgba_from_png(SELECT_FULL_GOLDEN);
+    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let painter = Painter::new();
+    let frame = render_topic_select_full(&painter, &font);
+    let d = diff(&frame, &golden, 6);
+    assert!(
+        matches(&frame, &golden, 6, 0.001),
+        "fully-unlocked topic-select drifted from the golden: {} / {} px changed (max Δ {})",
         d.changed,
         d.total,
         d.max_delta

@@ -1124,22 +1124,69 @@ pub fn render_initial_drill(painter: &crate::headless::Painter, font: &FontRef<'
 
 // ── topic-select screen (phase 3: drive all 46 topics, progression-gated) ─────────────────────
 
-/// Row rects for `count` topic-select rows, sized to `w`×`h` (top-down list).
+// The topic grid's layout band (between the header and the Collection button) + spacing. The grid
+// adapts to `count` so EVERY unlocked topic stays on-screen and tappable — a fixed row height ran
+// the list off the bottom (and out of reach) once a player unlocked more than ~8 topics.
+const TOPIC_TOP_FRAC: f32 = 0.17;
+const TOPIC_BOT_FRAC: f32 = 0.895; // just above the bottom button (at 0.915)
+const TOPIC_GAP_FRAC: f32 = 0.012;
+const TOPIC_MAX_ROW_FRAC: f32 = 0.075; // the comfortable height (early game keeps the old look)
+const TOPIC_MIN_ROW_FRAC: f32 = 0.012; // a floor so a fully-unlocked grid never collapses to nothing
+const TOPIC_COL_GAP_FRAC: f32 = 0.03;
+/// Beyond this many unlocked topics, split into a second column rather than shrink a tall list.
+const TOPIC_ONE_COL_MAX: usize = 12;
+
+/// How many columns the topic grid uses for `count` topics (1 while it fits comfortably, else 2).
+fn topic_cols(count: usize) -> usize {
+    if count > TOPIC_ONE_COL_MAX {
+        2
+    } else {
+        1
+    }
+}
+
+/// Rects for `count` topic rows, sized to `w`×`h`. Lays them out in [`topic_cols`] columns, filling
+/// each column top-to-bottom, with the row height shrunk to fit the band so the whole grid is always
+/// on-screen. Shared by the renderer ([`topic_select_frame`]) and the hit-test ([`topic_at`]).
 fn topic_rows(count: usize, w: f32, h: f32) -> Vec<(f32, f32, f32, f32)> {
+    if count == 0 {
+        return Vec::new();
+    }
     let margin = w * 0.06;
-    let row_h = h * 0.075;
-    let gap = h * 0.014;
-    let top = h * 0.17;
+    let top = h * TOPIC_TOP_FRAC;
+    let band = h * (TOPIC_BOT_FRAC - TOPIC_TOP_FRAC);
+    let gap = h * TOPIC_GAP_FRAC;
+    let cols = topic_cols(count);
+    let rows_per_col = count.div_ceil(cols);
+    let row_h =
+        (band / rows_per_col as f32 - gap).clamp(h * TOPIC_MIN_ROW_FRAC, h * TOPIC_MAX_ROW_FRAC);
+    let col_gap = w * TOPIC_COL_GAP_FRAC;
+    let avail_w = w - margin * 2.0;
+    let col_w = (avail_w - (cols as f32 - 1.0) * col_gap) / cols as f32;
     (0..count)
         .map(|i| {
+            let col = i / rows_per_col;
+            let row = i % rows_per_col;
             (
-                margin,
-                top + i as f32 * (row_h + gap),
-                w - margin * 2.0,
+                margin + col as f32 * (col_w + col_gap),
+                top + row as f32 * (row_h + gap),
+                col_w,
                 row_h,
             )
         })
         .collect()
+}
+
+/// The face for a topic row of height `row_h` — step down to a smaller atlas as the grid densifies
+/// (a fully-unlocked 2-column grid needs the small face so labels still read).
+fn topic_font(fonts: &Fonts, row_h: f32, h: f32) -> &Atlas {
+    if row_h >= h * 0.05 {
+        &fonts.q
+    } else if row_h >= h * 0.032 {
+        &fonts.body
+    } else {
+        &fonts.tiny
+    }
 }
 
 /// Build the topic-select screen: heading + unlocked-count + a row per **unlocked** topic
@@ -1190,14 +1237,11 @@ pub fn topic_select_frame<'a>(
         } else {
             GOLD
         };
-        let (q, _hh) = fonts.q.layout(
-            &m.name,
-            rx + rw * 0.06,
-            ry + rh / 2.0 - 0.59 * fonts.q.px,
-            rw,
-        );
+        // Pick the face for this row's height, and clip the label to its column width.
+        let font = topic_font(fonts, rh, h);
+        let (q, _hh) = font.layout(&m.name, rx + rw * 0.06, ry + rh / 2.0 - 0.59 * font.px, rw);
         texts.push(TextRun {
-            atlas: &fonts.q,
+            atlas: font,
             quads: q,
             rgba: col,
         });
@@ -1729,6 +1773,26 @@ pub fn render_topic_select(painter: &crate::headless::Painter, font: &FontRef<'_
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
+/// A progress with **every** topic unlocked (a fully-progressed save) — for the
+/// [`render_topic_select_full`] golden that proves the grid fits all 46 on-screen.
+fn all_unlocked() -> progression::Progress {
+    let keys: Vec<String> = progression::modes()
+        .iter()
+        .map(|m| format!("init:{}", m.id))
+        .collect();
+    progression::Progress::from_collected(keys.iter().map(String::as_str))
+}
+
+/// Render the topic-select with **all 46 topics unlocked** (the worst case for layout) headless —
+/// the multi-column grid keeps every row on-screen. Shared by the golden blesser + golden test.
+pub fn render_topic_select_full(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let modes = progression::modes();
+    let (rects, texts) = topic_select_frame(&modes, &all_unlocked(), &fonts, w, h);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
 /// A representative save for the Collection golden — a player who's made some progress, so earned
 /// and not-yet-earned both show.
 fn sample_save() -> Save {
@@ -1887,4 +1951,79 @@ fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
     // Keep the handle so `resumed` can marshal the immersive JNI onto the Java UI thread.
     app.android_app = Some(android_app);
     event_loop.run_app(&mut app).expect("run");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The topic grid must keep EVERY unlocked topic fully on-screen (above the Collection button)
+    /// and within the horizontal margins — the bug this layout fixes was a fixed row height that ran
+    /// the list off the bottom once a player unlocked more than ~8 topics.
+    #[test]
+    fn topic_grid_fits_on_screen_when_fully_unlocked() {
+        let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+        let modes = progression::modes();
+        let progress = all_unlocked();
+        let unlocked: Vec<_> = modes.iter().filter(|m| progress.is_unlocked(m)).collect();
+        assert_eq!(unlocked.len(), 46, "all topics should be unlocked");
+        let (bx, by, _bw, _bh) = bottom_button(w, h);
+        let _ = bx;
+        for (rx, ry, rw, rh) in topic_rows(unlocked.len(), w, h) {
+            assert!(
+                ry >= h * TOPIC_TOP_FRAC - 0.5,
+                "row starts above the band: {ry}"
+            );
+            assert!(
+                ry + rh <= by + 0.5,
+                "row {ry}+{rh} overruns the button at {by}"
+            );
+            assert!(
+                rx >= 0.0 && rx + rw <= w + 0.5,
+                "row out of width: {rx}+{rw} vs {w}"
+            );
+            assert!(rh > 0.0, "degenerate row height");
+        }
+    }
+
+    /// Every unlocked topic must be reachable by a tap at its row centre — the renderer and the
+    /// hit-test share `topic_rows`, so a multi-column layout can't strand a topic out of reach.
+    #[test]
+    fn every_unlocked_topic_is_tappable() {
+        let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+        let modes = progression::modes();
+        let progress = all_unlocked();
+        let unlocked: Vec<_> = modes.iter().filter(|m| progress.is_unlocked(m)).collect();
+        let rows = topic_rows(unlocked.len(), w, h);
+        for (m, (rx, ry, rw, rh)) in unlocked.iter().zip(rows) {
+            let (cx, cy) = (rx + rw / 2.0, ry + rh / 2.0);
+            let hit = topic_at(&modes, &progress, w, h, cx, cy);
+            assert_eq!(
+                hit.as_deref(),
+                Some(m.id.as_str()),
+                "tap at row centre missed {}",
+                m.id
+            );
+        }
+    }
+
+    /// The single-column early-game layout (and the initial 1-row golden) must be unchanged: the
+    /// first row sits at the band top at the comfortable max height.
+    #[test]
+    fn single_topic_keeps_the_comfortable_layout() {
+        let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+        let rows = topic_rows(1, w, h);
+        assert_eq!(rows.len(), 1);
+        let (rx, ry, rw, rh) = rows[0];
+        assert!((rx - w * 0.06).abs() < 0.5);
+        assert!((ry - h * TOPIC_TOP_FRAC).abs() < 0.5);
+        assert!(
+            (rw - (w - w * 0.06 * 2.0)).abs() < 0.5,
+            "full-width single column"
+        );
+        assert!(
+            (rh - h * TOPIC_MAX_ROW_FRAC).abs() < 0.5,
+            "comfortable max height"
+        );
+    }
 }
