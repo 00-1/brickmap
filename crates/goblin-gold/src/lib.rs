@@ -52,6 +52,10 @@ pub mod arena;
 // data-driven from the `Events` collectibles.
 pub mod events;
 
+// The Arena combat resolution (T233b-combat): the 3v3 team battle from main.js/Enemies.teamBattle,
+// proven vs `combat-vectors.json`. Pure logic; composes the catalogue/arena boost bridge.
+pub mod combat;
+
 // Earning: the rule turning a finished round + running totals into awarded collectible keys,
 // re-impl'd from collectibles.js and proven vs `earning-vectors.json`. Pure logic.
 pub mod earning;

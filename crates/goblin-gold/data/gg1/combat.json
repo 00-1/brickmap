@@ -1,0 +1,6100 @@
+{
+ "_note": "GG1 3v3 Arena (main.js finishBattle ← Enemies.teamBattle, the T88 sim). DATA = ladder/enemyTeams/loot (fixed, consume as-is — don't reproduce the FOE_BUDGET calibration). LOGIC proven by combat-vectors.json.",
+ "_resolution": "teamBattle(party[1..3], tier, collected): each party hero → heroCombatant(effectiveStats(hero,collected)); foes = combat.enemyTeams[tier]. simulateTeams: turn order = spd desc, ord asc (party ord 0..2, foes ord 100..102); each round, every still-alive actor in that order picks a target among the OTHER side's living units by max matchup(actor.type,tgt.type) → lowest hp → lowest ord, deals max(1, round(atk·matchup)); repeat rounds until one side is empty or guard 4000. Result {win = any party alive, heroesAlive, foesAlive, rounds = #rounds}. NO questions/RNG — pure payoff for what you've collected+climbed.",
+ "_onWin": "main.js finishBattle: grant tier:<n> + combat.loot[n] (the loot ids) into collected, evaluate collector/meta milestones, earn = tierGold(n, goldMult(col)) (see gold.json), earnGold crosses wealth. region cleared when a boss (n % regionSize === 0) falls.",
+ "constants": {
+  "tierCount": 120,
+  "regionSize": 12,
+  "types": [
+   "Brawn",
+   "Arcane",
+   "Cunning"
+  ],
+  "matchup": {
+   "same": 1,
+   "advantage": 1.5,
+   "disadvantage": 0.6
+  },
+  "hero": {
+   "HB": 22,
+   "HG": 1.4,
+   "HPP": 0.5,
+   "atk": "power + 0.8*focus",
+   "hp": "HB + guard*HG + power*HPP",
+   "spd": "speed"
+  },
+  "rating": "power*1.0 + focus*0.8 + speed*0.5 + guard*0.3   (display/odds only; the sim uses combatant atk/hp)"
+ },
+ "heroes": [
+  {
+   "id": "bram",
+   "type": "Brawn",
+   "base": {
+    "power": 14,
+    "guard": 12,
+    "speed": 6,
+    "focus": 6
+   },
+   "unlockHint": "Finish your first round"
+  },
+  {
+   "id": "greta",
+   "type": "Brawn",
+   "base": {
+    "power": 16,
+    "guard": 10,
+    "speed": 5,
+    "focus": 7
+   },
+   "unlockHint": "Finish 3 topics"
+  },
+  {
+   "id": "tovar",
+   "type": "Brawn",
+   "base": {
+    "power": 12,
+    "guard": 16,
+    "speed": 5,
+    "focus": 5
+   },
+   "unlockHint": "Master any topic"
+  },
+  {
+   "id": "mo",
+   "type": "Brawn",
+   "base": {
+    "power": 18,
+    "guard": 8,
+    "speed": 7,
+    "focus": 5
+   },
+   "unlockHint": "Reach the Dark Wizard rank"
+  },
+  {
+   "id": "wisp",
+   "type": "Arcane",
+   "base": {
+    "power": 7,
+    "guard": 6,
+    "speed": 10,
+    "focus": 15
+   },
+   "unlockHint": "Collect 25 items"
+  },
+  {
+   "id": "mira",
+   "type": "Arcane",
+   "base": {
+    "power": 6,
+    "guard": 8,
+    "speed": 9,
+    "focus": 17
+   },
+   "unlockHint": "Earn a flawless round in 3 modes"
+  },
+  {
+   "id": "nim",
+   "type": "Arcane",
+   "base": {
+    "power": 8,
+    "guard": 10,
+    "speed": 7,
+    "focus": 14
+   },
+   "unlockHint": "Reach 100% on a topic"
+  },
+  {
+   "id": "zeph",
+   "type": "Arcane",
+   "base": {
+    "power": 9,
+    "guard": 6,
+    "speed": 13,
+    "focus": 13
+   },
+   "unlockHint": "Reach the Archmage rank"
+  },
+  {
+   "id": "pip",
+   "type": "Cunning",
+   "base": {
+    "power": 8,
+    "guard": 6,
+    "speed": 16,
+    "focus": 9
+   },
+   "unlockHint": "Earn a Lightning speed bracket"
+  },
+  {
+   "id": "vex",
+   "type": "Cunning",
+   "base": {
+    "power": 10,
+    "guard": 7,
+    "speed": 15,
+    "focus": 8
+   },
+   "unlockHint": "Finish a round in every mode"
+  },
+  {
+   "id": "sela",
+   "type": "Cunning",
+   "base": {
+    "power": 9,
+    "guard": 9,
+    "speed": 14,
+    "focus": 9
+   },
+   "unlockHint": "Collect 75 items"
+  },
+  {
+   "id": "roon",
+   "type": "Cunning",
+   "base": {
+    "power": 11,
+    "guard": 8,
+    "speed": 17,
+    "focus": 7
+   },
+   "unlockHint": "Defeat enemy tier 10"
+  }
+ ],
+ "lootBoosts": [
+  {
+   "id": "loot:1:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 1
+  },
+  {
+   "id": "loot:2:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 1
+  },
+  {
+   "id": "loot:3:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 1
+  },
+  {
+   "id": "loot:4:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 1
+  },
+  {
+   "id": "loot:5:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 1
+  },
+  {
+   "id": "loot:6:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 1
+  },
+  {
+   "id": "loot:7:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 1
+  },
+  {
+   "id": "loot:8:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 1
+  },
+  {
+   "id": "loot:9:0",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 1
+  },
+  {
+   "id": "loot:10:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 1
+  },
+  {
+   "id": "loot:11:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 1
+  },
+  {
+   "id": "loot:12:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 1
+  },
+  {
+   "id": "loot:13:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 1
+  },
+  {
+   "id": "loot:14:0",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 1
+  },
+  {
+   "id": "loot:15:0",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:16:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:17:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:18:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:19:0",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:20:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:21:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:22:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:23:0",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:24:0",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:25:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:26:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 1
+  },
+  {
+   "id": "loot:26:1",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:27:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 1
+  },
+  {
+   "id": "loot:27:1",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:28:0",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 1
+  },
+  {
+   "id": "loot:28:1",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:29:0",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 1
+  },
+  {
+   "id": "loot:29:1",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:30:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:30:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:31:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:31:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:32:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:32:1",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:33:0",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:33:1",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:34:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:34:1",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:35:0",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:35:1",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:36:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:36:1",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:37:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:37:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:38:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:38:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:39:0",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:39:1",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:40:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:40:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:41:0",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:41:1",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:42:0",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:42:1",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:43:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:43:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:44:0",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:44:1",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:45:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:45:1",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:46:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:46:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:47:0",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:47:1",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:48:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:48:1",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:49:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:49:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:50:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:50:1",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:51:0",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:51:1",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:51:2",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:52:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:52:1",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:52:2",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:53:0",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:53:1",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:53:2",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:54:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:54:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:54:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:55:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:55:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:55:2",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:56:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:56:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:56:2",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:57:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:57:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:57:2",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:58:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:58:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:58:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:59:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:59:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:59:2",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:60:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:60:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:60:2",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:61:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:61:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:61:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:62:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:62:1",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:62:2",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:63:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:63:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:63:2",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:64:0",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:64:1",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:64:2",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:65:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:65:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:65:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:66:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 2
+  },
+  {
+   "id": "loot:66:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:66:2",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:67:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 2
+  },
+  {
+   "id": "loot:67:1",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:67:2",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:68:0",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 2
+  },
+  {
+   "id": "loot:68:1",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:68:2",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:69:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 2
+  },
+  {
+   "id": "loot:69:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:69:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:70:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:70:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:70:2",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:71:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:71:1",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:71:2",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:72:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:72:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:72:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:73:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:73:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:73:2",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:74:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:74:1",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:74:2",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:75:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:75:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:75:2",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:76:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:76:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:76:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:76:3",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:77:0",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:77:1",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:77:2",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:77:3",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:78:0",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:78:1",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:78:2",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:78:3",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:79:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:79:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:79:2",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:79:3",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:80:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:80:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:80:2",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:80:3",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:81:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:81:1",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:81:2",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:81:3",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:82:0",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:82:1",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:82:2",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:82:3",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:83:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:83:1",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:83:2",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:83:3",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:84:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:84:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:84:2",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:84:3",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:85:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:85:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:85:2",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:85:3",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:86:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:86:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:86:2",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:86:3",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:87:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:87:1",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:87:2",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:87:3",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:88:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:88:1",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:88:2",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:88:3",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:89:0",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:89:1",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:89:2",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:89:3",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:90:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:90:1",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:90:2",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:90:3",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:91:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:91:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:91:2",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:91:3",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:92:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:92:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:92:2",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:92:3",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:93:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:93:1",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:93:2",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:93:3",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:94:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:94:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:94:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:94:3",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:95:0",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:95:1",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:95:2",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:95:3",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:96:0",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:96:1",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:96:2",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:96:3",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:97:0",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:97:1",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:97:2",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:97:3",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:98:0",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:98:1",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:98:2",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:98:3",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:99:0",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:99:1",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:99:2",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:99:3",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:100:0",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:100:1",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:100:2",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:100:3",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:101:0",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:101:1",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:101:2",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:101:3",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:101:4",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:102:0",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:102:1",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:102:2",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:102:3",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:102:4",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:103:0",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:103:1",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:103:2",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:103:3",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:103:4",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:104:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:104:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:104:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:104:3",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:104:4",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:105:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:105:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:105:2",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:105:3",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:105:4",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:106:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:106:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:106:2",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:106:3",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:106:4",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:107:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:107:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:107:2",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:107:3",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:107:4",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:108:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:108:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:108:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:108:3",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:108:4",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:109:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:109:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:109:2",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:109:3",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:109:4",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:110:0",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:110:1",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:110:2",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:110:3",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:110:4",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:111:0",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:111:1",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:111:2",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:111:3",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:111:4",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:112:0",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:112:1",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:112:2",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:112:3",
+   "hero": "tovar",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:112:4",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:113:0",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:113:1",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:113:2",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:113:3",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:113:4",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:114:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:114:1",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:114:2",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:114:3",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:114:4",
+   "hero": "greta",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:115:0",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:115:1",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:115:2",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:115:3",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:115:4",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:116:0",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:116:1",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:116:2",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:116:3",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:116:4",
+   "hero": "mo",
+   "stat": "power",
+   "amount": 8
+  },
+  {
+   "id": "loot:117:0",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 3
+  },
+  {
+   "id": "loot:117:1",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 3
+  },
+  {
+   "id": "loot:117:2",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 5
+  },
+  {
+   "id": "loot:117:3",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 5
+  },
+  {
+   "id": "loot:117:4",
+   "hero": "wisp",
+   "stat": "guard",
+   "amount": 8
+  },
+  {
+   "id": "loot:118:0",
+   "hero": "vex",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:118:1",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:118:2",
+   "hero": "roon",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:118:3",
+   "hero": "bram",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:118:4",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 8
+  },
+  {
+   "id": "loot:119:0",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:119:1",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:119:2",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:119:3",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:119:4",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 8
+  },
+  {
+   "id": "loot:120:0",
+   "hero": "nim",
+   "stat": "focus",
+   "amount": 3
+  },
+  {
+   "id": "loot:120:1",
+   "hero": "mira",
+   "stat": "speed",
+   "amount": 3
+  },
+  {
+   "id": "loot:120:2",
+   "hero": "pip",
+   "stat": "guard",
+   "amount": 5
+  },
+  {
+   "id": "loot:120:3",
+   "hero": "zeph",
+   "stat": "power",
+   "amount": 5
+  },
+  {
+   "id": "loot:120:4",
+   "hero": "sela",
+   "stat": "focus",
+   "amount": 8
+  }
+ ],
+ "tiers": [
+  {
+   "n": 1,
+   "name": "Goblin Warren Runt",
+   "type": "Brawn",
+   "def": 11,
+   "boss": false
+  },
+  {
+   "n": 2,
+   "name": "Goblin Warren Sentry",
+   "type": "Arcane",
+   "def": 12,
+   "boss": false
+  },
+  {
+   "n": 3,
+   "name": "Goblin Warren Brute",
+   "type": "Cunning",
+   "def": 12,
+   "boss": false
+  },
+  {
+   "n": 4,
+   "name": "Goblin Warren Raider",
+   "type": "Brawn",
+   "def": 13,
+   "boss": false
+  },
+  {
+   "n": 5,
+   "name": "Goblin Warren Warden",
+   "type": "Arcane",
+   "def": 13,
+   "boss": false
+  },
+  {
+   "n": 6,
+   "name": "Goblin Warren Champion",
+   "type": "Cunning",
+   "def": 14,
+   "boss": false
+  },
+  {
+   "n": 7,
+   "name": "Goblin Warren Reaver",
+   "type": "Brawn",
+   "def": 15,
+   "boss": false
+  },
+  {
+   "n": 8,
+   "name": "Goblin Warren Dread",
+   "type": "Arcane",
+   "def": 16,
+   "boss": false
+  },
+  {
+   "n": 9,
+   "name": "Goblin Warren Warlord",
+   "type": "Cunning",
+   "def": 16,
+   "boss": false
+  },
+  {
+   "n": 10,
+   "name": "Goblin Warren Overlord",
+   "type": "Brawn",
+   "def": 17,
+   "boss": false
+  },
+  {
+   "n": 11,
+   "name": "Goblin Warren Tyrant",
+   "type": "Arcane",
+   "def": 18,
+   "boss": false
+  },
+  {
+   "n": 12,
+   "name": "Goblin King",
+   "type": "Brawn",
+   "def": 19,
+   "boss": true
+  },
+  {
+   "n": 13,
+   "name": "Gallowmarch Runt",
+   "type": "Brawn",
+   "def": 20,
+   "boss": false
+  },
+  {
+   "n": 14,
+   "name": "Gallowmarch Sentry",
+   "type": "Arcane",
+   "def": 21,
+   "boss": false
+  },
+  {
+   "n": 15,
+   "name": "Gallowmarch Brute",
+   "type": "Cunning",
+   "def": 22,
+   "boss": false
+  },
+  {
+   "n": 16,
+   "name": "Gallowmarch Raider",
+   "type": "Brawn",
+   "def": 23,
+   "boss": false
+  },
+  {
+   "n": 17,
+   "name": "Gallowmarch Warden",
+   "type": "Arcane",
+   "def": 24,
+   "boss": false
+  },
+  {
+   "n": 18,
+   "name": "Gallowmarch Champion",
+   "type": "Cunning",
+   "def": 26,
+   "boss": false
+  },
+  {
+   "n": 19,
+   "name": "Gallowmarch Reaver",
+   "type": "Brawn",
+   "def": 27,
+   "boss": false
+  },
+  {
+   "n": 20,
+   "name": "Gallowmarch Dread",
+   "type": "Arcane",
+   "def": 28,
+   "boss": false
+  },
+  {
+   "n": 21,
+   "name": "Gallowmarch Warlord",
+   "type": "Cunning",
+   "def": 30,
+   "boss": false
+  },
+  {
+   "n": 22,
+   "name": "Gallowmarch Overlord",
+   "type": "Brawn",
+   "def": 31,
+   "boss": false
+  },
+  {
+   "n": 23,
+   "name": "Gallowmarch Tyrant",
+   "type": "Arcane",
+   "def": 33,
+   "boss": false
+  },
+  {
+   "n": 24,
+   "name": "The Highwayman",
+   "type": "Arcane",
+   "def": 35,
+   "boss": true
+  },
+  {
+   "n": 25,
+   "name": "Gloamwood Runt",
+   "type": "Brawn",
+   "def": 36,
+   "boss": false
+  },
+  {
+   "n": 26,
+   "name": "Gloamwood Sentry",
+   "type": "Arcane",
+   "def": 38,
+   "boss": false
+  },
+  {
+   "n": 27,
+   "name": "Gloamwood Brute",
+   "type": "Cunning",
+   "def": 40,
+   "boss": false
+  },
+  {
+   "n": 28,
+   "name": "Gloamwood Raider",
+   "type": "Brawn",
+   "def": 42,
+   "boss": false
+  },
+  {
+   "n": 29,
+   "name": "Gloamwood Warden",
+   "type": "Arcane",
+   "def": 44,
+   "boss": false
+  },
+  {
+   "n": 30,
+   "name": "Gloamwood Champion",
+   "type": "Cunning",
+   "def": 47,
+   "boss": false
+  },
+  {
+   "n": 31,
+   "name": "Gloamwood Reaver",
+   "type": "Brawn",
+   "def": 49,
+   "boss": false
+  },
+  {
+   "n": 32,
+   "name": "Gloamwood Dread",
+   "type": "Arcane",
+   "def": 51,
+   "boss": false
+  },
+  {
+   "n": 33,
+   "name": "Gloamwood Warlord",
+   "type": "Cunning",
+   "def": 54,
+   "boss": false
+  },
+  {
+   "n": 34,
+   "name": "Gloamwood Overlord",
+   "type": "Brawn",
+   "def": 57,
+   "boss": false
+  },
+  {
+   "n": 35,
+   "name": "Gloamwood Tyrant",
+   "type": "Arcane",
+   "def": 60,
+   "boss": false
+  },
+  {
+   "n": 36,
+   "name": "Old Mother Bramble",
+   "type": "Cunning",
+   "def": 63,
+   "boss": true
+  },
+  {
+   "n": 37,
+   "name": "Haunted Marsh Runt",
+   "type": "Brawn",
+   "def": 66,
+   "boss": false
+  },
+  {
+   "n": 38,
+   "name": "Haunted Marsh Sentry",
+   "type": "Arcane",
+   "def": 69,
+   "boss": false
+  },
+  {
+   "n": 39,
+   "name": "Haunted Marsh Brute",
+   "type": "Cunning",
+   "def": 73,
+   "boss": false
+  },
+  {
+   "n": 40,
+   "name": "Haunted Marsh Raider",
+   "type": "Brawn",
+   "def": 77,
+   "boss": false
+  },
+  {
+   "n": 41,
+   "name": "Haunted Marsh Warden",
+   "type": "Arcane",
+   "def": 80,
+   "boss": false
+  },
+  {
+   "n": 42,
+   "name": "Haunted Marsh Champion",
+   "type": "Cunning",
+   "def": 85,
+   "boss": false
+  },
+  {
+   "n": 43,
+   "name": "Haunted Marsh Reaver",
+   "type": "Brawn",
+   "def": 89,
+   "boss": false
+  },
+  {
+   "n": 44,
+   "name": "Haunted Marsh Dread",
+   "type": "Arcane",
+   "def": 93,
+   "boss": false
+  },
+  {
+   "n": 45,
+   "name": "Haunted Marsh Warlord",
+   "type": "Cunning",
+   "def": 98,
+   "boss": false
+  },
+  {
+   "n": 46,
+   "name": "Haunted Marsh Overlord",
+   "type": "Brawn",
+   "def": 103,
+   "boss": false
+  },
+  {
+   "n": 47,
+   "name": "Haunted Marsh Tyrant",
+   "type": "Arcane",
+   "def": 108,
+   "boss": false
+  },
+  {
+   "n": 48,
+   "name": "Gurgle, King of the Bog",
+   "type": "Brawn",
+   "def": 114,
+   "boss": true
+  },
+  {
+   "n": 49,
+   "name": "Frostpeak Caverns Runt",
+   "type": "Brawn",
+   "def": 120,
+   "boss": false
+  },
+  {
+   "n": 50,
+   "name": "Frostpeak Caverns Sentry",
+   "type": "Arcane",
+   "def": 126,
+   "boss": false
+  },
+  {
+   "n": 51,
+   "name": "Frostpeak Caverns Brute",
+   "type": "Cunning",
+   "def": 132,
+   "boss": false
+  },
+  {
+   "n": 52,
+   "name": "Frostpeak Caverns Raider",
+   "type": "Brawn",
+   "def": 139,
+   "boss": false
+  },
+  {
+   "n": 53,
+   "name": "Frostpeak Caverns Warden",
+   "type": "Arcane",
+   "def": 146,
+   "boss": false
+  },
+  {
+   "n": 54,
+   "name": "Frostpeak Caverns Champion",
+   "type": "Cunning",
+   "def": 154,
+   "boss": false
+  },
+  {
+   "n": 55,
+   "name": "Frostpeak Caverns Reaver",
+   "type": "Brawn",
+   "def": 161,
+   "boss": false
+  },
+  {
+   "n": 56,
+   "name": "Frostpeak Caverns Dread",
+   "type": "Arcane",
+   "def": 170,
+   "boss": false
+  },
+  {
+   "n": 57,
+   "name": "Frostpeak Caverns Warlord",
+   "type": "Cunning",
+   "def": 178,
+   "boss": false
+  },
+  {
+   "n": 58,
+   "name": "Frostpeak Caverns Overlord",
+   "type": "Brawn",
+   "def": 187,
+   "boss": false
+  },
+  {
+   "n": 59,
+   "name": "Frostpeak Caverns Tyrant",
+   "type": "Arcane",
+   "def": 197,
+   "boss": false
+  },
+  {
+   "n": 60,
+   "name": "The Frost Jarl",
+   "type": "Arcane",
+   "def": 207,
+   "boss": true
+  },
+  {
+   "n": 61,
+   "name": "Drownholm Runt",
+   "type": "Brawn",
+   "def": 218,
+   "boss": false
+  },
+  {
+   "n": 62,
+   "name": "Drownholm Sentry",
+   "type": "Arcane",
+   "def": 229,
+   "boss": false
+  },
+  {
+   "n": 63,
+   "name": "Drownholm Brute",
+   "type": "Cunning",
+   "def": 240,
+   "boss": false
+  },
+  {
+   "n": 64,
+   "name": "Drownholm Raider",
+   "type": "Brawn",
+   "def": 253,
+   "boss": false
+  },
+  {
+   "n": 65,
+   "name": "Drownholm Warden",
+   "type": "Arcane",
+   "def": 265,
+   "boss": false
+  },
+  {
+   "n": 66,
+   "name": "Drownholm Champion",
+   "type": "Cunning",
+   "def": 279,
+   "boss": false
+  },
+  {
+   "n": 67,
+   "name": "Drownholm Reaver",
+   "type": "Brawn",
+   "def": 293,
+   "boss": false
+  },
+  {
+   "n": 68,
+   "name": "Drownholm Dread",
+   "type": "Arcane",
+   "def": 308,
+   "boss": false
+  },
+  {
+   "n": 69,
+   "name": "Drownholm Warlord",
+   "type": "Cunning",
+   "def": 324,
+   "boss": false
+  },
+  {
+   "n": 70,
+   "name": "Drownholm Overlord",
+   "type": "Brawn",
+   "def": 340,
+   "boss": false
+  },
+  {
+   "n": 71,
+   "name": "Drownholm Tyrant",
+   "type": "Arcane",
+   "def": 358,
+   "boss": false
+  },
+  {
+   "n": 72,
+   "name": "Bonecaller",
+   "type": "Cunning",
+   "def": 376,
+   "boss": true
+  },
+  {
+   "n": 73,
+   "name": "Cinderwaste Runt",
+   "type": "Brawn",
+   "def": 395,
+   "boss": false
+  },
+  {
+   "n": 74,
+   "name": "Cinderwaste Sentry",
+   "type": "Arcane",
+   "def": 415,
+   "boss": false
+  },
+  {
+   "n": 75,
+   "name": "Cinderwaste Brute",
+   "type": "Cunning",
+   "def": 437,
+   "boss": false
+  },
+  {
+   "n": 76,
+   "name": "Cinderwaste Raider",
+   "type": "Brawn",
+   "def": 459,
+   "boss": false
+  },
+  {
+   "n": 77,
+   "name": "Cinderwaste Warden",
+   "type": "Arcane",
+   "def": 482,
+   "boss": false
+  },
+  {
+   "n": 78,
+   "name": "Cinderwaste Champion",
+   "type": "Cunning",
+   "def": 507,
+   "boss": false
+  },
+  {
+   "n": 79,
+   "name": "Cinderwaste Reaver",
+   "type": "Brawn",
+   "def": 533,
+   "boss": false
+  },
+  {
+   "n": 80,
+   "name": "Cinderwaste Dread",
+   "type": "Arcane",
+   "def": 560,
+   "boss": false
+  },
+  {
+   "n": 81,
+   "name": "Cinderwaste Warlord",
+   "type": "Cunning",
+   "def": 581,
+   "boss": false
+  },
+  {
+   "n": 82,
+   "name": "Cinderwaste Overlord",
+   "type": "Brawn",
+   "def": 581,
+   "boss": false
+  },
+  {
+   "n": 83,
+   "name": "Cinderwaste Tyrant",
+   "type": "Arcane",
+   "def": 585,
+   "boss": false
+  },
+  {
+   "n": 84,
+   "name": "Cindermaw",
+   "type": "Brawn",
+   "def": 585,
+   "boss": true
+  },
+  {
+   "n": 85,
+   "name": "Stormspire Runt",
+   "type": "Brawn",
+   "def": 592,
+   "boss": false
+  },
+  {
+   "n": 86,
+   "name": "Stormspire Sentry",
+   "type": "Arcane",
+   "def": 592,
+   "boss": false
+  },
+  {
+   "n": 87,
+   "name": "Stormspire Brute",
+   "type": "Cunning",
+   "def": 592,
+   "boss": false
+  },
+  {
+   "n": 88,
+   "name": "Stormspire Raider",
+   "type": "Brawn",
+   "def": 592,
+   "boss": false
+  },
+  {
+   "n": 89,
+   "name": "Stormspire Warden",
+   "type": "Arcane",
+   "def": 603,
+   "boss": false
+  },
+  {
+   "n": 90,
+   "name": "Stormspire Champion",
+   "type": "Cunning",
+   "def": 603,
+   "boss": false
+  },
+  {
+   "n": 91,
+   "name": "Stormspire Reaver",
+   "type": "Brawn",
+   "def": 603,
+   "boss": false
+  },
+  {
+   "n": 92,
+   "name": "Stormspire Dread",
+   "type": "Arcane",
+   "def": 603,
+   "boss": false
+  },
+  {
+   "n": 93,
+   "name": "Stormspire Warlord",
+   "type": "Cunning",
+   "def": 603,
+   "boss": false
+  },
+  {
+   "n": 94,
+   "name": "Stormspire Overlord",
+   "type": "Brawn",
+   "def": 603,
+   "boss": false
+  },
+  {
+   "n": 95,
+   "name": "Stormspire Tyrant",
+   "type": "Arcane",
+   "def": 618,
+   "boss": false
+  },
+  {
+   "n": 96,
+   "name": "Voltan, Lord of Storms",
+   "type": "Arcane",
+   "def": 618,
+   "boss": true
+  },
+  {
+   "n": 97,
+   "name": "Dragon's Roost Runt",
+   "type": "Brawn",
+   "def": 618,
+   "boss": false
+  },
+  {
+   "n": 98,
+   "name": "Dragon's Roost Sentry",
+   "type": "Arcane",
+   "def": 622,
+   "boss": false
+  },
+  {
+   "n": 99,
+   "name": "Dragon's Roost Brute",
+   "type": "Cunning",
+   "def": 622,
+   "boss": false
+  },
+  {
+   "n": 100,
+   "name": "Dragon's Roost Raider",
+   "type": "Brawn",
+   "def": 622,
+   "boss": false
+  },
+  {
+   "n": 101,
+   "name": "Dragon's Roost Warden",
+   "type": "Arcane",
+   "def": 626,
+   "boss": false
+  },
+  {
+   "n": 102,
+   "name": "Dragon's Roost Champion",
+   "type": "Cunning",
+   "def": 626,
+   "boss": false
+  },
+  {
+   "n": 103,
+   "name": "Dragon's Roost Reaver",
+   "type": "Brawn",
+   "def": 626,
+   "boss": false
+  },
+  {
+   "n": 104,
+   "name": "Dragon's Roost Dread",
+   "type": "Arcane",
+   "def": 637,
+   "boss": false
+  },
+  {
+   "n": 105,
+   "name": "Dragon's Roost Warlord",
+   "type": "Cunning",
+   "def": 637,
+   "boss": false
+  },
+  {
+   "n": 106,
+   "name": "Dragon's Roost Overlord",
+   "type": "Brawn",
+   "def": 637,
+   "boss": false
+  },
+  {
+   "n": 107,
+   "name": "Dragon's Roost Tyrant",
+   "type": "Arcane",
+   "def": 644,
+   "boss": false
+  },
+  {
+   "n": 108,
+   "name": "the Elder Wyrm",
+   "type": "Cunning",
+   "def": 644,
+   "boss": true
+  },
+  {
+   "n": 109,
+   "name": "The Void Throne Runt",
+   "type": "Brawn",
+   "def": 644,
+   "boss": false
+  },
+  {
+   "n": 110,
+   "name": "The Void Throne Sentry",
+   "type": "Arcane",
+   "def": 658,
+   "boss": false
+  },
+  {
+   "n": 111,
+   "name": "The Void Throne Brute",
+   "type": "Cunning",
+   "def": 658,
+   "boss": false
+  },
+  {
+   "n": 112,
+   "name": "The Void Throne Raider",
+   "type": "Brawn",
+   "def": 658,
+   "boss": false
+  },
+  {
+   "n": 113,
+   "name": "The Void Throne Warden",
+   "type": "Arcane",
+   "def": 658,
+   "boss": false
+  },
+  {
+   "n": 114,
+   "name": "The Void Throne Champion",
+   "type": "Cunning",
+   "def": 658,
+   "boss": false
+  },
+  {
+   "n": 115,
+   "name": "The Void Throne Reaver",
+   "type": "Brawn",
+   "def": 658,
+   "boss": false
+  },
+  {
+   "n": 116,
+   "name": "The Void Throne Dread",
+   "type": "Arcane",
+   "def": 662,
+   "boss": false
+  },
+  {
+   "n": 117,
+   "name": "The Void Throne Warlord",
+   "type": "Cunning",
+   "def": 662,
+   "boss": false
+  },
+  {
+   "n": 118,
+   "name": "The Void Throne Overlord",
+   "type": "Brawn",
+   "def": 662,
+   "boss": false
+  },
+  {
+   "n": 119,
+   "name": "The Void Throne Tyrant",
+   "type": "Arcane",
+   "def": 669,
+   "boss": false
+  },
+  {
+   "n": 120,
+   "name": "The Void Sovereign",
+   "type": "Arcane",
+   "def": 893,
+   "boss": true
+  }
+ ],
+ "enemyTeams": {
+  "1": [
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "2": [
+   {
+    "atk": 7.193091702299222,
+    "hp": 15.82480174505829,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "3": [
+   {
+    "atk": 7.423186995700398,
+    "hp": 16.331011390540876,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "4": [
+   {
+    "atk": 7.660642662948671,
+    "hp": 16.853413858487077,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "5": [
+   {
+    "atk": 7.905694150420923,
+    "hp": 17.392527130926034,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "6": [
+   {
+    "atk": 8.158584436040334,
+    "hp": 17.948885759288736,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "7": [
+   {
+    "atk": 8.419564270198283,
+    "hp": 18.523041394436223,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "8": [
+   {
+    "atk": 8.688892424382956,
+    "hp": 19.115563333642505,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "9": [
+   {
+    "atk": 8.96683594776117,
+    "hp": 19.727039085074576,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "10": [
+   {
+    "atk": 9.253670431967846,
+    "hp": 20.358074950329264,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "11": [
+   {
+    "atk": 9.549680284365646,
+    "hp": 21.009296625604424,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 6.970128634460468,
+    "hp": 15.33428299581303,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "12": [
+   {
+    "atk": 9.855159010045757,
+    "hp": 21.681349822100668,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 7.193091702299222,
+    "hp": 15.82480174505829,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 7.193091702299222,
+    "hp": 15.82480174505829,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "13": [
+   {
+    "atk": 10.170409502849413,
+    "hp": 22.37490090626871,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 7.423186995700398,
+    "hp": 16.331011390540876,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 7.423186995700398,
+    "hp": 16.331011390540876,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "14": [
+   {
+    "atk": 10.49574434569873,
+    "hp": 23.09063756053721,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 7.660642662948671,
+    "hp": 16.853413858487077,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 7.660642662948671,
+    "hp": 16.853413858487077,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "15": [
+   {
+    "atk": 10.831486120534624,
+    "hp": 23.82926946517618,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 7.905694150420923,
+    "hp": 17.392527130926034,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 7.905694150420923,
+    "hp": 17.392527130926034,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "16": [
+   {
+    "atk": 11.177967728169147,
+    "hp": 24.591529001972127,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 8.158584436040334,
+    "hp": 17.948885759288736,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 8.158584436040334,
+    "hp": 17.948885759288736,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "17": [
+   {
+    "atk": 11.535532718369375,
+    "hp": 25.378171980412624,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 8.419564270198283,
+    "hp": 18.523041394436223,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 8.419564270198283,
+    "hp": 18.523041394436223,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "18": [
+   {
+    "atk": 11.90453563050014,
+    "hp": 26.189978387100314,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 8.688892424382956,
+    "hp": 19.115563333642505,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 8.688892424382956,
+    "hp": 19.115563333642505,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "19": [
+   {
+    "atk": 12.285342345063384,
+    "hp": 27.027753159139447,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 8.96683594776117,
+    "hp": 19.727039085074576,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 8.96683594776117,
+    "hp": 19.727039085074576,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "20": [
+   {
+    "atk": 12.678330446482649,
+    "hp": 27.89232698226183,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 9.253670431967846,
+    "hp": 20.358074950329264,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 9.253670431967846,
+    "hp": 20.358074950329264,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "21": [
+   {
+    "atk": 13.083889597492503,
+    "hp": 28.78455711448351,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 9.549680284365646,
+    "hp": 21.009296625604424,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 9.549680284365646,
+    "hp": 21.009296625604424,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "22": [
+   {
+    "atk": 13.502421925504022,
+    "hp": 29.70532823610885,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 9.855159010045757,
+    "hp": 21.681349822100668,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 9.855159010045757,
+    "hp": 21.681349822100668,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "23": [
+   {
+    "atk": 13.934342421329514,
+    "hp": 30.655553326924935,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 10.170409502849413,
+    "hp": 22.37490090626871,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 10.170409502849413,
+    "hp": 22.37490090626871,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "24": [
+   {
+    "atk": 14.38007935066178,
+    "hp": 31.63617457145592,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 10.49574434569873,
+    "hp": 23.09063756053721,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 10.49574434569873,
+    "hp": 23.09063756053721,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "25": [
+   {
+    "atk": 14.840074678715931,
+    "hp": 32.64816429317505,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 10.831486120534624,
+    "hp": 23.82926946517618,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 10.831486120534624,
+    "hp": 23.82926946517618,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "26": [
+   {
+    "atk": 15.314784508454798,
+    "hp": 33.69252591860056,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 11.177967728169147,
+    "hp": 24.591529001972127,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 11.177967728169147,
+    "hp": 24.591529001972127,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "27": [
+   {
+    "atk": 15.804679532832466,
+    "hp": 34.77029497223143,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 11.535532718369375,
+    "hp": 25.378171980412624,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 11.535532718369375,
+    "hp": 25.378171980412624,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "28": [
+   {
+    "atk": 16.310245501504358,
+    "hp": 35.88254010330959,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 11.90453563050014,
+    "hp": 26.189978387100314,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 11.90453563050014,
+    "hp": 26.189978387100314,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "29": [
+   {
+    "atk": 16.831983702466577,
+    "hp": 37.03036414542647,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 12.285342345063384,
+    "hp": 27.027753159139447,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 12.285342345063384,
+    "hp": 27.027753159139447,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "30": [
+   {
+    "atk": 17.37041145910214,
+    "hp": 38.21490521002471,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 12.678330446482649,
+    "hp": 27.89232698226183,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 12.678330446482649,
+    "hp": 27.89232698226183,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "31": [
+   {
+    "atk": 17.926062643126905,
+    "hp": 39.43733781487919,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 13.083889597492503,
+    "hp": 28.78455711448351,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 13.083889597492503,
+    "hp": 28.78455711448351,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "32": [
+   {
+    "atk": 18.49948820394378,
+    "hp": 40.698874048676316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 13.502421925504022,
+    "hp": 29.70532823610885,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 13.502421925504022,
+    "hp": 29.70532823610885,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "33": [
+   {
+    "atk": 19.09125671493015,
+    "hp": 42.00076477284634,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 13.934342421329514,
+    "hp": 30.655553326924935,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 13.934342421329514,
+    "hp": 30.655553326924935,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "34": [
+   {
+    "atk": 19.70195493720012,
+    "hp": 43.344300861840274,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 14.38007935066178,
+    "hp": 31.63617457145592,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 14.38007935066178,
+    "hp": 31.63617457145592,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "35": [
+   {
+    "atk": 20.33218840140061,
+    "hp": 44.730814483081346,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 14.840074678715931,
+    "hp": 32.64816429317505,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 14.840074678715931,
+    "hp": 32.64816429317505,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "36": [
+   {
+    "atk": 20.98258200811813,
+    "hp": 46.16168041785989,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 15.314784508454798,
+    "hp": 33.69252591860056,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 15.314784508454798,
+    "hp": 33.69252591860056,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "37": [
+   {
+    "atk": 21.65378064749165,
+    "hp": 47.638317424481635,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 15.804679532832466,
+    "hp": 34.77029497223143,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 15.804679532832466,
+    "hp": 34.77029497223143,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "38": [
+   {
+    "atk": 22.346449838645807,
+    "hp": 49.16218964502079,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 16.310245501504358,
+    "hp": 35.88254010330959,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 16.310245501504358,
+    "hp": 35.88254010330959,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "39": [
+   {
+    "atk": 23.061276389578605,
+    "hp": 50.73480805707293,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 16.831983702466577,
+    "hp": 37.03036414542647,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 16.831983702466577,
+    "hp": 37.03036414542647,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "40": [
+   {
+    "atk": 23.798969078157782,
+    "hp": 52.357731971947125,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 17.37041145910214,
+    "hp": 38.21490521002471,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 17.37041145910214,
+    "hp": 38.21490521002471,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "41": [
+   {
+    "atk": 24.560259354901213,
+    "hp": 54.032570580782675,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 17.926062643126905,
+    "hp": 39.43733781487919,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 17.926062643126905,
+    "hp": 39.43733781487919,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "42": [
+   {
+    "atk": 25.34590206823804,
+    "hp": 55.76098455012369,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 18.49948820394378,
+    "hp": 40.698874048676316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 18.49948820394378,
+    "hp": 40.698874048676316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "43": [
+   {
+    "atk": 26.15667621296979,
+    "hp": 57.54468766853354,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 19.09125671493015,
+    "hp": 42.00076477284634,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 19.09125671493015,
+    "hp": 42.00076477284634,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "44": [
+   {
+    "atk": 26.99338570267351,
+    "hp": 59.38544854588173,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 19.70195493720012,
+    "hp": 43.344300861840274,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 19.70195493720012,
+    "hp": 43.344300861840274,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "45": [
+   {
+    "atk": 27.856860166812822,
+    "hp": 61.285092366988216,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 20.33218840140061,
+    "hp": 44.730814483081346,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 20.33218840140061,
+    "hp": 44.730814483081346,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "46": [
+   {
+    "atk": 28.747955773347286,
+    "hp": 63.24550270136403,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 20.98258200811813,
+    "hp": 46.16168041785989,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 20.98258200811813,
+    "hp": 46.16168041785989,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "47": [
+   {
+    "atk": 29.667556077655657,
+    "hp": 65.26862337084245,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 21.65378064749165,
+    "hp": 47.638317424481635,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 21.65378064749165,
+    "hp": 47.638317424481635,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "48": [
+   {
+    "atk": 30.61657289861486,
+    "hp": 67.3564603769527,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 22.346449838645807,
+    "hp": 49.16218964502079,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 22.346449838645807,
+    "hp": 49.16218964502079,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "49": [
+   {
+    "atk": 31.595947222703273,
+    "hp": 69.5110838899472,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 23.061276389578605,
+    "hp": 50.73480805707293,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 23.061276389578605,
+    "hp": 50.73480805707293,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "50": [
+   {
+    "atk": 32.60665013702482,
+    "hp": 71.73463030145462,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 23.798969078157782,
+    "hp": 52.357731971947125,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 23.798969078157782,
+    "hp": 52.357731971947125,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "51": [
+   {
+    "atk": 33.64968379217898,
+    "hp": 74.02930434279378,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 24.560259354901213,
+    "hp": 54.032570580782675,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 24.560259354901213,
+    "hp": 54.032570580782675,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "52": [
+   {
+    "atk": 34.726082395931435,
+    "hp": 76.39738127104916,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 25.34590206823804,
+    "hp": 55.76098455012369,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 25.34590206823804,
+    "hp": 55.76098455012369,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "53": [
+   {
+    "atk": 35.83691323867061,
+    "hp": 78.84120912507535,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 26.15667621296979,
+    "hp": 57.54468766853354,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 26.15667621296979,
+    "hp": 57.54468766853354,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "54": [
+   {
+    "atk": 36.983277751666975,
+    "hp": 81.36321105366736,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 26.99338570267351,
+    "hp": 59.38544854588173,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 26.99338570267351,
+    "hp": 59.38544854588173,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "55": [
+   {
+    "atk": 38.1663125991842,
+    "hp": 83.96588771820525,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 27.856860166812822,
+    "hp": 61.285092366988216,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 27.856860166812822,
+    "hp": 61.285092366988216,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "56": [
+   {
+    "atk": 39.38719080552533,
+    "hp": 86.65181977215573,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 28.747955773347286,
+    "hp": 63.24550270136403,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 28.747955773347286,
+    "hp": 63.24550270136403,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "57": [
+   {
+    "atk": 40.647122918131174,
+    "hp": 89.4236704198886,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 29.667556077655657,
+    "hp": 65.26862337084245,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 29.667556077655657,
+    "hp": 65.26862337084245,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "58": [
+   {
+    "atk": 41.94735820788447,
+    "hp": 92.28418805734584,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 30.61657289861486,
+    "hp": 67.3564603769527,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 30.61657289861486,
+    "hp": 67.3564603769527,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "59": [
+   {
+    "atk": 43.289185907809696,
+    "hp": 95.23620899718134,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 31.595947222703273,
+    "hp": 69.5110838899472,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 31.595947222703273,
+    "hp": 69.5110838899472,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "60": [
+   {
+    "atk": 44.67393649139696,
+    "hp": 98.28266028107332,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 32.60665013702482,
+    "hp": 71.73463030145462,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 32.60665013702482,
+    "hp": 71.73463030145462,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "61": [
+   {
+    "atk": 46.10298299181733,
+    "hp": 101.42656258199813,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 33.64968379217898,
+    "hp": 74.02930434279378,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 33.64968379217898,
+    "hp": 74.02930434279378,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "62": [
+   {
+    "atk": 47.57774236333776,
+    "hp": 104.67103319934309,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 34.726082395931435,
+    "hp": 76.39738127104916,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 34.726082395931435,
+    "hp": 76.39738127104916,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "63": [
+   {
+    "atk": 49.09967688628545,
+    "hp": 108.01928914982801,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 35.83691323867061,
+    "hp": 78.84120912507535,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 35.83691323867061,
+    "hp": 78.84120912507535,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "64": [
+   {
+    "atk": 50.67029561695471,
+    "hp": 111.47465035730038,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 36.983277751666975,
+    "hp": 81.36321105366736,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 36.983277751666975,
+    "hp": 81.36321105366736,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "65": [
+   {
+    "atk": 52.29115588389401,
+    "hp": 115.04054294456682,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 38.1663125991842,
+    "hp": 83.96588771820525,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 38.1663125991842,
+    "hp": 83.96588771820525,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "66": [
+   {
+    "atk": 53.963864832056764,
+    "hp": 118.72050263052489,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 39.38719080552533,
+    "hp": 86.65181977215573,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 39.38719080552533,
+    "hp": 86.65181977215573,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "67": [
+   {
+    "atk": 55.690081016347115,
+    "hp": 122.51817823596366,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 40.647122918131174,
+    "hp": 89.4236704198886,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 40.647122918131174,
+    "hp": 89.4236704198886,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "68": [
+   {
+    "atk": 57.47151604614045,
+    "hp": 126.43733530150901,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 41.94735820788447,
+    "hp": 92.28418805734584,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 41.94735820788447,
+    "hp": 92.28418805734584,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "69": [
+   {
+    "atk": 59.309936282409666,
+    "hp": 130.48185982130127,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 43.289185907809696,
+    "hp": 95.23620899718134,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 43.289185907809696,
+    "hp": 95.23620899718134,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "70": [
+   {
+    "atk": 61.20716458913957,
+    "hp": 134.65576209610708,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 44.67393649139696,
+    "hp": 98.28266028107332,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 44.67393649139696,
+    "hp": 98.28266028107332,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "71": [
+   {
+    "atk": 63.165082140766295,
+    "hp": 138.96318070968584,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 46.10298299181733,
+    "hp": 101.42656258199813,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 46.10298299181733,
+    "hp": 101.42656258199813,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "72": [
+   {
+    "atk": 65.18563028743365,
+    "hp": 143.40838663235405,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 47.57774236333776,
+    "hp": 104.67103319934309,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 47.57774236333776,
+    "hp": 104.67103319934309,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "73": [
+   {
+    "atk": 67.27081247991609,
+    "hp": 147.99578745581542,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 49.09967688628545,
+    "hp": 108.01928914982801,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 49.09967688628545,
+    "hp": 108.01928914982801,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "74": [
+   {
+    "atk": 69.42269625611682,
+    "hp": 152.72993176345705,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 50.67029561695471,
+    "hp": 111.47465035730038,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 50.67029561695471,
+    "hp": 111.47465035730038,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "75": [
+   {
+    "atk": 71.64341529111064,
+    "hp": 157.61551364044342,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 52.29115588389401,
+    "hp": 115.04054294456682,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 52.29115588389401,
+    "hp": 115.04054294456682,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "76": [
+   {
+    "atk": 73.93517151276443,
+    "hp": 162.65737732808174,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 53.963864832056764,
+    "hp": 118.72050263052489,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 53.963864832056764,
+    "hp": 118.72050263052489,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "77": [
+   {
+    "atk": 76.30023728503284,
+    "hp": 167.86052202707225,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 55.690081016347115,
+    "hp": 122.51817823596366,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 55.690081016347115,
+    "hp": 122.51817823596366,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "78": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 57.47151604614045,
+    "hp": 126.43733530150901,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 57.47151604614045,
+    "hp": 126.43733530150901,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "79": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 59.309936282409666,
+    "hp": 130.48185982130127,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 59.309936282409666,
+    "hp": 130.48185982130127,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "80": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 61.20716458913957,
+    "hp": 134.65576209610708,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 61.20716458913957,
+    "hp": 134.65576209610708,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "81": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 63.165082140766295,
+    "hp": 138.96318070968584,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 63.165082140766295,
+    "hp": 138.96318070968584,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "82": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 65.18563028743365,
+    "hp": 143.40838663235405,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 65.18563028743365,
+    "hp": 143.40838663235405,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "83": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 67.27081247991609,
+    "hp": 147.99578745581542,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 67.27081247991609,
+    "hp": 147.99578745581542,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "84": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 69.42269625611682,
+    "hp": 152.72993176345705,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 69.42269625611682,
+    "hp": 152.72993176345705,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "85": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 71.64341529111064,
+    "hp": 157.61551364044342,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 71.64341529111064,
+    "hp": 157.61551364044342,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "86": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 73.93517151276443,
+    "hp": 162.65737732808174,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 73.93517151276443,
+    "hp": 162.65737732808174,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "87": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 76.30023728503284,
+    "hp": 167.86052202707225,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 76.30023728503284,
+    "hp": 167.86052202707225,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "88": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "89": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "90": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "91": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "92": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "93": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "94": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "95": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "96": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "97": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "98": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "99": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "100": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "101": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "102": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "103": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "104": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "105": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "106": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "107": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "108": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "109": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "110": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "111": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "112": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "113": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "114": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "115": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "116": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "117": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ],
+  "118": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   }
+  ],
+  "119": [
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Cunning"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   }
+  ],
+  "120": [
+   {
+    "atk": 1303.8480872826956,
+    "hp": 2868.46579202193,
+    "spd": 4,
+    "type": "Arcane"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Brawn"
+   },
+   {
+    "atk": 77.57806566760526,
+    "hp": 170.6717444687316,
+    "spd": 4,
+    "type": "Arcane"
+   }
+  ]
+ },
+ "loot": {
+  "1": [
+   "loot:1:0"
+  ],
+  "2": [
+   "loot:2:0"
+  ],
+  "3": [
+   "loot:3:0"
+  ],
+  "4": [
+   "loot:4:0"
+  ],
+  "5": [
+   "loot:5:0"
+  ],
+  "6": [
+   "loot:6:0"
+  ],
+  "7": [
+   "loot:7:0"
+  ],
+  "8": [
+   "loot:8:0"
+  ],
+  "9": [
+   "loot:9:0"
+  ],
+  "10": [
+   "loot:10:0"
+  ],
+  "11": [
+   "loot:11:0"
+  ],
+  "12": [
+   "loot:12:0"
+  ],
+  "13": [
+   "loot:13:0"
+  ],
+  "14": [
+   "loot:14:0"
+  ],
+  "15": [
+   "loot:15:0"
+  ],
+  "16": [
+   "loot:16:0"
+  ],
+  "17": [
+   "loot:17:0"
+  ],
+  "18": [
+   "loot:18:0"
+  ],
+  "19": [
+   "loot:19:0"
+  ],
+  "20": [
+   "loot:20:0"
+  ],
+  "21": [
+   "loot:21:0"
+  ],
+  "22": [
+   "loot:22:0"
+  ],
+  "23": [
+   "loot:23:0"
+  ],
+  "24": [
+   "loot:24:0"
+  ],
+  "25": [
+   "loot:25:0"
+  ],
+  "26": [
+   "loot:26:0",
+   "loot:26:1"
+  ],
+  "27": [
+   "loot:27:0",
+   "loot:27:1"
+  ],
+  "28": [
+   "loot:28:0",
+   "loot:28:1"
+  ],
+  "29": [
+   "loot:29:0",
+   "loot:29:1"
+  ],
+  "30": [
+   "loot:30:0",
+   "loot:30:1"
+  ],
+  "31": [
+   "loot:31:0",
+   "loot:31:1"
+  ],
+  "32": [
+   "loot:32:0",
+   "loot:32:1"
+  ],
+  "33": [
+   "loot:33:0",
+   "loot:33:1"
+  ],
+  "34": [
+   "loot:34:0",
+   "loot:34:1"
+  ],
+  "35": [
+   "loot:35:0",
+   "loot:35:1"
+  ],
+  "36": [
+   "loot:36:0",
+   "loot:36:1"
+  ],
+  "37": [
+   "loot:37:0",
+   "loot:37:1"
+  ],
+  "38": [
+   "loot:38:0",
+   "loot:38:1"
+  ],
+  "39": [
+   "loot:39:0",
+   "loot:39:1"
+  ],
+  "40": [
+   "loot:40:0",
+   "loot:40:1"
+  ],
+  "41": [
+   "loot:41:0",
+   "loot:41:1"
+  ],
+  "42": [
+   "loot:42:0",
+   "loot:42:1"
+  ],
+  "43": [
+   "loot:43:0",
+   "loot:43:1"
+  ],
+  "44": [
+   "loot:44:0",
+   "loot:44:1"
+  ],
+  "45": [
+   "loot:45:0",
+   "loot:45:1"
+  ],
+  "46": [
+   "loot:46:0",
+   "loot:46:1"
+  ],
+  "47": [
+   "loot:47:0",
+   "loot:47:1"
+  ],
+  "48": [
+   "loot:48:0",
+   "loot:48:1"
+  ],
+  "49": [
+   "loot:49:0",
+   "loot:49:1"
+  ],
+  "50": [
+   "loot:50:0",
+   "loot:50:1"
+  ],
+  "51": [
+   "loot:51:0",
+   "loot:51:1",
+   "loot:51:2"
+  ],
+  "52": [
+   "loot:52:0",
+   "loot:52:1",
+   "loot:52:2"
+  ],
+  "53": [
+   "loot:53:0",
+   "loot:53:1",
+   "loot:53:2"
+  ],
+  "54": [
+   "loot:54:0",
+   "loot:54:1",
+   "loot:54:2"
+  ],
+  "55": [
+   "loot:55:0",
+   "loot:55:1",
+   "loot:55:2"
+  ],
+  "56": [
+   "loot:56:0",
+   "loot:56:1",
+   "loot:56:2"
+  ],
+  "57": [
+   "loot:57:0",
+   "loot:57:1",
+   "loot:57:2"
+  ],
+  "58": [
+   "loot:58:0",
+   "loot:58:1",
+   "loot:58:2"
+  ],
+  "59": [
+   "loot:59:0",
+   "loot:59:1",
+   "loot:59:2"
+  ],
+  "60": [
+   "loot:60:0",
+   "loot:60:1",
+   "loot:60:2"
+  ],
+  "61": [
+   "loot:61:0",
+   "loot:61:1",
+   "loot:61:2"
+  ],
+  "62": [
+   "loot:62:0",
+   "loot:62:1",
+   "loot:62:2"
+  ],
+  "63": [
+   "loot:63:0",
+   "loot:63:1",
+   "loot:63:2"
+  ],
+  "64": [
+   "loot:64:0",
+   "loot:64:1",
+   "loot:64:2"
+  ],
+  "65": [
+   "loot:65:0",
+   "loot:65:1",
+   "loot:65:2"
+  ],
+  "66": [
+   "loot:66:0",
+   "loot:66:1",
+   "loot:66:2"
+  ],
+  "67": [
+   "loot:67:0",
+   "loot:67:1",
+   "loot:67:2"
+  ],
+  "68": [
+   "loot:68:0",
+   "loot:68:1",
+   "loot:68:2"
+  ],
+  "69": [
+   "loot:69:0",
+   "loot:69:1",
+   "loot:69:2"
+  ],
+  "70": [
+   "loot:70:0",
+   "loot:70:1",
+   "loot:70:2"
+  ],
+  "71": [
+   "loot:71:0",
+   "loot:71:1",
+   "loot:71:2"
+  ],
+  "72": [
+   "loot:72:0",
+   "loot:72:1",
+   "loot:72:2"
+  ],
+  "73": [
+   "loot:73:0",
+   "loot:73:1",
+   "loot:73:2"
+  ],
+  "74": [
+   "loot:74:0",
+   "loot:74:1",
+   "loot:74:2"
+  ],
+  "75": [
+   "loot:75:0",
+   "loot:75:1",
+   "loot:75:2"
+  ],
+  "76": [
+   "loot:76:0",
+   "loot:76:1",
+   "loot:76:2",
+   "loot:76:3"
+  ],
+  "77": [
+   "loot:77:0",
+   "loot:77:1",
+   "loot:77:2",
+   "loot:77:3"
+  ],
+  "78": [
+   "loot:78:0",
+   "loot:78:1",
+   "loot:78:2",
+   "loot:78:3"
+  ],
+  "79": [
+   "loot:79:0",
+   "loot:79:1",
+   "loot:79:2",
+   "loot:79:3"
+  ],
+  "80": [
+   "loot:80:0",
+   "loot:80:1",
+   "loot:80:2",
+   "loot:80:3"
+  ],
+  "81": [
+   "loot:81:0",
+   "loot:81:1",
+   "loot:81:2",
+   "loot:81:3"
+  ],
+  "82": [
+   "loot:82:0",
+   "loot:82:1",
+   "loot:82:2",
+   "loot:82:3"
+  ],
+  "83": [
+   "loot:83:0",
+   "loot:83:1",
+   "loot:83:2",
+   "loot:83:3"
+  ],
+  "84": [
+   "loot:84:0",
+   "loot:84:1",
+   "loot:84:2",
+   "loot:84:3"
+  ],
+  "85": [
+   "loot:85:0",
+   "loot:85:1",
+   "loot:85:2",
+   "loot:85:3"
+  ],
+  "86": [
+   "loot:86:0",
+   "loot:86:1",
+   "loot:86:2",
+   "loot:86:3"
+  ],
+  "87": [
+   "loot:87:0",
+   "loot:87:1",
+   "loot:87:2",
+   "loot:87:3"
+  ],
+  "88": [
+   "loot:88:0",
+   "loot:88:1",
+   "loot:88:2",
+   "loot:88:3"
+  ],
+  "89": [
+   "loot:89:0",
+   "loot:89:1",
+   "loot:89:2",
+   "loot:89:3"
+  ],
+  "90": [
+   "loot:90:0",
+   "loot:90:1",
+   "loot:90:2",
+   "loot:90:3"
+  ],
+  "91": [
+   "loot:91:0",
+   "loot:91:1",
+   "loot:91:2",
+   "loot:91:3"
+  ],
+  "92": [
+   "loot:92:0",
+   "loot:92:1",
+   "loot:92:2",
+   "loot:92:3"
+  ],
+  "93": [
+   "loot:93:0",
+   "loot:93:1",
+   "loot:93:2",
+   "loot:93:3"
+  ],
+  "94": [
+   "loot:94:0",
+   "loot:94:1",
+   "loot:94:2",
+   "loot:94:3"
+  ],
+  "95": [
+   "loot:95:0",
+   "loot:95:1",
+   "loot:95:2",
+   "loot:95:3"
+  ],
+  "96": [
+   "loot:96:0",
+   "loot:96:1",
+   "loot:96:2",
+   "loot:96:3"
+  ],
+  "97": [
+   "loot:97:0",
+   "loot:97:1",
+   "loot:97:2",
+   "loot:97:3"
+  ],
+  "98": [
+   "loot:98:0",
+   "loot:98:1",
+   "loot:98:2",
+   "loot:98:3"
+  ],
+  "99": [
+   "loot:99:0",
+   "loot:99:1",
+   "loot:99:2",
+   "loot:99:3"
+  ],
+  "100": [
+   "loot:100:0",
+   "loot:100:1",
+   "loot:100:2",
+   "loot:100:3"
+  ],
+  "101": [
+   "loot:101:0",
+   "loot:101:1",
+   "loot:101:2",
+   "loot:101:3",
+   "loot:101:4"
+  ],
+  "102": [
+   "loot:102:0",
+   "loot:102:1",
+   "loot:102:2",
+   "loot:102:3",
+   "loot:102:4"
+  ],
+  "103": [
+   "loot:103:0",
+   "loot:103:1",
+   "loot:103:2",
+   "loot:103:3",
+   "loot:103:4"
+  ],
+  "104": [
+   "loot:104:0",
+   "loot:104:1",
+   "loot:104:2",
+   "loot:104:3",
+   "loot:104:4"
+  ],
+  "105": [
+   "loot:105:0",
+   "loot:105:1",
+   "loot:105:2",
+   "loot:105:3",
+   "loot:105:4"
+  ],
+  "106": [
+   "loot:106:0",
+   "loot:106:1",
+   "loot:106:2",
+   "loot:106:3",
+   "loot:106:4"
+  ],
+  "107": [
+   "loot:107:0",
+   "loot:107:1",
+   "loot:107:2",
+   "loot:107:3",
+   "loot:107:4"
+  ],
+  "108": [
+   "loot:108:0",
+   "loot:108:1",
+   "loot:108:2",
+   "loot:108:3",
+   "loot:108:4"
+  ],
+  "109": [
+   "loot:109:0",
+   "loot:109:1",
+   "loot:109:2",
+   "loot:109:3",
+   "loot:109:4"
+  ],
+  "110": [
+   "loot:110:0",
+   "loot:110:1",
+   "loot:110:2",
+   "loot:110:3",
+   "loot:110:4"
+  ],
+  "111": [
+   "loot:111:0",
+   "loot:111:1",
+   "loot:111:2",
+   "loot:111:3",
+   "loot:111:4"
+  ],
+  "112": [
+   "loot:112:0",
+   "loot:112:1",
+   "loot:112:2",
+   "loot:112:3",
+   "loot:112:4"
+  ],
+  "113": [
+   "loot:113:0",
+   "loot:113:1",
+   "loot:113:2",
+   "loot:113:3",
+   "loot:113:4"
+  ],
+  "114": [
+   "loot:114:0",
+   "loot:114:1",
+   "loot:114:2",
+   "loot:114:3",
+   "loot:114:4"
+  ],
+  "115": [
+   "loot:115:0",
+   "loot:115:1",
+   "loot:115:2",
+   "loot:115:3",
+   "loot:115:4"
+  ],
+  "116": [
+   "loot:116:0",
+   "loot:116:1",
+   "loot:116:2",
+   "loot:116:3",
+   "loot:116:4"
+  ],
+  "117": [
+   "loot:117:0",
+   "loot:117:1",
+   "loot:117:2",
+   "loot:117:3",
+   "loot:117:4"
+  ],
+  "118": [
+   "loot:118:0",
+   "loot:118:1",
+   "loot:118:2",
+   "loot:118:3",
+   "loot:118:4"
+  ],
+  "119": [
+   "loot:119:0",
+   "loot:119:1",
+   "loot:119:2",
+   "loot:119:3",
+   "loot:119:4"
+  ],
+  "120": [
+   "loot:120:0",
+   "loot:120:1",
+   "loot:120:2",
+   "loot:120:3",
+   "loot:120:4"
+  ]
+ }
+}
