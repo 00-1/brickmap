@@ -27,6 +27,16 @@ pub struct Stamp {
     pub ts: u64,
 }
 
+/// One step of a finished round, in order — drives the per-question (solve/spark) awards and the
+/// LIVE gold accrual (combo resets on a skip, so the order of solves vs skips matters).
+#[derive(Clone, Debug, PartialEq)]
+pub enum RoundStep {
+    /// A clean solve of `prompt` taking `dt` seconds.
+    Solve { prompt: String, dt: f64 },
+    /// A skipped question (resets the gold combo).
+    Skip,
+}
+
 /// The result of one finished round — what the results screen shows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoundOutcome {
@@ -123,26 +133,30 @@ impl Save {
     /// Goblin Gold, and return a [`RoundOutcome`] (rank + newly-earned keys + time + gold) for the
     /// results screen.
     ///
-    /// `solves` is the per-question outcome — `(prompt, seconds)` for each question solved this round
-    /// — driving solve/spark awards and the per-question gold. In the auto-accept drill every accepted
-    /// answer is correct, so `score == answered`, `mistakes == total − answered`, and every solve is
-    /// clean (`miss == 0`).
+    /// `steps` is the round's ordered outcome — each [`RoundStep::Solve`] (with its time) or
+    /// [`RoundStep::Skip`]. Solves drive the solve/spark awards; the full ordered list drives the
+    /// **live** gold accrual (the combo resets on a skip, so order matters). In the auto-accept drill
+    /// every accepted answer is clean (`miss == 0`) and `score == answered`.
     pub fn award_round(
         &mut self,
         mode: &progression::Mode,
         run: &progression::RunResult,
-        solves: &[(String, f64)],
+        steps: &[RoundStep],
         ts: u64,
     ) -> RoundOutcome {
         self.games += 1;
         let count_prefix =
             |s: &Save, p: &str| s.collected.keys().filter(|k| k.starts_with(p)).count() as u32;
-        let qmap = solves
+        // Solve steps drive the solve/spark awards (every accepted answer is clean → miss 0).
+        let qmap = steps
             .iter()
-            .map(|(prompt, t)| crate::earning::QSolve {
-                prompt: prompt.clone(),
-                miss: 0,
-                t: *t,
+            .filter_map(|s| match s {
+                RoundStep::Solve { prompt, dt } => Some(crate::earning::QSolve {
+                    prompt: prompt.clone(),
+                    miss: 0,
+                    t: *dt,
+                }),
+                RoundStep::Skip => None,
             })
             .collect();
         let ctx = crate::earning::Ctx {
@@ -175,13 +189,20 @@ impl Save {
         let items =
             crate::catalogue::earned(self.collected.keys().map(String::as_str)).len() as u32;
         let mult = crate::gold::gold_mult(items, count_prefix(self, "mastery:"), 0, 0, 0);
-        let clean_dts: Vec<f64> = solves.iter().map(|(_, t)| *t).collect();
+        // Accrue gold LIVE over the ordered steps (combo resets on skip — the parity fix).
+        let plays: Vec<crate::gold::Play> = steps
+            .iter()
+            .map(|s| match s {
+                RoundStep::Solve { dt, .. } => crate::gold::Play::Solve(*dt),
+                RoundStep::Skip => crate::gold::Play::Skip,
+            })
+            .collect();
         let gold_earned = crate::gold::round_gold(
             mode.master_secs,
-            &clean_dts,
+            mult,
+            &plays,
             run.answered,
             rank_idx as u32,
-            mult,
         );
         self.gold += gold_earned as f64;
 
@@ -311,7 +332,10 @@ mod tests {
 
         // A perfect, fast, clean round earns init/flawless/mastery + ranks + speed brackets, plus
         // solve/spark for the timed questions (a real halves prompt, solved fast).
-        let solves = vec![("3".to_string(), 0.5)];
+        let steps = vec![RoundStep::Solve {
+            prompt: "3".to_string(),
+            dt: 0.5,
+        }];
         let out = s.award_round(
             &mode,
             &RunResult {
@@ -319,7 +343,7 @@ mod tests {
                 answered: 10,
                 total_time_secs: 0.0,
             },
-            &solves,
+            &steps,
             1000,
         );
         assert!(s.has("init:halves") && s.has("flawless:halves") && s.has("mastery:halves"));
@@ -344,7 +368,7 @@ mod tests {
                 answered: 10,
                 total_time_secs: 0.0,
             },
-            &solves,
+            &steps,
             2000,
         );
         assert_eq!(s.games, 2);

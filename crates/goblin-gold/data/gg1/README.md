@@ -22,7 +22,9 @@ A snapshot of Goblin Gold v1's content-as-data export — the cross-repo **data 
 - `gold.json` (T233b) — the Goblin Gold tunables + formula text (questionGold/roundBonusGold/
   tierGold/goldMult/hoardLevel). The formulas are re-impl'd in `gold.rs` and proven against:
 - `gold-vectors.json` (T233b) — numeric `{inputs → gold}` vectors for each formula (1e-9 abs, 1e-6
-  rel for goldMult's integer power).
+  rel for goldMult's integer power), incl. the **`roundGold`** composition vectors (`{target, mult,
+  seq → total}`) that prove the LIVE per-question accrual — combo resets on a `skip`, so it must be
+  accumulated as the round plays (see corrected `gold.json:_round`).
 
 **Sync:** regenerate in halves (`node tools/content-export.js`), then re-copy `content/gg1/*`
 here from `origin/main`. Halves' `test/content-parity.test.js` keeps the halves copy locked to the

@@ -11,8 +11,10 @@
 //! - [`gold_mult`] `(1 + items·0.05 + mastered·0.5 + heroes·0.5 + tiers·1) · HOARD_G^bosses`.
 //! - [`hoard_level`] a 0..1 log-scaled wealth fraction (for the hoard visuals).
 //!
-//! [`round_gold`] composes these into a round payout (faithful to `finish()`): combo rises with each
-//! clean solve (it never resets here — the auto-accept drill has no wrong submissions).
+//! [`round_gold`] composes these into a round payout (faithful to `finish()`), accruing **live** over
+//! the ordered round steps: combo rises on each clean solve and **resets to 0 on a skip** — so it
+//! must be accumulated as the round plays, not derived post-hoc from the solved times (which would
+//! over-pay after a mid-run skip). See [`Play`] / [`accrue_round`].
 
 use serde::Deserialize;
 
@@ -81,26 +83,44 @@ pub fn hoard_level(gold: f64) -> f64 {
     (((1.0 + gold).log10() - lo) / span).clamp(0.0, 1.0)
 }
 
-/// A round's gold payout (faithful to `main.js` `finish()`): for each cleanly-solved question pay
-/// `question_gold(master_secs, dt, combo, mult)` with `combo` rising 1,2,3… across the round, then
-/// add `round_bonus_gold(score, rank_idx, mult)`, and round to a whole coin. `mult` is the global
-/// multiplier (compute via [`gold_mult`]). NOTE: `main.js` recomputes `mult` per question as awards
-/// drop mid-round; the live drill batches awards at round end, so a single `mult` is used — a
-/// minor difference in a payout figure, not a vectored invariant.
-pub fn round_gold(
-    master_secs: f64,
-    clean_dts: &[f64],
-    score: u32,
-    rank_idx: u32,
-    mult: f64,
-) -> u64 {
+/// One step of a round, for **live** gold accrual: a clean solve (with its time) or a skip.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Play {
+    /// A clean solve taking `dt` seconds — `combo++` then earns `question_gold`.
+    Solve(f64),
+    /// A skip — resets the combo streak to 0 and earns nothing.
+    Skip,
+}
+
+/// Accrue a round's per-question gold **live**, faithful to `main.js`: `combo` starts 0, rises by 1
+/// on each [`Play::Solve`] (earning `question_gold(target, dt, combo, mult)`), and **resets to 0** on
+/// each [`Play::Skip`]. This is the corrected model (T233b-gold `roundGold` vectors): combo *must* be
+/// accumulated live — derived post-hoc from the solved times it would over-pay after a mid-run skip,
+/// since the skip-reset is unrecoverable. Returns the per-question sum (the vectors' `total`; the
+/// round bonus is added by [`round_gold`]).
+pub fn accrue_round(target: f64, mult: f64, plays: &[Play]) -> f64 {
+    let mut combo = 0u32;
     let mut earn = 0.0;
-    for (i, &dt) in clean_dts.iter().enumerate() {
-        let combo = (i + 1) as u32; // combo++ before each award → first clean solve is combo 1
-        earn += question_gold(master_secs, dt, combo, mult);
+    for p in plays {
+        match p {
+            Play::Solve(dt) => {
+                combo += 1;
+                earn += question_gold(target, *dt, combo, mult);
+            }
+            Play::Skip => combo = 0,
+        }
     }
-    earn += round_bonus_gold(score, rank_idx, mult);
-    earn.round().max(0.0) as u64
+    earn
+}
+
+/// A round's total payout: the live per-question accrual ([`accrue_round`]) plus
+/// `round_bonus_gold(score, rank_idx, mult)`, rounded to a whole coin. `score` = number of solves.
+/// `mult` is the global multiplier (see [`gold_mult`]); our drill batches awards at round end so a
+/// single round-`mult` is used (the col doesn't mutate mid-round here).
+pub fn round_gold(target: f64, mult: f64, plays: &[Play], score: u32, rank_idx: u32) -> u64 {
+    (accrue_round(target, mult, plays) + round_bonus_gold(score, rank_idx, mult))
+        .round()
+        .max(0.0) as u64
 }
 
 #[cfg(test)]
@@ -189,14 +209,45 @@ mod tests {
         }
     }
 
+    // The corrected LIVE accrual: every `roundGold` composition vector (combo resets on skip).
     #[test]
-    fn round_gold_pays_per_question_plus_bonus() {
-        // Two fast clean solves (master 5s, dt 0.5) at mult 1, score 2, rank 22.
-        // q1: (2+round(4.5))*(1.1)*1 = (2+5)*1.1 = 7.7 ; q2 combo2: 7*1.2 = 8.4 ; bonus (2+44)*1 = 46.
-        // total = 7.7 + 8.4 + 46 = 62.1 → round 62.
-        let g = round_gold(5.0, &[0.5, 0.5], 2, 22, 1.0);
-        assert_eq!(g, 62);
-        // No solves, no score → no gold.
-        assert_eq!(round_gold(5.0, &[], 0, 0, 1.0), 0);
+    fn accrue_round_reproduces_every_round_gold_vector() {
+        let v = vectors();
+        let arr = v["roundGold"].as_array().unwrap();
+        assert!(
+            arr.len() >= 20,
+            "expected the roundGold composition vectors"
+        );
+        for r in arr {
+            let plays: Vec<Play> = r["seq"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| match e.as_f64() {
+                    Some(dt) => Play::Solve(dt),
+                    None => Play::Skip, // the string "skip"
+                })
+                .collect();
+            let got = accrue_round(
+                r["target"].as_f64().unwrap(),
+                r["mult"].as_f64().unwrap(),
+                &plays,
+            );
+            assert!(
+                approx(got, r["total"].as_f64().unwrap(), 1e-9),
+                "roundGold {r} → {got}"
+            );
+        }
+    }
+
+    #[test]
+    fn round_gold_resets_combo_on_skip_then_adds_bonus() {
+        // Solve, SKIP, solve (master 5s, dt 0.5, mult 1): combo 1 then reset then 1 again.
+        // q1 combo1: (2+round(4.5))*1.1 = 7*1.1 = 7.7 ; skip: 0 ; q3 combo1: 7.7 ; accrual = 15.4.
+        // score = 2 solves, rank 22 → bonus (2+44)*1 = 46 ; total 61.4 → round 61.
+        let plays = [Play::Solve(0.5), Play::Skip, Play::Solve(0.5)];
+        assert_eq!(round_gold(5.0, 1.0, &plays, 2, 22), 61);
+        // No plays, no score → no gold.
+        assert_eq!(round_gold(5.0, 1.0, &[], 0, 0), 0);
     }
 }

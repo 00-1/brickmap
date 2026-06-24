@@ -23,7 +23,7 @@ use crate::drill::{Drill, Mark};
 use crate::headless::{RectRun, TextRun};
 use crate::keypad::{Key, Keypad};
 use crate::progression;
-use crate::save::{RoundOutcome, Save};
+use crate::save::{RoundOutcome, RoundStep, Save};
 use crate::text::{Atlas, Quad};
 use brickmap::save::FileStore;
 // The on-screen UI surface draws the engine's `ui2d` primitives with the engine's quad shader.
@@ -601,8 +601,9 @@ struct App {
     round_start: Option<Instant>,
     /// When the current question appeared (for per-question solve/spark timing).
     q_start: Option<Instant>,
-    /// This round's solved questions: `(prompt, seconds)` — feeds the solve/spark awards.
-    solves: Vec<(String, f64)>,
+    /// This round's steps in order (solves with their time, and skips) — feeds the solve/spark
+    /// awards and the LIVE gold accrual (combo resets on a skip, so order matters).
+    round_steps: Vec<RoundStep>,
     /// The most recent round's outcome — shown on the Results screen.
     last_outcome: Option<RoundOutcome>,
     keypad: Keypad,
@@ -636,7 +637,7 @@ impl App {
             current: None,
             round_start: None,
             q_start: None,
-            solves: Vec::new(),
+            round_steps: Vec::new(),
             last_outcome: None,
             keypad: Keypad::layout(0.0, 0.0, 1.0, 1.0, 0.0),
             cursor: (0.0, 0.0),
@@ -666,7 +667,7 @@ impl App {
         let now = Instant::now();
         self.round_start = Some(now);
         self.q_start = Some(now);
-        self.solves = Vec::new();
+        self.round_steps = Vec::new();
         self.fx_start = None;
         self.screen = Screen::Drill;
     }
@@ -696,7 +697,7 @@ impl App {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0);
-                let outcome = self.save.award_round(&m, &run, &self.solves, ts);
+                let outcome = self.save.award_round(&m, &run, &self.round_steps, ts);
                 self.save.last_mode = Some(m.id.clone());
                 self.progress = self.save.progress();
                 self.last_outcome = Some(outcome);
@@ -709,7 +710,7 @@ impl App {
         self.current = None;
         self.round_start = None;
         self.q_start = None;
-        self.solves = Vec::new();
+        self.round_steps = Vec::new();
         self.fx_start = None;
         // Show the per-run results summary (rank/awards/time/gold); tapping it returns to Select.
         self.screen = if self.last_outcome.is_some() {
@@ -770,18 +771,19 @@ impl App {
                         let before_consumed = d.consumed();
                         d.press(key);
                         if d.consumed() > before_consumed {
-                            // A question was resolved (solved or skipped); the next one's timer
-                            // starts now.
+                            // A question was resolved (solved or skipped); record the step in order
+                            // (gold combo resets on a skip), then restart the per-question timer.
                             if d.solved() > before_solved {
-                                // A clean solve — record its time for the solve/spark awards…
                                 let t = self
                                     .q_start
                                     .map(|s| s.elapsed().as_secs_f64())
                                     .unwrap_or(0.0);
-                                self.solves.push((prompt, t));
+                                self.round_steps.push(RoundStep::Solve { prompt, dt: t });
                                 // …and fire the celebration.
                                 self.fx_start = Some(Instant::now());
                                 self.fx_seed ^= d.solved().wrapping_mul(2_654_435_761);
+                            } else {
+                                self.round_steps.push(RoundStep::Skip);
                             }
                             self.q_start = Some(Instant::now());
                         }
