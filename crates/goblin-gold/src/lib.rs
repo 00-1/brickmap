@@ -40,6 +40,10 @@ pub mod transforms;
 // / events / save). Pure logic; data-driven from the synced `content/gg1/` export.
 pub mod collector;
 
+// The full collectible catalogue (2352 items) over the T230/T232 export — the unified reward set
+// whose ids ARE the save's `collected` keys. Pure logic; data-driven from `collectibles.json`.
+pub mod catalogue;
+
 // The save model (the central `collected` keystone + gold/last-mode), persisted through the engine
 // `bm-platform::save` Store seam. Native-gated like the other engine-facade consumers.
 #[cfg(not(target_arch = "wasm32"))]
