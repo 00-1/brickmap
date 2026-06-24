@@ -303,21 +303,39 @@ fn density_at(spec: &Spec, step: usize) -> f64 {
     spec.density * (0.55 + 0.6 * pos)
 }
 
-/// The events scheduled on one 16th-note step, as their score tokens (`p:`/`b:`/`l:`/`d:`) — the
-/// exact order + gating of `stepEvents` (intensity is 0 for the score).
-fn step_tokens(spec: &Spec, step: usize, rnd: &mut Rng, deg: &mut i32) -> Vec<String> {
+/// The role of a scheduled note (its instrument lane).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Pad,
+    Bass,
+    Lead,
+    Drum,
+}
+
+/// A scheduled note within a step: its lane + pitch (MIDI; ignored for drums) + drum piece.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Voiced {
+    pub role: Role,
+    pub midi: i32,
+    pub piece: &'static str,
+}
+
+/// The events on one 16th-note step, structured — the exact order + gating of `stepEvents`
+/// (intensity 0). The score tokens and the audio renderer both derive from this single source.
+fn step_voiced(spec: &Spec, step: usize, rnd: &mut Rng, deg: &mut i32) -> Vec<Voiced> {
     let s = step % 16;
     let bar = step / 16;
     let chord = &spec.harmony[bar % spec.harmony.len()];
     let dens = density_at(spec, step).min(1.0);
     let mut ev = Vec::new();
+    let v = |role, midi, piece| Voiced { role, midi, piece };
     if s == 0 {
         for &m in &chord.voiced {
-            ev.push(format!("p:{m}"));
+            ev.push(v(Role::Pad, m, ""));
         }
     }
     if s == 0 || s == 8 {
-        ev.push(format!("b:{}", chord.bass));
+        ev.push(v(Role::Bass, chord.bass, ""));
     }
     if spec.lead_euclid[s] == 1 && rnd.next() < dens {
         *deg += lead_step(rnd);
@@ -326,24 +344,34 @@ fn step_tokens(spec: &Spec, step: usize, rnd: &mut Rng, deg: &mut i32) -> Vec<St
         if s.is_multiple_of(4) {
             midi = nearest_chord_tone(midi, &chord.chord);
         }
-        ev.push(format!("l:{midi}"));
+        ev.push(v(Role::Lead, midi, ""));
     }
     if spec.kick[s] == 1 {
-        ev.push("d:kick".to_string());
+        ev.push(v(Role::Drum, 0, "kick"));
     }
     if spec.hat[s] == 1 {
-        ev.push("d:hat".to_string());
+        ev.push(v(Role::Drum, 0, "hat"));
     }
     if !spec.snare.is_empty() && spec.snare[s] == 1 {
-        ev.push("d:snare".to_string());
+        ev.push(v(Role::Drum, 0, "snare"));
     }
     ev
 }
 
-/// Generate a scene's score: the first `steps` 16th-notes as token lists. Reseeds the PRNG per phrase
-/// from `phraseSeed` (the melodic `deg` state persists across phrases) — mirroring `musicTick`.
-/// Returns `None` for an unknown scene.
-pub fn score(name: &str, steps: usize) -> Option<Vec<Vec<String>>> {
+/// The score token for a voiced note (`p:`/`b:`/`l:`/`d:`).
+fn token(v: &Voiced) -> String {
+    match v.role {
+        Role::Pad => format!("p:{}", v.midi),
+        Role::Bass => format!("b:{}", v.midi),
+        Role::Lead => format!("l:{}", v.midi),
+        Role::Drum => format!("d:{}", v.piece),
+    }
+}
+
+/// The structured per-step voiced events for a scene — the audio renderer's input. Same generation
+/// as [`score`] (the goldens cover it): reseeds the PRNG per phrase from `phraseSeed`, the melodic
+/// `deg` state persists. `None` for an unknown scene.
+pub fn voiced_score(name: &str, steps: usize) -> Option<Vec<Vec<Voiced>>> {
     let scene = context(name)?;
     let spec = normalize(name, &scene);
     let phrase_len = 16 * spec.harmony.len();
@@ -357,9 +385,39 @@ pub fn score(name: &str, steps: usize) -> Option<Vec<Vec<String>>> {
             phrase = ph;
             rnd = Rng::new(phrase_seed(spec.seed, phrase));
         }
-        out.push(step_tokens(&spec, step, &mut rnd, &mut deg));
+        out.push(step_voiced(&spec, step, &mut rnd, &mut deg));
     }
     Some(out)
+}
+
+/// Generate a scene's score: the first `steps` 16th-notes as token lists (`p:`/`b:`/`l:`/`d:`).
+/// Returns `None` for an unknown scene.
+pub fn score(name: &str, steps: usize) -> Option<Vec<Vec<String>>> {
+    Some(
+        voiced_score(name, steps)?
+            .iter()
+            .map(|step| step.iter().map(token).collect())
+            .collect(),
+    )
+}
+
+/// A scene's tempo in BPM (from `CONTEXTS`). The renderer's 16th-note grid step is `(60/tempo)/4` s.
+pub fn tempo_of(name: &str) -> Option<f64> {
+    Some(match name {
+        "menu" => 96.0,
+        "arena" => 124.0,
+        "lofi" => 78.0,
+        "ambient" => 60.0,
+        "chiptune" => 150.0,
+        "synthwave" => 112.0,
+        "dubstep" => 140.0,
+        "dnb" => 174.0,
+        "bigroom" => 128.0,
+        "boss8bit" => 140.0,
+        "tropical" => 104.0,
+        "techno" => 126.0,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

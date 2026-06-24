@@ -91,3 +91,8 @@ path = "src/bin/fx_proto.rs"
 [[bin]]
 name = "sfx_proto"
 path = "src/bin/sfx_proto.rs"
+
+# Phase-4 audio: render each generative-music scene to a WAV for the owner's by-ear check.
+[[bin]]
+name = "music_proto"
+path = "src/bin/music_proto.rs"
