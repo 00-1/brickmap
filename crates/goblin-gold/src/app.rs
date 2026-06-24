@@ -23,7 +23,7 @@ use crate::drill::{Drill, Mark};
 use crate::headless::{RectRun, TextRun};
 use crate::keypad::{Key, Keypad};
 use crate::progression;
-use crate::save::Save;
+use crate::save::{RoundOutcome, Save};
 use crate::text::{Atlas, Quad};
 use brickmap::save::FileStore;
 // The on-screen UI surface draws the engine's `ui2d` primitives with the engine's quad shader.
@@ -557,6 +557,8 @@ enum Screen {
     Collection,
     /// The collector ladder detail (tiers reached vs locked).
     Ladder,
+    /// The end-of-round results summary (rank, awards, time, gold).
+    Results,
 }
 
 /// The full-width bottom button shared by Select ("Collection") and Collection ("Back"): its rect.
@@ -595,6 +597,8 @@ struct App {
     q_start: Option<Instant>,
     /// This round's solved questions: `(prompt, seconds)` — feeds the solve/spark awards.
     solves: Vec<(String, f64)>,
+    /// The most recent round's outcome — shown on the Results screen.
+    last_outcome: Option<RoundOutcome>,
     keypad: Keypad,
     cursor: (f32, f32),
     fx_start: Option<Instant>,
@@ -624,6 +628,7 @@ impl App {
             round_start: None,
             q_start: None,
             solves: Vec::new(),
+            last_outcome: None,
             keypad: Keypad::layout(0.0, 0.0, 1.0, 1.0, 0.0),
             cursor: (0.0, 0.0),
             fx_start: None,
@@ -680,9 +685,10 @@ impl App {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0);
-                self.save.award_round(&m, &run, &self.solves, ts);
+                let outcome = self.save.award_round(&m, &run, &self.solves, ts);
                 self.save.last_mode = Some(m.id.clone());
                 self.progress = self.save.progress();
+                self.last_outcome = Some(outcome);
                 if let Some(store) = &self.store {
                     let _ = self.save.store(store);
                 }
@@ -694,7 +700,12 @@ impl App {
         self.q_start = None;
         self.solves = Vec::new();
         self.fx_start = None;
-        self.screen = Screen::Select;
+        // Show the per-run results summary (rank/awards/time/gold); tapping it returns to Select.
+        self.screen = if self.last_outcome.is_some() {
+            Screen::Results
+        } else {
+            Screen::Select
+        };
     }
 
     fn tap(&mut self, x: f32, y: f32) {
@@ -723,6 +734,10 @@ impl App {
                 if hit_bottom_button(w, h, x, y) {
                     self.screen = Screen::Collection;
                 }
+            }
+            Screen::Results => {
+                // Tap anywhere to continue back to the topic list.
+                self.screen = Screen::Select;
             }
             Screen::Drill => {
                 let mut done = false;
@@ -781,6 +796,14 @@ impl App {
                 let keys = self.save.collected.keys().map(String::as_str);
                 let items = crate::catalogue::earned(keys).len() as u32;
                 let (r, t) = ladder_frame(items, fonts, w, h);
+                (r, t, None)
+            }
+            Screen::Results => {
+                let (r, t) = match &self.last_outcome {
+                    Some(o) => results_frame(o, fonts, w, h),
+                    // Defensive: no outcome (shouldn't happen) → an empty frame.
+                    None => (Vec::new(), Vec::new()),
+                };
                 (r, t, None)
             }
             Screen::Select => {
@@ -1309,6 +1332,107 @@ pub fn render_ladder(painter: &crate::headless::Painter, font: &FontRef<'_>) -> 
     let (w, h) = (DRILL_W as f32, DRILL_H as f32);
     let fonts = Fonts::bake(font, h);
     let (rects, texts) = ladder_frame(500, &fonts, w, h);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+/// Build the end-of-round **Results** screen from a [`RoundOutcome`]: the rank reached (prominent),
+/// then accuracy/time/gold and the count of collectibles earned this run, with a Continue button.
+pub fn results_frame<'a>(
+    o: &RoundOutcome,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.06;
+    let col_w = w - margin * 2.0;
+    let cx = w / 2.0;
+
+    let (q, _hh) = fonts.head.layout("Round Complete", margin, h * 0.05, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    // The rank, large and centred — the headline reward of the run.
+    texts.push(TextRun {
+        atlas: &fonts.q,
+        quads: centered(&fonts.q, &o.rank_name, cx, h * 0.15, h * 0.1),
+        rgba: GREEN,
+    });
+
+    let accuracy = if o.total > 0 {
+        (o.answered * 100 + o.total / 2) / o.total
+    } else {
+        0
+    };
+    let rows = [
+        (
+            "Answered".to_string(),
+            format!("{} / {}", o.answered, o.total),
+        ),
+        ("Accuracy".to_string(), format!("{accuracy}%")),
+        ("Time".to_string(), format!("{:.1}s", o.total_time)),
+        ("Gold earned".to_string(), format!("+{}", o.gold_earned)),
+        ("New collectibles".to_string(), format!("{}", o.newly.len())),
+    ];
+    let top = h * 0.30;
+    let row_h = h * 0.085;
+    let gap = h * 0.02;
+    for (i, (label, value)) in rows.iter().enumerate() {
+        let ry = top + i as f32 * (row_h + gap);
+        rects.push(RectRun {
+            x: margin,
+            y: ry,
+            w: col_w,
+            h: row_h,
+            rgba: PANEL,
+        });
+        let ty = ry + row_h / 2.0 - 0.59 * fonts.body.px;
+        let (lq, _) = fonts.body.layout(label, margin + col_w * 0.05, ty, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: lq,
+            rgba: DIM,
+        });
+        let vw = fonts.body.text_width(value);
+        // Gold is the headline figure — tint it gold; the rest read as body text.
+        let col = if i == 3 { GOLD } else { BODY };
+        let (vq, _) = fonts
+            .body
+            .layout(value, margin + col_w * 0.95 - vw, ty, vw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: vq,
+            rgba: col,
+        });
+    }
+
+    push_button(&mut rects, &mut texts, fonts, "Continue", w, h);
+    (rects, texts)
+}
+
+/// Render a representative **Results** screen (a strong-but-imperfect run), headless. Shared by the
+/// golden blesser + golden test.
+pub fn render_results(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let outcome = RoundOutcome {
+        rank_idx: 16,
+        rank_name: "Runelord".to_string(),
+        newly: vec![
+            "init:halves".to_string(),
+            "flawless:halves".to_string(),
+            "speed:halves:0".to_string(),
+        ],
+        gold_earned: 184,
+        answered: 10,
+        total: 10,
+        total_time: 14.2,
+    };
+    let (rects, texts) = results_frame(&outcome, &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 

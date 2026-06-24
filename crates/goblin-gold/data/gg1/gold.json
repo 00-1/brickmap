@@ -1,0 +1,21 @@
+{
+ "_note": "GG1 goblin-gold earning rules (from main.js). Pure numeric formulas proven by gold-vectors.json.",
+ "_round": "Round-end gold (faithful to main.js finish()): for each CLEANLY-solved question (qMiss===0) earn questionGold(mode.masterSecs, dt, combo, goldMult(col)); combo = running count of clean solves this round (0 at round start, ++ before each award); recompute goldMult(col) per question (col mutates as awards drop). Then earn += roundBonusGold(score, rankIndex(score,total,totalTime), goldMult(col)). Finally earnGold(round(earn)): total += round(earn); cross wealth milestones via evaluateGold (already in earning-vectors.json). NO spending — gold only accrues.",
+ "_catalog": "goldMult's `items` counts EVERY owned C.CATALOG entry INCLUDING Arena loot — at runtime enemies.js registers tier loot into CATALOG (2352 collectibles + loot = 2702). Until the Arena is ported B has no loot, so only the 2352 collectibles contribute (items maxes at 2352, not 2702); the `full` vector below records the full-catalogue count for when the Arena lands.",
+ "_tolerance": "Match within 1e-9 absolute for questionGold/roundBonusGold/tierGold/hoardLevel; goldMult uses HOARD_G^bosses (integer power) so allow 1e-6 relative there (powi vs Math.pow last-ULP).",
+ "HOARD_G": 2.5,
+ "GOLD_EMPTY": 500,
+ "GOLD_FULL": 1000000000000000,
+ "multWeights": {
+  "item": 0.05,
+  "mastery": 0.5,
+  "hero": 0.5,
+  "tier": 1
+ },
+ "regionSize": 12,
+ "tierCount": 120,
+ "questionGold": "(2 + max(0, round(target - dt))) * (1 + combo*0.1) * mult   [target = mode.masterSecs]",
+ "roundBonusGold": "(score + rankIdx*2) * mult",
+ "tierGold": "round(10 * (1 + n/10)) * mult        [Arena per-tier payoff]",
+ "hoardLevel": "clamp((log10(1+gold) - log10(GOLD_EMPTY)) / (log10(GOLD_FULL) - log10(GOLD_EMPTY)), 0, 1)"
+}

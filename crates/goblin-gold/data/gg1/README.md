@@ -19,6 +19,10 @@ A snapshot of Goblin Gold v1's content-as-data export — the cross-repo **data 
 - `earning-vectors.json` (T233) — the `{ctx → awarded keys}` behavioural contract (rank-index grid,
   46 modes × 13 scenarios, and the collector/topics/meta/gold/momentum families). A re-impl is
   correct iff it reproduces these (`earning.rs` does — set-equality, like the transforms test).
+- `gold.json` (T233b) — the Goblin Gold tunables + formula text (questionGold/roundBonusGold/
+  tierGold/goldMult/hoardLevel). The formulas are re-impl'd in `gold.rs` and proven against:
+- `gold-vectors.json` (T233b) — numeric `{inputs → gold}` vectors for each formula (1e-9 abs, 1e-6
+  rel for goldMult's integer power).
 
 **Sync:** regenerate in halves (`node tools/content-export.js`), then re-copy `content/gg1/*`
 here from `origin/main`. Halves' `test/content-parity.test.js` keeps the halves copy locked to the

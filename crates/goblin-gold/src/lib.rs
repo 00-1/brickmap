@@ -56,6 +56,10 @@ pub mod events;
 // re-impl'd from collectibles.js and proven vs `earning-vectors.json`. Pure logic.
 pub mod earning;
 
+// The Goblin Gold economy: the round-payout formulas re-impl'd from main.js, proven vs
+// `gold-vectors.json`. Pure logic.
+pub mod gold;
+
 // The save model (the central `collected` keystone + gold/last-mode), persisted through the engine
 // `bm-platform::save` Store seam. Native-gated like the other engine-facade consumers.
 #[cfg(not(target_arch = "wasm32"))]

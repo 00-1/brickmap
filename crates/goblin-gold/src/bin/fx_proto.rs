@@ -60,6 +60,12 @@ fn main() {
     write_png(&ladder_shot, app::DRILL_W, app::DRILL_H, &ladder_rgba);
     println!("wrote {ladder_shot}");
 
+    // The end-of-round Results summary.
+    let results_rgba = app::render_results(&painter, &font);
+    let results_shot = format!("{out_dir}/gg-results.png");
+    write_png(&results_shot, app::DRILL_W, app::DRILL_H, &results_rgba);
+    println!("wrote {results_shot}");
+
     if std::env::var("GG_BLESS").is_ok() {
         std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens")).ok();
         for (name, w, h, data) in [
@@ -68,6 +74,7 @@ fn main() {
             ("topic-select.png", app::DRILL_W, app::DRILL_H, &sel_rgba),
             ("collection.png", app::DRILL_W, app::DRILL_H, &coll_rgba),
             ("ladder.png", app::DRILL_W, app::DRILL_H, &ladder_rgba),
+            ("results.png", app::DRILL_W, app::DRILL_H, &results_rgba),
         ] {
             let path = format!(
                 concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/{}"),

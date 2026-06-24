@@ -27,6 +27,25 @@ pub struct Stamp {
     pub ts: u64,
 }
 
+/// The result of one finished round — what the results screen shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoundOutcome {
+    /// The rank tier reached this round (0..=22).
+    pub rank_idx: usize,
+    /// Its display name (e.g. "Archmage").
+    pub rank_name: String,
+    /// Collectible keys newly earned this round (for the "earned this run" list).
+    pub newly: Vec<String>,
+    /// Goblin Gold paid out this round (already accrued into the save).
+    pub gold_earned: u64,
+    /// Questions answered (= score, in the auto-accept drill).
+    pub answered: u32,
+    /// Questions in the round.
+    pub total: u32,
+    /// Total time across the round (seconds).
+    pub total_time: f64,
+}
+
 /// The persisted game state: the central `collected` keystone plus the loose top-level fields.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Save {
@@ -100,23 +119,24 @@ impl Save {
     }
 
     /// Fold a finished round into the save: bump the games counter, run the earning rule
-    /// ([`crate::earning::award`]), and mark every awarded key (keeping the earliest `ts`). Returns
-    /// the keys **newly** collected this round (for a "you earned…" toast).
+    /// ([`crate::earning::award`]) marking every awarded key (earliest `ts` wins), accrue the round's
+    /// Goblin Gold, and return a [`RoundOutcome`] (rank + newly-earned keys + time + gold) for the
+    /// results screen.
     ///
     /// `solves` is the per-question outcome — `(prompt, seconds)` for each question solved this round
-    /// — which drives the solve/spark awards (a clean solve earns `solve:<mode>:<prompt>`, and under
-    /// 1.5s also `spark:…`). In the auto-accept drill every accepted answer is correct, so
-    /// `score == answered`, `mistakes == total − answered`, and every solve is clean (`miss == 0`).
+    /// — driving solve/spark awards and the per-question gold. In the auto-accept drill every accepted
+    /// answer is correct, so `score == answered`, `mistakes == total − answered`, and every solve is
+    /// clean (`miss == 0`).
     pub fn award_round(
         &mut self,
         mode: &progression::Mode,
         run: &progression::RunResult,
         solves: &[(String, f64)],
         ts: u64,
-    ) -> Vec<String> {
+    ) -> RoundOutcome {
         self.games += 1;
         let count_prefix =
-            |p: &str| self.collected.keys().filter(|k| k.starts_with(p)).count() as u32;
+            |s: &Save, p: &str| s.collected.keys().filter(|k| k.starts_with(p)).count() as u32;
         let qmap = solves
             .iter()
             .map(|(prompt, t)| crate::earning::QSolve {
@@ -135,17 +155,45 @@ impl Save {
             qmap,
             stats: crate::earning::RunStats {
                 games: self.games as u32,
-                modes_cleared: count_prefix("init:"),
-                flawless: count_prefix("flawless:"),
+                modes_cleared: count_prefix(self, "init:"),
+                flawless: count_prefix(self, "flawless:"),
             },
         };
-        let mut added = Vec::new();
+        let mut newly = Vec::new();
         for k in crate::earning::award(&ctx) {
             if self.mark(k.clone(), ts) {
-                added.push(k);
+                newly.push(k);
             }
         }
-        added
+
+        // Rank for the round, and the Goblin Gold it pays out (accrued — gold only ever grows).
+        let rank_idx = crate::earning::rank_index(run.answered, run.total, run.total_time_secs);
+        let rank_name =
+            crate::earning::rank_name(rank_idx).unwrap_or_else(|| "Unranked".to_string());
+        // Gold multiplier from the owned-collectible counts (post-award). Heroes/tiers/bosses are 0
+        // until the Arena is ported (T233b-combat).
+        let items =
+            crate::catalogue::earned(self.collected.keys().map(String::as_str)).len() as u32;
+        let mult = crate::gold::gold_mult(items, count_prefix(self, "mastery:"), 0, 0, 0);
+        let clean_dts: Vec<f64> = solves.iter().map(|(_, t)| *t).collect();
+        let gold_earned = crate::gold::round_gold(
+            mode.master_secs,
+            &clean_dts,
+            run.answered,
+            rank_idx as u32,
+            mult,
+        );
+        self.gold += gold_earned as f64;
+
+        RoundOutcome {
+            rank_idx,
+            rank_name,
+            newly,
+            gold_earned,
+            answered: run.answered,
+            total: run.total,
+            total_time: run.total_time_secs,
+        }
     }
 
     /// Load the save from `store` (slot [`SLOT`]); a fresh [`Save::default`] if absent or corrupt
@@ -264,7 +312,7 @@ mod tests {
         // A perfect, fast, clean round earns init/flawless/mastery + ranks + speed brackets, plus
         // solve/spark for the timed questions (a real halves prompt, solved fast).
         let solves = vec![("3".to_string(), 0.5)];
-        let added = s.award_round(
+        let out = s.award_round(
             &mode,
             &RunResult {
                 total: 10,
@@ -281,7 +329,10 @@ mod tests {
             "a clean, fast solve earns solve + spark"
         );
         assert_eq!(s.games, 1);
-        assert!(added.contains(&"init:halves".to_string()));
+        assert!(out.newly.contains(&"init:halves".to_string()));
+        // A perfect fast round is the top rank and pays gold (accrued into the save).
+        assert_eq!(out.rank_idx, 22);
+        assert!(out.gold_earned > 0 && s.gold >= out.gold_earned as f64);
         // The save is the source of truth for progression.
         assert!(s.progress().is_mastered("halves"));
 
@@ -298,8 +349,9 @@ mod tests {
         );
         assert_eq!(s.games, 2);
         assert!(
-            again.is_empty(),
-            "already-collected keys aren't re-awarded: {again:?}"
+            again.newly.is_empty(),
+            "already-collected keys aren't re-awarded: {:?}",
+            again.newly
         );
     }
 

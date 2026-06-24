@@ -32,6 +32,7 @@ struct SpeedTier {
 #[derive(Clone, Deserialize)]
 struct RankDef {
     key: String,
+    name: String,
 }
 
 #[derive(Clone, Deserialize)]
@@ -121,6 +122,11 @@ pub fn rank_index(score: u32, total: u32, time: f64) -> usize {
             22
         }
     }
+}
+
+/// The display name of the rank at tier `idx` (e.g. 22 → "God-Hand"), if in range.
+pub fn rank_name(idx: usize) -> Option<String> {
+    earning().ranks.into_iter().nth(idx).map(|r| r.name)
 }
 
 /// One question's outcome within a round, for solve/spark awards.
