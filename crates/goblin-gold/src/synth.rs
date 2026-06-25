@@ -10,15 +10,16 @@
 //! the perceptual, by-ear half; this module is the provable note schedule that drives it.
 
 /// `mulberry32` — the exact PRNG `synth.js` seeds per phrase. Reproduces the JS `f64` stream via u32
-/// wrapping arithmetic (`Math.imul` → `wrapping_mul`, `>>>` → `>>`).
-struct Rng {
+/// wrapping arithmetic (`Math.imul` → `wrapping_mul`, `>>>` → `>>`). `pub(crate)` so the event-play
+/// gauntlet builder ([`crate::event_play`]) reuses the identical stream.
+pub(crate) struct Rng {
     a: u32,
 }
 impl Rng {
-    fn new(seed: u32) -> Rng {
+    pub(crate) fn new(seed: u32) -> Rng {
         Rng { a: seed }
     }
-    fn next(&mut self) -> f64 {
+    pub(crate) fn next(&mut self) -> f64 {
         self.a = self.a.wrapping_add(0x6D2B_79F5);
         let a = self.a;
         let mut t = (a ^ (a >> 15)).wrapping_mul(1 | a);
@@ -27,8 +28,9 @@ impl Rng {
     }
 }
 
-/// FNV-1a over the scene name → the music seed (matches `synth.js` `hashStr`).
-fn hash_str(s: &str) -> u32 {
+/// FNV-1a over a string (matches `synth.js`/`events.js` `hashStr`). `pub(crate)` for the event-play
+/// gauntlet seed.
+pub(crate) fn hash_str(s: &str) -> u32 {
     let mut h: u32 = 2_166_136_261;
     for b in s.bytes() {
         h ^= b as u32;

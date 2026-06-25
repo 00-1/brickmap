@@ -56,6 +56,10 @@ pub mod events;
 // proven vs `combat-vectors.json`. Pure logic; composes the catalogue/arena boost bridge.
 pub mod combat;
 
+// Event-play (T233c): the deterministic daily-event gauntlet + UTC-day schedule + reward tiers from
+// events.js/main.js, proven vs `events-vectors.json`. Pure logic; reuses the synth PRNG + transforms.
+pub mod event_play;
+
 // Earning: the rule turning a finished round + running totals into awarded collectible keys,
 // re-impl'd from collectibles.js and proven vs `earning-vectors.json`. Pure logic.
 pub mod earning;
