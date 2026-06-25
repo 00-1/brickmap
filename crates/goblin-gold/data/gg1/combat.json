@@ -36,7 +36,12 @@
     "speed": 6,
     "focus": 6
    },
-   "unlockHint": "Finish your first round"
+   "unlockHint": "Finish your first round",
+   "unlock": {
+    "kind": "countPrefix",
+    "prefix": "init:",
+    "min": 1
+   }
   },
   {
    "id": "greta",
@@ -47,7 +52,12 @@
     "speed": 5,
     "focus": 7
    },
-   "unlockHint": "Finish 3 topics"
+   "unlockHint": "Finish 3 topics",
+   "unlock": {
+    "kind": "countPrefix",
+    "prefix": "init:",
+    "min": 3
+   }
   },
   {
    "id": "tovar",
@@ -58,7 +68,12 @@
     "speed": 5,
     "focus": 5
    },
-   "unlockHint": "Master any topic"
+   "unlockHint": "Master any topic",
+   "unlock": {
+    "kind": "countPrefix",
+    "prefix": "mastery:",
+    "min": 1
+   }
   },
   {
    "id": "mo",
@@ -69,7 +84,11 @@
     "speed": 7,
     "focus": 5
    },
-   "unlockHint": "Reach the Dark Wizard rank"
+   "unlockHint": "Reach the Dark Wizard rank",
+   "unlock": {
+    "kind": "hasKey",
+    "key": "rank:darkwizard"
+   }
   },
   {
    "id": "wisp",
@@ -80,7 +99,11 @@
     "speed": 10,
     "focus": 15
    },
-   "unlockHint": "Collect 25 items"
+   "unlockHint": "Collect 25 items",
+   "unlock": {
+    "kind": "hasKey",
+    "key": "collector:25"
+   }
   },
   {
    "id": "mira",
@@ -91,7 +114,12 @@
     "speed": 9,
     "focus": 17
    },
-   "unlockHint": "Earn a flawless round in 3 modes"
+   "unlockHint": "Earn a flawless round in 3 modes",
+   "unlock": {
+    "kind": "countPrefix",
+    "prefix": "flawless:",
+    "min": 3
+   }
   },
   {
    "id": "nim",
@@ -102,7 +130,11 @@
     "speed": 7,
     "focus": 14
    },
-   "unlockHint": "Reach 100% on a topic"
+   "unlockHint": "Reach 100% on a topic",
+   "unlock": {
+    "kind": "hasKey",
+    "key": "topics:one100"
+   }
   },
   {
    "id": "zeph",
@@ -113,7 +145,11 @@
     "speed": 13,
     "focus": 13
    },
-   "unlockHint": "Reach the Archmage rank"
+   "unlockHint": "Reach the Archmage rank",
+   "unlock": {
+    "kind": "hasKey",
+    "key": "rank:archmage"
+   }
   },
   {
    "id": "pip",
@@ -124,7 +160,13 @@
     "speed": 16,
     "focus": 9
    },
-   "unlockHint": "Earn a Lightning speed bracket"
+   "unlockHint": "Earn a Lightning speed bracket",
+   "unlock": {
+    "kind": "keyMatch",
+    "prefix": "speed:",
+    "suffix": ":3",
+    "min": 1
+   }
   },
   {
    "id": "vex",
@@ -135,7 +177,11 @@
     "speed": 15,
     "focus": 8
    },
-   "unlockHint": "Finish a round in every mode"
+   "unlockHint": "Finish a round in every mode",
+   "unlock": {
+    "kind": "hasKey",
+    "key": "meta:allmodes"
+   }
   },
   {
    "id": "sela",
@@ -146,7 +192,11 @@
     "speed": 14,
     "focus": 9
    },
-   "unlockHint": "Collect 75 items"
+   "unlockHint": "Collect 75 items",
+   "unlock": {
+    "kind": "hasKey",
+    "key": "collector:75"
+   }
   },
   {
    "id": "roon",
@@ -157,9 +207,14 @@
     "speed": 17,
     "focus": 7
    },
-   "unlockHint": "Defeat enemy tier 10"
+   "unlockHint": "Defeat enemy tier 10",
+   "unlock": {
+    "kind": "hasKey",
+    "key": "tier:10"
+   }
   }
  ],
+ "unlockKinds": "hasKey:{key} present · countPrefix:{prefix,min} ≥min keys start with prefix · keyMatch:{prefix,suffix,min} ≥min keys start-with prefix AND end-with suffix with ≥1 char between",
  "lootBoosts": [
   {
    "id": "loot:1:0",

@@ -87,9 +87,66 @@ struct FoeRaw {
     kind: Kind,
 }
 
+/// A hero's unlock predicate over the save's `collected` keystone (`compileUnlock`): a single key, a
+/// minimum count of keys with a prefix, or a minimum count of keys matching `prefix…suffix` with at
+/// least one character between (the `speed:<mode>:3` Lightning bracket).
+#[derive(Deserialize, Clone, Debug)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum Unlock {
+    HasKey {
+        key: String,
+    },
+    CountPrefix {
+        prefix: String,
+        min: usize,
+    },
+    KeyMatch {
+        prefix: String,
+        suffix: String,
+        min: usize,
+    },
+}
+
+impl Unlock {
+    /// Is this predicate satisfied by `collected`?
+    fn satisfied(&self, collected: &HashSet<&str>) -> bool {
+        match self {
+            Unlock::HasKey { key } => collected.contains(key.as_str()),
+            Unlock::CountPrefix { prefix, min } => {
+                collected.iter().filter(|k| k.starts_with(prefix)).count() >= *min
+            }
+            Unlock::KeyMatch {
+                prefix,
+                suffix,
+                min,
+            } => {
+                collected
+                    .iter()
+                    .filter(|k| {
+                        k.starts_with(prefix.as_str())
+                            && k.ends_with(suffix.as_str())
+                            // ≥1 char between prefix and suffix (and they can't overlap).
+                            && k.len() > prefix.len() + suffix.len()
+                    })
+                    .count()
+                    >= *min
+            }
+        }
+    }
+}
+
+/// A roster hero's id + its unlock predicate (the rest of its stats live in `balance.json` via
+/// [`crate::arena`]; `combat.json` carries only the id + unlock here).
+#[derive(Deserialize)]
+struct HeroRaw {
+    id: String,
+    unlock: Unlock,
+}
+
 #[derive(Deserialize)]
 struct CombatFile {
     constants: Constants,
+    heroes: Vec<HeroRaw>,
     #[serde(rename = "lootBoosts")]
     loot_boosts: Vec<LootBoost>,
     #[serde(rename = "enemyTeams")]
@@ -137,6 +194,27 @@ pub fn next_tier<'a>(collected: impl IntoIterator<Item = &'a str>) -> u32 {
         .max()
         .unwrap_or(0);
     (max_cleared + 1).min(tier_count())
+}
+
+/// Is hero `hero_id` unlocked given the player's `collected` keys? (Unknown id → `false`.)
+pub fn is_hero_unlocked(hero_id: &str, collected: &HashSet<&str>) -> bool {
+    parse()
+        .heroes
+        .iter()
+        .find(|h| h.id == hero_id)
+        .map(|h| h.unlock.satisfied(collected))
+        .unwrap_or(false)
+}
+
+/// The hero ids unlocked for `collected`, in roster order — the Arena fields only these (no more
+/// "all 12" interim). The unlock predicates are `compileUnlock`, proven vs the `heroUnlock` battery.
+pub fn unlocked_roster(collected: &HashSet<&str>) -> Vec<String> {
+    parse()
+        .heroes
+        .into_iter()
+        .filter(|h| h.unlock.satisfied(collected))
+        .map(|h| h.id)
+        .collect()
 }
 
 /// A hero's **effective** stats for the Arena: base + catalogue boosts (the existing
@@ -495,6 +573,29 @@ mod tests {
         assert_eq!(r.heroes_alive, tl["heroesAlive"].as_u64().unwrap() as usize);
         assert_eq!(r.foes_alive, tl["foesAlive"].as_u64().unwrap() as usize);
         assert_eq!(r.rounds, tl["rounds"].as_u64().unwrap() as u32);
+    }
+
+    /// Hero-unlock predicates (`hasKey` / `countPrefix` / `keyMatch`) reproduce the 18-state
+    /// `heroUnlock` battery exactly — incl. the count boundaries and the `keyMatch` rejects.
+    #[test]
+    fn hero_unlock_matches_vectors() {
+        for st in vectors()["heroUnlock"].as_array().unwrap() {
+            let label = st["label"].as_str().unwrap();
+            let owned: Vec<String> = st["collected"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect();
+            let keys: HashSet<&str> = owned.iter().map(String::as_str).collect();
+            let want: Vec<String> = st["unlocked"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(unlocked_roster(&keys), want, "heroUnlock state {label}");
+        }
     }
 
     /// Sanity: the ladder is complete (every tier 1..=tierCount has an enemy team).
