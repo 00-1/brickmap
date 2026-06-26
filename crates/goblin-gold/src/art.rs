@@ -620,6 +620,27 @@ struct Preset {
     r: i32,
     ring: i32,
     coin: i32,
+    blade_len: i32,
+    blade_width: i32,
+    shape: i32,
+    guard: i32,
+    guard_w: i32,
+    pommel: i32,
+    edge: i32,
+    shaft_len: i32,
+    head: i32,
+    teeth: i32,
+    outline: i32,
+    boss: i32,
+    divide: i32,
+    kind: i32,
+    plate: i32,
+    stroke_set: i32,
+    form: i32,
+    cap_w: i32,
+    spots: i32,
+    clasp: i32,
+    bands: i32,
 }
 
 /// `BASE[arch]` merged with the category's `.p` overrides — the pre-jitter preset for `cat_id`.
@@ -786,6 +807,167 @@ fn base_preset(cat_id: &str) -> Preset {
             coin: 1,
             ..Default::default()
         },
+        // blade (BASE bladeLen:6,bladeWidth:3,shape:0,guard:0,guardW:3,pommel:0,edge:0)
+        "dagger" => Preset {
+            blade_len: 5,
+            blade_width: 3,
+            guard: 1,
+            guard_w: 3,
+            pommel: 1,
+            edge: 1,
+            ..Default::default()
+        },
+        "sword" => Preset {
+            blade_len: 9,
+            blade_width: 3,
+            guard: 1,
+            guard_w: 4,
+            pommel: 1,
+            edge: 1,
+            ..Default::default()
+        },
+        "kris" => Preset {
+            blade_len: 8,
+            blade_width: 3,
+            shape: 2,
+            guard: 1,
+            guard_w: 3,
+            edge: 1,
+            ..Default::default()
+        },
+        "sickle" => Preset {
+            blade_len: 7,
+            blade_width: 4,
+            shape: 3,
+            pommel: 1,
+            edge: 1,
+            ..Default::default()
+        },
+        "cleaver" => Preset {
+            blade_len: 6,
+            blade_width: 5,
+            guard_w: 3,
+            ..Default::default()
+        },
+        "rapier" => Preset {
+            blade_len: 10,
+            blade_width: 2,
+            guard: 1,
+            guard_w: 4,
+            pommel: 1,
+            edge: 1,
+            ..Default::default()
+        },
+        // tool (BASE shaftLen:11,head:1,teeth:0)
+        "hammer" => Preset {
+            shaft_len: 11,
+            head: 1,
+            ..Default::default()
+        },
+        "mace" => Preset {
+            shaft_len: 11,
+            head: 2,
+            ..Default::default()
+        },
+        "axe" => Preset {
+            shaft_len: 11,
+            head: 3,
+            ..Default::default()
+        },
+        "staff" => Preset {
+            shaft_len: 13,
+            head: 4,
+            ..Default::default()
+        },
+        "wand" => Preset {
+            shaft_len: 9,
+            head: 4,
+            ..Default::default()
+        },
+        "key" => Preset {
+            shaft_len: 10,
+            head: 0,
+            teeth: 3,
+            ..Default::default()
+        },
+        // shield (BASE outline:1,w:6,boss:0,divide:0)
+        "shield" => Preset {
+            outline: 1,
+            w: 6,
+            boss: 2,
+            ..Default::default()
+        },
+        "buckler" => Preset {
+            outline: 2,
+            w: 5,
+            boss: 1,
+            ..Default::default()
+        },
+        "kiteshield" => Preset {
+            outline: 3,
+            w: 6,
+            divide: 2,
+            ..Default::default()
+        },
+        "helm" => Preset {
+            outline: 2,
+            w: 6,
+            divide: 1,
+            ..Default::default()
+        },
+        // garment (BASE kind:1) — no resolvePreset jitter (consumes no rPick).
+        "wizardhat" => Preset {
+            kind: 1,
+            ..Default::default()
+        },
+        "cap" => Preset {
+            kind: 2,
+            ..Default::default()
+        },
+        "boots" => Preset {
+            kind: 3,
+            ..Default::default()
+        },
+        "gloves" => Preset {
+            kind: 4,
+            ..Default::default()
+        },
+        // sigil (BASE plate:1,strokeSet:19 — strokeSet is overwritten by resolvePreset)
+        "rune" => Preset {
+            plate: 1,
+            ..Default::default()
+        },
+        "glyph" => Preset {
+            plate: 0,
+            ..Default::default()
+        },
+        "talisman" => Preset {
+            plate: 2,
+            ..Default::default()
+        },
+        // provision (BASE form:1,capW:5,spots:2,clasp:0,bands:2)
+        "mushroom" => Preset {
+            form: 1,
+            cap_w: 5,
+            spots: 2,
+            bands: 2,
+            ..Default::default()
+        },
+        "bread" => Preset {
+            form: 1,
+            cap_w: 6,
+            spots: 0,
+            bands: 2,
+            ..Default::default()
+        },
+        "chest" => Preset {
+            form: 2,
+            cap_w: 5,
+            spots: 2,
+            clasp: 1,
+            bands: 2,
+            ..Default::default()
+        },
         _ => Preset::default(),
     }
 }
@@ -797,10 +979,8 @@ fn arch_ported(cat_id: &str) -> bool {
         .find(|(c, _)| *c == cat_id)
         .map(|(_, a)| *a)
         .unwrap_or("");
-    matches!(
-        arch,
-        "critter" | "bottle" | "sheet" | "gem" | "ring" | "orb"
-    )
+    // All 12 archetypes are ported.
+    FAMILY.contains(&arch)
 }
 
 /// `resolvePreset(cat, rPick)` — structural jitter on the soft ranges (exact rPick draw order).
@@ -839,6 +1019,24 @@ fn resolve_preset(cat_id: &str, rng: &mut crate::synth::Rng) -> Preset {
         "orb" => {
             p.r = cli(j(p.r, 0, rng), 5, 6);
         }
+        "blade" => {
+            p.blade_len = cli(j(p.blade_len, 1, rng), 4, 11);
+            p.blade_width = cli(j(p.blade_width, 1, rng), 1, 5);
+        }
+        "tool" => {
+            p.shaft_len = cli(j(p.shaft_len, 1, rng), 8, 13);
+        }
+        "shield" => {
+            p.w = cli(j(p.w, 0, rng), 5, 7);
+        }
+        "sigil" => {
+            p.stroke_set = (rng.next() * 128.0).floor() as i32;
+        }
+        "provision" => {
+            p.cap_w = cli(j(p.cap_w, 1, rng), 4, 6);
+            p.spots = (rng.next() * 4.0).floor() as i32;
+        }
+        // garment has NO jitter case (consumes no rPick).
         _ => {}
     }
     p
@@ -1038,6 +1236,259 @@ fn arch_orb(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
     mirror(g, a);
 }
 
+/// The `blade` archetype — a tapered blade + crossguard + grip + pommel; len/width/shape per preset.
+fn arch_blade(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    let tip_y = cli(12 - p.blade_len, 1, 10);
+    let bw = p.blade_width;
+    let mut y = 12;
+    while y >= tip_y {
+        let t = (12 - y) as f64 / (12.0 - tip_y as f64 + 0.01);
+        let w = (js_round(bw as f64 * (1.0 - t * 0.45)) as i32).max(1);
+        let mut cx0 = 8 - w;
+        if p.shape == 2 {
+            cx0 += if (12 - y) % 2 != 0 { 1 } else { -1 };
+        }
+        fill(g, cx0, y, 7, y, true);
+        if p.edge != 0 {
+            idot(a, cx0, y, true);
+        }
+        y -= 1;
+    }
+    fill(g, 8 - bw - 1, 13, 7, 13, true);
+    lock_cell(locked, 7, 12);
+    lock_cell(locked, 7, 13);
+    if p.guard != 0 {
+        fill(g, 8 - p.guard_w, 14, 7, 14, true);
+        fill(a, 8 - p.guard_w, 14, 7, 14, true);
+        lock_cell(locked, 7, 14);
+    }
+    fill(g, 7, 15, 7, 15, true);
+    if p.pommel != 0 {
+        fill(g, 6, 15, 7, 15, true);
+        fill(a, 6, 15, 7, 15, true);
+    }
+    mirror(g, a);
+    if p.shape == 3 {
+        for yy in tip_y..=11 {
+            idot(g, 15 - (8 - bw), yy, false);
+        }
+    }
+}
+
+/// The `tool` archetype — a shaft + a distinct head (hammer/mace/axe/orb) or key bits.
+fn arch_tool(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    fill(g, 7, 16 - p.shaft_len, 8, 15, true);
+    for y in 11..=15 {
+        lock_cell(locked, 7, y);
+    }
+    if p.head == 1 {
+        fill(g, 4, 2, 8, 5, true);
+        fill(a, 4, 3, 8, 4, true);
+        lock_cell(locked, 7, 3);
+    } else if p.head == 2 {
+        disc(g, 7, 4, 3, true);
+        disc(a, 7, 4, 1, true);
+        lock_cell(locked, 7, 4);
+    } else if p.head == 3 {
+        fill(g, 2, 2, 7, 7, true);
+        for y in 2..=7 {
+            let lim = 2 + (6 - if y < 5 { y } else { 9 - y });
+            for x in 2..lim {
+                idot(g, x, y, false);
+            }
+        }
+        fill(a, 6, 3, 7, 6, true);
+        lock_cell(locked, 7, 4);
+    } else if p.head == 4 {
+        disc(g, 7, 4, 2, true);
+        fill(a, 6, 3, 8, 5, true);
+        lock_cell(locked, 7, 4);
+    }
+    if p.teeth != 0 {
+        fill(g, 7, 5, 8, 12, true);
+        for i in 0..p.teeth {
+            fill(g, 9, 10 + i, 10, 10 + i, true);
+        }
+        disc(g, 7, 4, 2, true);
+        disc(g, 7, 4, 1, false);
+        lock_cell(locked, 7, 11);
+    }
+    mirror(g, a);
+    if p.teeth != 0 {
+        for i in 0..p.teeth {
+            fill(g, 9, 10 + i, 10, 10 + i, true);
+        }
+    }
+}
+
+/// The `shield` archetype — heater / round / kite outline + boss + division.
+fn arch_shield(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    let w = p.w;
+    if p.outline == 2 {
+        disc(g, 8, 8, w, true);
+    } else if p.outline == 3 {
+        for y in 2..=15 {
+            let rw = if y < 7 {
+                (js_round(w as f64 * (y - 1) as f64 / 6.0) as i32).max(1)
+            } else {
+                (js_round(w as f64 * (15 - y) as f64 / 8.0) as i32).max(1)
+            };
+            fill(g, 8 - rw, y, 8, y, true);
+        }
+    } else {
+        fill(g, 8 - w, 2, 8, 9, true);
+        for y in 10..=14 {
+            let rw = (js_round(w as f64 * (14 - y) as f64 / 4.0) as i32).max(1);
+            fill(g, 8 - rw, y, 8, y, true);
+        }
+    }
+    for y in 4..=10 {
+        lock_cell(locked, 8, y);
+    }
+    if p.boss == 1 {
+        fill(a, 6, 7, 8, 9, true);
+    } else if p.boss == 2 {
+        disc(a, 8, 8, 2, true);
+    }
+    if p.divide == 1 {
+        hline(a, 8, 8 - w, 8, true);
+    } else if p.divide == 2 {
+        vline(a, 8, 3, 13, true);
+    }
+    mirror(g, a);
+}
+
+/// The `garment` archetype — hat / cap / boot / glove by `kind`.
+fn arch_garment(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    if p.kind == 1 {
+        for y in 2..=9 {
+            let rw = (js_round((y - 1) as f64 * 0.85) as i32).max(1);
+            fill(g, 8 - rw, y, 7, y, true);
+        }
+        fill(g, 2, 10, 7, 11, true);
+        fill(a, 2, 10, 7, 11, true);
+        fill(a, 5, 5, 6, 6, true);
+        for y in 3..=9 {
+            lock_cell(locked, 7, y);
+        }
+    } else if p.kind == 2 {
+        fill(g, 3, 5, 8, 8, true);
+        fill(g, 2, 8, 8, 9, true);
+        fill(a, 2, 8, 8, 8, true);
+        for y in 5..=8 {
+            lock_cell(locked, 7, y);
+        }
+    } else if p.kind == 3 {
+        fill(g, 5, 2, 8, 11, true);
+        fill(g, 5, 12, 12, 14, true);
+        fill(a, 5, 12, 12, 13, true);
+        for y in 4..=11 {
+            lock_cell(locked, 7, y);
+        }
+        lock_cell(locked, 11, 13);
+    } else {
+        fill(g, 4, 3, 8, 6, true);
+        fill(g, 4, 7, 8, 14, true);
+        fill(a, 4, 12, 8, 14, true);
+        for y in 4..=12 {
+            lock_cell(locked, 7, y);
+        }
+    }
+    mirror(g, a);
+}
+
+/// The `sigil` archetype — a central stave (locked) + bit-flagged strokes; optional plate behind.
+fn arch_sigil(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    if p.plate == 1 {
+        fill(g, 2, 2, 13, 13, true);
+        fill(a, 3, 3, 12, 12, true);
+    } else if p.plate == 2 {
+        disc(g, 8, 8, 7, true);
+        disc(a, 8, 8, 6, true);
+    }
+    let s = p.stroke_set;
+    fill(a, 7, 3, 8, 12, true);
+    for y in 3..=12 {
+        lock_cell(locked, 7, y);
+    }
+    if s & 2 != 0 {
+        fill(a, 4, 5, 11, 5, true);
+    }
+    if s & 4 != 0 {
+        fill(a, 4, 11, 11, 11, true);
+    }
+    if s & 8 != 0 {
+        for i in 0..6 {
+            idot(a, 4 + i, 3 + i, true);
+        }
+    }
+    if s & 16 != 0 {
+        for i in 0..6 {
+            idot(a, 4 + i, 12 - i, true);
+        }
+    }
+    if s & 32 != 0 {
+        fill(a, 5, 8, 11, 8, true);
+    }
+    if s & 64 != 0 {
+        fill(a, 5, 6, 10, 9, true);
+        fill(a, 7, 7, 8, 8, false);
+    }
+    for y in 0..G {
+        for x in 0..G {
+            if a[y][x] && !g[y][x] {
+                g[y][x] = true;
+            }
+        }
+    }
+    mirror(g, a);
+}
+
+/// The `provision` archetype — an organic cap+stem (form 1) or a container box+lid+clasp (form 2).
+fn arch_provision(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    if p.form == 1 {
+        let ch = 4;
+        for y in 2..=(2 + ch) {
+            let rw = js_round(
+                p.cap_w as f64
+                    * ((y - 1) as f64 / (ch as f64 + 1.0) * std::f64::consts::PI * 0.92).sin(),
+            ) as i32;
+            if rw > 0 {
+                fill(g, 8 - rw, y, 7, y, true);
+            }
+        }
+        fill(g, 5, 3 + ch, 7, 12, true);
+        fill(a, 5, 3 + ch, 7, 12, true);
+        for y in 3..=12 {
+            lock_cell(locked, 7, y);
+        }
+        for i in 0..p.spots {
+            let sx = 5 + (i % 3);
+            let sy = 3 + (i % 2);
+            if in_b(sx, sy) && g[sy as usize][sx as usize] {
+                a[sy as usize][sx as usize] = true;
+            }
+        }
+        mirror(g, a);
+    } else {
+        fill(g, 2, 6, 8, 14, true);
+        fill(g, 1, 5, 8, 6, true);
+        for y in 6..=14 {
+            lock_cell(locked, 8, y);
+        }
+        fill(a, 1, 5, 8, 6, true);
+        if p.clasp != 0 {
+            fill(g, 7, 8, 8, 11, true);
+            fill(a, 7, 9, 8, 10, true);
+            lock_cell(locked, 8, 10);
+        }
+        for i in 0..p.bands {
+            vline(a, 3 + i * 2, 7, 13, true);
+        }
+        mirror(g, a);
+    }
+}
+
 /// `applyLevers(g,a,locked,P,rPick,rTex)` — interior texture (highlight/carve) + one off-centre
 /// accent, with the exact rTex (shuffle + texture) then rPick (symmetry-break) draw order.
 fn apply_levers(
@@ -1133,6 +1584,12 @@ pub fn item_icon(id: &str, base_pal: &Palette) -> Option<(RoleGrid, Palette)> {
         "gem" => arch_gem(&mut g, &mut a, &p, &mut locked),
         "ring" => arch_ring(&mut g, &mut a, &p, &mut locked),
         "orb" => arch_orb(&mut g, &mut a, &p, &mut locked),
+        "blade" => arch_blade(&mut g, &mut a, &p, &mut locked),
+        "tool" => arch_tool(&mut g, &mut a, &p, &mut locked),
+        "shield" => arch_shield(&mut g, &mut a, &p, &mut locked),
+        "garment" => arch_garment(&mut g, &mut a, &p, &mut locked),
+        "sigil" => arch_sigil(&mut g, &mut a, &p, &mut locked),
+        "provision" => arch_provision(&mut g, &mut a, &p, &mut locked),
         _ => return None,
     }
     apply_levers(&mut g, &mut a, &locked, &mut r_pick, &mut r_tex);
@@ -1304,10 +1761,7 @@ mod tests {
             assert_eq!(pal, want_pal(&it["pal"]), "{id} palette");
             checked += 1;
         }
-        // critter(5) + bottle(4) + sheet(4) + gem(4) + ring(4) + orb(3) = 24 samples covered.
-        assert!(
-            checked >= 24,
-            "expected ≥24 ported item icons, checked {checked}"
-        );
+        // All 12 archetypes ported → every one of the 50 itemIcons samples is reproduced.
+        assert_eq!(checked, 50, "all 50 item-icon samples reproduced");
     }
 }
