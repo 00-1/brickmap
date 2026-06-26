@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 const COLLECTIBLES_JSON: &str = include_str!("../data/gg1/collectibles.json");
 
 /// A collectible's gameplay category (the export's `cat`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 pub enum Category {
     Rank,
     Initiation,

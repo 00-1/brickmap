@@ -526,7 +526,7 @@ pub struct Fonts {
 /// separates inline stat/label fields, and the `—`/`–` dashes used in event blurbs. Baked into every
 /// prose face so prompts like "91 − 37" and blurbs like "bondfire — close …" render their symbols
 /// (the default atlas is ASCII-only).
-const GLYPHS: &str = "−×÷²·—–";
+const GLYPHS: &str = "−×÷²·—–✓";
 
 impl Fonts {
     pub fn bake(font: &FontRef<'_>, h: f32) -> Fonts {
@@ -2233,11 +2233,23 @@ const INV_TABS: [&str; 5] = ["Topics", "Awards", "Events", "Loot", "Codex"];
 fn inv_tab_cats(tab: usize) -> &'static [crate::catalogue::Category] {
     use crate::catalogue::Category::*;
     match tab {
-        0 => &[Initiation, Flawless, Mastery, Speed, Solved, Spark], // Topics
-        1 => &[Rank, Milestone, Collector],                          // Awards
-        2 => &[Events],                                              // Events
-        _ => &[], // Loot/Codex: special (see below)
+        // Awards = every non-event collectible category (web's AWARDS overview); Topics splits the
+        // per-mode ones; Events its own. Loot/Codex are special (loot ids / bestiary — a later pass).
+        1 => &[
+            Rank, Initiation, Flawless, Speed, Mastery, Solved, Spark, Milestone, Collector,
+        ],
+        0 => &[Initiation, Flawless, Mastery, Speed, Solved, Spark],
+        2 => &[Events],
+        _ => &[],
     }
+}
+
+/// Every loot id (combat.json `lootBoosts`, tiers 1..=`tier_count`) — the 350 `loot:*` ids the
+/// Inventory header counts (loot lives on the Loot tab, but the grand total includes it).
+fn all_loot_ids() -> Vec<String> {
+    (1..=crate::combat::tier_count())
+        .flat_map(crate::combat::loot_for)
+        .collect()
 }
 
 /// The tile/border colour for an item rarity (`collectibles.js RARITY`).
@@ -2269,12 +2281,18 @@ pub fn items_frame<'a>(
     let owned: std::collections::HashSet<&str> =
         save.collected.keys().map(String::as_str).collect();
 
-    // Header: "Inventory  owned / total".
-    let owned_n = crate::catalogue::catalog()
+    // Header: "Inventory  owned / total" over the GRAND total (catalogue + the 350 loot ids).
+    let loot_ids = all_loot_ids();
+    let cat_owned = crate::catalogue::catalog()
         .iter()
         .filter(|c| owned.contains(c.id.as_str()))
         .count();
-    let title = format!("Inventory  {} / {}", owned_n, crate::catalogue::total());
+    let loot_owned = loot_ids
+        .iter()
+        .filter(|id| owned.contains(id.as_str()))
+        .count();
+    let grand_total = crate::catalogue::total() as usize + loot_ids.len();
+    let title = format!("Inventory  {} / {}", cat_owned + loot_owned, grand_total);
     texts.push(TextRun {
         atlas: &fonts.head,
         quads: centered(&fonts.head, &title, w / 2.0, h * 0.028, h * 0.045),
@@ -2311,76 +2329,170 @@ pub fn items_frame<'a>(
         });
     }
 
-    // The selected tab's items (id, name, rarity). Loot pulls from the combat loot ids; Codex shows
-    // the bestiary foes (a later pass) — for now both fall back to the catalogue Events as a stand-in.
+    // Per-category owned/total over the catalogue (one pass), for the progress bars.
+    use std::collections::BTreeMap;
+    let mut have: BTreeMap<crate::catalogue::Category, u32> = BTreeMap::new();
+    let mut tot: BTreeMap<crate::catalogue::Category, u32> = BTreeMap::new();
+    for c in crate::catalogue::catalog() {
+        *tot.entry(c.cat).or_default() += 1;
+        if owned.contains(c.id.as_str()) {
+            *have.entry(c.cat).or_default() += 1;
+        }
+    }
+
+    // Section label + count (this tab's categories) — e.g. "AWARDS  2310 / 2310".
     let cats = inv_tab_cats(tab);
-    let items: Vec<(String, String, String)> = crate::catalogue::catalog()
-        .into_iter()
-        .filter(|c| cats.contains(&c.cat))
-        .map(|c| (c.id, c.name, c.rarity))
-        .collect();
-    let sect = format!("{}  ", INV_TABS[tab].to_uppercase());
+    let sec_tot: u32 = cats.iter().map(|c| *tot.get(c).unwrap_or(&0)).sum();
+    let sec_have: u32 = cats.iter().map(|c| *have.get(c).unwrap_or(&0)).sum();
+    let (q, _) = fonts
+        .body
+        .layout(&INV_TABS[tab].to_uppercase(), margin, h * 0.142, col_w);
     texts.push(TextRun {
         atlas: &fonts.body,
-        quads: {
-            let (q, _) = fonts.body.layout(&sect, margin, h * 0.145, col_w);
-            q
-        },
+        quads: q,
         rgba: GOLD,
     });
+    let sc = format!("{sec_have} / {sec_tot}");
+    let scw = fonts.tiny.text_width(&sc);
+    let (q, _) = fonts
+        .tiny
+        .layout(&sc, w - margin - scw, h * 0.15, scw + 4.0);
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: DIM,
+    });
 
-    // Icon grid (4 columns); tiles past the frame clip (the web list scrolls).
-    let cols = 4usize;
-    let gap = w * 0.025;
-    let tile = (col_w - gap * (cols as f32 - 1.0)) / cols as f32;
-    let (gx0, gy0) = (margin, h * 0.185);
-    for (i, (id, name, rarity)) in items.iter().enumerate() {
-        let (r, c) = (i / cols, i % cols);
-        let x = gx0 + c as f32 * (tile + gap);
-        let y = gy0 + r as f32 * (tile * 1.32 + gap);
-        if y + tile > h * 0.9 {
-            break; // off-screen (scrolls on device)
-        }
-        let have = owned.contains(id.as_str());
-        // Rarity-bordered tile.
+    // One PROGRESS-BAR row per category: name + owned/total + ✓ (when complete) + a green fill bar.
+    let n = cats.len().max(1);
+    let band_top = h * 0.175;
+    let band_bot = h * 0.70;
+    let rgap = h * 0.012;
+    let row_h = ((band_bot - band_top) / n as f32 - rgap).clamp(h * 0.03, h * 0.06);
+    for (i, cat) in cats.iter().enumerate() {
+        let (t, hv) = (*tot.get(cat).unwrap_or(&0), *have.get(cat).unwrap_or(&0));
+        let ry = band_top + i as f32 * (row_h + rgap);
         rects.push(RectRun {
-            x: x - 1.5,
-            y: y - 1.5,
-            w: tile + 3.0,
-            h: tile + 3.0,
-            rgba: if have { rarity_rgba(rarity) } else { DIM },
+            x: margin,
+            y: ry,
+            w: col_w,
+            h: row_h,
+            rgba: PANEL,
         });
-        rects.push(RectRun {
-            x,
-            y,
-            w: tile,
-            h: tile,
-            rgba: INK,
+        let done = t > 0 && hv >= t;
+        let label_col = if done { GREEN } else { BODY };
+        let (q, _) = fonts.body.layout(
+            &format!("{cat:?}"),
+            margin + col_w * 0.04,
+            ry + row_h * 0.12,
+            col_w,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: label_col,
         });
-        // The pixel icon (N1 generator).
-        if let Some((role, pal)) = crate::art::item_icon_for(id, rarity) {
-            paint_role(
-                &mut rects,
-                &role,
-                &pal,
-                x + tile * 0.06,
-                y + tile * 0.06,
-                tile * 0.88 / 16.0,
-            );
-        }
-        // Name (truncated to fit) below the tile.
-        let short: String = name.chars().take(10).collect();
+        let cnt = format!("{hv} / {t}{}", if done { "  ✓" } else { "" });
+        let cw = fonts.tiny.text_width(&cnt);
+        let (q, _) = fonts.tiny.layout(
+            &cnt,
+            margin + col_w * 0.96 - cw,
+            ry + row_h * 0.16,
+            cw + 8.0,
+        );
         texts.push(TextRun {
             atlas: &fonts.tiny,
-            quads: centered(
-                &fonts.tiny,
-                &short,
-                x + tile / 2.0,
-                y + tile + h * 0.004,
-                h * 0.02,
-            ),
-            rgba: if have { BODY } else { DIM },
+            quads: q,
+            rgba: label_col,
         });
+        // Progress bar (track + green fill).
+        let (bx, by, bw, bh) = (
+            margin + col_w * 0.04,
+            ry + row_h * 0.62,
+            col_w * 0.92,
+            row_h * 0.18,
+        );
+        rects.push(RectRun {
+            x: bx,
+            y: by,
+            w: bw,
+            h: bh,
+            rgba: INK,
+        });
+        let frac = if t > 0 { hv as f32 / t as f32 } else { 0.0 };
+        if frac > 0.0 {
+            rects.push(RectRun {
+                x: bx,
+                y: by,
+                w: bw * frac,
+                h: bh,
+                rgba: GREEN,
+            });
+        }
+    }
+
+    // Detail strip: the first category's item tiles (icons), like web's "RANK 23/23" row.
+    if let Some(first) = cats.first() {
+        let strip: Vec<(String, String, String)> = crate::catalogue::catalog()
+            .into_iter()
+            .filter(|c| &c.cat == first)
+            .map(|c| (c.id, c.name, c.rarity))
+            .collect();
+        let (q, _) = fonts.tiny.layout(
+            &format!("{first:?}").to_uppercase(),
+            margin,
+            h * 0.715,
+            col_w,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        let cols = 5usize;
+        let sgap = w * 0.02;
+        let tile = (col_w - sgap * (cols as f32 - 1.0)) / cols as f32;
+        let sy = h * 0.74;
+        for (i, (id, name, rarity)) in strip.iter().take(cols).enumerate() {
+            let x = margin + i as f32 * (tile + sgap);
+            let have_it = owned.contains(id.as_str());
+            rects.push(RectRun {
+                x: x - 1.5,
+                y: sy - 1.5,
+                w: tile + 3.0,
+                h: tile + 3.0,
+                rgba: if have_it { rarity_rgba(rarity) } else { DIM },
+            });
+            rects.push(RectRun {
+                x,
+                y: sy,
+                w: tile,
+                h: tile,
+                rgba: INK,
+            });
+            if let Some((role, pal)) = crate::art::item_icon_for(id, rarity) {
+                paint_role(
+                    &mut rects,
+                    &role,
+                    &pal,
+                    x + tile * 0.08,
+                    sy + tile * 0.08,
+                    tile * 0.84 / 16.0,
+                );
+            }
+            let short: String = name.chars().take(9).collect();
+            texts.push(TextRun {
+                atlas: &fonts.tiny,
+                quads: centered(
+                    &fonts.tiny,
+                    &short,
+                    x + tile / 2.0,
+                    sy + tile + h * 0.003,
+                    h * 0.018,
+                ),
+                rgba: if have_it { BODY } else { DIM },
+            });
+        }
     }
 
     push_button(&mut rects, &mut texts, fonts, "Back", w, h);
@@ -2414,6 +2526,10 @@ fn full_collection_sample() -> Save {
     }
     for c in crate::catalogue::catalog() {
         mark(&mut s, c.id.clone());
+    }
+    // …and every loot id (so the Inventory header reads the full 2702/2702).
+    for id in all_loot_ids() {
+        mark(&mut s, id);
     }
     s.gold = 99_999.0;
     s
