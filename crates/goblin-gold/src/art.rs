@@ -385,9 +385,11 @@ pub fn foe_grid(n: u32, name: &str, kind: Kind) -> (RoleGrid, Palette) {
 /// FNV-1a (32-bit) over a string → 8 lowercase hex (the `art-export.js` digest hash). ASCII-only
 /// inputs, so byte iteration matches JS `charCodeAt`.
 fn fnv1a(s: &str) -> String {
+    // JS `charCodeAt` semantics: hash over UTF-16 code units, NOT UTF-8 bytes — they differ for the
+    // non-ASCII prompt chars in solve:/spark: ids (× ÷ − ² …). ASCII-only inputs are unaffected.
     let mut h: u32 = 0x811c_9dc5;
-    for b in s.bytes() {
-        h ^= b as u32;
+    for u in s.encode_utf16() {
+        h ^= u as u32;
         h = h.wrapping_mul(0x0100_0193);
     }
     format!("{h:08x}")
@@ -1617,32 +1619,38 @@ fn palette_for(rarity: &str) -> Palette {
     }
 }
 
-/// The rolled FNV-1a digest over **every** catalogue item icon — proving the full 2702-icon item space
-/// (not just the 50 sampled). Per `art-vectors.json itemDigest.canon`: a line per catalogue id,
-/// `"<id>|<roleGrid>|<body><accent><outline>"` (roleGrid = the 256-char `item_icon` role string, pal =
-/// the per-id shift of `paletteFor(rarity)`); the lines are **sorted ascending**, joined with `\n`
-/// with a trailing `\n`, then FNV-1a-32 → 8 lowercase hex. Order-independent (the sort).
-pub fn item_digest() -> String {
-    let mut lines: Vec<String> = crate::catalogue::catalog()
-        .into_iter()
-        .map(|c| {
-            let base = palette_for(&c.rarity);
-            let (role, pal) =
-                item_icon(&c.id, &base).expect("every catalogue id maps to an archetype");
-            format!(
-                "{}|{}|{}{}{}",
-                c.id,
-                role_rows_joined(&role),
-                pal.body,
-                pal.accent,
-                pal.outline
-            )
-        })
-        .collect();
+/// One item's digest line (`itemDigest.canon`): `"<id>|<roleGrid>|<body><accent><outline>"` — roleGrid
+/// the 256-char `item_icon` role string, palette the per-id shift of `paletteFor(rarity)`.
+fn icon_digest_line(id: &str, rarity: &str) -> String {
+    let (role, pal) = item_icon(id, &palette_for(rarity)).expect("id maps to a ported archetype");
+    format!(
+        "{}|{}|{}{}{}",
+        id,
+        role_rows_joined(&role),
+        pal.body,
+        pal.accent,
+        pal.outline
+    )
+}
+
+/// FNV-1a digest of a set of icon lines: **sort ascending**, join with `\n`, trailing `\n`, then
+/// FNV-1a-32 → 8 lowercase hex (order-independent). Shared by the item + loot digests.
+fn icon_digest_of(mut lines: Vec<String>) -> String {
     lines.sort();
     let mut acc = lines.join("\n");
     acc.push('\n');
     fnv1a(&acc)
+}
+
+/// The rolled digest over **every** non-loot catalogue item icon (`itemDigest` — the full catalogue
+/// space, not just the 50 sampled).
+pub fn item_digest() -> String {
+    icon_digest_of(
+        crate::catalogue::catalog()
+            .into_iter()
+            .map(|c| icon_digest_line(&c.id, &c.rarity))
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -1816,12 +1824,10 @@ mod tests {
     ///
     /// IGNORED pending an EXPORT reconciliation (flagged to the Babysitter): the committed
     /// `collectibles.json` catalogue is **2352** entries (Solved 959 · Spark 959 · +434), but
-    /// `itemDigest.count` is **2702** (⇒ the digest was computed over a superset — Solved/Spark 1134
-    /// each from the live `collectibles.js` CATALOG, not the committed export). The generator itself is
-    /// proven by `item_icons_match_vectors` (all 12 archetypes, every sample byte-exact); `item_digest`
-    /// is correct per `itemDigest.canon` and will match once the catalogue export aligns with the digest.
+    /// `itemDigest` (Babysitter `bd20937`+ fix: now scoped to the **non-loot** catalogue, 2352, fnv
+    /// `934075ca`; the 350 loot ids moved to `lootDigest`). Proves all 2352 catalogue item icons
+    /// byte-identical — the whole item space, not a sample.
     #[test]
-    #[ignore = "export mismatch: collectibles.json=2352 vs itemDigest.count=2702 — flagged to Babysitter"]
     fn item_digest_matches_full_space() {
         let v = &vectors()["itemDigest"];
         let want_count = v["count"].as_u64().unwrap() as usize;
@@ -1834,6 +1840,28 @@ mod tests {
             item_digest(),
             v["fnv"].as_str().unwrap(),
             "full item-space FNV digest"
+        );
+    }
+
+    /// `lootDigest`: the 350 loot icons (`combat.json` loot ids + their rarity from `lootItems`) — same
+    /// `icon_digest` recipe — reproduce the export's fnv `8143c303` byte-for-byte.
+    #[test]
+    fn loot_digest_matches_full_space() {
+        let v = vectors();
+        let items = v["lootItems"].as_array().unwrap();
+        assert_eq!(
+            items.len(),
+            v["lootDigest"]["count"].as_u64().unwrap() as usize,
+            "lootItems count == lootDigest count"
+        );
+        let lines: Vec<String> = items
+            .iter()
+            .map(|it| icon_digest_line(it["id"].as_str().unwrap(), it["rarity"].as_str().unwrap()))
+            .collect();
+        assert_eq!(
+            icon_digest_of(lines),
+            v["lootDigest"]["fnv"].as_str().unwrap(),
+            "full loot-space FNV digest"
         );
     }
 }

@@ -31,9 +31,11 @@ impl Rng {
 /// FNV-1a over a string (matches `synth.js`/`events.js` `hashStr`). `pub(crate)` for the event-play
 /// gauntlet seed.
 pub(crate) fn hash_str(s: &str) -> u32 {
+    // JS `hashStr` folds in `charCodeAt(i)` — UTF-16 code units, NOT UTF-8 bytes. They differ for the
+    // non-ASCII solve:/spark: catalogue ids (prompt chars × ÷ − ²); ASCII ids are identical either way.
     let mut h: u32 = 2_166_136_261;
-    for b in s.bytes() {
-        h ^= b as u32;
+    for u in s.encode_utf16() {
+        h ^= u as u32;
         h = h.wrapping_mul(16_777_619);
     }
     h
