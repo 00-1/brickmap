@@ -60,6 +60,11 @@ pub mod combat;
 // events.js/main.js, proven vs `events-vectors.json`. Pure logic; reuses the synth PRNG + transforms.
 pub mod event_play;
 
+// Procedural portraits (F1+F2): the 16×16 hero/foe generators from collectibles.js drawIcon +
+// monsters.js buildGrid, proven byte-identical vs `art-vectors.json`. Pure logic; the screens paint
+// these role grids through the per-id/per-type palettes.
+pub mod art;
+
 // Earning: the rule turning a finished round + running totals into awarded collectible keys,
 // re-impl'd from collectibles.js and proven vs `earning-vectors.json`. Pure logic.
 pub mod earning;

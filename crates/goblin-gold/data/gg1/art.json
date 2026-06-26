@@ -1,0 +1,43 @@
+{
+ "_note": "GG1 procedural portraits/icons (NO art assets). Two deterministic generators over a 16×16 grid: collectibles.js drawIcon (hero portraits + item icons) and monsters.js buildGrid (Arena foes). The port reproduces the GENERATORS (read them from gg1/dev) and proves byte-identical vs art-vectors.json.",
+ "_f1": "ICONS (collectibles.js): buildIcon(id,catId) seeds mulberry32(hashStr(id)); a 'hero:'<id> routes to heroSprite (mirrored centre-weighted creature-blob, ~30% accent), else ARCH[cat.arch] + applyLevers. iconRoleGrid → 0 empty·1 outline·2 body·3 accent (shape, palette-independent); iconPalette(id,basePal,catId) → the per-id hue/lum-shifted {body,accent,outline} LUT. Paint a cell by its role through that LUT. catId 'familiar' is the hero archetype (ignored for 'hero:' ids — the hero branch wins).",
+ "_f2": "FOES (monsters.js): buildGrid({n,name,type}) seeds mulberry32(hashStr(name)^imul(n,2654435761)); a lumpy vertically-symmetric blob + region-biased horns/eyes/mouth/feet, bosses (n%12===0) larger + crowned. role grid → 0 empty·1 outline·2 body·3 accent·4 eye; pal {body,accent,outline,eye} is per TYPE (no per-id shift).",
+ "constants": {
+  "gridSize": 16,
+  "heroPal": {
+   "Brawn": {
+    "body": "#d05a4a",
+    "accent": "#ff8a6e",
+    "outline": "#3a1410"
+   },
+   "Arcane": {
+    "body": "#8a5cf6",
+    "accent": "#cda9ff",
+    "outline": "#1f1340"
+   },
+   "Cunning": {
+    "body": "#3fce8c",
+    "accent": "#8ef0bf",
+    "outline": "#0f3324"
+   }
+  },
+  "roleLegendIcon": {
+   "0": "empty",
+   "1": "outline",
+   "2": "body",
+   "3": "accent"
+  },
+  "roleLegendFoe": {
+   "0": "empty",
+   "1": "outline",
+   "2": "body",
+   "3": "accent",
+   "4": "eye"
+  },
+  "regionSize": 12,
+  "source": {
+   "icons": "gg1/dev/collectibles.js (drawIcon/buildIcon/heroSprite/iconRoleGrid/iconPalette)",
+   "foes": "gg1/dev/monsters.js (buildGrid)"
+  }
+ }
+}
