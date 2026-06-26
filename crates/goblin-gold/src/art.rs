@@ -564,6 +564,16 @@ fn idot(t: &mut IGrid, x: i32, y: i32, v: bool) {
         t[y as usize][x as usize] = v;
     }
 }
+/// `disc(t,cx,cy,r,v)` — fill a filled circle of radius `r` (the `x²+y² ≤ r²+r` disc).
+fn disc(t: &mut IGrid, cx: i32, cy: i32, r: i32, v: bool) {
+    for y in -r..=r {
+        for x in -r..=r {
+            if x * x + y * y <= r * r + r {
+                idot(t, cx + x, cy + y, v);
+            }
+        }
+    }
+}
 fn mirror(g: &mut IGrid, a: &mut IGrid) {
     for y in 0..G {
         for x in 0..8 {
@@ -592,6 +602,24 @@ struct Preset {
     feet: i32,
     tail: i32,
     wings: i32,
+    liquid: f64,
+    label: i32,
+    w: i32,
+    top_roll: i32,
+    bot_roll: i32,
+    glyph_lines: i32,
+    spine: i32,
+    seal: i32,
+    facet_w: i32,
+    facet_h: i32,
+    facet_twist: i32,
+    band_style: i32,
+    outer_r: i32,
+    stone: i32,
+    points: i32,
+    r: i32,
+    ring: i32,
+    coin: i32,
 }
 
 /// `BASE[arch]` merged with the category's `.p` overrides — the pre-jitter preset for `cat_id`.
@@ -634,15 +662,144 @@ fn base_preset(cat_id: &str) -> Preset {
             tail: 1,
             ..Default::default()
         },
+        // bottle (BASE bodyW:5,bodyH:8,liquid:0.6,label:0)
+        "potion" => Preset {
+            body_w: 5,
+            body_h: 8,
+            liquid: 0.6,
+            label: 1,
+            ..Default::default()
+        },
+        "elixir" => Preset {
+            body_w: 6,
+            body_h: 9,
+            liquid: 0.85,
+            label: 0,
+            ..Default::default()
+        },
+        "tonic" => Preset {
+            body_w: 3,
+            body_h: 7,
+            liquid: 0.5,
+            label: 1,
+            ..Default::default()
+        },
+        "vial" => Preset {
+            body_w: 3,
+            body_h: 5,
+            liquid: 0.7,
+            label: 0,
+            ..Default::default()
+        },
+        // sheet (BASE w:5,glyphLines:3, rest 0)
+        "scroll" => Preset {
+            w: 5,
+            top_roll: 1,
+            bot_roll: 1,
+            glyph_lines: 3,
+            ..Default::default()
+        },
+        "tome" => Preset {
+            w: 5,
+            spine: 1,
+            glyph_lines: 2,
+            ..Default::default()
+        },
+        "map" => Preset {
+            w: 6,
+            top_roll: 1,
+            seal: 1,
+            glyph_lines: 2,
+            ..Default::default()
+        },
+        "letter" => Preset {
+            w: 4,
+            seal: 1,
+            glyph_lines: 2,
+            ..Default::default()
+        },
+        // gem (BASE facetW:4,facetH:4,facetTwist:0)
+        "gem" => Preset {
+            facet_w: 4,
+            facet_h: 4,
+            ..Default::default()
+        },
+        "shard" => Preset {
+            facet_w: 2,
+            facet_h: 6,
+            ..Default::default()
+        },
+        "jewel" => Preset {
+            facet_w: 5,
+            facet_h: 3,
+            ..Default::default()
+        },
+        "geode" => Preset {
+            facet_w: 6,
+            facet_h: 5,
+            ..Default::default()
+        },
+        // ring (BASE bandStyle:0,outerR:5,stone:0,points:4)
+        "ring" => Preset {
+            band_style: 0,
+            outer_r: 5,
+            stone: 1,
+            points: 4,
+            ..Default::default()
+        },
+        "signet" => Preset {
+            band_style: 0,
+            outer_r: 5,
+            stone: 0,
+            points: 4,
+            ..Default::default()
+        },
+        "amulet" => Preset {
+            band_style: 2,
+            outer_r: 5,
+            stone: 1,
+            points: 4,
+            ..Default::default()
+        },
+        "crown" => Preset {
+            band_style: 1,
+            outer_r: 5,
+            points: 4,
+            ..Default::default()
+        },
+        // orb (BASE r:6,ring:0,coin:0)
+        "orb" => Preset {
+            r: 6,
+            ring: 0,
+            coin: 0,
+            ..Default::default()
+        },
+        "globe" => Preset {
+            r: 6,
+            ring: 1,
+            coin: 0,
+            ..Default::default()
+        },
+        "coin" => Preset {
+            r: 5,
+            ring: 0,
+            coin: 1,
+            ..Default::default()
+        },
         _ => Preset::default(),
     }
 }
 
 /// Whether the item generator can draw `cat_id` yet (archetype ported). Grows as archetypes land.
 fn arch_ported(cat_id: &str) -> bool {
+    let arch = CATEGORIES
+        .iter()
+        .find(|(c, _)| *c == cat_id)
+        .map(|(_, a)| *a)
+        .unwrap_or("");
     matches!(
-        cat_id,
-        "familiar" | "imp" | "slime" | "batling" | "dragonet"
+        arch,
+        "critter" | "bottle" | "sheet" | "gem" | "ring" | "orb"
     )
 }
 
@@ -657,9 +814,32 @@ fn resolve_preset(cat_id: &str, rng: &mut crate::synth::Rng) -> Preset {
         .find(|(c, _)| *c == cat_id)
         .map(|(_, a)| *a)
         .unwrap_or("critter");
-    if arch == "critter" {
-        p.body_w = cli(j(p.body_w, 1, rng), 3, 7);
-        p.body_h = cli(j(p.body_h, 1, rng), 3, 6);
+    match arch {
+        "critter" => {
+            p.body_w = cli(j(p.body_w, 1, rng), 3, 7);
+            p.body_h = cli(j(p.body_h, 1, rng), 3, 6);
+        }
+        "bottle" => {
+            p.body_w = cli(j(p.body_w, 1, rng), 3, 6);
+            p.body_h = cli(j(p.body_h, 1, rng), 5, 9);
+            p.liquid = 0.35 + rng.next() * 0.5;
+        }
+        "sheet" => {
+            p.glyph_lines = cli(j(p.glyph_lines, 1, rng), 1, 5);
+            p.w = cli(j(p.w, 1, rng), 4, 6);
+        }
+        "gem" => {
+            p.facet_w = cli(j(p.facet_w, 1, rng), 2, 6);
+            p.facet_h = cli(j(p.facet_h, 1, rng), 2, 6);
+            p.facet_twist = (rng.next() * 2.0).floor() as i32;
+        }
+        "ring" => {
+            p.outer_r = cli(j(p.outer_r, 0, rng), 4, 6);
+        }
+        "orb" => {
+            p.r = cli(j(p.r, 0, rng), 5, 6);
+        }
+        _ => {}
     }
     p
 }
@@ -711,6 +891,151 @@ fn arch_critter(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
     lock_cell(locked, 6, cy - 1);
     lock_cell(locked, 9, cy - 1);
     fill(a, 6, cy + 2, 9, cy + 3, true);
+}
+
+/// The `bottle` archetype — body + shoulder + neck + cork, mirrored, with a liquid fill + optional label.
+fn arch_bottle(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    let by = 15 - p.body_h;
+    let bw = p.body_w;
+    fill(g, 8 - bw, by, 7, 15, true);
+    fill(g, 6, by - 2, 7, by - 1, true);
+    fill(g, 6, by - 4, 7, by - 3, true);
+    fill(g, 6, by - 5, 7, by - 5, true);
+    for y in (by - 5)..=15 {
+        lock_cell(locked, 7, y);
+    }
+    mirror(g, a);
+    let liq = js_round((15 - by) as f64 * p.liquid) as i32;
+    fill(a, 8 - bw, 15 - liq, 7, 15, true);
+    mirror(g, a);
+    if p.label != 0 {
+        hline(g, 11, 8 - bw, 7, true);
+        hline(a, 11, 8 - bw, 7, true);
+        mirror(g, a);
+    }
+}
+
+/// The `sheet` archetype — a parchment rect (not mirrored); rolls/spine/glyph-lines/seal per preset.
+fn arch_sheet(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    let x0 = 8 - p.w;
+    let x1 = 12;
+    let y0 = 2 + if p.top_roll != 0 { 1 } else { 0 };
+    let y1 = 13 - if p.bot_roll != 0 { 1 } else { 0 };
+    fill(g, x0, y0, x1, y1, true);
+    if p.top_roll != 0 {
+        fill(g, x0 - 1, 1, x1 + 1, 2, true);
+        fill(a, x0 - 1, 1, x1 + 1, 1, true);
+    }
+    if p.bot_roll != 0 {
+        fill(g, x0 - 1, 13, x1 + 1, 14, true);
+        fill(a, x0 - 1, 14, x1 + 1, 14, true);
+    }
+    for y in y0..=y1 {
+        lock_cell(locked, 8, y);
+    }
+    lock_cell(locked, x0, y0 + 1);
+    lock_cell(locked, x1, y1 - 1);
+    for i in 0..p.glyph_lines {
+        let gy = y0 + 2 + i * 2;
+        if gy < y1 - 1 {
+            hline(a, gy, x0 + 1, x1 - 1, true);
+        }
+    }
+    if p.spine != 0 {
+        fill(g, 7, y0, 8, y1, true);
+        fill(a, 7, y0, 8, y1, true);
+    }
+    if p.seal != 0 {
+        fill(a, x1 - 2, y1 - 2, x1 - 1, y1 - 1, true);
+    }
+}
+
+/// The `gem` archetype — a mirrored faceted gem; facet width/height + a twist parity per preset.
+fn arch_gem(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    let ty = cli(8 - p.facet_h, 1, 7);
+    let by = cli(8 + p.facet_h, 9, 15);
+    let fw = p.facet_w;
+    for y in ty..=8 {
+        let rw = (js_round(fw as f64 * (y - ty + 1) as f64 / (8 - ty + 1) as f64) as i32).max(1);
+        fill(g, 8 - rw, y, 8, y, true);
+    }
+    for y in 9..=by {
+        let rw = (js_round(fw as f64 * (by - y + 1) as f64 / (by - 8) as f64) as i32).max(1);
+        fill(g, 8 - rw, y, 8, y, true);
+    }
+    for y in (ty + 1)..=(by - 1) {
+        lock_cell(locked, 8, y);
+    }
+    for y in ty..=by {
+        for x in (8 - fw)..=8 {
+            if in_b(x, y) && g[y as usize][x as usize] && (x + y + p.facet_twist).rem_euclid(2) == 0
+            {
+                a[y as usize][x as usize] = true;
+            }
+        }
+    }
+    mirror(g, a);
+}
+
+/// The `ring` archetype — a band with a hollow centre; crown points / amulet torc / signet stone.
+fn arch_ring(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    let r = p.outer_r;
+    let ir = (r - 2).max(2);
+    let cy = 9;
+    disc(g, 8, cy, r, true);
+    disc(g, 8, cy, ir, false);
+    for x in (8 - r)..=(8 - ir - 1) {
+        lock_cell(locked, x, cy);
+    }
+    lock_cell(locked, 8, cy - r);
+    if p.band_style == 1 {
+        for pp in 0..=p.points {
+            let px = 3 + pp * 2;
+            fill(g, px, 3, px, 5, true);
+        }
+        fill(g, 3, 5, 8, 7, true);
+        fill(a, 3, 5, 8, 6, true);
+        lock_cell(locked, 8, 4);
+    } else if p.stone != 0 {
+        fill(g, 7, cy - r - 1, 8, cy - r, true);
+        fill(a, 7, cy - r - 1, 8, cy - r, true);
+        lock_cell(locked, 7, cy - r - 1);
+    }
+    mirror(g, a);
+    if p.band_style == 2 {
+        for y in (cy + 1)..=(cy + r) {
+            idot(g, 8, y, false);
+        }
+    }
+}
+
+/// The `orb` archetype — a mirrored disc + highlight; coin = flat rim, globe = cross banding.
+fn arch_orb(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    let r = p.r;
+    disc(g, 8, 8, r, true);
+    if p.coin != 0 {
+        fill(g, 8 - r, 7, 8, 9, true);
+        for x in (8 - r)..=8 {
+            idot(g, x, 8 - r, false);
+            idot(g, x, 8 + r, false);
+        }
+    }
+    for y in (8 - 2)..=(8 + 2) {
+        lock_cell(locked, 8, y);
+    }
+    let f = r / 2;
+    fill(a, 8 - f - 1, 8 - f - 1, 8 - f, 8 - f, true);
+    if p.ring == 1 {
+        fill(a, 8 - r, 8, 8, 8, true);
+        for y in (8 - r)..=(8 + r) {
+            idot(a, 8, y, true);
+        }
+    } else if p.ring == 2 {
+        for x in (8 - r)..=8 {
+            idot(a, x, 8 - r, true);
+        }
+    }
+    mirror(g, a);
 }
 
 /// `applyLevers(g,a,locked,P,rPick,rTex)` — interior texture (highlight/carve) + one off-centre
@@ -803,6 +1128,11 @@ pub fn item_icon(id: &str, base_pal: &Palette) -> Option<(RoleGrid, Palette)> {
     let p = resolve_preset(cat_id, &mut r_pick);
     match arch {
         "critter" => arch_critter(&mut g, &mut a, &p, &mut locked),
+        "bottle" => arch_bottle(&mut g, &mut a, &p, &mut locked),
+        "sheet" => arch_sheet(&mut g, &mut a, &p, &mut locked),
+        "gem" => arch_gem(&mut g, &mut a, &p, &mut locked),
+        "ring" => arch_ring(&mut g, &mut a, &p, &mut locked),
+        "orb" => arch_orb(&mut g, &mut a, &p, &mut locked),
         _ => return None,
     }
     apply_levers(&mut g, &mut a, &locked, &mut r_pick, &mut r_tex);
@@ -974,10 +1304,10 @@ mod tests {
             assert_eq!(pal, want_pal(&it["pal"]), "{id} palette");
             checked += 1;
         }
-        // The critter family (5 categories) is ported — all 5 critter samples must be covered.
+        // critter(5) + bottle(4) + sheet(4) + gem(4) + ring(4) + orb(3) = 24 samples covered.
         assert!(
-            checked >= 5,
-            "expected ≥5 ported item icons, checked {checked}"
+            checked >= 24,
+            "expected ≥24 ported item icons, checked {checked}"
         );
     }
 }
