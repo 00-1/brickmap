@@ -157,6 +157,16 @@ fn main() {
     );
     println!("wrote inventory-awards-brickmap (430x880 visual-ref)");
 
+    // The Results screen at the web reference aspect → halves visual-ref.
+    let results_ref = app::render_results_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/results-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &results_ref,
+    );
+    println!("wrote results-brickmap (430x880 visual-ref)");
+
     // The procedural-art contact sheet (F1 heroes · F2 foes · F3 scenery · F4 crests).
     let art_rgba = app::render_art_sheet(&painter, &font);
     write_png(

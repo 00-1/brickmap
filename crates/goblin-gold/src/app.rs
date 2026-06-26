@@ -1730,69 +1730,149 @@ pub fn results_frame<'a>(
     let col_w = w - margin * 2.0;
     let cx = w / 2.0;
 
-    let (q, _hh) = fonts.head.layout("Round Complete", margin, h * 0.05, col_w);
+    // Starfield backdrop (deterministic scatter of dim pixels) — web's results sky.
+    let mut rng = crate::synth::Rng::new(0x57a4_1e2d);
+    for _ in 0..140 {
+        let s = 1.4 + rng.next() as f32 * 2.4;
+        let lum = 0.16 + rng.next() as f32 * 0.22;
+        rects.push(RectRun {
+            x: rng.next() as f32 * w,
+            y: rng.next() as f32 * h,
+            w: s,
+            h: s,
+            rgba: [lum, lum, lum * 1.1, 1.0],
+        });
+    }
+
+    // The headline FINAL TIME — the run's reward in a speed game (gold, huge).
     texts.push(TextRun {
-        atlas: &fonts.head,
-        quads: q,
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "FINAL TIME", cx, h * 0.06, h * 0.022),
+        rgba: DIM,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.q,
+        quads: centered(
+            &fonts.q,
+            &format!("{:.1}s", o.total_time),
+            cx,
+            h * 0.085,
+            h * 0.11,
+        ),
         rgba: GOLD,
     });
 
-    // The rank, large and centred — the headline reward of the run.
+    // RANK EARNED — its pixel portrait (the N1 item generator over the `rank:<key>` id) + name.
+    let ry = h * 0.26;
     texts.push(TextRun {
-        atlas: &fonts.q,
-        quads: centered(&fonts.q, &o.rank_name, cx, h * 0.15, h * 0.1),
-        rgba: GREEN,
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "RANK EARNED", cx, ry, h * 0.022),
+        rgba: DIM,
+    });
+    let tile = h * 0.085;
+    if let Some((id, rarity)) = rank_item(o.rank_idx) {
+        if let Some((role, pal)) = crate::art::item_icon_for(&id, &rarity) {
+            rects.push(RectRun {
+                x: cx - tile - w * 0.06,
+                y: ry + h * 0.03,
+                w: tile,
+                h: tile,
+                rgba: INK,
+            });
+            paint_role(
+                &mut rects,
+                &role,
+                &pal,
+                cx - tile - w * 0.06,
+                ry + h * 0.03,
+                tile / 16.0,
+            );
+        }
+    }
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: {
+            let (q, _) = fonts
+                .head
+                .layout(&o.rank_name, cx - w * 0.02, ry + h * 0.04, col_w);
+            q
+        },
+        rgba: BODY,
     });
 
+    // Accuracy + Skipped, as two centred stat columns (web's layout).
     let accuracy = if o.total > 0 {
         (o.answered * 100 + o.total / 2) / o.total
     } else {
         0
     };
-    let rows = [
-        (
-            "Answered".to_string(),
-            format!("{} / {}", o.answered, o.total),
-        ),
-        ("Accuracy".to_string(), format!("{accuracy}%")),
-        ("Time".to_string(), format!("{:.1}s", o.total_time)),
-        ("Gold earned".to_string(), format!("+{}", o.gold_earned)),
-        ("New collectibles".to_string(), format!("{}", o.newly.len())),
-    ];
-    let top = h * 0.30;
-    let row_h = h * 0.085;
-    let gap = h * 0.02;
-    for (i, (label, value)) in rows.iter().enumerate() {
-        let ry = top + i as f32 * (row_h + gap);
-        rects.push(RectRun {
-            x: margin,
-            y: ry,
-            w: col_w,
-            h: row_h,
-            rgba: PANEL,
-        });
-        let ty = ry + row_h / 2.0 - 0.59 * fonts.body.px;
-        let (lq, _) = fonts.body.layout(label, margin + col_w * 0.05, ty, col_w);
+    let skipped = o.total.saturating_sub(o.answered);
+    let sy = h * 0.42;
+    for (val, label, x) in [
+        (format!("{accuracy}%"), "ACCURACY", w * 0.32),
+        (format!("{skipped}"), "SKIPPED", w * 0.68),
+    ] {
         texts.push(TextRun {
-            atlas: &fonts.body,
-            quads: lq,
+            atlas: &fonts.head,
+            quads: centered(&fonts.head, &val, x, sy, h * 0.05),
+            rgba: BODY,
+        });
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: centered(&fonts.tiny, label, x, sy + h * 0.055, h * 0.022),
             rgba: DIM,
-        });
-        let vw = fonts.body.text_width(value);
-        // Gold is the headline figure — tint it gold; the rest read as body text.
-        let col = if i == 3 { GOLD } else { BODY };
-        let (vq, _) = fonts
-            .body
-            .layout(value, margin + col_w * 0.95 - vw, ty, vw + 4.0);
-        texts.push(TextRun {
-            atlas: &fonts.body,
-            quads: vq,
-            rgba: col,
         });
     }
 
+    // Goblin Gold (with a coin pip).
+    let gy = h * 0.54;
+    let coin = h * 0.026;
+    rects.push(RectRun {
+        x: cx - w * 0.20,
+        y: gy,
+        w: coin,
+        h: coin,
+        rgba: GOLD,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: {
+            let (q, _) = fonts.body.layout(
+                &format!("{} Goblin Gold", o.gold_earned),
+                cx - w * 0.14,
+                gy,
+                col_w,
+            );
+            q
+        },
+        rgba: GOLD,
+    });
+
+    // SLOWEST ANSWERS section header (the per-question list needs round-step times — a follow-up; the
+    // RoundOutcome doesn't carry them yet).
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: {
+            let (q, _) = fonts
+                .tiny
+                .layout("SLOWEST ANSWERS", margin, h * 0.63, col_w);
+            q
+        },
+        rgba: DIM,
+    });
+
     push_button(&mut rects, &mut texts, fonts, "Continue", w, h);
     (rects, texts)
+}
+
+/// The catalogue Rank item (id + rarity) at rank tier `rank_idx` — for the Results rank portrait
+/// (`item_icon("rank:<key>")`). The Rank category is added in tier order, so the nth is tier n.
+fn rank_item(rank_idx: usize) -> Option<(String, String)> {
+    crate::catalogue::catalog()
+        .into_iter()
+        .filter(|c| c.cat == crate::catalogue::Category::Rank)
+        .nth(rank_idx)
+        .map(|c| (c.id, c.rarity))
 }
 
 /// Render a representative **Results** screen (a strong-but-imperfect run), headless. Shared by the
@@ -1815,6 +1895,28 @@ pub fn render_results(painter: &crate::headless::Painter, font: &FontRef<'_>) ->
     };
     let (rects, texts) = results_frame(&outcome, &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+/// The representative end-of-round outcome (a flawless Runelord run) for the Results golden/ref.
+fn results_sample() -> RoundOutcome {
+    RoundOutcome {
+        rank_idx: 16,
+        rank_name: "Runelord".to_string(),
+        newly: vec!["init:halves".to_string()],
+        gold_earned: 184,
+        answered: 10,
+        total: 10,
+        total_time: 14.2,
+    }
+}
+
+/// Render the **Results** screen at the web reference aspect (430×880) — committed to halves as
+/// `visual-ref/results-brickmap.png` for the Babysitter's side-by-side review.
+pub fn render_results_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = results_frame(&results_sample(), &fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
 /// The three-letter section label for a hero type (the grouped `BRAWN` / `ARCANE` / `CUNNING`
