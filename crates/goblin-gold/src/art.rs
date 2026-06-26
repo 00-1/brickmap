@@ -524,6 +524,294 @@ pub fn family_of(id: &str) -> usize {
     FAMILY.iter().position(|f| *f == arch).unwrap_or(0)
 }
 
+// ── N1: drawIcon ITEM generator (collectibles.js buildIcon ELSE branch) ────────────────────────
+//
+// The item-icon pipeline (vs the `hero:` heroSprite branch): `resolvePreset(rPick)` →
+// `ARCH[cat.arch](rPick)` → `applyLevers(rPick,rTex)` → palette shift (rTex). Drawn into bool grids
+// `g` (silhouette) / `a` (accent) with `locked` (identity cells the levers never disturb); the role
+// grid is then `role_from` (== `iconRoleGrid`), and the palette is `shiftPalette(basePal, shift)`.
+// Proven byte-identical vs `art-vectors.json` `itemIcons` (per-archetype, growing) → `itemDigest`.
+
+type IGrid = [[bool; G]; G];
+
+fn in_b(x: i32, y: i32) -> bool {
+    x >= 0 && x < G as i32 && y >= 0 && y < G as i32
+}
+/// `box(t,x0,y0,x1,y1,v)` — fill the (inclusive) rect, bounds-clamped.
+fn fill(t: &mut IGrid, x0: i32, y0: i32, x1: i32, y1: i32, v: bool) {
+    let mut y = y0;
+    while y <= y1 {
+        let mut x = x0;
+        while x <= x1 {
+            if in_b(x, y) {
+                t[y as usize][x as usize] = v;
+            }
+            x += 1;
+        }
+        y += 1;
+    }
+}
+#[allow(dead_code)]
+fn hline(t: &mut IGrid, y: i32, x0: i32, x1: i32, v: bool) {
+    fill(t, x0, y, x1, y, v);
+}
+#[allow(dead_code)]
+fn vline(t: &mut IGrid, x: i32, y0: i32, y1: i32, v: bool) {
+    fill(t, x, y0, x, y1, v);
+}
+fn idot(t: &mut IGrid, x: i32, y: i32, v: bool) {
+    if in_b(x, y) {
+        t[y as usize][x as usize] = v;
+    }
+}
+fn mirror(g: &mut IGrid, a: &mut IGrid) {
+    for y in 0..G {
+        for x in 0..8 {
+            g[y][G - 1 - x] = g[y][x];
+            a[y][G - 1 - x] = a[y][x];
+        }
+    }
+}
+fn lock_cell(l: &mut IGrid, x: i32, y: i32) {
+    if in_b(x, y) {
+        l[y as usize][x as usize] = true;
+    }
+}
+fn cli(v: i32, lo: i32, hi: i32) -> i32 {
+    v.clamp(lo, hi)
+}
+
+/// The resolved per-item params (`Object.assign(BASE[arch], cat.p)` + `resolvePreset` jitter). All
+/// archetypes' fields live here; an archetype reads only its own (others stay at their `0` default).
+#[derive(Clone, Default)]
+struct Preset {
+    body_w: i32,
+    body_h: i32,
+    dome: i32,
+    horns: i32,
+    feet: i32,
+    tail: i32,
+    wings: i32,
+}
+
+/// `BASE[arch]` merged with the category's `.p` overrides — the pre-jitter preset for `cat_id`.
+fn base_preset(cat_id: &str) -> Preset {
+    // Only the critter family is ported so far (validates the whole pipeline); others follow.
+    match cat_id {
+        "familiar" => Preset {
+            body_w: 5,
+            body_h: 5,
+            feet: 2,
+            tail: 1,
+            ..Default::default()
+        },
+        "imp" => Preset {
+            body_w: 5,
+            body_h: 5,
+            horns: 1,
+            tail: 2,
+            feet: 2,
+            ..Default::default()
+        },
+        "slime" => Preset {
+            body_w: 7,
+            body_h: 4,
+            dome: 1,
+            ..Default::default()
+        },
+        "batling" => Preset {
+            body_w: 4,
+            body_h: 4,
+            wings: 2,
+            ..Default::default()
+        },
+        "dragonet" => Preset {
+            body_w: 5,
+            body_h: 6,
+            horns: 1,
+            wings: 1,
+            feet: 4,
+            tail: 1,
+            ..Default::default()
+        },
+        _ => Preset::default(),
+    }
+}
+
+/// Whether the item generator can draw `cat_id` yet (archetype ported). Grows as archetypes land.
+fn arch_ported(cat_id: &str) -> bool {
+    matches!(
+        cat_id,
+        "familiar" | "imp" | "slime" | "batling" | "dragonet"
+    )
+}
+
+/// `resolvePreset(cat, rPick)` — structural jitter on the soft ranges (exact rPick draw order).
+fn resolve_preset(cat_id: &str, rng: &mut crate::synth::Rng) -> Preset {
+    let mut p = base_preset(cat_id);
+    let j = |v: i32, d: i32, rng: &mut crate::synth::Rng| -> i32 {
+        v + ((rng.next() * (2.0 * d as f64 + 1.0)).floor() as i32) - d
+    };
+    let arch = CATEGORIES
+        .iter()
+        .find(|(c, _)| *c == cat_id)
+        .map(|(_, a)| *a)
+        .unwrap_or("critter");
+    if arch == "critter" {
+        p.body_w = cli(j(p.body_w, 1, rng), 3, 7);
+        p.body_h = cli(j(p.body_h, 1, rng), 3, 6);
+    }
+    p
+}
+
+/// The `critter` archetype — a mirrored centre-weighted blob with appendages (horns/feet/tail/wings).
+fn arch_critter(g: &mut IGrid, a: &mut IGrid, p: &Preset, locked: &mut IGrid) {
+    let cy = 8;
+    let (w, h) = (p.body_w, p.body_h);
+    let mut y = cy - h;
+    while y <= cy + h {
+        let dy = (y - cy) as f64 / (h as f64 + 0.6);
+        let mut ww = js_round(w as f64 * (1.0 - dy * dy).max(0.0).sqrt()) as i32;
+        if p.dome != 0 && y >= cy {
+            ww = w;
+        }
+        if ww > 0 {
+            fill(g, 8 - ww, y, 7, y, true);
+        }
+        y += 1;
+    }
+    if p.horns != 0 {
+        fill(g, 8 - w + 1, cy - h - 2, 8 - w + 2, cy - h - 1, true);
+        fill(g, 6, cy - h - 2, 7, cy - h - 1, true);
+    }
+    if p.feet != 0 {
+        fill(g, 8 - w, cy + h + 1, 8 - w + 1, cy + h + 2, true);
+        if p.feet >= 4 {
+            fill(g, 5, cy + h + 1, 6, cy + h + 2, true);
+        }
+    }
+    if p.tail != 0 {
+        fill(g, 8 - w - 2, cy, 8 - w - 1, cy + 2, true);
+        if p.tail >= 2 {
+            fill(g, 8 - w - 3, cy - 1, 8 - w - 2, cy, true);
+        }
+    }
+    if p.wings != 0 {
+        fill(g, 8 - w - 4, cy - 2, 8 - w - 1, cy + 1, true);
+        if p.wings >= 2 {
+            fill(g, 8 - w - 5, cy - 3, 8 - w - 4, cy + 2, true);
+        }
+    }
+    for yy in (cy - 2)..=(cy + 3) {
+        lock_cell(locked, 7, yy);
+    }
+    mirror(g, a);
+    idot(g, 6, cy - 1, false);
+    idot(g, 9, cy - 1, false);
+    lock_cell(locked, 6, cy - 1);
+    lock_cell(locked, 9, cy - 1);
+    fill(a, 6, cy + 2, 9, cy + 3, true);
+}
+
+/// `applyLevers(g,a,locked,P,rPick,rTex)` — interior texture (highlight/carve) + one off-centre
+/// accent, with the exact rTex (shuffle + texture) then rPick (symmetry-break) draw order.
+fn apply_levers(
+    g: &mut IGrid,
+    a: &mut IGrid,
+    locked: &IGrid,
+    r_pick: &mut crate::synth::Rng,
+    r_tex: &mut crate::synth::Rng,
+) {
+    let is_inner = |g: &IGrid, x: i32, y: i32| -> bool {
+        x > 0
+            && x < G as i32 - 1
+            && y > 0
+            && y < G as i32 - 1
+            && g[(y - 1) as usize][x as usize]
+            && g[(y + 1) as usize][x as usize]
+            && g[y as usize][(x - 1) as usize]
+            && g[y as usize][(x + 1) as usize]
+    };
+    let mut filled = 0i32;
+    let mut body: Vec<(i32, i32)> = Vec::new();
+    for y in 0..G {
+        for x in 0..G {
+            if g[y][x] {
+                filled += 1;
+                if !locked[y][x] {
+                    body.push((x as i32, y as i32));
+                }
+            }
+        }
+    }
+    // Fisher–Yates (backward) with rTex.
+    let mut i = body.len() as i32 - 1;
+    while i > 0 {
+        let k = (r_tex.next() * (i as f64 + 1.0)).floor() as usize;
+        body.swap(i as usize, k);
+        i -= 1;
+    }
+    let budget = (body.len() as i32).min((js_round(filled as f64 * 0.45) as i32).max(5));
+    for &(x, y) in body.iter().take(budget as usize) {
+        if r_tex.next() < 0.7 || !is_inner(g, x, y) {
+            a[y as usize][x as usize] = true;
+        } else {
+            g[y as usize][x as usize] = false;
+        }
+    }
+    for _ in 0..6 {
+        let x = 2 + (r_pick.next() * 5.0).floor() as i32;
+        let y = 2 + (r_pick.next() * 12.0).floor() as i32;
+        if in_b(x, y) && g[y as usize][x as usize] && !locked[y as usize][x as usize] {
+            a[y as usize][x as usize] = true;
+            break;
+        }
+    }
+}
+
+/// `shiftPalette(basePal, {hue,lum})` — nudge body+accent in HSL; outline unchanged.
+fn shift_palette(base: &Palette, hue: f64, lum: f64) -> Palette {
+    if hue == 0.0 && lum == 0.0 {
+        return base.clone();
+    }
+    Palette {
+        body: nudge(&base.body, hue, lum),
+        accent: nudge(&base.accent, hue, lum),
+        outline: base.outline.clone(),
+        eye: None,
+    }
+}
+
+/// Build item `id`'s icon (role grid + per-item palette) from `base_pal` (the rarity base). Reproduces
+/// `buildIcon`'s item branch + `iconRoleGrid` + `shiftPalette`. `None` if the archetype isn't ported.
+pub fn item_icon(id: &str, base_pal: &Palette) -> Option<(RoleGrid, Palette)> {
+    let cat_id = category_of(id);
+    if !arch_ported(cat_id) {
+        return None;
+    }
+    let arch = CATEGORIES
+        .iter()
+        .find(|(c, _)| *c == cat_id)
+        .map(|(_, a)| *a)
+        .unwrap_or("critter");
+    let seed = crate::synth::hash_str(id);
+    let mut r_pick = crate::synth::Rng::new(seed);
+    let mut r_tex = crate::synth::Rng::new(seed ^ 0x9e37_79b9);
+    let mut g: IGrid = [[false; G]; G];
+    let mut a: IGrid = [[false; G]; G];
+    let mut locked: IGrid = [[false; G]; G];
+    let p = resolve_preset(cat_id, &mut r_pick);
+    match arch {
+        "critter" => arch_critter(&mut g, &mut a, &p, &mut locked),
+        _ => return None,
+    }
+    apply_levers(&mut g, &mut a, &locked, &mut r_pick, &mut r_tex);
+    let hue = (r_tex.next() * 2.0 - 1.0) * 20.0;
+    let lum = (r_tex.next() * 2.0 - 1.0) * 0.08;
+    let role = role_from(&g, &a, None);
+    Some((role, shift_palette(base_pal, hue, lum)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -661,5 +949,35 @@ mod tests {
             let arch = CATEGORIES.iter().find(|(c, _)| *c == want).unwrap().1;
             assert_eq!(FAMILY[family_of(id)], arch, "family_of({id}) archetype");
         }
+    }
+
+    /// N1 generator: every ported-archetype `itemIcons` sample reproduces the EXACT role grid and
+    /// palette (the full pipeline — preset jitter, the archetype draw, applyLevers texture, the HSL
+    /// palette shift — all RNG-order-correct). Grows to all 50 plus the digest as archetypes land.
+    #[test]
+    fn item_icons_match_vectors() {
+        let want_pal = |v: &Value| Palette {
+            body: v["body"].as_str().unwrap().to_string(),
+            accent: v["accent"].as_str().unwrap().to_string(),
+            outline: v["outline"].as_str().unwrap().to_string(),
+            eye: None,
+        };
+        let mut checked = 0;
+        for it in vectors()["itemIcons"].as_array().unwrap() {
+            let id = it["id"].as_str().unwrap();
+            if !arch_ported(category_of(id)) {
+                continue;
+            }
+            let base = want_pal(&it["basePal"]);
+            let (role, pal) = item_icon(id, &base).expect("ported archetype builds");
+            assert_eq!(ser(&role), want_rows(&it["roleGrid"]), "{id} role grid");
+            assert_eq!(pal, want_pal(&it["pal"]), "{id} palette");
+            checked += 1;
+        }
+        // The critter family (5 categories) is ported — all 5 critter samples must be covered.
+        assert!(
+            checked >= 5,
+            "expected ≥5 ported item icons, checked {checked}"
+        );
     }
 }
