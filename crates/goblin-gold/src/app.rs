@@ -716,7 +716,7 @@ impl App {
         self.fonts = Some(Fonts::bake(&self.font, h));
         let margin = w * 0.06;
         let kp_w = w - margin * 2.0;
-        let kp_h = h * 0.46;
+        let kp_h = h * 0.40;
         let kp_y = h - kp_h - margin;
         self.keypad = Keypad::layout(margin, kp_y, kp_w, kp_h, w * 0.018);
     }
@@ -1196,45 +1196,107 @@ pub fn drill_frame<'a>(
         rgba: col,
     });
 
-    // Keypad.
-    let back_label = if fonts.key.glyphs.contains_key(&'⌫') {
-        "⌫"
-    } else {
-        "<"
-    };
+    // Keypad zone — a "How to approach this" hint button above the calculator-order numpad, a pixel
+    // backspace, and an OUTLINED Skip bar (web's subtle action bar, not a solid slab).
+    let kp_top = keypad.cells.iter().map(|c| c.y).fold(f32::MAX, f32::min);
+    let kp_left = keypad.cells.iter().map(|c| c.x).fold(f32::MAX, f32::min);
+    let kp_right = keypad
+        .cells
+        .iter()
+        .map(|c| c.x + c.w)
+        .fold(f32::MIN, f32::max);
+    let cell_h = keypad.cells.first().map(|c| c.h).unwrap_or(h * 0.07);
+    // The hint button (outlined) just above the numpad — opens the "how to approach this" primer.
+    let hint_h = cell_h * 0.82;
+    let hint_y = kp_top - hint_h - h * 0.012;
+    rects.push(RectRun {
+        x: kp_left,
+        y: hint_y,
+        w: kp_right - kp_left,
+        h: hint_h,
+        rgba: [GOLD[0], GOLD[1], GOLD[2], 0.45],
+    });
+    rects.push(RectRun {
+        x: kp_left + 2.0,
+        y: hint_y + 2.0,
+        w: kp_right - kp_left - 4.0,
+        h: hint_h - 4.0,
+        rgba: KEYBG,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: centered(
+            &fonts.body,
+            "How to approach this",
+            (kp_left + kp_right) / 2.0,
+            hint_y,
+            hint_h,
+        ),
+        rgba: GOLD,
+    });
+
     let mut key_quads: Vec<Quad> = Vec::new();
     for cell in &keypad.cells {
-        let is_enter = cell.key == Key::Enter;
-        rects.push(RectRun {
-            x: cell.x,
-            y: cell.y,
-            w: cell.w,
-            h: cell.h,
-            rgba: if is_enter { GOLD } else { KEYBG },
-        });
-        if is_enter {
-            // The action bar is SKIP (GG1 has no submit key — answers auto-accept).
-            let qd = centered(&fonts.key, "Skip", cell.x + cell.w / 2.0, cell.y, cell.h);
-            texts.push(TextRun {
-                atlas: &fonts.key,
-                quads: qd,
-                rgba: INK,
-            });
-            continue;
+        match cell.key {
+            Key::Enter => {
+                // Outlined Skip bar (gold border + key-coloured fill) — the subtle action bar.
+                rects.push(RectRun {
+                    x: cell.x,
+                    y: cell.y,
+                    w: cell.w,
+                    h: cell.h,
+                    rgba: [GOLD[0], GOLD[1], GOLD[2], 0.55],
+                });
+                rects.push(RectRun {
+                    x: cell.x + 2.0,
+                    y: cell.y + 2.0,
+                    w: cell.w - 4.0,
+                    h: cell.h - 4.0,
+                    rgba: KEYBG,
+                });
+                texts.push(TextRun {
+                    atlas: &fonts.key,
+                    quads: centered(&fonts.key, "Skip", cell.x + cell.w / 2.0, cell.y, cell.h),
+                    rgba: GOLD,
+                });
+            }
+            Key::Back => {
+                rects.push(RectRun {
+                    x: cell.x,
+                    y: cell.y,
+                    w: cell.w,
+                    h: cell.h,
+                    rgba: KEYBG,
+                });
+                paint_backspace(
+                    &mut rects,
+                    cell.x + cell.w / 2.0,
+                    cell.y + cell.h / 2.0,
+                    cell.h * 0.07,
+                );
+            }
+            Key::Digit(_) | Key::Dot => {
+                rects.push(RectRun {
+                    x: cell.x,
+                    y: cell.y,
+                    w: cell.w,
+                    h: cell.h,
+                    rgba: KEYBG,
+                });
+                let s = match cell.key {
+                    Key::Digit(d) => ((b'0' + d) as char).to_string(),
+                    Key::Dot => ".".to_string(),
+                    _ => unreachable!(),
+                };
+                key_quads.extend(centered(
+                    &fonts.key,
+                    &s,
+                    cell.x + cell.w / 2.0,
+                    cell.y,
+                    cell.h,
+                ));
+            }
         }
-        let s = match cell.key {
-            Key::Digit(d) => ((b'0' + d) as char).to_string(),
-            Key::Dot => ".".to_string(),
-            Key::Back => back_label.to_string(),
-            Key::Enter => unreachable!(),
-        };
-        key_quads.extend(centered(
-            &fonts.key,
-            &s,
-            cell.x + cell.w / 2.0,
-            cell.y,
-            cell.h,
-        ));
     }
     texts.push(TextRun {
         atlas: &fonts.key,
@@ -1273,7 +1335,7 @@ pub fn render_initial_drill(painter: &crate::headless::Painter, font: &FontRef<'
     let drill = Drill::from_seam("halves");
     let margin = w * 0.06;
     let kp_w = w - margin * 2.0;
-    let kp_h = h * 0.46;
+    let kp_h = h * 0.40;
     let kp_y = h - kp_h - margin;
     let keypad = Keypad::layout(margin, kp_y, kp_w, kp_h, w * 0.018);
     let (rects, texts) = drill_frame(&drill, &keypad, &fonts, w, h, None);
@@ -2095,7 +2157,7 @@ pub fn render_event_play_ref(painter: &crate::headless::Painter, font: &FontRef<
     }
     let margin = w * 0.06;
     let kp_w = w - margin * 2.0;
-    let kp_h = h * 0.46;
+    let kp_h = h * 0.40;
     let kp_y = h - kp_h - margin;
     let keypad = Keypad::layout(margin, kp_y, kp_w, kp_h, w * 0.018);
     let (rects, texts) = drill_frame(&drill, &keypad, &fonts, w, h, None);
@@ -2219,6 +2281,31 @@ pub fn paint_role(
     }
 }
 
+/// Paint a low-fi **backspace** glyph (a left arrow: a `<` chevron + a short shaft) centred at
+/// `(cx,cy)` with `s`-px pixels. The text face lacks U+232B ⌫, and a pixel arrow fits the game's
+/// aesthetic better than the ASCII `<` fallback (a Babysitter parity note on the keypad).
+fn paint_backspace(rects: &mut Vec<RectRun>, cx: f32, cy: f32, s: f32) {
+    for (ix, iy) in [
+        (-2, 0),
+        (-1, -1),
+        (0, -2),
+        (-1, 1),
+        (0, 2),
+        (-1, 0),
+        (0, 0),
+        (1, 0),
+        (2, 0),
+    ] {
+        rects.push(RectRun {
+            x: cx + ix as f32 * s - s / 2.0,
+            y: cy + iy as f32 * s - s / 2.0,
+            w: s + 0.6,
+            h: s + 0.6,
+            rgba: BODY,
+        });
+    }
+}
+
 /// Paint a full **colour grid** (a scenery backdrop or event crest) at `(x0,y0)` with `cw`×`ch` cells.
 pub fn paint_colors(
     rects: &mut Vec<RectRun>,
@@ -2323,46 +2410,111 @@ pub fn arena_frame<'a>(
         rgba: DIM,
     });
 
-    // Foe showcase: region backdrop, then the headline foe portrait + name/type/stats.
-    let (sy, sh) = (h * 0.085, h * 0.165);
+    // Foe TEAM showcase: region backdrop band, the tier's name, then the three typed foe cards (the
+    // actual 3v3 you fight — lead + supports), each with a mini portrait, its type, and PWR/HP.
+    let (sy, sh) = (h * 0.082, h * 0.20);
     let backdrop = crate::scenes::scenery_grid(region as i64);
     paint_colors(&mut rects, &backdrop, margin, sy, col_w / 28.0, sh / 11.0);
     let foes = crate::combat::tier_foes(tier);
+    let lead_kind = foes
+        .first()
+        .map(|f| f.0)
+        .unwrap_or(crate::arena::Kind::Brawn);
     let foe_name = crate::arena::bestiary()
         .into_iter()
         .find(|e| e.n == tier)
         .map(|e| e.name)
         .unwrap_or_else(|| format!("Tier {tier}"));
-    if let Some(&(kind, pow, hp)) = foes.first() {
-        let (role, pal) = crate::art::foe_grid(tier, &foe_name, kind);
-        let pcell = sh * 0.72 / 16.0;
-        let px = w / 2.0 - 16.0 * pcell / 2.0;
-        paint_role(&mut rects, &role, &pal, px, sy + sh * 0.12, pcell);
-        // Foe name + "TYPE · N PWR · N HP".
-        let nm = centered(&fonts.body, &foe_name, w / 2.0, sy + sh, h * 0.04);
-        texts.push(TextRun {
-            atlas: &fonts.body,
-            quads: nm,
-            rgba: BODY,
+    let nm = centered(&fonts.body, &foe_name, w / 2.0, sy + sh * 0.02, h * 0.034);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: nm,
+        rgba: BODY,
+    });
+    let nfoe = foes.len().max(1);
+    let fgap = w * 0.02;
+    let fcw = (col_w - fgap * (nfoe as f32 - 1.0)) / nfoe as f32;
+    let fcard_y = sy + sh * 0.14;
+    let fcard_h = sh * 0.84;
+    for (i, &(kind, pow, hp)) in foes.iter().enumerate() {
+        let fx = margin + i as f32 * (fcw + fgap);
+        // A dark card floats over the backdrop so the portrait + stats read.
+        rects.push(RectRun {
+            x: fx,
+            y: fcard_y,
+            w: fcw,
+            h: fcard_h,
+            rgba: [INK[0], INK[1], INK[2], 0.74],
         });
-        let stat = format!(
-            "{:?} · {} PWR · {} HP",
-            kind,
-            pow.round() as i64,
-            hp.round() as i64
+        // Mini portrait — the lead silhouette tinted by THIS foe's type (supports carry no own art
+        // export; their type is the real signal). Index-varied seed so supports look distinct.
+        let seed_name = if i == 0 {
+            foe_name.clone()
+        } else {
+            format!("{foe_name} {i}")
+        };
+        let (role, pal) = crate::art::foe_grid(tier, &seed_name, kind);
+        let pcell = (fcard_h * 0.5) / 16.0;
+        paint_role(
+            &mut rects,
+            &role,
+            &pal,
+            fx + fcw / 2.0 - 8.0 * pcell,
+            fcard_y + fcard_h * 0.05,
+            pcell,
         );
-        let sline = centered(&fonts.tiny, &stat, w / 2.0, sy + sh + h * 0.035, h * 0.03);
+        // Type + PWR/HP under the portrait.
+        let tline = centered(
+            &fonts.tiny,
+            &format!("{kind:?}"),
+            fx + fcw / 2.0,
+            fcard_y + fcard_h * 0.62,
+            h * 0.026,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: tline,
+            rgba: type_rgba(kind),
+        });
+        let sline = centered(
+            &fonts.tiny,
+            &format!("{} P · {} H", pow.round() as i64, hp.round() as i64),
+            fx + fcw / 2.0,
+            fcard_y + fcard_h * 0.82,
+            h * 0.024,
+        );
         texts.push(TextRun {
             atlas: &fonts.tiny,
             quads: sline,
-            rgba: type_rgba(kind),
+            rgba: BODY,
         });
     }
+
+    // "How battles work" primer (the collapsible info box) — the type-triangle strategy.
+    let primer_y = sy + sh + h * 0.012;
+    rects.push(RectRun {
+        x: margin,
+        y: primer_y,
+        w: col_w,
+        h: h * 0.055,
+        rgba: PANEL,
+    });
+    let (q, _) = fonts.tiny.layout(
+        "How battles work:  Brawn > Cunning > Arcane > Brawn  (matchup ×1.5)",
+        margin + col_w * 0.03,
+        primer_y + h * 0.009,
+        col_w * 0.94,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: DIM,
+    });
 
     // Party-pick header.
     let unlocked = crate::combat::unlocked_roster(&keys);
     let pick = format!("Choose your party  {}/3", party.len());
-    let (q, _) = fonts.body.layout(&pick, margin, h * 0.355, col_w);
+    let (q, _) = fonts.body.layout(&pick, margin, h * 0.375, col_w);
     texts.push(TextRun {
         atlas: &fonts.body,
         quads: q,
@@ -2376,12 +2528,22 @@ pub fn arena_frame<'a>(
         .zip(&unlocked)
     {
         let selected = party.iter().any(|p| p == id);
+        // Selected = a subtle amber BORDER over the panel (web's look), not a heavy fill.
+        if selected {
+            rects.push(RectRun {
+                x: rx - 2.0,
+                y: ry - 2.0,
+                w: rw + 4.0,
+                h: rh + 4.0,
+                rgba: GOLD,
+            });
+        }
         rects.push(RectRun {
             x: rx,
             y: ry,
             w: rw,
             h: rh,
-            rgba: if selected { GREEN } else { PANEL },
+            rgba: PANEL,
         });
         let hero = roster.iter().find(|hh| &hh.id == id);
         let kind = hero.map(|hh| hh.kind).unwrap_or(crate::arena::Kind::Brawn);
@@ -2397,14 +2559,22 @@ pub fn arena_frame<'a>(
             ry + rh * 0.09,
             pcell,
         );
-        // Name + type dot + rating (top line); effective stat chips (bottom line).
+        // Type dot + name + rating (top line); effective stat chips (bottom line).
         let stats = crate::combat::effective_stats(id, &keys).unwrap_or_default();
         let tx = rx + rh + w * 0.02;
-        let (q, _) = fonts.body.layout(&name, tx, ry + rh * 0.16, rw);
+        let dot = rh * 0.14;
+        rects.push(RectRun {
+            x: tx,
+            y: ry + rh * 0.2,
+            w: dot,
+            h: dot,
+            rgba: type_rgba(kind),
+        });
+        let (q, _) = fonts.body.layout(&name, tx + dot * 1.6, ry + rh * 0.16, rw);
         texts.push(TextRun {
             atlas: &fonts.body,
             quads: q,
-            rgba: if selected { INK } else { type_rgba(kind) },
+            rgba: type_rgba(kind),
         });
         let rating = format!("* {}", hero_rating(&stats));
         let rw_txt = fonts.body.text_width(&rating);
@@ -2417,7 +2587,7 @@ pub fn arena_frame<'a>(
         texts.push(TextRun {
             atlas: &fonts.body,
             quads: q,
-            rgba: if selected { INK } else { GOLD },
+            rgba: GOLD,
         });
         let chips = format!(
             "{} PWR  {} GRD  {} SPD  {} FOC",
@@ -2427,7 +2597,28 @@ pub fn arena_frame<'a>(
         texts.push(TextRun {
             atlas: &fonts.tiny,
             quads: q,
-            rgba: if selected { INK } else { DIM },
+            rgba: DIM,
+        });
+        // Matchup badge vs the lead foe — the type-triangle strategy signal, bottom-right of the card.
+        let mu = crate::combat::matchup_mult(kind, lead_kind);
+        let (badge, bcol) = if mu > 1.0 {
+            ("ADV ×1.5".to_string(), GREEN)
+        } else if mu < 1.0 {
+            ("WEAK".to_string(), type_rgba(crate::arena::Kind::Brawn))
+        } else {
+            ("EVEN".to_string(), DIM)
+        };
+        let bw_txt = fonts.tiny.text_width(&badge);
+        let (q, _) = fonts.tiny.layout(
+            &badge,
+            rx + rw - bw_txt - w * 0.02,
+            ry + rh * 0.58,
+            bw_txt + 4.0,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: bcol,
         });
     }
 
@@ -2465,7 +2656,7 @@ pub fn arena_frame<'a>(
         rgba: if party.is_empty() { KEYBG } else { GOLD },
     });
     let flabel = if party.is_empty() {
-        "Pick a hero".to_string()
+        "Pick your party".to_string()
     } else {
         format!("Fight Tier {tier}")
     };
@@ -2474,8 +2665,32 @@ pub fn arena_frame<'a>(
         quads: centered(&fonts.key, &flabel, fbx + fbw / 2.0, fby, fbh),
         rgba: if party.is_empty() { DIM } else { INK },
     });
+    // "Journey map" button (region-progress view; route stubbed) — pre-fight only, so it doesn't
+    // collide with the post-fight outcome banner.
+    if last.is_none() {
+        let (jx, jy, jw, jh) = arena_journey_button(w, h);
+        rects.push(RectRun {
+            x: jx,
+            y: jy,
+            w: jw,
+            h: jh,
+            rgba: PANEL,
+        });
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: centered(&fonts.body, "Journey map", jx + jw / 2.0, jy, jh),
+            rgba: DIM,
+        });
+    }
     push_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
+}
+
+/// The Arena "Journey map" button rect — sits just above the Fight bar (region-progress view).
+fn arena_journey_button(w: f32, h: f32) -> (f32, f32, f32, f32) {
+    let bw = w * 0.6;
+    let bh = h * 0.042;
+    ((w - bw) / 2.0, h * 0.792, bw, bh)
 }
 
 /// The Arena "Fight" bar rect (just above the bottom Back button).
@@ -2526,8 +2741,9 @@ fn arena_sample() -> (Save, Vec<String>, crate::save::ArenaOutcome) {
 pub fn render_arena(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let (w, h) = (DRILL_W as f32, DRILL_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (save, party, last) = arena_sample();
-    let (rects, texts) = arena_frame(&save, &party, Some(&last), &fonts, w, h);
+    let (save, party, _) = arena_sample();
+    // The clean PRE-FIGHT state (no post-battle banner) — the party-pick the web ref captures.
+    let (rects, texts) = arena_frame(&save, &party, None, &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
@@ -2540,8 +2756,9 @@ pub const REF_H: u32 = 880;
 pub fn render_arena_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (save, party, last) = arena_sample();
-    let (rects, texts) = arena_frame(&save, &party, Some(&last), &fonts, w, h);
+    let (save, party, _) = arena_sample();
+    // The clean PRE-FIGHT state (no post-battle banner) — the party-pick the web ref captures.
+    let (rects, texts) = arena_frame(&save, &party, None, &fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 

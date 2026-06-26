@@ -22,7 +22,8 @@ pub struct Cell {
     pub h: f32,
 }
 
-/// A 3-column keypad: rows `1 2 3 / 4 5 6 / 7 8 9 / . 0 ⌫`, then a full-width `Enter` bar.
+/// A 3-column **calculator-layout** keypad: rows `7 8 9 / 4 5 6 / 1 2 3 / . 0 ⌫`, then a full-width
+/// `Enter` bar (matches web GG1 — high digits on top, not the phone-dialpad order).
 pub struct Keypad {
     pub cells: Vec<Cell>,
 }
@@ -36,9 +37,10 @@ impl Keypad {
         let col_x = |c: usize| x + c as f32 * (cw + gap);
         let row_y = |r: usize| y + r as f32 * (ch + gap);
         let mut cells = Vec::with_capacity(13);
-        // digit rows 1..9
-        for (i, d) in (1u8..=9).enumerate() {
-            let (r, c) = (i / 3, i % 3);
+        // Digit rows in calculator order: 7 8 9 (top) / 4 5 6 / 1 2 3. Digit d sits at
+        // row `2 - (d-1)/3`, col `(d-1)%3` — so 1 lands bottom-left, 9 top-right.
+        for d in 1u8..=9 {
+            let (r, c) = (2 - (d as usize - 1) / 3, (d as usize - 1) % 3);
             cells.push(Cell {
                 key: Key::Digit(d),
                 x: col_x(c),
@@ -127,7 +129,7 @@ mod tests {
     #[test]
     fn hit_test_finds_the_key_under_a_point() {
         let kp = Keypad::layout(0.0, 0.0, 300.0, 500.0, 8.0);
-        // centre of the '1' cell (row 0, col 0)
+        // centre of the '1' cell (cells[0]; calculator layout puts it bottom-left)
         let one = kp.cells[0];
         assert_eq!(
             kp.hit(one.x + one.w / 2.0, one.y + one.h / 2.0),

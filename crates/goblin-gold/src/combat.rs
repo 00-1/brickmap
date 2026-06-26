@@ -295,6 +295,12 @@ fn matchup(attacker: Kind, target: Kind, m: &MatchupMul) -> f64 {
     }
 }
 
+/// The type-triangle multiplier for `attacker` vs `target`, using the loaded matchup constants —
+/// for the Arena's per-hero matchup badge (`>1` advantage · `1.0` neutral · `<1` disadvantage).
+pub fn matchup_mult(attacker: Kind, target: Kind) -> f64 {
+    matchup(attacker, target, &parse().constants.matchup)
+}
+
 /// The outcome of a resolved battle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BattleResult {
