@@ -1063,7 +1063,9 @@ impl App {
                     None
                 };
                 let d = self.drill.as_ref().expect("drill on the drill screen");
-                let (r, t) = drill_frame(d, &self.keypad, fonts, w, h, fx);
+                // The live per-question timer (drives Spark scoring) — seconds since this question.
+                let timer = self.q_start.map(|s| s.elapsed().as_secs_f32());
+                let (r, t) = drill_frame(d, &self.keypad, fonts, w, h, fx, timer);
                 let ramp = fx_active.then_some((
                     &crate::fx::GOLD_RAMP[..],
                     crate::fx::GOLD_RAMP.len() as u32,
@@ -1098,6 +1100,7 @@ pub fn drill_frame<'a>(
     w: f32,
     h: f32,
     fx: Option<(u32, f32)>,
+    timer: Option<f32>,
 ) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
     let cx = w / 2.0;
     let margin = w * 0.06;
@@ -1105,7 +1108,7 @@ pub fn drill_frame<'a>(
     let mut rects: Vec<RectRun> = Vec::new();
     let mut texts: Vec<TextRun> = Vec::new();
 
-    // Heading + progress.
+    // Heading + progress counter; a per-question timer under the counter (it drives Spark scoring).
     let (q, _hh) = fonts.head.layout(&drill.name, margin, h * 0.035, col_w);
     texts.push(TextRun {
         atlas: &fonts.head,
@@ -1122,62 +1125,74 @@ pub fn drill_frame<'a>(
         quads: q,
         rgba: DIM,
     });
+    if let Some(t) = timer {
+        let ts = format!("{t:.1}s");
+        let tw = fonts.body.text_width(&ts);
+        let (q, _) = fonts.body.layout(&ts, w - margin - tw, h * 0.085, tw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: GOLD,
+        });
+    }
 
-    // Question card.
-    let cy = h * 0.16;
-    let ch = h * 0.16;
+    // Top PROGRESS BAR (solved / len) — a thin track under the heading.
+    let (pbx, pby, pbw, pbh) = (margin, h * 0.105, col_w, h * 0.006);
     rects.push(RectRun {
-        x: margin,
-        y: cy,
-        w: col_w,
-        h: ch,
-        rgba: [GOLD[0], GOLD[1], GOLD[2], 0.5],
-    });
-    rects.push(RectRun {
-        x: margin + 3.0,
-        y: cy + 3.0,
-        w: col_w - 6.0,
-        h: ch - 6.0,
+        x: pbx,
+        y: pby,
+        w: pbw,
+        h: pbh,
         rgba: PANEL,
     });
-    // The question is the transform's prompt verbatim (e.g. "100", "3 × 7", "area 10×7"); the topic
-    // name in the heading gives it context. Generic across all 46 topics (no per-topic framing).
+    let frac = if drill.is_empty() {
+        0.0
+    } else {
+        drill.solved() as f32 / drill.len() as f32
+    };
+    if frac > 0.0 {
+        rects.push(RectRun {
+            x: pbx,
+            y: pby,
+            w: pbw * frac,
+            h: pbh,
+            rgba: GOLD,
+        });
+    }
+
+    // The question — BORDERLESS large text (web's look; no card), the transform's prompt verbatim
+    // (e.g. "100", "3 × 7", "area 10×7"). The heading gives it topic context.
+    let cy = h * 0.16;
+    let ch = h * 0.16;
     texts.push(TextRun {
         atlas: &fonts.q,
         quads: centered(&fonts.q, drill.prompt(), cx, cy, ch),
         rgba: GOLD,
     });
 
-    // Answer box — frame colour reflects the last verdict; the value is the typed string (which is
-    // EMPTY on the first frame → an empty text run, exercised by the renderer's empty-run guard).
-    let (frame_col, ink) = match drill.last_mark() {
-        Some(Mark::Right) => (GREEN, GREEN),
-        Some(Mark::Skipped) => (DIM, DIM),
-        None => (DIM, BODY),
+    // The answer — BORDERLESS large text over a thin verdict-tinted underline (web shows no box). The
+    // value is the typed string (EMPTY on the first frame → an empty text run, exercising the guard).
+    let ink = match drill.last_mark() {
+        Some(Mark::Right) => GREEN,
+        Some(Mark::Skipped) => DIM,
+        None => BODY,
     };
-    // On a skip the box shows the revealed answer; otherwise the typed string.
     let box_text = drill.revealed().unwrap_or_else(|| drill.typed());
     let by = h * 0.35;
     let bh = h * 0.085;
-    let bw = col_w * 0.7;
+    let bw = col_w * 0.5;
     let bx = cx - bw / 2.0;
-    rects.push(RectRun {
-        x: bx,
-        y: by,
-        w: bw,
-        h: bh,
-        rgba: frame_col,
-    });
-    rects.push(RectRun {
-        x: bx + 3.0,
-        y: by + 3.0,
-        w: bw - 6.0,
-        h: bh - 6.0,
-        rgba: [28.0 / 255.0, 18.0 / 255.0, 44.0 / 255.0, 1.0],
-    });
     texts.push(TextRun {
         atlas: &fonts.q,
         quads: centered(&fonts.q, box_text, cx, by, bh),
+        rgba: ink,
+    });
+    // A thin underline marks the input slot (dim until typed; verdict-tinted after).
+    rects.push(RectRun {
+        x: bx,
+        y: by + bh * 0.92,
+        w: bw,
+        h: h * 0.004,
         rgba: ink,
     });
 
@@ -1338,7 +1353,7 @@ pub fn render_initial_drill(painter: &crate::headless::Painter, font: &FontRef<'
     let kp_h = h * 0.40;
     let kp_y = h - kp_h - margin;
     let keypad = Keypad::layout(margin, kp_y, kp_w, kp_h, w * 0.018);
-    let (rects, texts) = drill_frame(&drill, &keypad, &fonts, w, h, None);
+    let (rects, texts) = drill_frame(&drill, &keypad, &fonts, w, h, None, None);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
@@ -2351,7 +2366,8 @@ pub fn render_event_play_ref(painter: &crate::headless::Painter, font: &FontRef<
     let kp_h = h * 0.40;
     let kp_y = h - kp_h - margin;
     let keypad = Keypad::layout(margin, kp_y, kp_w, kp_h, w * 0.018);
-    let (rects, texts) = drill_frame(&drill, &keypad, &fonts, w, h, None);
+    // A representative per-question time so the gauntlet ref shows the speed timer (web's "1.3s").
+    let (rects, texts) = drill_frame(&drill, &keypad, &fonts, w, h, None, Some(1.3));
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 pub fn render_items(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
