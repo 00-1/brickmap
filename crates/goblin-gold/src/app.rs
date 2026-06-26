@@ -1523,6 +1523,32 @@ fn push_button<'a>(
     });
 }
 
+/// The bottom **PRIMARY CTA** — a SOLID-gold bar with ink text (the prominent forward action, e.g.
+/// Results "Continue"), vs the outlined secondary [`push_button`] ("Back"). Per parity ledger V17:
+/// web reserves solid gold for the primary action, the outline for secondary nav.
+fn push_cta<'a>(
+    rects: &mut Vec<RectRun>,
+    texts: &mut Vec<TextRun<'a>>,
+    fonts: &'a Fonts,
+    label: &str,
+    w: f32,
+    h: f32,
+) {
+    let (bx, by, bw, bh) = bottom_button(w, h);
+    rects.push(RectRun {
+        x: bx,
+        y: by,
+        w: bw,
+        h: bh,
+        rgba: GOLD,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.key,
+        quads: centered(&fonts.key, label, bx + bw / 2.0, by, bh),
+        rgba: INK,
+    });
+}
+
 /// Build the **Collection** (metagame summary) screen from the save: items collected vs the
 /// catalogue, the collector ladder's reached tier, topics initiated/mastered, the hero roster, and
 /// events touched. Shared by the on-device renderer + the golden.
@@ -1861,7 +1887,7 @@ pub fn results_frame<'a>(
         rgba: DIM,
     });
 
-    push_button(&mut rects, &mut texts, fonts, "Continue", w, h);
+    push_cta(&mut rects, &mut texts, fonts, "Continue", w, h);
     (rects, texts)
 }
 
@@ -3196,14 +3222,15 @@ pub fn arena_frame<'a>(
         });
     }
 
-    // Fight bar (gold when a party is picked, dim otherwise) + Back button.
+    // Fight bar — the PRIMARY CTA, always SOLID gold (parity V17; the label conveys state, not the
+    // fill). "Pick your party" prompts before a pick, "Fight Tier N" once chosen.
     let (fbx, fby, fbw, fbh) = arena_fight_button(w, h);
     rects.push(RectRun {
         x: fbx,
         y: fby,
         w: fbw,
         h: fbh,
-        rgba: if party.is_empty() { KEYBG } else { GOLD },
+        rgba: GOLD,
     });
     let flabel = if party.is_empty() {
         "Pick your party".to_string()
@@ -3213,7 +3240,7 @@ pub fn arena_frame<'a>(
     texts.push(TextRun {
         atlas: &fonts.key,
         quads: centered(&fonts.key, &flabel, fbx + fbw / 2.0, fby, fbh),
-        rgba: if party.is_empty() { DIM } else { INK },
+        rgba: INK,
     });
     // "Journey map" button (region-progress view; route stubbed) — pre-fight only, so it doesn't
     // collide with the post-fight outcome banner.
