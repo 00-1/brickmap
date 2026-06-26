@@ -77,6 +77,10 @@ pub mod earning;
 // `gold-vectors.json`. Pure logic.
 pub mod gold;
 
+// The deterministic gold-HOARD coin-pile (`fxgl.js seedHoard`) — the Home hub's signature gold pile.
+// Pure: surface-coin placement (mound profile + xorshift scatter); the screen paints the coins.
+pub mod hoard;
+
 // Phase 4 (audio): the sound effects re-authored from sound.js as pure sample buffers (same DSP
 // style as scraped-again's Drone). Perceptual parity is owner-by-ear; tests gate the mechanics.
 pub mod sfx;
