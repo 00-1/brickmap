@@ -1982,6 +1982,26 @@ fn arrow_down(rects: &mut Vec<RectRun>, cx: f32, top: f32, half: f32, height: f3
     }
 }
 
+/// A small pixel **checkmark** ✓ drawn as art (the bundled font has no U+2713 glyph), top-left at
+/// `(x, y)`, `size` tall. Used for the "complete" badges (inventory rows + mastered tree nodes).
+fn push_check(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
+    const CK: [&str; 5] = ["......", ".....#", "#...#.", ".#.#..", "..#..."];
+    let cell = size / 5.0;
+    for (r, row) in CK.iter().enumerate() {
+        for (c, &b) in row.as_bytes().iter().enumerate() {
+            if b == b'#' {
+                rects.push(RectRun {
+                    x: x + c as f32 * cell,
+                    y: y + r as f32 * cell,
+                    w: cell + 0.6,
+                    h: cell + 0.6,
+                    rgba,
+                });
+            }
+        }
+    }
+}
+
 /// A small rightward ► arrowhead, apex at `(left + width, cy)`.
 fn arrow_right(
     rects: &mut Vec<RectRun>,
@@ -2023,13 +2043,14 @@ fn home_glyph(
     let cell = (gw / g.w as f32).min(gh / g.h as f32).floor().max(1.0);
     let ox = gx + ((gw - cell * g.w as f32) / 2.0).floor();
     let oy = gy + ((gh - cell * g.h as f32) / 2.0).floor();
+    // Locked nodes recede hard (web only keeps the unlocked frontier bright) — a near-backdrop dim.
     let body = if locked {
-        [0.55, 0.55, 0.62, 1.0]
+        [0.32, 0.31, 0.40, 1.0]
     } else {
         [230.0 / 255.0, 233.0 / 255.0, 239.0 / 255.0, 1.0]
     };
     let accent = if locked {
-        [0.5, 0.45, 0.55, 1.0]
+        [0.30, 0.27, 0.36, 1.0]
     } else {
         [245.0 / 255.0, 181.0 / 255.0, 68.0 / 255.0, 1.0]
     };
@@ -2067,10 +2088,12 @@ fn home_node<'a>(
 ) {
     let unlocked = progress.is_unlocked(m);
     let mastered = progress.is_mastered(&m.id);
+    // Unlocked nodes sit as raised dark cards; LOCKED nodes recede to a near-backdrop dim (web keeps
+    // only the unlocked frontier bright — the `nodeState` locked/unlocked/done styling).
     let fill = if unlocked {
-        [28.0 / 255.0, 24.0 / 255.0, 42.0 / 255.0, 1.0]
+        [30.0 / 255.0, 26.0 / 255.0, 46.0 / 255.0, 1.0]
     } else {
-        [18.0 / 255.0, 14.0 / 255.0, 26.0 / 255.0, 1.0]
+        [20.0 / 255.0, 17.0 / 255.0, 30.0 / 255.0, 0.72]
     };
     rects.push(RectRun {
         x,
@@ -2091,7 +2114,13 @@ fn home_node<'a>(
     );
     // Progress + state badge along the bottom.
     let (have, total) = mode_progress(save, &m.id);
-    let prog_col = if mastered { GOLD } else { DIM };
+    let prog_col = if mastered {
+        GOLD
+    } else if unlocked {
+        DIM
+    } else {
+        [0.34, 0.32, 0.42, 1.0] // locked count recedes with the node
+    };
     texts.push(TextRun {
         atlas: &fonts.tiny,
         quads: centered(
@@ -2104,14 +2133,7 @@ fn home_node<'a>(
         rgba: prog_col,
     });
     if mastered {
-        texts.push(TextRun {
-            atlas: &fonts.key,
-            quads: fonts
-                .key
-                .layout("✓", x + nw - nh * 0.5, y + nh * 0.02, nh)
-                .0,
-            rgba: GREEN,
-        });
+        push_check(rects, x + nw - nh * 0.42, y + nh * 0.08, nh * 0.3, GREEN);
     }
 }
 
@@ -3048,14 +3070,25 @@ fn push_progress_row<'a>(
         quads: q,
         rgba: lc,
     });
-    let cnt = format!("{have} / {total}{}", if done { "  ✓" } else { "" });
+    // A prominent green ✓ at the far right when complete (web's per-row checkmark, V22), with the
+    // count laid out to its left.
+    let mut count_right = margin + col_w * 0.96;
+    if done {
+        let ck = row_h * 0.34;
+        push_check(
+            rects,
+            margin + col_w * 0.96 - ck * 1.2,
+            ry + row_h * 0.3,
+            ck,
+            GREEN,
+        );
+        count_right = margin + col_w * 0.92 - ck * 1.2;
+    }
+    let cnt = format!("{have} / {total}");
     let cw = fonts.tiny.text_width(&cnt);
-    let (q, _) = fonts.tiny.layout(
-        &cnt,
-        margin + col_w * 0.96 - cw,
-        ry + row_h * 0.16,
-        cw + 8.0,
-    );
+    let (q, _) = fonts
+        .tiny
+        .layout(&cnt, count_right - cw, ry + row_h * 0.16, cw + 8.0);
     texts.push(TextRun {
         atlas: &fonts.tiny,
         quads: q,
@@ -3290,14 +3323,23 @@ pub fn items_frame<'a>(
             quads: q,
             rgba: label_col,
         });
-        let cnt = format!("{hv} / {t}{}", if done { "  ✓" } else { "" });
+        let mut count_right = margin + col_w * 0.96;
+        if done {
+            let ck = row_h * 0.34;
+            push_check(
+                &mut rects,
+                margin + col_w * 0.96 - ck * 1.2,
+                ry + row_h * 0.3,
+                ck,
+                GREEN,
+            );
+            count_right = margin + col_w * 0.92 - ck * 1.2;
+        }
+        let cnt = format!("{hv} / {t}");
         let cw = fonts.tiny.text_width(&cnt);
-        let (q, _) = fonts.tiny.layout(
-            &cnt,
-            margin + col_w * 0.96 - cw,
-            ry + row_h * 0.16,
-            cw + 8.0,
-        );
+        let (q, _) = fonts
+            .tiny
+            .layout(&cnt, count_right - cw, ry + row_h * 0.16, cw + 8.0);
         texts.push(TextRun {
             atlas: &fonts.tiny,
             quads: q,
