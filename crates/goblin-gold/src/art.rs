@@ -1601,6 +1601,13 @@ pub fn item_icon(id: &str, base_pal: &Palette) -> Option<(RoleGrid, Palette)> {
     Some((role, shift_palette(base_pal, hue, lum)))
 }
 
+/// Build the icon (role grid + palette) for a catalogue/loot item by id + `rarity` — the screen-facing
+/// entry point (`item_icon` over `paletteFor(rarity)`). `None` if the id's archetype isn't ported
+/// (never, now that all 12 are). The rarity also colours the item tile (see `rarity_rgba`).
+pub fn item_icon_for(id: &str, rarity: &str) -> Option<(RoleGrid, Palette)> {
+    item_icon(id, &palette_for(rarity))
+}
+
 /// The rarity base palette (`collectibles.js RARITY` / `paletteFor`) — the per-item icon base before
 /// the per-id HSL shift. Unknown rarities fall back to `common`.
 fn palette_for(rarity: &str) -> Palette {

@@ -147,6 +147,16 @@ fn main() {
     );
     println!("wrote heroes-partial-brickmap (430x880 visual-ref)");
 
+    // The Inventory (Items) screen — Awards tab — at the web reference aspect → halves visual-ref.
+    let items_ref = app::render_items_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/inventory-awards-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &items_ref,
+    );
+    println!("wrote inventory-awards-brickmap (430x880 visual-ref)");
+
     // The procedural-art contact sheet (F1 heroes · F2 foes · F3 scenery · F4 crests).
     let art_rgba = app::render_art_sheet(&painter, &font);
     write_png(

@@ -659,6 +659,8 @@ struct App {
     current_event: Option<String>,
     /// The most recent finished event-play run — shown as a banner on the Daily-Event screen.
     last_event: Option<EventOutcome>,
+    /// The active Inventory (Items) tab (0..5 over [`INV_TABS`]).
+    inv_tab: usize,
     keypad: Keypad,
     cursor: (f32, f32),
     fx_start: Option<Instant>,
@@ -699,6 +701,7 @@ impl App {
             last_arena: None,
             current_event: None,
             last_event: None,
+            inv_tab: 0,
             keypad: Keypad::layout(0.0, 0.0, 1.0, 1.0, 0.0),
             cursor: (0.0, 0.0),
             fx_start: None,
@@ -1047,7 +1050,7 @@ impl App {
                 (r, t, None)
             }
             Screen::Items => {
-                let (r, t) = items_frame(&self.save, fonts, w, h);
+                let (r, t) = items_frame(&self.save, self.inv_tab, fonts, w, h);
                 (r, t, None)
             }
             Screen::Select => {
@@ -1814,74 +1817,6 @@ pub fn render_results(painter: &crate::headless::Painter, font: &FontRef<'_>) ->
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
-/// A generic scrolling-free **list** screen — heading + subtitle + a panel row per `(left, right,
-/// colour)` (auto-sized to fit) + a Back button. Shared by the Heroes/Events/Items drill-downs.
-fn list_screen<'a>(
-    title: &str,
-    subtitle: &str,
-    rows: &[(String, String, [f32; 4])],
-    fonts: &'a Fonts,
-    w: f32,
-    h: f32,
-) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
-    let mut rects: Vec<RectRun> = Vec::new();
-    let mut texts: Vec<TextRun> = Vec::new();
-    let margin = w * 0.06;
-    let col_w = w - margin * 2.0;
-
-    let (q, _hh) = fonts.head.layout(title, margin, h * 0.04, col_w);
-    texts.push(TextRun {
-        atlas: &fonts.head,
-        quads: q,
-        rgba: GOLD,
-    });
-    if !subtitle.is_empty() {
-        let (q, _hh) = fonts.body.layout(subtitle, margin, h * 0.105, col_w);
-        texts.push(TextRun {
-            atlas: &fonts.body,
-            quads: q,
-            rgba: DIM,
-        });
-    }
-
-    let n = rows.len().max(1);
-    let (area_top, area_bot, gap) = (h * 0.155, h * 0.895, h * 0.008);
-    let row_h = ((area_bot - area_top) / n as f32 - gap).clamp(h * 0.022, h * 0.06);
-    // A denser list drops to the small face so the labels still fit.
-    let font = if row_h < h * 0.038 {
-        &fonts.tiny
-    } else {
-        &fonts.body
-    };
-    for (i, (left, right, color)) in rows.iter().enumerate() {
-        let ry = area_top + i as f32 * (row_h + gap);
-        rects.push(RectRun {
-            x: margin,
-            y: ry,
-            w: col_w,
-            h: row_h,
-            rgba: PANEL,
-        });
-        let ty = ry + row_h / 2.0 - 0.59 * font.px;
-        let (lq, _) = font.layout(left, margin + col_w * 0.05, ty, col_w);
-        texts.push(TextRun {
-            atlas: font,
-            quads: lq,
-            rgba: *color,
-        });
-        let vw = font.text_width(right);
-        let (vq, _) = font.layout(right, margin + col_w * 0.95 - vw, ty, vw + 4.0);
-        texts.push(TextRun {
-            atlas: font,
-            quads: vq,
-            rgba: BODY,
-        });
-    }
-
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
-    (rects, texts)
-}
-
 /// The three-letter section label for a hero type (the grouped `BRAWN` / `ARCANE` / `CUNNING`
 /// headers, matching web GG1's `renderHeroes`).
 fn hero_section_label(kind: crate::arena::Kind) -> &'static str {
@@ -2293,38 +2228,163 @@ fn event_play_cta_hit(w: f32, h: f32, px: f32, py: f32) -> bool {
 }
 
 /// The **Items** drill-down: the catalogue by category — how many of each the player owns.
+/// The five Inventory tabs (web's `renderInventory`) and the catalogue categories each gathers.
+const INV_TABS: [&str; 5] = ["Topics", "Awards", "Events", "Loot", "Codex"];
+fn inv_tab_cats(tab: usize) -> &'static [crate::catalogue::Category] {
+    use crate::catalogue::Category::*;
+    match tab {
+        0 => &[Initiation, Flawless, Mastery, Speed, Solved, Spark], // Topics
+        1 => &[Rank, Milestone, Collector],                          // Awards
+        2 => &[Events],                                              // Events
+        _ => &[], // Loot/Codex: special (see below)
+    }
+}
+
+/// The tile/border colour for an item rarity (`collectibles.js RARITY`).
+fn rarity_rgba(rarity: &str) -> [f32; 4] {
+    match rarity {
+        "uncommon" => crate::art::hex_rgba("#3fce8c"),
+        "rare" => crate::art::hex_rgba("#3f97d8"),
+        "epic" => crate::art::hex_rgba("#9a5cf6"),
+        "legendary" => crate::art::hex_rgba("#f0ad3c"),
+        _ => crate::art::hex_rgba("#7e8a97"), // common
+    }
+}
+
+/// The **Inventory** (Items) screen: a tab row (Topics/Awards/Events/Loot/Codex) over a grid of the
+/// selected tab's items, each a **pixel icon** (the N1 `item_icon` generator) on a rarity-coloured
+/// tile + its name. Owned items are bright; unowned are dimmed. Built to the visual bar against
+/// `inventory-*-web.png`. `tab` selects the active tab.
 pub fn items_frame<'a>(
     save: &Save,
+    tab: usize,
     fonts: &'a Fonts,
     w: f32,
     h: f32,
 ) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
-    use std::collections::BTreeMap;
-    let owned: std::collections::HashSet<String> = save.collected.keys().cloned().collect();
-    // Count owned vs total per category in one pass over the catalogue.
-    let mut total: BTreeMap<String, u32> = BTreeMap::new();
-    let mut have: BTreeMap<String, u32> = BTreeMap::new();
-    for c in crate::catalogue::catalog() {
-        let cat = format!("{:?}", c.cat);
-        *total.entry(cat.clone()).or_default() += 1;
-        if owned.contains(&c.id) {
-            *have.entry(cat).or_default() += 1;
-        }
-    }
-    let rows: Vec<(String, String, [f32; 4])> = total
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.05;
+    let col_w = w - margin * 2.0;
+    let owned: std::collections::HashSet<&str> =
+        save.collected.keys().map(String::as_str).collect();
+
+    // Header: "Inventory  owned / total".
+    let owned_n = crate::catalogue::catalog()
         .iter()
-        .map(|(cat, &t)| {
-            let h_ = *have.get(cat).unwrap_or(&0);
-            (
-                cat.clone(),
-                format!("{h_} / {t}"),
-                if h_ > 0 { GOLD } else { DIM },
-            )
-        })
+        .filter(|c| owned.contains(c.id.as_str()))
+        .count();
+    let title = format!("Inventory  {} / {}", owned_n, crate::catalogue::total());
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: centered(&fonts.head, &title, w / 2.0, h * 0.028, h * 0.045),
+        rgba: GOLD,
+    });
+
+    // Tab row.
+    let tgap = w * 0.015;
+    let tw = (col_w - tgap * 4.0) / 5.0;
+    let (ty, th) = (h * 0.085, h * 0.04);
+    for (i, name) in INV_TABS.iter().enumerate() {
+        let tx = margin + i as f32 * (tw + tgap);
+        let sel = i == tab;
+        if sel {
+            rects.push(RectRun {
+                x: tx - 1.5,
+                y: ty - 1.5,
+                w: tw + 3.0,
+                h: th + 3.0,
+                rgba: GOLD,
+            });
+        }
+        rects.push(RectRun {
+            x: tx,
+            y: ty,
+            w: tw,
+            h: th,
+            rgba: PANEL,
+        });
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: centered(&fonts.tiny, name, tx + tw / 2.0, ty, th),
+            rgba: if sel { GOLD } else { DIM },
+        });
+    }
+
+    // The selected tab's items (id, name, rarity). Loot pulls from the combat loot ids; Codex shows
+    // the bestiary foes (a later pass) — for now both fall back to the catalogue Events as a stand-in.
+    let cats = inv_tab_cats(tab);
+    let items: Vec<(String, String, String)> = crate::catalogue::catalog()
+        .into_iter()
+        .filter(|c| cats.contains(&c.cat))
+        .map(|c| (c.id, c.name, c.rarity))
         .collect();
-    let owned_total: u32 = have.values().sum();
-    let sub = format!("{} / {} collected", owned_total, crate::catalogue::total());
-    list_screen("Items", &sub, &rows, fonts, w, h)
+    let sect = format!("{}  ", INV_TABS[tab].to_uppercase());
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: {
+            let (q, _) = fonts.body.layout(&sect, margin, h * 0.145, col_w);
+            q
+        },
+        rgba: GOLD,
+    });
+
+    // Icon grid (4 columns); tiles past the frame clip (the web list scrolls).
+    let cols = 4usize;
+    let gap = w * 0.025;
+    let tile = (col_w - gap * (cols as f32 - 1.0)) / cols as f32;
+    let (gx0, gy0) = (margin, h * 0.185);
+    for (i, (id, name, rarity)) in items.iter().enumerate() {
+        let (r, c) = (i / cols, i % cols);
+        let x = gx0 + c as f32 * (tile + gap);
+        let y = gy0 + r as f32 * (tile * 1.32 + gap);
+        if y + tile > h * 0.9 {
+            break; // off-screen (scrolls on device)
+        }
+        let have = owned.contains(id.as_str());
+        // Rarity-bordered tile.
+        rects.push(RectRun {
+            x: x - 1.5,
+            y: y - 1.5,
+            w: tile + 3.0,
+            h: tile + 3.0,
+            rgba: if have { rarity_rgba(rarity) } else { DIM },
+        });
+        rects.push(RectRun {
+            x,
+            y,
+            w: tile,
+            h: tile,
+            rgba: INK,
+        });
+        // The pixel icon (N1 generator).
+        if let Some((role, pal)) = crate::art::item_icon_for(id, rarity) {
+            paint_role(
+                &mut rects,
+                &role,
+                &pal,
+                x + tile * 0.06,
+                y + tile * 0.06,
+                tile * 0.88 / 16.0,
+            );
+        }
+        // Name (truncated to fit) below the tile.
+        let short: String = name.chars().take(10).collect();
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: centered(
+                &fonts.tiny,
+                &short,
+                x + tile / 2.0,
+                y + tile + h * 0.004,
+                h * 0.02,
+            ),
+            rgba: if have { BODY } else { DIM },
+        });
+    }
+
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    (rects, texts)
 }
 
 /// Headless renders for the drill-down goldens (the representative sample save).
@@ -2428,8 +2488,18 @@ pub fn render_event_play_ref(painter: &crate::headless::Painter, font: &FontRef<
 pub fn render_items(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let (w, h) = (DRILL_W as f32, DRILL_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (rects, texts) = items_frame(&sample_save(), &fonts, w, h);
+    // The Awards tab over a full collection (every icon owned) — matches the web ref's seeded state.
+    let (rects, texts) = items_frame(&full_collection_sample(), 1, &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+/// Render the **Inventory** screen at the web reference aspect (430×880) — committed to halves as
+/// `visual-ref/inventory-awards-brickmap.png` for the Babysitter's side-by-side review.
+pub fn render_items_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = items_frame(&full_collection_sample(), 1, &fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
 /// The id of the unlocked topic whose row contains (`px`,`py`), if any (touch routing).
@@ -3381,6 +3451,30 @@ mod tests {
                 hero.id
             );
         }
+    }
+
+    /// The Inventory builds for every tab without panicking and resolves real item-icon content (the
+    /// N1 generator over the tab's catalogue items), proving the grid + `item_icon_for` wiring.
+    #[test]
+    fn inventory_builds_for_every_tab() {
+        let (w, h) = (REF_W as f32, REF_H as f32);
+        let fonts = Fonts::bake(
+            &FontRef::try_from_slice(crate::FONT_INSTRUMENT_SANS).unwrap(),
+            h,
+        );
+        let save = full_collection_sample();
+        for tab in 0..INV_TABS.len() {
+            let (rects, texts) = items_frame(&save, tab, &fonts, w, h);
+            assert!(!rects.is_empty() && !texts.is_empty(), "tab {tab} renders");
+        }
+        let award = crate::catalogue::catalog()
+            .into_iter()
+            .find(|c| inv_tab_cats(1).contains(&c.cat))
+            .unwrap();
+        assert!(
+            crate::art::item_icon_for(&award.id, &award.rarity).is_some(),
+            "award item icon builds"
+        );
     }
 
     /// A full-collection save unlocks every hero; the representative partial save unlocks some but not
