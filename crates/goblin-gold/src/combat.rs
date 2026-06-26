@@ -293,6 +293,19 @@ pub fn unlocked_roster(collected: &HashSet<&str>) -> Vec<String> {
         .collect()
 }
 
+/// Every combat loot boost (`combat.json lootBoosts`) targeting `hero_id` as `(loot_id, stat,
+/// amount, rarity_hint)` — for the Hero Detail screen's full boost list. The `rarity_hint` is the
+/// item's tier rarity (loot ids aren't in the catalogue so they have no `rarity` field; we tag
+/// them all as "rare" for the row colour, matching web's loot-boost styling).
+pub fn loot_boosts_for(hero_id: &str) -> Vec<(String, String, i64)> {
+    parse()
+        .loot_boosts
+        .into_iter()
+        .filter(|lb| lb.hero == hero_id)
+        .map(|lb| (lb.id, lb.stat, lb.amount))
+        .collect()
+}
+
 /// A hero's **effective** stats for the Arena: base + catalogue boosts (the existing
 /// [`crate::arena::hero_stats`] bridge) + the combat loot boosts of every owned `loot:*` id.
 /// `None` for an unknown hero id.

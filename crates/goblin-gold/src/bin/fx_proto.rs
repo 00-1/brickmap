@@ -197,6 +197,19 @@ fn main() {
     );
     println!("wrote inventory-codex-brickmap (430x880 visual-ref)");
 
+    // The Hero Detail screens (one per type) → halves visual-ref. Brannon = Brawn, Wisp = Arcane,
+    // Pocket = Cunning — the same 3 heroes the web refs were captured against.
+    for (hid, suffix) in [("bram", "brawn"), ("wisp", "arcane"), ("pip", "cunning")] {
+        let hd = app::render_hero_detail_ref(&painter, &font, hid);
+        write_png(
+            &format!("{out_dir}/hero-detail-{suffix}-brickmap.png"),
+            app::REF_W,
+            app::REF_H,
+            &hd,
+        );
+        println!("wrote hero-detail-{suffix}-brickmap (430x880 visual-ref)");
+    }
+
     // The Home hub at the web reference aspect → halves visual-ref (full + fresh + mid-progress).
     let home_ref = app::render_home_ref(&painter, &font);
     write_png(

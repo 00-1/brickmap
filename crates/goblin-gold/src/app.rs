@@ -2799,6 +2799,227 @@ pub fn heroes_frame<'a>(
     (rects, texts)
 }
 
+/// `main.js STAT_ABBR` — the 3-letter chip label for a `boost.stat` value.
+fn stat_abbr(stat: &str) -> &'static str {
+    match stat {
+        "power" => "PWR",
+        "guard" => "GRD",
+        "speed" => "SPD",
+        "focus" => "FOC",
+        _ => "?",
+    }
+}
+
+/// The **Hero Detail** screen — the per-hero drill-down opened from the Heroes list. A header card
+/// with the F1 portrait + type-coloured dot + name + type label + ★rating + 4 effective stat chips +
+/// "N/N boosts collected"; then one row per boost item targeting this hero (rarity square + flavour
+/// name + "+N STAT" gold tag, web's `renderHeroDetail`). Owned-only — locked heroes don't open.
+pub fn hero_detail_frame<'a>(
+    save: &Save,
+    hero_id: &str,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.05;
+    let col_w = w - margin * 2.0;
+    let keys: Vec<&str> = save.collected.keys().map(String::as_str).collect();
+    let keyset: std::collections::HashSet<&str> = keys.iter().copied().collect();
+    let hero = crate::arena::roster().into_iter().find(|h| h.id == hero_id);
+    let Some(hero) = hero else {
+        return (rects, texts);
+    };
+    let stats = crate::combat::effective_stats(&hero.id, &keyset).unwrap_or(hero.base);
+    let rating = hero_rating(&stats);
+
+    // "HERO" eyebrow.
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "HERO", w / 2.0, h * 0.02, h * 0.03),
+        rgba: DIM,
+    });
+
+    // Header CARD — portrait + name + type + rating + stat chips + boosts-collected.
+    let (cy, chh) = (h * 0.065, h * 0.18);
+    rects.push(RectRun {
+        x: margin,
+        y: cy,
+        w: col_w,
+        h: chh,
+        rgba: PANEL,
+    });
+    let tile = chh * 0.7;
+    let (tx, ty) = (margin + col_w * 0.04, cy + chh * 0.14);
+    rects.push(RectRun {
+        x: tx,
+        y: ty,
+        w: tile,
+        h: tile,
+        rgba: INK,
+    });
+    let (role, pal) = crate::art::hero_icon(&hero.id, hero.kind);
+    paint_role(&mut rects, &role, &pal, tx, ty, tile / 16.0);
+
+    let text_x = tx + tile + w * 0.03;
+    // Type dot + name + type label + ★ rating, on one line.
+    let dot = chh * 0.09;
+    rects.push(RectRun {
+        x: text_x,
+        y: cy + chh * 0.18,
+        w: dot,
+        h: dot,
+        rgba: type_rgba(hero.kind),
+    });
+    let name_x = text_x + dot * 1.5;
+    let (q, _) = fonts
+        .body
+        .layout(&hero.name, name_x, cy + chh * 0.14, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: BODY,
+    });
+    let name_w = fonts.body.text_width(&hero.name);
+    let type_label = format!("{:?}", hero.kind).to_uppercase();
+    let (q, _) = fonts.tiny.layout(
+        &type_label,
+        name_x + name_w + w * 0.02,
+        cy + chh * 0.2,
+        col_w,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: DIM,
+    });
+    let star = format!("* {rating}");
+    let stw = fonts.body.text_width(&star);
+    let (q, _) = fonts.body.layout(
+        &star,
+        margin + col_w - stw - w * 0.02,
+        cy + chh * 0.14,
+        stw + 4.0,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    // 4 stat chips (PWR/GRD/SPD/FOC).
+    let chip_y = cy + chh * 0.46;
+    let chip_h = chh * 0.18;
+    let chip_gap = w * 0.014;
+    let chip_count = 4;
+    let chip_w = (col_w * 0.78 - chip_gap * (chip_count as f32 - 1.0)) / chip_count as f32;
+    let labels = [
+        ("PWR", stats.power),
+        ("GRD", stats.guard),
+        ("SPD", stats.speed),
+        ("FOC", stats.focus),
+    ];
+    for (i, (lab, val)) in labels.iter().enumerate() {
+        let cx = text_x + i as f32 * (chip_w + chip_gap);
+        rects.push(RectRun {
+            x: cx,
+            y: chip_y,
+            w: chip_w,
+            h: chip_h,
+            rgba: KEYBG,
+        });
+        let txt = format!("{val} {lab}");
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: centered(&fonts.tiny, &txt, cx + chip_w / 2.0, chip_y, chip_h),
+            rgba: BODY,
+        });
+    }
+
+    // "N / N boosts collected" — counts BOTH catalogue boosts (`boost.hero == hero.id`) and the
+    // combat loot boosts targeting this hero (each owned `loot:*` id contributes).
+    let cat_all: Vec<crate::catalogue::Collectible> = crate::catalogue::catalog()
+        .into_iter()
+        .filter(|c| c.boost.as_ref().is_some_and(|b| b.hero == hero.id))
+        .collect();
+    let owned: Vec<&crate::catalogue::Collectible> =
+        cat_all.iter().filter(|c| save.has(&c.id)).collect();
+    let loot_boosts = crate::combat::loot_boosts_for(&hero.id);
+    let loot_owned = loot_boosts
+        .iter()
+        .filter(|(id, _, _)| save.has(id))
+        .count();
+    let total_have = owned.len() + loot_owned;
+    let total_all = cat_all.len() + loot_boosts.len();
+    let prog = format!("{total_have} / {total_all} boosts collected");
+    let (q, _) = fonts.body.layout(&prog, text_x, cy + chh * 0.74, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    // Boost rows (rarity square + flavour name + "+N STAT" gold tag), as many as fit.
+    let list_top = cy + chh + h * 0.018;
+    let row_h = h * 0.048;
+    let rgap = h * 0.008;
+    let bottom = h * 0.92;
+    for (i, item) in owned.iter().enumerate() {
+        let ry = list_top + i as f32 * (row_h + rgap);
+        if ry + row_h > bottom {
+            break;
+        }
+        rects.push(RectRun {
+            x: margin,
+            y: ry,
+            w: col_w,
+            h: row_h,
+            rgba: PANEL,
+        });
+        // Rarity square (left).
+        let sq = row_h * 0.36;
+        rects.push(RectRun {
+            x: margin + col_w * 0.025,
+            y: ry + row_h * 0.32,
+            w: sq,
+            h: sq,
+            rgba: rarity_rgba(&item.rarity),
+        });
+        // Flavour name.
+        let (q, _) = fonts.body.layout(
+            &item.name,
+            margin + col_w * 0.085,
+            ry + row_h * 0.18,
+            col_w * 0.65,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: BODY,
+        });
+        // "+N STAT" right.
+        if let Some(b) = &item.boost {
+            let tag = format!("+{} {}", b.amount, stat_abbr(&b.stat));
+            let tw = fonts.body.text_width(&tag);
+            let (q, _) = fonts.body.layout(
+                &tag,
+                margin + col_w - tw - w * 0.02,
+                ry + row_h * 0.18,
+                tw + 4.0,
+            );
+            texts.push(TextRun {
+                atlas: &fonts.body,
+                quads: q,
+                rgba: GOLD,
+            });
+        }
+    }
+
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    (rects, texts)
+}
+
 /// The banner shown on the Daily-Event screen after a finished gauntlet run — the event, the
 /// score, and which reward tier it cleared.
 pub struct EventOutcome {
@@ -3629,9 +3850,7 @@ pub fn items_frame<'a>(
                 (r, n, reached >= n)
             })
             .collect();
-        let realms_enc: Vec<bool> = (0..nregions as u32)
-            .map(|r| reached > r * rsize)
-            .collect();
+        let realms_enc: Vec<bool> = (0..nregions as u32).map(|r| reached > r * rsize).collect();
         let events_enc: Vec<bool> = event_roster
             .iter()
             .map(|ev| {
@@ -4078,6 +4297,19 @@ pub fn render_inventory_events_ref(
         w,
         h,
     );
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render a **Hero Detail** screen for `hero_id` at the web reference aspect — committed to halves as
+/// `visual-ref/hero-detail-<type>-brickmap.png` for the Babysitter's side-by-side review.
+pub fn render_hero_detail_ref(
+    painter: &crate::headless::Painter,
+    font: &FontRef<'_>,
+    hero_id: &str,
+) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = hero_detail_frame(&full_collection_sample(), hero_id, &fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
