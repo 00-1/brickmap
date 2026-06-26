@@ -427,6 +427,103 @@ pub fn foe_digest() -> String {
     fnv1a(&acc)
 }
 
+// ── N1: drawIcon ITEM path — category mapping (collectibles.js) ────────────────────────────────
+//
+// The item icons (the `ARCH[cat.arch]` branch of `buildIcon`, vs the `hero:` heroSprite branch in
+// [`hero_icon`]) hang off a fixed 50-entry category table; each category names its archetype. An
+// item id deterministically maps to a category by `hashStr(id + "~cat") % 50`, and a family index by
+// the archetype's position in [`FAMILY`] (the naming coupling). The 12 archetype renderers +
+// `applyLevers` + `buildIcon` (proven vs `itemIcons`/`itemDigest`) build on this in the Items pass.
+
+/// The 12 item archetypes, in order — the family index is the position here.
+const FAMILY: [&str; 12] = [
+    "critter",
+    "bottle",
+    "sheet",
+    "blade",
+    "tool",
+    "gem",
+    "ring",
+    "shield",
+    "garment",
+    "sigil",
+    "orb",
+    "provision",
+];
+
+/// The 50 item categories `(id, archetype)`, in catalogue order (the index `categoryOf` selects).
+const CATEGORIES: [(&str, &str); 50] = [
+    ("familiar", "critter"),
+    ("imp", "critter"),
+    ("slime", "critter"),
+    ("batling", "critter"),
+    ("dragonet", "critter"),
+    ("potion", "bottle"),
+    ("elixir", "bottle"),
+    ("tonic", "bottle"),
+    ("vial", "bottle"),
+    ("scroll", "sheet"),
+    ("tome", "sheet"),
+    ("map", "sheet"),
+    ("letter", "sheet"),
+    ("dagger", "blade"),
+    ("sword", "blade"),
+    ("kris", "blade"),
+    ("sickle", "blade"),
+    ("cleaver", "blade"),
+    ("rapier", "blade"),
+    ("hammer", "tool"),
+    ("mace", "tool"),
+    ("axe", "tool"),
+    ("staff", "tool"),
+    ("wand", "tool"),
+    ("key", "tool"),
+    ("gem", "gem"),
+    ("shard", "gem"),
+    ("jewel", "gem"),
+    ("geode", "gem"),
+    ("ring", "ring"),
+    ("signet", "ring"),
+    ("amulet", "ring"),
+    ("crown", "ring"),
+    ("shield", "shield"),
+    ("buckler", "shield"),
+    ("kiteshield", "shield"),
+    ("helm", "shield"),
+    ("wizardhat", "garment"),
+    ("cap", "garment"),
+    ("boots", "garment"),
+    ("gloves", "garment"),
+    ("rune", "sigil"),
+    ("glyph", "sigil"),
+    ("talisman", "sigil"),
+    ("orb", "orb"),
+    ("globe", "orb"),
+    ("coin", "orb"),
+    ("mushroom", "provision"),
+    ("bread", "provision"),
+    ("chest", "provision"),
+];
+
+/// The item category an id maps to (`collectibles.js categoryOf`): `CATEGORIES[hashStr(id+"~cat") %
+/// 50]`. Deterministic — the same id always names the same category (its icon archetype + the Items
+/// screen's grouping).
+pub fn category_of(id: &str) -> &'static str {
+    let idx = (crate::synth::hash_str(&format!("{id}~cat")) as usize) % CATEGORIES.len();
+    CATEGORIES[idx].0
+}
+
+/// The archetype family index (0..11) for an id (`collectibles.js familyOf`) — the position of its
+/// category's archetype in [`FAMILY`] (the item-name ↔ silhouette coupling).
+pub fn family_of(id: &str) -> usize {
+    let arch = CATEGORIES
+        .iter()
+        .find(|(cid, _)| *cid == category_of(id))
+        .map(|(_, a)| *a)
+        .unwrap_or("critter");
+    FAMILY.iter().position(|f| *f == arch).unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -539,6 +636,30 @@ mod tests {
             for x in 0..G {
                 assert_eq!(row[x], row[G - 1 - x], "hero portrait symmetric @ {x},{y}");
             }
+        }
+    }
+
+    /// N1 foundation: the item category mapping reproduces `collectibles.js categoryOf` — every
+    /// `itemIcons` sample's id maps to its exported `category`/`catId`, and `family_of` agrees with
+    /// that category's archetype position. (The 50-entry table + the hash are the basis the icon
+    /// generator builds on.)
+    #[test]
+    fn item_category_mapping_matches_vectors() {
+        // The 50-entry table is exactly the categories (no dupes, no gaps).
+        assert_eq!(CATEGORIES.len(), 50);
+        for it in vectors()["itemIcons"].as_array().unwrap() {
+            let id = it["id"].as_str().unwrap();
+            let want = it["category"].as_str().unwrap();
+            assert_eq!(category_of(id), want, "category_of({id})");
+            // catId is the same category for items.
+            assert_eq!(
+                it["catId"].as_str().unwrap(),
+                want,
+                "{id} catId == category"
+            );
+            // family index points at this category's archetype.
+            let arch = CATEGORIES.iter().find(|(c, _)| *c == want).unwrap().1;
+            assert_eq!(FAMILY[family_of(id)], arch, "family_of({id}) archetype");
         }
     }
 }
