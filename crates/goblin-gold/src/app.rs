@@ -3016,6 +3016,80 @@ fn rarity_rgba(rarity: &str) -> [f32; 4] {
     }
 }
 
+/// One Inventory progress-bar row: a panel with `label` (green when complete) + `have/total` (+ ✓)
+/// and a green fill bar. Shared by the Topics list (and a candidate for the category tabs).
+#[allow(clippy::too_many_arguments)]
+fn push_progress_row<'a>(
+    rects: &mut Vec<RectRun>,
+    texts: &mut Vec<TextRun<'a>>,
+    fonts: &'a Fonts,
+    label: &str,
+    have: u32,
+    total: u32,
+    margin: f32,
+    col_w: f32,
+    ry: f32,
+    row_h: f32,
+) {
+    rects.push(RectRun {
+        x: margin,
+        y: ry,
+        w: col_w,
+        h: row_h,
+        rgba: PANEL,
+    });
+    let done = total > 0 && have >= total;
+    let lc = if done { GREEN } else { BODY };
+    let (q, _) = fonts
+        .body
+        .layout(label, margin + col_w * 0.04, ry + row_h * 0.12, col_w * 0.7);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: lc,
+    });
+    let cnt = format!("{have} / {total}{}", if done { "  ✓" } else { "" });
+    let cw = fonts.tiny.text_width(&cnt);
+    let (q, _) = fonts.tiny.layout(
+        &cnt,
+        margin + col_w * 0.96 - cw,
+        ry + row_h * 0.16,
+        cw + 8.0,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: lc,
+    });
+    let (bx, by, bw, bh) = (
+        margin + col_w * 0.04,
+        ry + row_h * 0.62,
+        col_w * 0.92,
+        row_h * 0.18,
+    );
+    rects.push(RectRun {
+        x: bx,
+        y: by,
+        w: bw,
+        h: bh,
+        rgba: INK,
+    });
+    let frac = if total > 0 {
+        have as f32 / total as f32
+    } else {
+        0.0
+    };
+    if frac > 0.0 {
+        rects.push(RectRun {
+            x: bx,
+            y: by,
+            w: bw * frac,
+            h: bh,
+            rgba: GREEN,
+        });
+    }
+}
+
 /// The **Inventory** (Items) screen: a tab row (Topics/Awards/Events/Loot/Codex) over a grid of the
 /// selected tab's items, each a **pixel icon** (the N1 `item_icon` generator) on a rarity-coloured
 /// tile + its name. Owned items are bright; unowned are dimmed. Built to the visual bar against
@@ -3080,6 +3154,77 @@ pub fn items_frame<'a>(
             quads: centered(&fonts.tiny, name, tx + tw / 2.0, ty, th),
             rgba: if sel { GOLD } else { DIM },
         });
+    }
+
+    // TOPICS tab — one progress-bar row per topic (web's per-mode `modeProgress` list: name +
+    // have/total + ✓ + green bar, no detail strip). Distinct row source from the category tabs.
+    if tab == 0 {
+        use std::collections::BTreeMap;
+        let mut mhave: BTreeMap<String, u32> = BTreeMap::new();
+        let mut mtot: BTreeMap<String, u32> = BTreeMap::new();
+        for c in crate::catalogue::catalog() {
+            if let Some(mid) = &c.mode_id {
+                *mtot.entry(mid.clone()).or_default() += 1;
+                if owned.contains(c.id.as_str()) {
+                    *mhave.entry(mid.clone()).or_default() += 1;
+                }
+            }
+        }
+        let modes = crate::progression::modes();
+        let prog = |m: &progression::Mode| -> (u32, u32) {
+            (
+                *mhave.get(&m.id).unwrap_or(&0),
+                *mtot.get(&m.id).unwrap_or(&0),
+            )
+        };
+        let complete = modes
+            .iter()
+            .filter(|m| {
+                let (hv, t) = prog(m);
+                t > 0 && hv >= t
+            })
+            .count();
+        let sum_have: u32 = modes.iter().map(|m| prog(m).0).sum();
+        let sum_tot: u32 = modes.iter().map(|m| prog(m).1).sum();
+        let pct = if sum_tot > 0 {
+            (sum_have as f32 / sum_tot as f32 * 100.0).round() as u32
+        } else {
+            0
+        };
+        // Section label + "complete/total AT pct%".
+        let (q, _) = fonts.body.layout("TOPICS", margin, h * 0.142, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: GOLD,
+        });
+        let sc = format!("{complete}/{} AT {pct}%", modes.len());
+        let scw = fonts.tiny.text_width(&sc);
+        let (q, _) = fonts
+            .tiny
+            .layout(&sc, w - margin - scw, h * 0.15, scw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        // Rows (as many as fit above the Back button; the rest scroll on device).
+        let band_top = h * 0.175;
+        let band_bot = h * 0.88;
+        let rgap = h * 0.012;
+        let row_h = h * 0.055;
+        for (i, m) in modes.iter().enumerate() {
+            let ry = band_top + i as f32 * (row_h + rgap);
+            if ry + row_h > band_bot {
+                break;
+            }
+            let (hv, t) = prog(m);
+            push_progress_row(
+                &mut rects, &mut texts, fonts, &m.name, hv, t, margin, col_w, ry, row_h,
+            );
+        }
+        push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+        return (rects, texts);
     }
 
     // Per-category owned/total over the catalogue (one pass), for the progress bars.
@@ -3368,6 +3513,18 @@ pub fn render_items_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) 
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
     let (rects, texts) = items_frame(&full_collection_sample(), 1, &fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render the Inventory **Topics** tab (per-topic progress bars) at the web reference aspect —
+/// committed to halves as `visual-ref/inventory-topics-brickmap.png`.
+pub fn render_inventory_topics_ref(
+    painter: &crate::headless::Painter,
+    font: &FontRef<'_>,
+) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = items_frame(&full_collection_sample(), 0, &fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
