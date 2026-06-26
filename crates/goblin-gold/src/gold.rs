@@ -74,7 +74,37 @@ pub fn gold_mult(items: u32, mastered: u32, heroes: u32, tiers: u32, bosses: u32
     base * g.hoard_g.powi(bosses as i32)
 }
 
+/// Short-scale magnitude suffixes for [`fmt_gold`] (`main.js GOLD_SUFFIX`).
+const GOLD_SUFFIX: [&str; 16] = [
+    "", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc", "Ud", "Dd", "Td", "Qad",
+];
+
+/// Format a gold balance the way the HUD does (`main.js fmtGold`): `< 1000` verbatim, else a
+/// 1000-power tier with a suffix and 2/1/0 decimals by magnitude (e.g. `987654321 → "988M"`).
+pub fn fmt_gold(n: f64) -> String {
+    let mut n = if !n.is_finite() || n < 0.0 { 0.0 } else { n };
+    n = n.floor();
+    if n < 1000.0 {
+        return format!("{}", n as u64);
+    }
+    let mut tier = (n.log10() / 3.0).floor() as usize;
+    if tier >= GOLD_SUFFIX.len() {
+        tier = GOLD_SUFFIX.len() - 1;
+    }
+    let s = n / 1000f64.powi(tier as i32);
+    let body = if s >= 100.0 {
+        format!("{s:.0}")
+    } else if s >= 10.0 {
+        format!("{s:.1}")
+    } else {
+        format!("{s:.2}")
+    };
+    format!("{body}{}", GOLD_SUFFIX[tier])
+}
+
 /// The hoard "fullness" 0..1: `clamp((log10(1+gold) − log10(EMPTY)) / (log10(FULL) − log10(EMPTY)))`.
+/// This is the canonical gold→pile-fraction the Home backdrop feeds to `seedHoard` (vs `hoard.rs`'s
+/// distinct `gold/(gold+K)` fxgl helper).
 pub fn hoard_level(gold: f64) -> f64 {
     let g = cfg();
     let gold = gold.max(0.0);
@@ -136,6 +166,16 @@ mod tests {
 
     fn approx(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol
+    }
+
+    #[test]
+    fn fmt_gold_matches_the_hud() {
+        assert_eq!(fmt_gold(0.0), "0");
+        assert_eq!(fmt_gold(999.0), "999");
+        assert_eq!(fmt_gold(1000.0), "1.00K");
+        assert_eq!(fmt_gold(12_345.0), "12.3K");
+        assert_eq!(fmt_gold(987_654_321.0), "988M"); // the capture-state balance
+        assert_eq!(fmt_gold(-5.0), "0");
     }
 
     #[test]

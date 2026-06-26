@@ -1561,7 +1561,7 @@ pub fn home_frame<'a>(
         rgba: GOLD,
     });
     let (q, _) = fonts.body.layout(
-        &format!("{} Goblin Gold", save.gold as u64),
+        &format!("{} Goblin Gold", crate::gold::fmt_gold(save.gold)),
         margin + coin * 1.4,
         h * 0.02,
         col_w,
@@ -1649,19 +1649,24 @@ pub fn home_frame<'a>(
 
     // The gold-HOARD pile (seedHoard), drawn BEHIND the tree — confined to a bottom band (the coins
     // bank up the side walls and dip in the middle); the bottom card paints over its crest.
-    let level = crate::hoard::hoard_level(save.gold);
+    // The home pile rides the CANONICAL log-scaled wealth fraction (`gold::hoard_level`, the value
+    // `main.js homeFxState` feeds `seedHoard`) — NOT the fxgl `gold/(gold+K)` helper, which saturates
+    // far too early (987M → ~1.0 full pile instead of the web's ~half pile).
+    let level = crate::gold::hoard_level(save.gold);
     let band_top = 0.34; // the pile's wall crest reaches ~⅓ up; the mass sits in the bottom ⅔.
 
     // The pile's BULK — a gold-mass gradient under the surface coins (the "imply the bulk, render the
-    // surface" trick). Web's bottom is near-solid gold; without this the purple backdrop shows through
-    // the coin gaps. Ramps from transparent at the pile crest to a deep gold floor. Scaled by the
-    // hoard `level` so a poorer save shows less mass.
-    let mass_top = 0.46;
+    // surface" trick). Web's bottom is near-SOLID gold even at a moderate level; without this the
+    // purple backdrop shows through the coin gaps. Ramps from transparent at the crest to a solid
+    // deep-gold floor. The floor stays solid regardless of `level` (any non-trivial pile has one);
+    // `level` only gates a poorer save toward less mass (the `0.5 + 0.5·level` envelope).
+    let mass_top = 0.52;
+    let lvlf = (0.5 + 0.5 * level as f32).clamp(0.0, 1.0);
     let mbands = 16;
     for i in 0..mbands {
         let yc = mass_top + (i as f32 + 0.5) / mbands as f32 * (1.0 - mass_top);
         let tt = (yc - mass_top) / (1.0 - mass_top);
-        let a = (0.15 + tt * 1.05).clamp(0.0, 1.0) * level as f32;
+        let a = (0.18 + tt * 1.4).clamp(0.0, 1.0) * lvlf;
         let g0 = [120.0 / 255.0, 84.0 / 255.0, 22.0 / 255.0]; // deep gold (GOLD_TONES darkest)
         let g1 = [156.0 / 255.0, 112.0 / 255.0, 34.0 / 255.0];
         let c = [
@@ -1706,35 +1711,58 @@ pub fn home_frame<'a>(
         let ny = tree_top + i as f32 * row_pitch;
         for (j, p) in parts.iter().enumerate() {
             if j > 0 {
-                // Horizontal MASTERY connector (purple) before this part.
+                // Horizontal MASTERY arrow (purple ►) before this part: a shaft + an arrowhead
+                // pointing into the node, lit once the gate is crossed (web's directional edge).
+                let cy = ny + node_h * 0.5;
+                let pa = if progress.is_unlocked(p) { 0.95 } else { 0.35 };
+                let pcol = [
+                    HOME_PALETTE[2][0],
+                    HOME_PALETTE[2][1],
+                    HOME_PALETTE[2][2],
+                    pa,
+                ];
                 rects.push(RectRun {
-                    x: nx - hgap * 0.95,
-                    y: ny + node_h * 0.45,
-                    w: hgap * 0.9,
-                    h: node_h * 0.12,
-                    rgba: [
-                        HOME_PALETTE[2][0],
-                        HOME_PALETTE[2][1],
-                        HOME_PALETTE[2][2],
-                        if progress.is_unlocked(p) { 0.9 } else { 0.35 },
-                    ],
+                    x: nx - hgap * 1.0,
+                    y: cy - node_h * 0.045,
+                    w: hgap * 0.6,
+                    h: node_h * 0.09,
+                    rgba: pcol,
                 });
+                arrow_right(
+                    &mut rects,
+                    nx - hgap * 0.42,
+                    cy,
+                    node_h * 0.18,
+                    hgap * 0.42,
+                    pcol,
+                );
             }
             home_node(
                 &mut rects, &mut texts, fonts, save, progress, p, nx, ny, node_w, node_h,
             );
             nx += node_w + hgap;
         }
-        // Vertical CHAIN connector (amber) down to the next spine row (only if it too is visible).
+        // Vertical CHAIN arrow (amber ▼) down to the next spine row: a shaft + an arrowhead landing
+        // on the next node, so each edge reads as a discrete directional link (not one long spine).
         if i + 1 < spine.len() && row_visible(i + 1) {
             let lit = progress.is_unlocked(spine[i + 1]);
+            let acol = [GOLD[0], GOLD[1], GOLD[2], if lit { 0.9 } else { 0.3 }];
+            let head_h = (row_pitch - node_h) * 0.45;
             rects.push(RectRun {
                 x: cx - w * 0.004,
                 y: ny + node_h,
                 w: w * 0.008,
-                h: row_pitch - node_h,
-                rgba: [GOLD[0], GOLD[1], GOLD[2], if lit { 0.85 } else { 0.3 }],
+                h: row_pitch - node_h - head_h,
+                rgba: acol,
             });
+            arrow_down(
+                &mut rects,
+                cx,
+                ny + row_pitch - head_h,
+                w * 0.018,
+                head_h,
+                acol,
+            );
         }
     }
 
@@ -1923,6 +1951,46 @@ fn mode_progress(save: &Save, mode_id: &str) -> (usize, usize) {
         .collect();
     let have = items.iter().filter(|id| save.has(id)).count();
     (have, items.len())
+}
+
+/// A small downward ▼ arrowhead (a centred stack of narrowing axis-aligned rects — RectRun has no
+/// triangles), apex at `(cx, top + height)`.
+fn arrow_down(rects: &mut Vec<RectRun>, cx: f32, top: f32, half: f32, height: f32, rgba: [f32; 4]) {
+    let steps = 4;
+    for k in 0..steps {
+        let t = k as f32 / steps as f32;
+        let hw = half * (1.0 - t);
+        rects.push(RectRun {
+            x: cx - hw,
+            y: top + t * height,
+            w: hw * 2.0,
+            h: height / steps as f32 + 0.7,
+            rgba,
+        });
+    }
+}
+
+/// A small rightward ► arrowhead, apex at `(left + width, cy)`.
+fn arrow_right(
+    rects: &mut Vec<RectRun>,
+    left: f32,
+    cy: f32,
+    half: f32,
+    width: f32,
+    rgba: [f32; 4],
+) {
+    let steps = 4;
+    for k in 0..steps {
+        let t = k as f32 / steps as f32;
+        let hh = half * (1.0 - t);
+        rects.push(RectRun {
+            x: left + t * width,
+            y: cy - hh,
+            w: width / steps as f32 + 0.7,
+            h: hh * 2.0,
+            rgba,
+        });
+    }
 }
 
 /// Paint one topic glyph (the `glyphs.rs` ink grid) as little squares inside the box, body
@@ -3346,7 +3414,8 @@ pub fn render_home_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
     let modes = progression::modes();
-    let sample = full_collection_sample();
+    let mut sample = full_collection_sample();
+    sample.gold = 987_654_321.0; // the exact `capture-states.json` home balance ("988M" + ~½ pile).
     let progress = sample.progress();
     let (rects, texts) = home_frame(
         &sample,
