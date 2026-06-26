@@ -1490,6 +1490,210 @@ pub fn topic_select_frame<'a>(
     (rects, texts)
 }
 
+/// The Home hub's bottom-nav destinations (web's `Best · Items · Heroes · Arena · Setup`).
+const HOME_NAV: [&str; 5] = ["Best", "Items", "Heroes", "Arena", "Setup"];
+/// `main.js HOME_PALETTE` — the home backdrop's purple theme (`[bg, accent, light]`).
+const HOME_PALETTE: [[f32; 3]; 3] = [
+    [
+        0x0e as f32 / 255.0,
+        0x11 as f32 / 255.0,
+        0x16 as f32 / 255.0,
+    ],
+    [
+        0x9a as f32 / 255.0,
+        0x5c as f32 / 255.0,
+        0xf6 as f32 / 255.0,
+    ],
+    [
+        0xcd as f32 / 255.0,
+        0xa9 as f32 / 255.0,
+        0xff as f32 / 255.0,
+    ],
+];
+
+/// The **Home** hub (web's main screen): a purple backdrop with the gold-HOARD pile, a gold-bar header,
+/// the daily-event banner, the topic grid, and the bottom nav. Built to the visual bar against
+/// `home-web.png`. `now_ms` drives the event countdown deterministically.
+pub fn home_frame<'a>(
+    save: &Save,
+    modes: &[progression::Mode],
+    progress: &progression::Progress,
+    now_ms: i64,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.05;
+    let col_w = w - margin * 2.0;
+
+    // Purple backdrop wash (HOME_PALETTE bg→accent, vertical bands) under everything.
+    let bands = 18;
+    for i in 0..bands {
+        let t = i as f32 / (bands - 1) as f32;
+        let c = [
+            HOME_PALETTE[0][0] + (HOME_PALETTE[1][0] - HOME_PALETTE[0][0]) * t * 0.55,
+            HOME_PALETTE[0][1] + (HOME_PALETTE[1][1] - HOME_PALETTE[0][1]) * t * 0.55,
+            HOME_PALETTE[0][2] + (HOME_PALETTE[1][2] - HOME_PALETTE[0][2]) * t * 0.55,
+        ];
+        rects.push(RectRun {
+            x: 0.0,
+            y: h * (i as f32 / bands as f32),
+            w,
+            h: h / bands as f32 + 1.0,
+            rgba: [c[0], c[1], c[2], 1.0],
+        });
+    }
+
+    // The gold-HOARD pile (seedHoard) — coins fill from the surface down; level rides the balance.
+    let level = crate::hoard::hoard_level(save.gold);
+    for coin in crate::hoard::seed_hoard(level, 0x601d, &[], 480) {
+        let s = coin.size as f32 * (w / 430.0);
+        rects.push(RectRun {
+            x: coin.x as f32 * w - s / 2.0,
+            y: coin.y as f32 * h - s / 2.0,
+            w: s,
+            h: s * coin.aspect as f32,
+            rgba: [
+                coin.r as f32 / 255.0,
+                coin.g as f32 / 255.0,
+                coin.b as f32 / 255.0,
+                1.0,
+            ],
+        });
+    }
+
+    // Gold-bar header.
+    let coin = h * 0.022;
+    rects.push(RectRun {
+        x: margin,
+        y: h * 0.022,
+        w: coin,
+        h: coin,
+        rgba: GOLD,
+    });
+    let (q, _) = fonts.body.layout(
+        &format!("{} Goblin Gold", save.gold as u64),
+        margin + coin * 1.4,
+        h * 0.02,
+        col_w,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    // Daily-event banner (name + countdown + "Again").
+    let ev = crate::event_play::live_event(now_ms);
+    let (by, bh) = (h * 0.055, h * 0.06);
+    rects.push(RectRun {
+        x: margin,
+        y: by,
+        w: col_w,
+        h: bh,
+        rgba: INK,
+    });
+    let (q, _) = fonts.tiny.layout(
+        &format!("Today's event — {}", ev.name),
+        margin + col_w * 0.03,
+        by + bh * 0.16,
+        col_w,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: GOLD,
+    });
+    let (q, _) = fonts.tiny.layout(
+        &format!("new event in {}", event_countdown(now_ms)),
+        margin + col_w * 0.03,
+        by + bh * 0.56,
+        col_w,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: DIM,
+    });
+    let (aw, ax) = (col_w * 0.18, margin + col_w - col_w * 0.18);
+    rects.push(RectRun {
+        x: ax,
+        y: by + bh * 0.2,
+        w: aw,
+        h: bh * 0.6,
+        rgba: GOLD,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "Again", ax + aw / 2.0, by + bh * 0.2, bh * 0.6),
+        rgba: INK,
+    });
+
+    // Topic grid (over the purple; the connected tree-graph layout is the next refinement).
+    let unlocked: Vec<&progression::Mode> =
+        modes.iter().filter(|m| progress.is_unlocked(m)).collect();
+    let cols = if unlocked.len() > 12 { 3 } else { 2 };
+    let (gtop, gbot, ggap) = (h * 0.135, h * 0.80, w * 0.02);
+    let grows = unlocked.len().div_ceil(cols);
+    let cw = (col_w - ggap * (cols as f32 - 1.0)) / cols as f32;
+    let ch = ((gbot - gtop) / grows as f32 - ggap).clamp(h * 0.02, h * 0.05);
+    for (i, m) in unlocked.iter().enumerate() {
+        let (r, c) = (i / cols, i % cols);
+        let x = margin + c as f32 * (cw + ggap);
+        let y = gtop + r as f32 * (ch + ggap);
+        if y + ch > gbot {
+            break;
+        }
+        rects.push(RectRun {
+            x,
+            y,
+            w: cw,
+            h: ch,
+            rgba: INK,
+        });
+        let col = if progress.is_mastered(&m.id) {
+            GREEN
+        } else {
+            GOLD
+        };
+        let short: String = m.name.chars().take(12).collect();
+        let (q, _) = fonts.tiny.layout(
+            &short,
+            x + cw * 0.07,
+            y + ch / 2.0 - 0.59 * fonts.tiny.px,
+            cw,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: col,
+        });
+    }
+
+    // Bottom nav row.
+    let ngap = w * 0.015;
+    let nw = (col_w - ngap * 4.0) / 5.0;
+    let (ny, nh) = (h * 0.93, h * 0.05);
+    for (i, name) in HOME_NAV.iter().enumerate() {
+        let nx = margin + i as f32 * (nw + ngap);
+        rects.push(RectRun {
+            x: nx,
+            y: ny,
+            w: nw,
+            h: nh,
+            rgba: KEYBG,
+        });
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: centered(&fonts.tiny, name, nx + nw / 2.0, ny, nh),
+            rgba: DIM,
+        });
+    }
+    (rects, texts)
+}
+
 /// Draw the shared bottom button (a gold bar with a dark inked label).
 fn push_button<'a>(
     rects: &mut Vec<RectRun>,
@@ -2793,6 +2997,24 @@ pub fn render_topic_select_full(painter: &crate::headless::Painter, font: &FontR
     let modes = progression::modes();
     let (rects, texts) = topic_select_frame(&modes, &all_unlocked(), &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+/// Render the **Home** hub at the web reference aspect (430×880) — committed to halves as
+/// `visual-ref/home-brickmap.png`. (A progressed save: gold + every topic unlocked.)
+pub fn render_home_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let modes = progression::modes();
+    let (rects, texts) = home_frame(
+        &full_collection_sample(),
+        &modes,
+        &all_unlocked(),
+        EVENT_SAMPLE_NOW_MS,
+        &fonts,
+        w,
+        h,
+    );
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
 /// A representative save for the Collection golden — a player who's made some progress, so earned
