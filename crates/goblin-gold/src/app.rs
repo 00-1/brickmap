@@ -3062,11 +3062,17 @@ fn push_progress_row<'a>(
     });
     let done = total > 0 && have >= total;
     let lc = if done { GREEN } else { BODY };
-    let (q, _) = fonts
-        .body
-        .layout(label, margin + col_w * 0.04, ry + row_h * 0.12, col_w * 0.7);
+    // Keep the label on ONE line: the body face when it fits, else the smaller tiny face (the long
+    // "<Realm> · tiers a–b" loot labels would otherwise wrap over the progress bar).
+    let avail = col_w * 0.66;
+    let (la, ly) = if fonts.body.text_width(label) <= avail {
+        (&fonts.body, row_h * 0.12)
+    } else {
+        (&fonts.tiny, row_h * 0.2)
+    };
+    let (q, _) = la.layout(label, margin + col_w * 0.04, ry + ly, col_w);
     texts.push(TextRun {
-        atlas: &fonts.body,
+        atlas: la,
         quads: q,
         rgba: lc,
     });
@@ -3254,6 +3260,62 @@ pub fn items_frame<'a>(
             let (hv, t) = prog(m);
             push_progress_row(
                 &mut rects, &mut texts, fonts, &m.name, hv, t, margin, col_w, ry, row_h,
+            );
+        }
+        push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+        return (rects, texts);
+    }
+
+    // LOOT tab — one progress-bar row per REGION ("<Realm> · tiers a–b" + loot-collected/total + ✓ +
+    // bar), web's per-region loot list. Loot ids are per-tier; a region spans `regionSize` tiers.
+    if tab == 3 {
+        let rsize = crate::combat::region_size();
+        let nregions = (crate::combat::tier_count() / rsize) as usize;
+        // Per-region (have, total) over the region's loot ids.
+        let region_counts: Vec<(u32, u32)> = (0..nregions)
+            .map(|r| {
+                let (mut hv, mut t) = (0u32, 0u32);
+                for tier in (r as u32 * rsize + 1)..=((r as u32 + 1) * rsize) {
+                    for id in crate::combat::loot_for(tier) {
+                        t += 1;
+                        if owned.contains(id.as_str()) {
+                            hv += 1;
+                        }
+                    }
+                }
+                (hv, t)
+            })
+            .collect();
+        let loot_total: u32 = region_counts.iter().map(|(_, t)| t).sum();
+        let loot_have: u32 = region_counts.iter().map(|(hv, _)| hv).sum();
+        // Section label "LOOT" + right "have/total".
+        let (q, _) = fonts.body.layout("LOOT", margin, h * 0.142, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: GOLD,
+        });
+        let sc = format!("{loot_have} / {loot_total}");
+        let scw = fonts.tiny.text_width(&sc);
+        let (q, _) = fonts
+            .tiny
+            .layout(&sc, w - margin - scw, h * 0.15, scw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        // Rows, one per region.
+        let band_top = h * 0.175;
+        let rgap = h * 0.012;
+        let row_h = h * 0.058;
+        for (r, &(hv, t)) in region_counts.iter().enumerate() {
+            let ry = band_top + r as f32 * (row_h + rgap);
+            let lo = r as u32 * rsize + 1;
+            let hi = (r as u32 + 1) * rsize;
+            let label = format!("{} · tiers {lo}–{hi}", crate::combat::region_name(r));
+            push_progress_row(
+                &mut rects, &mut texts, fonts, &label, hv, t, margin, col_w, ry, row_h,
             );
         }
         push_button(&mut rects, &mut texts, fonts, "Back", w, h);
@@ -3567,6 +3629,18 @@ pub fn render_inventory_topics_ref(
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
     let (rects, texts) = items_frame(&full_collection_sample(), 0, &fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render the Inventory **Loot** tab (per-region loot progress bars) at the web reference aspect —
+/// committed to halves as `visual-ref/inventory-loot-brickmap.png`.
+pub fn render_inventory_loot_ref(
+    painter: &crate::headless::Painter,
+    font: &FontRef<'_>,
+) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = items_frame(&full_collection_sample(), 3, &fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 

@@ -200,6 +200,25 @@ pub fn tier_region(n: u32) -> u32 {
     (n.max(1) - 1) / region_size()
 }
 
+/// The 10 region/realm names (`enemies.js REGIONS`) — the tier-name prefixes + the Loot/Codex labels.
+pub const REGION_NAMES: [&str; 10] = [
+    "Goblin Warren",
+    "Gallowmarch",
+    "Gloamwood",
+    "Haunted Marsh",
+    "Frostpeak Caverns",
+    "Drownholm",
+    "Cinderwaste",
+    "Stormspire",
+    "Dragon's Roost",
+    "The Void Throne",
+];
+
+/// The region/realm name for region index `i` (0..9).
+pub fn region_name(i: usize) -> &'static str {
+    REGION_NAMES.get(i).copied().unwrap_or("")
+}
+
 /// The next tier to fight = one past the highest cleared `tier:n` key (capped at the ladder top).
 pub fn next_tier<'a>(collected: impl IntoIterator<Item = &'a str>) -> u32 {
     let max_cleared = collected
@@ -578,6 +597,24 @@ mod tests {
     use serde_json::Value;
 
     const VECTORS_JSON: &str = include_str!("../data/gg1/combat-vectors.json");
+
+    #[test]
+    fn region_names_align_with_the_tier_data() {
+        // 10 regions × regionSize == the ladder; each region's first ("Runt") tier name starts with
+        // its region label (catches any ordering drift in REGION_NAMES vs the combat.json tiers).
+        assert_eq!(REGION_NAMES.len() as u32 * region_size(), tier_count());
+        let v: Value = serde_json::from_str(COMBAT_JSON).expect("combat.json");
+        let tiers = v["tiers"].as_array().expect("tiers");
+        for (i, region) in REGION_NAMES.iter().enumerate() {
+            let first = &tiers[i * region_size() as usize];
+            let name = first["name"].as_str().unwrap_or("");
+            assert!(
+                name.starts_with(region),
+                "region {i} tier `{name}` should start with `{region}`"
+            );
+            assert_eq!(tier_region(i as u32 * region_size() + 1), i as u32);
+        }
+    }
 
     fn vectors() -> Value {
         serde_json::from_str(VECTORS_JSON).expect("combat-vectors.json")

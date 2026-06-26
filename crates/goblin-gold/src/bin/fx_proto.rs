@@ -167,6 +167,16 @@ fn main() {
     );
     println!("wrote inventory-topics-brickmap (430x880 visual-ref)");
 
+    // The Inventory Loot tab (per-region loot progress bars) → halves visual-ref.
+    let inv_loot = app::render_inventory_loot_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/inventory-loot-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &inv_loot,
+    );
+    println!("wrote inventory-loot-brickmap (430x880 visual-ref)");
+
     // The Home hub at the web reference aspect → halves visual-ref (full + fresh + mid-progress).
     let home_ref = app::render_home_ref(&painter, &font);
     write_png(
