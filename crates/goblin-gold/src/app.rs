@@ -1496,18 +1496,27 @@ fn push_button<'a>(
     w: f32,
     h: f32,
 ) {
+    // OUTLINED treatment (gold border + dark fill + gold label) — web's subtle action bar, not a
+    // bright solid-yellow slab (parity ledger V8/V12: the shared bottom bar across every screen).
     let (bx, by, bw, bh) = bottom_button(w, h);
     rects.push(RectRun {
         x: bx,
         y: by,
         w: bw,
         h: bh,
-        rgba: GOLD,
+        rgba: [GOLD[0], GOLD[1], GOLD[2], 0.55],
+    });
+    rects.push(RectRun {
+        x: bx + 2.0,
+        y: by + 2.0,
+        w: bw - 4.0,
+        h: bh - 4.0,
+        rgba: KEYBG,
     });
     texts.push(TextRun {
         atlas: &fonts.key,
         quads: centered(&fonts.key, label, bx + bw / 2.0, by, bh),
-        rgba: INK,
+        rgba: GOLD,
     });
 }
 
