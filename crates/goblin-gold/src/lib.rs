@@ -65,6 +65,10 @@ pub mod event_play;
 // these role grids through the per-id/per-type palettes.
 pub mod art;
 
+// Procedural backdrops + banners (F3+F4): the scenery.js + eventart.js full-colour generators (Arena
+// region scenes 28×11 + per-event emblem crests 24×16), proven byte-identical vs `scenes-vectors.json`.
+pub mod scenes;
+
 // Earning: the rule turning a finished round + running totals into awarded collectible keys,
 // re-impl'd from collectibles.js and proven vs `earning-vectors.json`. Pure logic.
 pub mod earning;

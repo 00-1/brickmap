@@ -1,0 +1,18 @@
+{
+ "_note": "GG1 procedural backdrops/banners (NO art assets). Two deterministic full-colour 2D generators the port reproduces from gg1/dev and proves vs scenes-vectors.json. Grids are palette-packed: each vector carries `pal` (hex, first-appearance order) + `rows` (base36 palette-index strings); cell colour = pal[parseInt(ch,36)].",
+ "_f3": "SCENERY (scenery.js buildGrid(region)): 28×11. THEMES[region%10] gives {sky:[top,bot], sil, shape, accent}. Fill: per-row sky = lerp(sky0,sky1,r/(ROWS-1)); silhouette from topRow(shape,c) down to the base in `sil`; if accent, 6+floor(rnd*5) accent cells above the horizon. rnd = mulberry32((region+1)*2654435761>>>0). NB the live `draw` adds a 0.64 scrim on top — buildGrid is the PRE-SCRIM grid (what these vectors hold).",
+ "_f4": "EVENTART (eventart.js buildGrid(seed)): 24×16. rnd = mulberry32((seed>>>0)||1); a hue-seeded HSL sky gradient + a centred edge-lit diamond crest (Manhattan |c-cx|+|r-cy|*1.35 ≤ R, R=6+floor(rnd*2)) + a seeded mirror-symmetric rune (accent) + 5+floor(rnd*5) sparks above. Seed = each event's `artSeed`.",
+ "constants": {
+  "scenery": {
+   "cols": 28,
+   "rows": 11,
+   "regionCount": 10,
+   "source": "gg1/dev/scenery.js (buildGrid)"
+  },
+  "eventart": {
+   "cols": 24,
+   "rows": 16,
+   "source": "gg1/dev/eventart.js (buildGrid)"
+  }
+ }
+}
