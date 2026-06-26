@@ -143,6 +143,17 @@ struct HeroRaw {
     unlock: Unlock,
 }
 
+/// One ladder tier as carried by `combat.json` `tiers[]`: the foe's display name + type + a boss
+/// flag (used by Codex enumeration + the Arena tier header).
+#[derive(Deserialize, Clone)]
+struct TierRaw {
+    n: u32,
+    name: String,
+    #[serde(rename = "type")]
+    kind: Kind,
+    boss: bool,
+}
+
 #[derive(Deserialize)]
 struct CombatFile {
     constants: Constants,
@@ -152,6 +163,7 @@ struct CombatFile {
     #[serde(rename = "enemyTeams")]
     enemy_teams: BTreeMap<String, Vec<FoeRaw>>,
     loot: BTreeMap<String, Vec<String>>,
+    tiers: Vec<TierRaw>,
 }
 
 fn parse() -> CombatFile {
@@ -198,6 +210,37 @@ pub fn tier_foes(n: u32) -> Vec<(Kind, f64, f64)> {
 /// The region index for tier `n` (`(n-1)/regionSize`) — selects the scenery backdrop + region label.
 pub fn tier_region(n: u32) -> u32 {
     (n.max(1) - 1) / region_size()
+}
+
+/// Tier `n`'s display name + type + boss flag (`combat.json tiers[]`), if `n` is in 1..=tier_count.
+pub fn tier_meta(n: u32) -> Option<(String, Kind, bool)> {
+    parse()
+        .tiers
+        .into_iter()
+        .find(|t| t.n == n)
+        .map(|t| (t.name, t.kind, t.boss))
+}
+
+/// The first non-boss tier `n` in region `r` whose type matches `kind` (`main.js invCodexHtml`
+/// Beasts enumeration). Returns `None` if no such tier exists in the region.
+pub fn beast_rep_tier(region: u32, kind: Kind) -> Option<u32> {
+    let rsize = region_size();
+    let lo = region * rsize + 1;
+    let hi = (region + 1) * rsize - 1; // exclude the region boss
+    parse()
+        .tiers
+        .into_iter()
+        .find(|t| t.n >= lo && t.n <= hi && t.kind == kind && !t.boss)
+        .map(|t| t.n)
+}
+
+/// The highest tier the save has cleared (`tier:N` keys), or 0 if none.
+pub fn reached_tier<'a>(collected: impl IntoIterator<Item = &'a str>) -> u32 {
+    collected
+        .into_iter()
+        .filter_map(|k| k.strip_prefix("tier:").and_then(|n| n.parse::<u32>().ok()))
+        .max()
+        .unwrap_or(0)
 }
 
 /// The 10 region/realm names (`enemies.js REGIONS`) — the tier-name prefixes + the Loot/Codex labels.
@@ -597,6 +640,27 @@ mod tests {
     use serde_json::Value;
 
     const VECTORS_JSON: &str = include_str!("../data/gg1/combat-vectors.json");
+
+    #[test]
+    fn codex_beasts_have_a_representative_tier_per_region_and_type() {
+        // The Beasts enumeration (`main.js invCodexHtml`): each region × {Brawn,Cunning,Arcane} has
+        // a non-boss `rep` tier; with 12 tiers/region and 3 types, every region should cover all 3.
+        use crate::arena::Kind::*;
+        for r in 0..REGION_NAMES.len() as u32 {
+            for k in [Brawn, Cunning, Arcane] {
+                let rep = beast_rep_tier(r, k).unwrap_or_else(|| {
+                    panic!(
+                        "region {r} ({}) has no {k:?} rep tier",
+                        REGION_NAMES[r as usize]
+                    )
+                });
+                let (_name, got_kind, boss) = tier_meta(rep).expect("rep tier metadata");
+                assert_eq!(got_kind, k);
+                assert!(!boss);
+                assert_eq!(tier_region(rep), r, "rep tier {rep} must be in region {r}");
+            }
+        }
+    }
 
     #[test]
     fn region_names_align_with_the_tier_data() {

@@ -3197,6 +3197,82 @@ fn push_item_grid<'a>(
     }
 }
 
+/// The Codex Beasts grid: a 5-col tile of region×type foe portraits via `art::foe_grid`. Encountered
+/// cells paint the foe at full palette; locked cells paint a dim silhouette (web's "?" + filter).
+#[allow(clippy::too_many_arguments)]
+fn push_codex_beast_grid<'a>(
+    rects: &mut Vec<RectRun>,
+    texts: &mut Vec<TextRun<'a>>,
+    fonts: &'a Fonts,
+    beasts: &[(u32, crate::arena::Kind, u32, bool)],
+    margin: f32,
+    col_w: f32,
+    top: f32,
+    h: f32,
+    w: f32,
+) {
+    let cols = 5usize;
+    let sgap = w * 0.02;
+    let tile = (col_w - sgap * (cols as f32 - 1.0)) / cols as f32;
+    let vgap = h * 0.03;
+    let bottom = h * 0.88;
+    for (i, (region, kind, rep, enc)) in beasts.iter().enumerate() {
+        let (r, c) = (i / cols, i % cols);
+        let x = margin + c as f32 * (tile + sgap);
+        let y = top + r as f32 * (tile + vgap);
+        if y + tile > bottom {
+            break;
+        }
+        // Tile background + a thin border (gold when encountered, dim otherwise).
+        rects.push(RectRun {
+            x: x - 1.5,
+            y: y - 1.5,
+            w: tile + 3.0,
+            h: tile + 3.0,
+            rgba: if *enc { GOLD } else { DIM },
+        });
+        rects.push(RectRun {
+            x,
+            y,
+            w: tile,
+            h: tile,
+            rgba: INK,
+        });
+        // Foe portrait — `foe_grid` at the rep tier. The (name, kind) only affect the name; the grid
+        // is seeded by tier-n + name, so passing the rep's combat.json name keeps the silhouette.
+        let name = crate::combat::tier_meta(*rep)
+            .map(|(n, _, _)| n)
+            .unwrap_or_default();
+        let (role, pal) = crate::art::foe_grid(*rep, &name, *kind);
+        // For locked cells, render with a "silhouette" palette (everything outline-coloured) so the
+        // shape reads but the type colour is hidden — matches web's CSS dark-silhouette filter.
+        let cell = tile * 0.84 / 16.0;
+        if *enc {
+            paint_role(rects, &role, &pal, x + tile * 0.08, y + tile * 0.08, cell);
+        } else {
+            let dim = crate::art::Palette::mono("#3a3a4a");
+            paint_role(rects, &role, &dim, x + tile * 0.08, y + tile * 0.08, cell);
+        }
+        // Caption "<Realm> · <Type>".
+        let cap = format!(
+            "{} · {kind:?}",
+            crate::combat::region_name(*region as usize)
+        );
+        let short: String = cap.chars().take(11).collect();
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: centered(
+                &fonts.tiny,
+                &short,
+                x + tile / 2.0,
+                y + tile + h * 0.002,
+                h * 0.014,
+            ),
+            rgba: if *enc { BODY } else { DIM },
+        });
+    }
+}
+
 /// The **Inventory** (Items) screen: a tab row (Topics/Awards/Events/Loot/Codex) over a grid of the
 /// selected tab's items, each a **pixel icon** (the N1 `item_icon` generator) on a rarity-coloured
 /// tile + its name. Owned items are bright; unowned are dimmed. Built to the visual bar against
@@ -3519,6 +3595,117 @@ pub fn items_frame<'a>(
             h * 0.415,
             h,
             w,
+        );
+
+        push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+        return (rects, texts);
+    }
+
+    // CODEX tab — a bestiary: 4 category progress rows (Beasts/Bosses/Realms/Events) + the Beasts
+    // grid (region×type foe portraits via `art::foe_grid`). Discovery = `tier:n` keys ≥ `rep`
+    // (`main.js invCodexHtml`); a "current" save has the whole ladder cleared, so every cell counts.
+    if tab == 4 {
+        use crate::arena::Kind::*;
+        let rsize = crate::combat::region_size();
+        let nregions = (crate::combat::tier_count() / rsize) as usize;
+        let reached = crate::combat::reached_tier(save.collected.keys().map(String::as_str));
+        let event_roster = crate::event_play::roster();
+
+        // Enumerate the 4 sections (web order). Beasts: region × {Brawn,Cunning,Arcane}; Bosses:
+        // every `RS`th tier; Realms: 1 per region (encountered once region's first tier is reached);
+        // Events: each event with any `event:<id>*` key owned.
+        type Beast = (u32, crate::arena::Kind, u32, bool); // (region, kind, rep_tier, encountered)
+        let mut beasts: Vec<Beast> = Vec::new();
+        for r in 0..nregions as u32 {
+            for k in [Brawn, Cunning, Arcane] {
+                if let Some(rep) = crate::combat::beast_rep_tier(r, k) {
+                    beasts.push((r, k, rep, reached >= rep));
+                }
+            }
+        }
+        let bosses: Vec<(u32, u32, bool)> = (0..nregions as u32)
+            .map(|r| {
+                let n = (r + 1) * rsize;
+                (r, n, reached >= n)
+            })
+            .collect();
+        let realms_enc: Vec<bool> = (0..nregions as u32)
+            .map(|r| reached > r * rsize)
+            .collect();
+        let events_enc: Vec<bool> = event_roster
+            .iter()
+            .map(|ev| {
+                let pref = format!("event:{}", ev.id);
+                save.collected.keys().any(|k| k.starts_with(&pref))
+            })
+            .collect();
+
+        let cats: [(&str, u32, u32); 4] = [
+            (
+                "Beasts",
+                beasts.iter().filter(|b| b.3).count() as u32,
+                beasts.len() as u32,
+            ),
+            (
+                "Bosses",
+                bosses.iter().filter(|b| b.2).count() as u32,
+                bosses.len() as u32,
+            ),
+            (
+                "Realms",
+                realms_enc.iter().filter(|&&e| e).count() as u32,
+                realms_enc.len() as u32,
+            ),
+            (
+                "Events",
+                events_enc.iter().filter(|&&e| e).count() as u32,
+                events_enc.len() as u32,
+            ),
+        ];
+        let total: u32 = cats.iter().map(|(_, _, t)| t).sum();
+        let have: u32 = cats.iter().map(|(_, h, _)| h).sum();
+
+        // Section header.
+        let (q, _) = fonts.body.layout("CODEX", margin, h * 0.142, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: GOLD,
+        });
+        let sc = format!("{have} / {total} DISCOVERED");
+        let scw = fonts.tiny.text_width(&sc);
+        let (q, _) = fonts
+            .tiny
+            .layout(&sc, w - margin - scw, h * 0.15, scw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+
+        // 4 progress rows.
+        let band_top = h * 0.175;
+        let rgap = h * 0.012;
+        let row_h = h * 0.055;
+        for (i, (label, hv, t)) in cats.iter().enumerate() {
+            let ry = band_top + i as f32 * (row_h + rgap);
+            push_progress_row(
+                &mut rects, &mut texts, fonts, label, *hv, *t, margin, col_w, ry, row_h,
+            );
+        }
+
+        // Beasts portrait grid (region×type) — encountered: bright foe; locked: dim silhouette.
+        let beasts_top = band_top + 4.0 * (row_h + rgap) + h * 0.018;
+        let (q, _) = fonts
+            .tiny
+            .layout("BEASTS", margin, beasts_top - h * 0.025, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        push_codex_beast_grid(
+            &mut rects, &mut texts, fonts, &beasts, margin, col_w, beasts_top, h, w,
         );
 
         push_button(&mut rects, &mut texts, fonts, "Back", w, h);
@@ -3886,6 +4073,25 @@ pub fn render_inventory_events_ref(
     let (rects, texts) = items_frame(
         &full_collection_sample(),
         2,
+        EVENT_SAMPLE_NOW_MS,
+        &fonts,
+        w,
+        h,
+    );
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render the Inventory **Codex** tab (4 category rows + Beasts portrait grid) at the web reference
+/// aspect — committed to halves as `visual-ref/inventory-codex-brickmap.png`.
+pub fn render_inventory_codex_ref(
+    painter: &crate::headless::Painter,
+    font: &FontRef<'_>,
+) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = items_frame(
+        &full_collection_sample(),
+        4,
         EVENT_SAMPLE_NOW_MS,
         &fonts,
         w,

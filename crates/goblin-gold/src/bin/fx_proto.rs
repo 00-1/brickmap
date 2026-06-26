@@ -187,6 +187,16 @@ fn main() {
     );
     println!("wrote inventory-events-brickmap (430x880 visual-ref)");
 
+    // The Inventory Codex tab (4 category rows + Beasts portrait grid) → halves visual-ref.
+    let inv_codex = app::render_inventory_codex_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/inventory-codex-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &inv_codex,
+    );
+    println!("wrote inventory-codex-brickmap (430x880 visual-ref)");
+
     // The Home hub at the web reference aspect → halves visual-ref (full + fresh + mid-progress).
     let home_ref = app::render_home_ref(&painter, &font);
     write_png(

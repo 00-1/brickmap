@@ -33,6 +33,16 @@ pub struct Palette {
 }
 
 impl Palette {
+    /// A **monochrome** palette (every role maps to `hex`) — used for locked silhouettes (Codex).
+    pub fn mono(hex: &str) -> Palette {
+        Palette {
+            body: hex.to_string(),
+            accent: hex.to_string(),
+            outline: hex.to_string(),
+            eye: Some(hex.to_string()),
+        }
+    }
+
     /// The hex colour for a role cell (`1 outline · 2 body · 3 accent · 4 eye`); `None` for empty
     /// (`0`) or a missing eye. The screens paint a role grid by mapping each cell through this.
     pub fn role_hex(&self, role: u8) -> Option<&str> {
