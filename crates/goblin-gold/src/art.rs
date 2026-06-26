@@ -382,6 +382,51 @@ pub fn foe_grid(n: u32, name: &str, kind: Kind) -> (RoleGrid, Palette) {
     (role, pal)
 }
 
+/// FNV-1a (32-bit) over a string → 8 lowercase hex (the `art-export.js` digest hash). ASCII-only
+/// inputs, so byte iteration matches JS `charCodeAt`.
+fn fnv1a(s: &str) -> String {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in s.bytes() {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    format!("{h:08x}")
+}
+
+/// Serialise a role grid to one 256-char string (`rows.join("")` — each of the 16 rows joined, then
+/// concatenated), as the digest canonicalisation expects.
+fn role_rows_joined(role: &RoleGrid) -> String {
+    role.iter()
+        .flat_map(|row| row.iter().map(|c| (b'0' + c) as char))
+        .collect()
+}
+
+/// The rolled FNV-1a digest over **every** foe (tier 1..=120), canonical
+/// `"<n>|<roleGrid>|<body><accent><outline><eye>\n"` — proving the full foe space, not a sample.
+/// Names/types come from the bestiary ([`crate::arena::bestiary`]).
+pub fn foe_digest() -> String {
+    let by_tier: std::collections::HashMap<u32, (String, Kind)> = crate::arena::bestiary()
+        .into_iter()
+        .map(|e| (e.n, (e.name, e.kind)))
+        .collect();
+    let mut acc = String::new();
+    let count = crate::arena::tier_count();
+    for n in 1..=count {
+        let (name, kind) = by_tier.get(&n).expect("tier in bestiary");
+        let (role, pal) = foe_grid(n, name, *kind);
+        let eye = pal.eye.as_deref().unwrap_or("");
+        acc.push_str(&format!(
+            "{n}|{}|{}{}{}{}\n",
+            role_rows_joined(&role),
+            pal.body,
+            pal.accent,
+            pal.outline,
+            eye
+        ));
+    }
+    fnv1a(&acc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,6 +518,15 @@ mod tests {
             );
             assert_eq!(pal.eye.as_deref(), want["eye"].as_str(), "foe {name} eye");
         }
+    }
+
+    /// The rolled FNV-1a digest over ALL 120 foes matches the export — proves the full foe space
+    /// (not just the 16 sampled tiers) is byte-identical.
+    #[test]
+    fn foe_digest_matches_full_space() {
+        let v = vectors();
+        let want = v["foeDigest"]["fnv"].as_str().unwrap();
+        assert_eq!(foe_digest(), want, "full-space foe digest (all 120 tiers)");
     }
 
     /// Determinism + symmetry sanity (the generators are pure; portraits are vertically symmetric).

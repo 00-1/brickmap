@@ -305,10 +305,34 @@ struct Unit {
     ord: u32,
 }
 
-/// Resolve a fight between `party` (ords 0..2) and `foes` (ords 100..102). Mutates a working copy.
-fn simulate(mut party: Vec<Unit>, mut foes: Vec<Unit>, c: &Constants) -> BattleResult {
+/// One strike in the battle playout (the `teamBattleLog` shape) — for the per-strike parity replay
+/// and animation callouts. `round` is 0 for opening strikes; `t_hp` is the target's hp after the hit
+/// (clamped at 0); `adv` = matchup > 1; `blocked` = the mitigation absorbed ≥ half the raw damage.
+#[derive(Clone, Debug, PartialEq)]
+struct LogEntry {
+    round: u32,
+    open: bool,
+    a_side: u8,
+    a_ord: u32,
+    t_side: u8,
+    t_ord: u32,
+    dmg: f64,
+    t_hp: f64,
+    ko: bool,
+    adv: bool,
+    blocked: bool,
+}
+
+/// Resolve a fight between `party` (ords 0..2) and `foes` (ords 100..102). Mutates a working copy and
+/// records the per-strike `log` (the same playout `teamBattleLog` holds).
+fn simulate(
+    mut party: Vec<Unit>,
+    mut foes: Vec<Unit>,
+    c: &Constants,
+) -> (BattleResult, Vec<LogEntry>) {
     let m = &c.matchup;
     let cc = &c.combat;
+    let mut log: Vec<LogEntry> = Vec::new();
     // Fixed turn order: spd desc, ord asc, over all units (side 0 = party, 1 = foes).
     let mut order: Vec<(u8, usize)> = party
         .iter()
@@ -339,8 +363,24 @@ fn simulate(mut party: Vec<Unit>, mut foes: Vec<Unit>, c: &Constants) -> BattleR
         if actor.spd > foes[t].spd {
             let mu = matchup(actor.kind, foes[t].kind, m);
             let raw = js_round(actor.spd * cc.spd_alpha * mu);
-            let dmg = (raw - js_round(foes[t].grd * cc.mit)).max(1.0);
+            let mitigation = js_round(foes[t].grd * cc.mit);
+            let dmg = (raw - mitigation).max(1.0);
+            let tgt_ord = foes[t].ord;
             foes[t].hp -= dmg;
+            let hp_after = foes[t].hp;
+            log.push(LogEntry {
+                round: 0,
+                open: true,
+                a_side: 0,
+                a_ord: actor.ord,
+                t_side: 1,
+                t_ord: tgt_ord,
+                dmg,
+                t_hp: hp_after.max(0.0),
+                ko: hp_after <= 0.0,
+                adv: mu > 1.0,
+                blocked: mitigation >= raw / 2.0,
+            });
         }
     }
 
@@ -362,11 +402,28 @@ fn simulate(mut party: Vec<Unit>, mut foes: Vec<Unit>, c: &Constants) -> BattleR
             let Some(t) = pick_target(actor.kind, targets, m) else {
                 break 'battle; // the other side is empty mid-round
             };
-            let mu = matchup(actor.kind, targets[t].kind, m);
+            let tgt = &targets[t];
+            let mu = matchup(actor.kind, tgt.kind, m);
             let raw = js_round(actor.pow * mu) + js_round(actor.foc * cc.foc_flat);
-            let dmg = (raw - js_round(targets[t].grd * cc.mit)).max(1.0);
+            let mitigation = js_round(tgt.grd * cc.mit);
+            let dmg = (raw - mitigation).max(1.0);
+            let tgt_ord = tgt.ord;
             let defenders = if side == 0 { &mut foes } else { &mut party };
             defenders[t].hp -= dmg;
+            let hp_after = defenders[t].hp;
+            log.push(LogEntry {
+                round: rounds,
+                open: false,
+                a_side: side,
+                a_ord: actor.ord,
+                t_side: 1 - side,
+                t_ord: tgt_ord,
+                dmg,
+                t_hp: hp_after.max(0.0),
+                ko: hp_after <= 0.0,
+                adv: mu > 1.0,
+                blocked: mitigation >= raw / 2.0,
+            });
         }
         if rounds >= ROUND_GUARD {
             break;
@@ -375,12 +432,15 @@ fn simulate(mut party: Vec<Unit>, mut foes: Vec<Unit>, c: &Constants) -> BattleR
 
     let heroes_alive = party.iter().filter(|u| u.hp > 0.0).count();
     let foes_alive = foes.iter().filter(|u| u.hp > 0.0).count();
-    BattleResult {
-        win: heroes_alive > 0,
-        heroes_alive,
-        foes_alive,
-        rounds,
-    }
+    (
+        BattleResult {
+            win: heroes_alive > 0,
+            heroes_alive,
+            foes_alive,
+            rounds,
+        },
+        log,
+    )
 }
 
 /// Borrow the combatant addressed by `(side, idx)`.
@@ -412,6 +472,50 @@ fn pick_target(attacker: Kind, targets: &[Unit], m: &MatchupMul) -> Option<usize
 /// Resolve the full Arena battle: `party` (≤3 hero ids) vs the enemy team at `tier` (1-based), with
 /// the player's `collected` keys driving each hero's effective stats. `None` if `tier` has no team.
 pub fn team_battle(party: &[&str], tier: u32, collected: &HashSet<&str>) -> Option<BattleResult> {
+    let data = parse();
+    let foes_raw = data.enemy_teams.get(&tier.to_string())?;
+    let roster = arena::roster();
+    let party_units: Vec<Unit> = party
+        .iter()
+        .enumerate()
+        .filter_map(|(i, id)| {
+            let kind = roster.iter().find(|h| h.id == *id)?.kind;
+            let hc = hero_combatant(effective_stats(id, collected)?);
+            Some(Unit {
+                kind,
+                pow: hc.pow,
+                grd: hc.grd,
+                spd: hc.spd,
+                foc: hc.foc,
+                hp: hc.hp,
+                ord: i as u32,
+            })
+        })
+        .collect();
+    let foe_units: Vec<Unit> = foes_raw
+        .iter()
+        .enumerate()
+        .map(|(i, f)| Unit {
+            kind: f.kind,
+            pow: f.pow,
+            grd: f.grd,
+            spd: f.spd,
+            foc: f.foc,
+            hp: f.hp,
+            ord: 100 + i as u32,
+        })
+        .collect();
+    Some(simulate(party_units, foe_units, &data.constants).0)
+}
+
+/// Like [`team_battle`] but also returns the per-strike playout log (the `teamBattleLog` shape) — for
+/// the per-strike parity replay. Builds the same combatants the headline path does.
+#[cfg(test)]
+fn team_battle_logged(
+    party: &[&str],
+    tier: u32,
+    collected: &HashSet<&str>,
+) -> Option<(BattleResult, Vec<LogEntry>)> {
     let data = parse();
     let foes_raw = data.enemy_teams.get(&tier.to_string())?;
     let roster = arena::roster();
@@ -595,6 +699,54 @@ mod tests {
                 .map(|v| v.as_str().unwrap().to_string())
                 .collect();
             assert_eq!(unlocked_roster(&keys), want, "heroUnlock state {label}");
+        }
+    }
+
+    /// Per-strike replay of all **5** diverse `teamBattleLogs` (opening strikes · a loss · single
+    /// hero · region 5 · the boss) — every strike's round/sides/ords/dmg/tHp/ko/adv/blocked matches,
+    /// so a per-strike bug (targeting, order, mitigation rounding) can't hide behind a right headline.
+    #[test]
+    fn team_battle_logs_replay_per_strike() {
+        for tl in vectors()["teamBattleLogs"].as_array().unwrap() {
+            let party: Vec<String> = tl["party"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s.as_str().unwrap().to_string())
+                .collect();
+            let party_refs: Vec<&str> = party.iter().map(String::as_str).collect();
+            let tier = tl["tier"].as_u64().unwrap() as u32;
+            let owned = owned_set(tl["own"].as_str().unwrap());
+            let keys: HashSet<&str> = owned.iter().map(String::as_str).collect();
+            let (res, log) = team_battle_logged(&party_refs, tier, &keys).expect("tier team");
+            let want = tl["log"].as_array().unwrap();
+            assert_eq!(log.len(), want.len(), "log length {party:?} t{tier}");
+            for (i, (e, w)) in log.iter().zip(want).enumerate() {
+                let at = format!("{party:?} t{tier} strike {i}");
+                assert_eq!(e.round, w["round"].as_u64().unwrap() as u32, "round @ {at}");
+                assert_eq!(e.open, w["open"].as_bool().unwrap(), "open @ {at}");
+                assert_eq!(e.a_side, w["aSide"].as_u64().unwrap() as u8, "aSide @ {at}");
+                assert_eq!(e.a_ord, w["aOrd"].as_u64().unwrap() as u32, "aOrd @ {at}");
+                assert_eq!(e.t_side, w["tSide"].as_u64().unwrap() as u8, "tSide @ {at}");
+                assert_eq!(e.t_ord, w["tOrd"].as_u64().unwrap() as u32, "tOrd @ {at}");
+                assert_eq!(e.dmg, w["dmg"].as_f64().unwrap(), "dmg @ {at}");
+                assert!(
+                    (e.t_hp - w["tHp"].as_f64().unwrap()).abs() < 1e-9,
+                    "tHp @ {at}: {} vs {}",
+                    e.t_hp,
+                    w["tHp"]
+                );
+                assert_eq!(e.ko, w["ko"].as_bool().unwrap(), "ko @ {at}");
+                assert_eq!(e.adv, w["adv"].as_bool().unwrap(), "adv @ {at}");
+                assert_eq!(e.blocked, w["blocked"].as_bool().unwrap(), "blocked @ {at}");
+            }
+            // …and the headline agrees with the replayed log.
+            assert_eq!(
+                res.win,
+                tl["win"].as_bool().unwrap(),
+                "win {party:?} t{tier}"
+            );
+            assert_eq!(res.rounds, tl["rounds"].as_u64().unwrap() as u32, "rounds");
         }
     }
 
