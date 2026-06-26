@@ -284,6 +284,19 @@ impl Save {
         })
     }
 
+    /// Fold a finished daily-event run into the save: grant the [`crate::event_play::event_tiers_earned`]
+    /// keys for `eid` at `score`/`total` (always `event:<eid>`; `+:well` ≥ 0.7; `+:ace` on a flawless
+    /// run). Events pay **no gold** — the reward IS the buff item. Returns the keys newly granted.
+    pub fn award_event(&mut self, eid: &str, score: u32, total: u32, ts: u64) -> Vec<String> {
+        let mut newly = Vec::new();
+        for key in crate::event_play::event_tiers_earned(eid, score, total) {
+            if self.mark(key.clone(), ts) {
+                newly.push(key);
+            }
+        }
+        newly
+    }
+
     /// Load the save from `store` (slot [`SLOT`]); a fresh [`Save::default`] if absent or corrupt
     /// (a torn blob shouldn't brick the game — it starts over rather than refusing to launch).
     pub fn load(store: &dyn Store) -> Save {
@@ -474,6 +487,29 @@ mod tests {
         assert_eq!(
             crate::combat::next_tier(s.collected.keys().map(String::as_str)),
             2
+        );
+    }
+
+    #[test]
+    fn awarding_an_event_grants_its_tier_keys() {
+        // A flawless run grants all three tiers; the keys persist and re-awarding adds nothing new.
+        let mut s = Save::default();
+        let newly = s.award_event("halving-moon", 13, 13, 5);
+        assert_eq!(
+            newly,
+            vec![
+                "event:halving-moon".to_string(),
+                "event:halving-moon:well".to_string(),
+                "event:halving-moon:ace".to_string(),
+            ]
+        );
+        assert!(s.has("event:halving-moon:ace"));
+        // A weaker re-run grants nothing new (keys already collected), and never *removes* a tier.
+        let again = s.award_event("halving-moon", 3, 13, 6);
+        assert!(again.is_empty(), "already-earned tiers aren't re-granted");
+        assert!(
+            s.has("event:halving-moon:ace"),
+            "a worse run can't strip a tier"
         );
     }
 
