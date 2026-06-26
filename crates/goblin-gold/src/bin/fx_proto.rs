@@ -197,6 +197,16 @@ fn main() {
     );
     println!("wrote inventory-codex-brickmap (430x880 visual-ref)");
 
+    // The Audio screen (Sound toggle + sliders + Music-style grid + Test sound) → halves visual-ref.
+    let audio_ref = app::render_audio_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/audio-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &audio_ref,
+    );
+    println!("wrote audio-brickmap (430x880 visual-ref)");
+
     // The Settings screen (3 nav cards + Danger Zone) → halves visual-ref.
     let settings_ref = app::render_settings_ref(&painter, &font);
     write_png(

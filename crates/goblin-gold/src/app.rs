@@ -3017,6 +3017,227 @@ pub fn hero_detail_frame<'a>(
     (rects, texts)
 }
 
+/// The 12 music-style labels (`synth.js SCENES.label`, in the web's Audio-panel grid order — 2 cols
+/// × 6 rows). Pure presentation data — like the `TOPIC_GLYPHS` map, ported straight from source.
+const MUSIC_STYLE_LABELS: [&str; 12] = [
+    "Neon Lobby",
+    "Lo-Fi Study",
+    "Ambient Drift",
+    "Chiptune Rush",
+    "Synthwave Cruise",
+    "Tropical Pluck",
+    "Festival",
+    "Hypno Techno",
+    "Liquid DnB",
+    "Phrygian Onslaught",
+    "8-Bit Boss March",
+    "Dubstep Victory",
+];
+
+/// The **Audio** screen — web's audio panel: AUDIO eyebrow, a Sound toggle card, two volume sliders
+/// (Music · Sound FX, each with a "N/11" right-aligned count + a track + a square handle), a
+/// "Music style" panel (12 button grid + "Auto" pill), then a "Test sound" Play card + Back.
+pub fn audio_frame<'a>(fonts: &'a Fonts, w: f32, h: f32) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.05;
+    let col_w = w - margin * 2.0;
+
+    // Eyebrow.
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "AUDIO", w / 2.0, h * 0.018, h * 0.03),
+        rgba: DIM,
+    });
+
+    // Outlined panel helper.
+    let panel = |rects: &mut Vec<RectRun>, y: f32, ph: f32| {
+        rects.push(RectRun {
+            x: margin,
+            y,
+            w: col_w,
+            h: ph,
+            rgba: [DIM[0], DIM[1], DIM[2], 0.5],
+        });
+        rects.push(RectRun {
+            x: margin + 1.5,
+            y: y + 1.5,
+            w: col_w - 3.0,
+            h: ph - 3.0,
+            rgba: KEYBG,
+        });
+    };
+
+    // Sound toggle card.
+    let p1_y = h * 0.06;
+    let p1_h = h * 0.07;
+    panel(&mut rects, p1_y, p1_h);
+    let (q, _) = fonts
+        .body
+        .layout("Sound", margin + col_w * 0.05, p1_y + p1_h * 0.28, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: BODY,
+    });
+    let on_w = fonts.body.text_width("On");
+    let (q, _) = fonts.body.layout(
+        "On",
+        margin + col_w - on_w - p1_h * 0.5,
+        p1_y + p1_h * 0.28,
+        on_w + 4.0,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    // Volume slider card (shared helper).
+    let slider =
+        |rects: &mut Vec<RectRun>, texts: &mut Vec<TextRun<'a>>, label: &str, val: u32, y: f32| {
+            let ph = h * 0.10;
+            panel(rects, y, ph);
+            let (q, _) = fonts
+                .body
+                .layout(label, margin + col_w * 0.05, y + ph * 0.18, col_w);
+            texts.push(TextRun {
+                atlas: &fonts.body,
+                quads: q,
+                rgba: BODY,
+            });
+            let cnt = format!("{val} / 11");
+            let cw = fonts.body.text_width(&cnt);
+            let (q, _) = fonts.body.layout(
+                &cnt,
+                margin + col_w - cw - ph * 0.5,
+                y + ph * 0.18,
+                cw + 4.0,
+            );
+            texts.push(TextRun {
+                atlas: &fonts.body,
+                quads: q,
+                rgba: GOLD,
+            });
+            // Track (thin DIM bar) + handle (gold square at val/11).
+            let (tx, ty, tw, th) = (
+                margin + col_w * 0.08,
+                y + ph * 0.66,
+                col_w * 0.84,
+                ph * 0.05,
+            );
+            rects.push(RectRun {
+                x: tx,
+                y: ty,
+                w: tw,
+                h: th,
+                rgba: DIM,
+            });
+            let hs = ph * 0.22;
+            let hx = tx + tw * (val as f32 / 11.0) - hs / 2.0;
+            rects.push(RectRun {
+                x: hx,
+                y: ty + th / 2.0 - hs / 2.0,
+                w: hs,
+                h: hs,
+                rgba: GOLD,
+            });
+        };
+
+    let p2_y = p1_y + p1_h + h * 0.018;
+    slider(&mut rects, &mut texts, "Music volume", 6, p2_y);
+    let p3_y = p2_y + h * 0.10 + h * 0.018;
+    slider(&mut rects, &mut texts, "Sound FX volume", 6, p3_y);
+
+    // Music style panel.
+    let p4_y = p3_y + h * 0.10 + h * 0.018;
+    let p4_h = h * 0.36;
+    panel(&mut rects, p4_y, p4_h);
+    let (q, _) = fonts.body.layout(
+        "Music style",
+        margin + col_w * 0.05,
+        p4_y + h * 0.018,
+        col_w,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: BODY,
+    });
+    let auto_w = fonts.body.text_width("Auto");
+    let (q, _) = fonts.body.layout(
+        "Auto",
+        margin + col_w - auto_w - p4_h * 0.06,
+        p4_y + h * 0.018,
+        auto_w + 4.0,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: GOLD,
+    });
+    // 12-button grid (2 cols × 6 rows).
+    let grid_top = p4_y + h * 0.06;
+    let grid_pad = col_w * 0.04;
+    let cell_w = (col_w - grid_pad * 3.0) / 2.0;
+    let cell_h = (p4_h - h * 0.07) / 6.0 - h * 0.006;
+    for (i, label) in MUSIC_STYLE_LABELS.iter().enumerate() {
+        let (r, c) = (i / 2, i % 2);
+        let cx = margin + grid_pad + c as f32 * (cell_w + grid_pad);
+        let cy = grid_top + r as f32 * (cell_h + h * 0.006);
+        rects.push(RectRun {
+            x: cx,
+            y: cy,
+            w: cell_w,
+            h: cell_h,
+            rgba: [DIM[0], DIM[1], DIM[2], 0.4],
+        });
+        rects.push(RectRun {
+            x: cx + 1.5,
+            y: cy + 1.5,
+            w: cell_w - 3.0,
+            h: cell_h - 3.0,
+            rgba: KEYBG,
+        });
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: centered(&fonts.tiny, label, cx + cell_w / 2.0, cy, cell_h),
+            rgba: BODY,
+        });
+    }
+
+    // Test sound card.
+    let p5_y = p4_y + p4_h + h * 0.018;
+    let p5_h = h * 0.07;
+    panel(&mut rects, p5_y, p5_h);
+    let (q, _) = fonts.body.layout(
+        "Test sound",
+        margin + col_w * 0.05,
+        p5_y + p5_h * 0.28,
+        col_w,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: BODY,
+    });
+    let play_w = fonts.body.text_width("Play");
+    let (q, _) = fonts.body.layout(
+        "Play",
+        margin + col_w - play_w - p5_h * 0.5,
+        p5_y + p5_h * 0.28,
+        play_w + 4.0,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    (rects, texts)
+}
+
 /// The **Settings** screen — web's setup page: 3 nav cards (Audio · Developer · Fullscreen), each
 /// with a label + an action chip on the right, then a red-bordered "DANGER ZONE" with the wipe-data
 /// blurb + a coral "Clear all data" button. Pure UI, no state.
@@ -4331,6 +4552,14 @@ pub fn render_settings_ref(painter: &crate::headless::Painter, font: &FontRef<'_
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
     let (rects, texts) = settings_frame(&fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render the **Audio** screen at the web reference aspect — `visual-ref/audio-brickmap.png`.
+pub fn render_audio_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = audio_frame(&fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
