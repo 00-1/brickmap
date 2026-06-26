@@ -2908,33 +2908,45 @@ pub fn hero_detail_frame<'a>(
         rgba: GOLD,
     });
 
-    // 4 stat chips (PWR/GRD/SPD/FOC).
+    // 4 stat chips (PWR/GRD/SPD/FOC) — fit ALL 4 across the available width right of the portrait
+    // (the V23 bug was anchoring to `col_w*0.78` from text_x, clipping the 4th chip "FOC" off the
+    // card's right edge for high-stat heroes). Adapt each chip's width to its label so the row
+    // fits cleanly even when the GRD count is 3 digits (e.g. Brannon's "561 GRD").
     let chip_y = cy + chh * 0.46;
     let chip_h = chh * 0.18;
-    let chip_gap = w * 0.014;
-    let chip_count = 4;
-    let chip_w = (col_w * 0.78 - chip_gap * (chip_count as f32 - 1.0)) / chip_count as f32;
+    let chip_gap = w * 0.012;
     let labels = [
         ("PWR", stats.power),
         ("GRD", stats.guard),
         ("SPD", stats.speed),
         ("FOC", stats.focus),
     ];
-    for (i, (lab, val)) in labels.iter().enumerate() {
-        let cx = text_x + i as f32 * (chip_w + chip_gap);
+    let chip_strs: Vec<String> = labels.iter().map(|(l, v)| format!("{v} {l}")).collect();
+    let chip_pad = chip_h * 0.7;
+    let chip_widths: Vec<f32> = chip_strs
+        .iter()
+        .map(|s| fonts.tiny.text_width(s) + chip_pad)
+        .collect();
+    let chips_total: f32 = chip_widths.iter().sum::<f32>() + chip_gap * 3.0;
+    // The chip row can extend slightly past `text_x` if needed; cap at the card's right edge.
+    let chips_right = margin + col_w - w * 0.02;
+    let chips_left = (chips_right - chips_total).max(text_x);
+    let mut cx_run = chips_left;
+    for (i, txt) in chip_strs.iter().enumerate() {
+        let cw = chip_widths[i];
         rects.push(RectRun {
-            x: cx,
+            x: cx_run,
             y: chip_y,
-            w: chip_w,
+            w: cw,
             h: chip_h,
             rgba: KEYBG,
         });
-        let txt = format!("{val} {lab}");
         texts.push(TextRun {
             atlas: &fonts.tiny,
-            quads: centered(&fonts.tiny, &txt, cx + chip_w / 2.0, chip_y, chip_h),
+            quads: centered(&fonts.tiny, txt, cx_run + cw / 2.0, chip_y, chip_h),
             rgba: BODY,
         });
+        cx_run += cw + chip_gap;
     }
 
     // "N / N boosts collected" — counts BOTH catalogue boosts (`boost.hero == hero.id`) and the
@@ -5511,19 +5523,34 @@ pub fn arena_map_frame<'a>(
         quads: q,
         rgba: DIM,
     });
-    let def_str = "DEF 47";
-    let tw = fonts.tiny.text_width(&type_str);
-    let (q, _) = fonts.tiny.layout(
-        def_str,
-        info_x + tw + col_w * 0.06,
-        card_y + card_h * 0.72,
-        col_w * 0.2,
-    );
-    texts.push(TextRun {
-        atlas: &fonts.tiny,
-        quads: q,
-        rgba: GOLD,
-    });
+    // V24: the foe-showcase stat line — the LEAD foe's `pow`+`hp` (the combat redesign replaced the
+    // removed `DEF` with PWR·HP), preceded by a tiny crossed-swords mark (the bundled font has no
+    // U+2694 glyph, so we draw it as art).
+    let foes = crate::combat::tier_foes(tier);
+    let stat_str = if let Some((_kind, pow, hp)) = foes.first() {
+        format!("{}  PWR · {}  HP", pow.round() as i64, hp.round() as i64)
+    } else {
+        String::new()
+    };
+    if !stat_str.is_empty() {
+        let tw = fonts.tiny.text_width(&type_str);
+        let stat_x = info_x + tw + col_w * 0.06;
+        let stat_y = card_y + card_h * 0.72;
+        let mark_size = card_h * 0.12;
+        // Tiny crossed-swords mark in gold.
+        push_check(&mut rects, stat_x, stat_y + card_h * 0.06, mark_size, GOLD);
+        let (q, _) = fonts.tiny.layout(
+            &stat_str,
+            stat_x + mark_size + card_h * 0.04,
+            stat_y,
+            col_w * 0.5,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: GOLD,
+        });
+    }
 
     // "X ENEMY TEAM" eyebrow.
     let foes_y = card_y + card_h + h * 0.012;
