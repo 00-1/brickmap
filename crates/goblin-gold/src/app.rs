@@ -1944,17 +1944,20 @@ pub fn heroes_frame<'a>(
     let margin = w * 0.05;
     let col_w = w - margin * 2.0;
     let keys: Vec<&str> = save.collected.keys().map(String::as_str).collect();
+    let keyset: std::collections::HashSet<&str> = keys.iter().copied().collect();
     let roster = crate::arena::roster();
+    let unlocked_n = roster
+        .iter()
+        .filter(|h| crate::combat::is_hero_unlocked(&h.id, &keyset))
+        .count();
 
-    // Centred header "Heroes  N / 12".
-    let title = format!("Heroes  {} / {}", roster.len(), roster.len());
-    let tw = fonts.head.text_width(&title);
+    // Centred header "Heroes  unlocked / total".
+    let title = format!("Heroes  {} / {}", unlocked_n, roster.len());
     texts.push(TextRun {
         atlas: &fonts.head,
         quads: centered(&fonts.head, &title, w / 2.0, h * 0.03, h * 0.05),
         rgba: GOLD,
     });
-    let _ = tw;
 
     for (hero, (kind, (rx, ry, rw, rh), first)) in roster.iter().zip(hero_card_rows(&roster, w, h))
     {
@@ -1980,7 +1983,7 @@ pub fn heroes_frame<'a>(
             h: rh,
             rgba: PANEL,
         });
-        // Portrait (F1), boxed on a darker tile to read like the web's 48×48.
+        // Portrait tile (a darker box, web's 48×48).
         let tile = rh * 0.84;
         let tx0 = rx + rh * 0.08;
         let ty0 = ry + (rh - tile) / 2.0;
@@ -1991,12 +1994,42 @@ pub fn heroes_frame<'a>(
             h: tile,
             rgba: INK,
         });
+        let text_x = tx0 + tile + w * 0.03;
+
+        // LOCKED heroes show a "?" portrait + dim name + the unlock hint (web's `renderHeroes`), in
+        // place of stats/rating/boost. (In a full-collection save every hero is unlocked.)
+        if !crate::combat::is_hero_unlocked(&hero.id, &keyset) {
+            texts.push(TextRun {
+                atlas: &fonts.q,
+                quads: centered(
+                    &fonts.q,
+                    "?",
+                    tx0 + tile / 2.0,
+                    ty0 + tile * 0.1,
+                    tile * 0.8,
+                ),
+                rgba: DIM,
+            });
+            let (q, _) = fonts.body.layout(&hero.name, text_x, ry + rh * 0.16, rw);
+            texts.push(TextRun {
+                atlas: &fonts.body,
+                quads: q,
+                rgba: DIM,
+            });
+            let (q, _) = fonts
+                .tiny
+                .layout(&hero.unlock_hint, text_x, ry + rh * 0.52, rw - tile);
+            texts.push(TextRun {
+                atlas: &fonts.tiny,
+                quads: q,
+                rgba: DIM,
+            });
+            continue;
+        }
+
         let (role, pal) = crate::art::hero_icon(&hero.id, kind);
         paint_role(&mut rects, &role, &pal, tx0, ty0, tile / 16.0);
-
-        let stats = crate::combat::effective_stats(&hero.id, &keys.iter().copied().collect())
-            .unwrap_or(hero.base);
-        let text_x = tx0 + tile + w * 0.03;
+        let stats = crate::combat::effective_stats(&hero.id, &keyset).unwrap_or(hero.base);
         // Type dot + name.
         let dot = rh * 0.13;
         rects.push(RectRun {
@@ -2339,6 +2372,19 @@ pub fn render_heroes_ref(painter: &crate::headless::Painter, font: &FontRef<'_>)
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
     let (rects, texts) = heroes_frame(&full_collection_sample(), &fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render the **Heroes** screen in a PARTIAL save (only a few heroes unlocked) at the web reference
+/// aspect — committed to halves as `visual-ref/heroes-partial-brickmap.png`. Exercises the locked-hero
+/// rows (`?` portrait + unlock hint) the full-collection ref can't show.
+pub fn render_heroes_partial_ref(
+    painter: &crate::headless::Painter,
+    font: &FontRef<'_>,
+) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = heroes_frame(&sample_save(), &fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 /// A fixed sample wall-clock for the event-play golden/visual-ref: 2026-06-26 14:30 UTC, which puts
@@ -3335,6 +3381,39 @@ mod tests {
                 hero.id
             );
         }
+    }
+
+    /// A full-collection save unlocks every hero; the representative partial save unlocks some but not
+    /// all — exercising the locked-hero rows (`?` portrait + unlock hint) without panicking.
+    #[test]
+    fn heroes_partial_locks_some_full_unlocks_all() {
+        let roster = crate::arena::roster();
+        let count_unlocked = |save: &Save| {
+            let set: std::collections::HashSet<&str> =
+                save.collected.keys().map(String::as_str).collect();
+            roster
+                .iter()
+                .filter(|hh| crate::combat::is_hero_unlocked(&hh.id, &set))
+                .count()
+        };
+        assert_eq!(
+            count_unlocked(&full_collection_sample()),
+            roster.len(),
+            "full collection unlocks every hero"
+        );
+        let partial = sample_save();
+        let pu = count_unlocked(&partial);
+        assert!(
+            pu > 0 && pu < roster.len(),
+            "partial save unlocks some but not all heroes (got {pu})"
+        );
+        let (w, h) = (REF_W as f32, REF_H as f32);
+        let fonts = Fonts::bake(
+            &FontRef::try_from_slice(crate::FONT_INSTRUMENT_SANS).unwrap(),
+            h,
+        );
+        let (rects, texts) = heroes_frame(&partial, &fonts, w, h);
+        assert!(!rects.is_empty() && !texts.is_empty());
     }
 
     /// The single-column early-game layout (and the initial 1-row golden) must be unchanged: the

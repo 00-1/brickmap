@@ -137,6 +137,16 @@ fn main() {
     );
     println!("wrote heroes-brickmap (430x880 visual-ref)");
 
+    // The Heroes screen in a PARTIAL save (locked-hero rows) → halves visual-ref.
+    let heroes_partial = app::render_heroes_partial_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/heroes-partial-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &heroes_partial,
+    );
+    println!("wrote heroes-partial-brickmap (430x880 visual-ref)");
+
     // The procedural-art contact sheet (F1 heroes · F2 foes · F3 scenery · F4 crests).
     let art_rgba = app::render_art_sheet(&painter, &font);
     write_png(
