@@ -177,6 +177,16 @@ fn main() {
     );
     println!("wrote inventory-loot-brickmap (430x880 visual-ref)");
 
+    // The Inventory Events tab (live-event banner + reward-item grid) → halves visual-ref.
+    let inv_events = app::render_inventory_events_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/inventory-events-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &inv_events,
+    );
+    println!("wrote inventory-events-brickmap (430x880 visual-ref)");
+
     // The Home hub at the web reference aspect → halves visual-ref (full + fresh + mid-progress).
     let home_ref = app::render_home_ref(&painter, &font);
     write_png(

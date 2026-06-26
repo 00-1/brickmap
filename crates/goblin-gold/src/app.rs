@@ -1050,7 +1050,7 @@ impl App {
                 (r, t, None)
             }
             Screen::Items => {
-                let (r, t) = items_frame(&self.save, self.inv_tab, fonts, w, h);
+                let (r, t) = items_frame(&self.save, self.inv_tab, now_ms_i64(), fonts, w, h);
                 (r, t, None)
             }
             Screen::Select => {
@@ -3129,6 +3129,74 @@ fn push_progress_row<'a>(
     }
 }
 
+/// A 5-column grid of collectible tiles (rarity border + N1 pixel icon + short name; owned bright,
+/// unowned dim), starting at `top` and filling down to the Back button. Shared by the tabs that show
+/// an item grid (Events; Codex foes use their own portrait path).
+#[allow(clippy::too_many_arguments)]
+fn push_item_grid<'a>(
+    rects: &mut Vec<RectRun>,
+    texts: &mut Vec<TextRun<'a>>,
+    fonts: &'a Fonts,
+    items: &[(String, String, String)],
+    owned: &std::collections::HashSet<&str>,
+    margin: f32,
+    col_w: f32,
+    top: f32,
+    h: f32,
+    w: f32,
+) {
+    let cols = 5usize;
+    let sgap = w * 0.02;
+    let tile = (col_w - sgap * (cols as f32 - 1.0)) / cols as f32;
+    let vgap = h * 0.03;
+    let bottom = h * 0.88;
+    for (i, (id, name, rarity)) in items.iter().enumerate() {
+        let (r, c) = (i / cols, i % cols);
+        let x = margin + c as f32 * (tile + sgap);
+        let y = top + r as f32 * (tile + vgap);
+        if y + tile > bottom {
+            break;
+        }
+        let have_it = owned.contains(id.as_str());
+        rects.push(RectRun {
+            x: x - 1.5,
+            y: y - 1.5,
+            w: tile + 3.0,
+            h: tile + 3.0,
+            rgba: if have_it { rarity_rgba(rarity) } else { DIM },
+        });
+        rects.push(RectRun {
+            x,
+            y,
+            w: tile,
+            h: tile,
+            rgba: INK,
+        });
+        if let Some((role, pal)) = crate::art::item_icon_for(id, rarity) {
+            paint_role(
+                rects,
+                &role,
+                &pal,
+                x + tile * 0.08,
+                y + tile * 0.08,
+                tile * 0.84 / 16.0,
+            );
+        }
+        let short: String = name.chars().take(9).collect();
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: centered(
+                &fonts.tiny,
+                &short,
+                x + tile / 2.0,
+                y + tile + h * 0.002,
+                h * 0.016,
+            ),
+            rgba: if have_it { BODY } else { DIM },
+        });
+    }
+}
+
 /// The **Inventory** (Items) screen: a tab row (Topics/Awards/Events/Loot/Codex) over a grid of the
 /// selected tab's items, each a **pixel icon** (the N1 `item_icon` generator) on a rarity-coloured
 /// tile + its name. Owned items are bright; unowned are dimmed. Built to the visual bar against
@@ -3136,6 +3204,7 @@ fn push_progress_row<'a>(
 pub fn items_frame<'a>(
     save: &Save,
     tab: usize,
+    now_ms: i64,
     fonts: &'a Fonts,
     w: f32,
     h: f32,
@@ -3318,6 +3387,140 @@ pub fn items_frame<'a>(
                 &mut rects, &mut texts, fonts, &label, hv, t, margin, col_w, ry, row_h,
             );
         }
+        push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+        return (rects, texts);
+    }
+
+    // EVENTS tab — a live-event banner + a "Daily Events" progress row + a grid of the 42 Events
+    // collectibles (the daily-event reward items), web's event collection view.
+    if tab == 2 {
+        let ev = crate::event_play::live_event(now_ms);
+        let earned = owned.contains(format!("event:{}", ev.id).as_str());
+        let ev_items: Vec<(String, String, String)> = crate::catalogue::catalog()
+            .into_iter()
+            .filter(|c| matches!(c.cat, crate::catalogue::Category::Events))
+            .map(|c| (c.id, c.name, c.rarity))
+            .collect();
+        let ev_total = ev_items.len() as u32;
+        let ev_have = ev_items
+            .iter()
+            .filter(|(id, _, _)| owned.contains(id.as_str()))
+            .count() as u32;
+
+        // Live-event banner.
+        let (by, bh) = (h * 0.115, h * 0.14);
+        rects.push(RectRun {
+            x: margin,
+            y: by,
+            w: col_w,
+            h: bh,
+            rgba: INK,
+        });
+        let eyebrow = if earned {
+            "LIVE TODAY · REWARD EARNED"
+        } else {
+            "LIVE TODAY"
+        };
+        let (q, _) = fonts
+            .tiny
+            .layout(eyebrow, margin + col_w * 0.04, by + bh * 0.1, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: GOLD,
+        });
+        let (q, _) =
+            fonts
+                .body
+                .layout(&ev.name, margin + col_w * 0.04, by + bh * 0.28, col_w * 0.6);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: BODY,
+        });
+        let (q, _) = fonts.tiny.layout(
+            &ev.blurb,
+            margin + col_w * 0.04,
+            by + bh * 0.56,
+            col_w * 0.56,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        // "Play again" / "Play" CTA (solid gold).
+        let plabel = if earned { "Play again" } else { "Play" };
+        let (pw, px) = (col_w * 0.26, margin + col_w - col_w * 0.28);
+        rects.push(RectRun {
+            x: px,
+            y: by + bh * 0.32,
+            w: pw,
+            h: bh * 0.36,
+            rgba: GOLD,
+        });
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: centered(
+                &fonts.tiny,
+                plabel,
+                px + pw / 2.0,
+                by + bh * 0.32,
+                bh * 0.36,
+            ),
+            rgba: INK,
+        });
+
+        // "EVENTS  have/total" section + a single "Daily Events" progress row.
+        let (q, _) = fonts.body.layout("EVENTS", margin, h * 0.285, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: GOLD,
+        });
+        let sc = format!("{ev_have} / {ev_total}");
+        let scw = fonts.tiny.text_width(&sc);
+        let (q, _) = fonts
+            .tiny
+            .layout(&sc, w - margin - scw, h * 0.292, scw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        push_progress_row(
+            &mut rects,
+            &mut texts,
+            fonts,
+            "Daily Events",
+            ev_have,
+            ev_total,
+            margin,
+            col_w,
+            h * 0.315,
+            h * 0.05,
+        );
+
+        // "DAILY EVENTS  have/total" + the reward-item icon grid.
+        let (q, _) = fonts.tiny.layout("DAILY EVENTS", margin, h * 0.39, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        push_item_grid(
+            &mut rects,
+            &mut texts,
+            fonts,
+            &ev_items,
+            &owned,
+            margin,
+            col_w,
+            h * 0.415,
+            h,
+            w,
+        );
+
         push_button(&mut rects, &mut texts, fonts, "Back", w, h);
         return (rects, texts);
     }
@@ -3607,7 +3810,14 @@ pub fn render_items(painter: &crate::headless::Painter, font: &FontRef<'_>) -> V
     let (w, h) = (DRILL_W as f32, DRILL_H as f32);
     let fonts = Fonts::bake(font, h);
     // The Awards tab over a full collection (every icon owned) — matches the web ref's seeded state.
-    let (rects, texts) = items_frame(&full_collection_sample(), 1, &fonts, w, h);
+    let (rects, texts) = items_frame(
+        &full_collection_sample(),
+        1,
+        EVENT_SAMPLE_NOW_MS,
+        &fonts,
+        w,
+        h,
+    );
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
@@ -3616,7 +3826,14 @@ pub fn render_items(painter: &crate::headless::Painter, font: &FontRef<'_>) -> V
 pub fn render_items_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (rects, texts) = items_frame(&full_collection_sample(), 1, &fonts, w, h);
+    let (rects, texts) = items_frame(
+        &full_collection_sample(),
+        1,
+        EVENT_SAMPLE_NOW_MS,
+        &fonts,
+        w,
+        h,
+    );
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
@@ -3628,7 +3845,14 @@ pub fn render_inventory_topics_ref(
 ) -> Vec<u8> {
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (rects, texts) = items_frame(&full_collection_sample(), 0, &fonts, w, h);
+    let (rects, texts) = items_frame(
+        &full_collection_sample(),
+        0,
+        EVENT_SAMPLE_NOW_MS,
+        &fonts,
+        w,
+        h,
+    );
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
@@ -3640,7 +3864,33 @@ pub fn render_inventory_loot_ref(
 ) -> Vec<u8> {
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (rects, texts) = items_frame(&full_collection_sample(), 3, &fonts, w, h);
+    let (rects, texts) = items_frame(
+        &full_collection_sample(),
+        3,
+        EVENT_SAMPLE_NOW_MS,
+        &fonts,
+        w,
+        h,
+    );
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render the Inventory **Events** tab (live-event banner + reward-item grid) at the web reference
+/// aspect — committed to halves as `visual-ref/inventory-events-brickmap.png`.
+pub fn render_inventory_events_ref(
+    painter: &crate::headless::Painter,
+    font: &FontRef<'_>,
+) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = items_frame(
+        &full_collection_sample(),
+        2,
+        EVENT_SAMPLE_NOW_MS,
+        &fonts,
+        w,
+        h,
+    );
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
@@ -4670,7 +4920,7 @@ mod tests {
         );
         let save = full_collection_sample();
         for tab in 0..INV_TABS.len() {
-            let (rects, texts) = items_frame(&save, tab, &fonts, w, h);
+            let (rects, texts) = items_frame(&save, tab, EVENT_SAMPLE_NOW_MS, &fonts, w, h);
             assert!(!rects.is_empty() && !texts.is_empty(), "tab {tab} renders");
         }
         let award = crate::catalogue::catalog()
