@@ -30,6 +30,7 @@ const LADDER_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/
 const RESULTS_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/results.png");
 const HEROES_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/heroes.png");
 const ART_SHEET_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/art-sheet.png");
+const ARENA_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/arena.png");
 const EVENTS_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/events.png");
 const ITEMS_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/items.png");
 
@@ -418,6 +419,43 @@ fn art_sheet_renders_and_matches_golden() {
     assert!(
         matches(&frame, &golden, 6, 0.001),
         "art sheet drifted from the golden: {} / {} px changed (max Δ {})",
+        d.changed,
+        d.total,
+        d.max_delta
+    );
+}
+
+/// Pure: the committed Arena-screen golden decodes + self-matches. (Phase-5 parity: the 3v3 Arena.)
+#[test]
+fn arena_golden_is_present_and_self_consistent() {
+    let (w, h, g) = rgba_from_png(ARENA_GOLDEN);
+    assert!(
+        w == goblin_gold::app::DRILL_W && h == goblin_gold::app::DRILL_H,
+        "golden dims {w}x{h}"
+    );
+    assert!(
+        matches(&g, &g, 0, 0.0),
+        "the Arena golden must match itself"
+    );
+}
+
+/// GPU (`--ignored`, lavapipe): re-render the Arena screen (foe showcase + party-pick, painting the
+/// F1–F3 generators) and assert it matches the committed golden.
+#[test]
+#[ignore = "needs a Vulkan adapter (lavapipe); run with --ignored"]
+fn arena_renders_and_matches_golden() {
+    use ab_glyph::FontRef;
+    use goblin_gold::app::render_arena;
+    use goblin_gold::headless::Painter;
+
+    let (_w, _h, golden) = rgba_from_png(ARENA_GOLDEN);
+    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let painter = Painter::new();
+    let frame = render_arena(&painter, &font);
+    let d = diff(&frame, &golden, 6);
+    assert!(
+        matches(&frame, &golden, 6, 0.001),
+        "Arena screen drifted from the golden: {} / {} px changed (max Δ {})",
         d.changed,
         d.total,
         d.max_delta

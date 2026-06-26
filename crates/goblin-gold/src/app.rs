@@ -559,8 +559,9 @@ enum Screen {
     Ladder,
     /// The end-of-round results summary (rank, awards, time, gold).
     Results,
-    /// The hero roster detail (effective stats).
-    Heroes,
+    /// The 3v3 Arena: party-pick (unlocked heroes) → fight the next tier → grant. (Subsumes the old
+    /// roster viewer — `arena_frame` shows each hero's portrait + effective stats too.)
+    Arena,
     /// The daily-events detail.
     Events,
     /// The items-by-category detail.
@@ -581,7 +582,7 @@ fn trailing_solves(steps: &[RoundStep]) -> u32 {
 /// arena bed on the hero roster, the menu bed everywhere else.
 fn scene_for(screen: Screen) -> &'static str {
     match screen {
-        Screen::Heroes => "arena",
+        Screen::Arena => "arena",
         _ => "menu",
     }
 }
@@ -625,6 +626,10 @@ struct App {
     round_steps: Vec<RoundStep>,
     /// The most recent round's outcome — shown on the Results screen.
     last_outcome: Option<RoundOutcome>,
+    /// The Arena party selection (≤3 unlocked hero ids) being assembled on the Arena screen.
+    arena_party: Vec<String>,
+    /// The most recent Arena battle outcome — shown as a banner on the Arena screen.
+    last_arena: Option<crate::save::ArenaOutcome>,
     keypad: Keypad,
     cursor: (f32, f32),
     fx_start: Option<Instant>,
@@ -661,6 +666,8 @@ impl App {
             q_start: None,
             round_steps: Vec::new(),
             last_outcome: None,
+            arena_party: Vec::new(),
+            last_arena: None,
             keypad: Keypad::layout(0.0, 0.0, 1.0, 1.0, 0.0),
             cursor: (0.0, 0.0),
             fx_start: None,
@@ -781,21 +788,59 @@ impl App {
                     self.screen = Screen::Select;
                 } else if let Some(row) = collection_row_at(w, h, x, y) {
                     // Every stat row drills into its detail (owner: "nothing clickable").
-                    // Rows: 0 Items · 1 Collector · 2 Topics · 3 Heroes · 4 Events · 5 Gold.
-                    self.screen = match row {
+                    // Rows: 0 Items · 1 Collector · 2 Topics · 3 Arena · 4 Events · 5 Gold.
+                    let next = match row {
                         0 => Screen::Items,
                         1 => Screen::Ladder,
                         2 => Screen::Select, // topics live on the topic-select screen
-                        3 => Screen::Heroes,
+                        3 => Screen::Arena,
                         4 => Screen::Events,
                         _ => Screen::Collection, // Gold has no detail (yet)
                     };
+                    // Fresh Arena visit → clear the party pick + any stale outcome banner.
+                    if next == Screen::Arena {
+                        self.arena_party.clear();
+                        self.last_arena = None;
+                    }
+                    self.screen = next;
                 }
             }
             // The drill-down screens return to the Collection via their Back button.
-            Screen::Ladder | Screen::Heroes | Screen::Events | Screen::Items => {
+            Screen::Ladder | Screen::Events | Screen::Items => {
                 if hit_bottom_button(w, h, x, y) {
                     self.screen = Screen::Collection;
+                }
+            }
+            Screen::Arena => {
+                if hit_bottom_button(w, h, x, y) {
+                    self.screen = Screen::Collection;
+                } else if arena_fight_hit(w, h, x, y) && !self.arena_party.is_empty() {
+                    // Resolve the fight against the next tier; on a win the save advances the tier.
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    let party: Vec<&str> = self.arena_party.iter().map(String::as_str).collect();
+                    if let Some(out) = self.save.resolve_arena(&party, ts) {
+                        let win = out.win;
+                        self.last_arena = Some(out);
+                        self.progress = self.save.progress();
+                        if let Some(store) = &self.store {
+                            let _ = self.save.store(store);
+                        }
+                        self.sfx(if win {
+                            crate::sfx::Sfx::RoundComplete
+                        } else {
+                            crate::sfx::Sfx::Skip
+                        });
+                    }
+                } else if let Some(id) = arena_hero_at(&self.save, w, h, x, y) {
+                    // Toggle the hero in/out of the party (capped at 3).
+                    if let Some(pos) = self.arena_party.iter().position(|p| *p == id) {
+                        self.arena_party.remove(pos);
+                    } else if self.arena_party.len() < 3 {
+                        self.arena_party.push(id);
+                    }
                 }
             }
             Screen::Results => {
@@ -880,8 +925,15 @@ impl App {
                 };
                 (r, t, None)
             }
-            Screen::Heroes => {
-                let (r, t) = heroes_frame(&self.save, fonts, w, h);
+            Screen::Arena => {
+                let (r, t) = arena_frame(
+                    &self.save,
+                    &self.arena_party,
+                    self.last_arena.as_ref(),
+                    fonts,
+                    w,
+                    h,
+                );
                 (r, t, None)
             }
             Screen::Events => {
@@ -1305,7 +1357,8 @@ pub fn collection_frame<'a>(
     let count_pre = |p: &str| keys.iter().filter(|k| k.starts_with(p)).count();
     let modes = progression::modes().len();
     let events_touched = crate::events::touched(keys.iter().copied()).len();
-    let heroes = crate::arena::roster().len();
+    let tiers_cleared = count_pre("tier:");
+    let arena_total = crate::combat::tier_count();
 
     let (q, _hh) = fonts.head.layout("Collection", margin, h * 0.05, col_w);
     texts.push(TextRun {
@@ -1327,7 +1380,10 @@ pub fn collection_frame<'a>(
                 count_pre("mastery:")
             ),
         ),
-        ("Heroes".to_string(), format!("{heroes} in the roster")),
+        (
+            "Arena".to_string(),
+            format!("{tiers_cleared} / {arena_total} cleared"),
+        ),
         ("Events".to_string(), format!("{events_touched} / 14")),
         ("Gold".to_string(), format!("{}", save.gold as u64)),
     ];
@@ -1877,6 +1933,310 @@ pub fn paint_colors(
     }
 }
 
+// ── Arena screen (party-pick → battle → grant) ────────────────────────────────────────────────
+
+/// The display colour for a combatant type (matching the portrait base hues).
+fn type_rgba(kind: crate::arena::Kind) -> [f32; 4] {
+    match kind {
+        crate::arena::Kind::Brawn => crate::art::hex_rgba("#d05a4a"),
+        crate::arena::Kind::Arcane => crate::art::hex_rgba("#8a5cf6"),
+        crate::arena::Kind::Cunning => crate::art::hex_rgba("#3fce8c"),
+    }
+}
+
+/// A hero's `★` rating (`power·1 + focus·0.8 + speed·0.5 + guard·0.3`, rounded) — the party-picker
+/// heuristic shown on each card (per `combat.json constants.rating`).
+fn hero_rating(s: &crate::arena::Stats) -> i64 {
+    (s.power as f64 + s.focus as f64 * 0.8 + s.speed as f64 * 0.5 + s.guard as f64 * 0.3 + 0.5)
+        .floor() as i64
+}
+
+/// The Arena hero-card layout band + spacing (shared by [`arena_frame`] + the row hit-test).
+const ARENA_ROWS_TOP: f32 = 0.40;
+const ARENA_ROWS_BOT: f32 = 0.79;
+
+/// Row rects for `count` Arena hero cards, sized to `w`×`h` (single column, height shrunk to fit).
+fn arena_hero_rows(count: usize, w: f32, h: f32) -> Vec<(f32, f32, f32, f32)> {
+    if count == 0 {
+        return Vec::new();
+    }
+    let margin = w * 0.05;
+    let top = h * ARENA_ROWS_TOP;
+    let band = h * (ARENA_ROWS_BOT - ARENA_ROWS_TOP);
+    let gap = h * 0.012;
+    let row_h = (band / count as f32 - gap).clamp(h * 0.045, h * 0.085);
+    (0..count)
+        .map(|i| {
+            (
+                margin,
+                top + i as f32 * (row_h + gap),
+                w - margin * 2.0,
+                row_h,
+            )
+        })
+        .collect()
+}
+
+/// Build the **Arena** screen: a foe showcase (region backdrop + foe portrait + name/type/stats over
+/// the next tier) and a party-pick list of the player's **unlocked** heroes (portrait + type dot +
+/// `★`rating + effective stat chips), with a Fight bar and a Back button. A prior outcome shows as a
+/// banner. Shared by the on-device renderer + the golden.
+pub fn arena_frame<'a>(
+    save: &Save,
+    party: &[String],
+    last: Option<&crate::save::ArenaOutcome>,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.05;
+    let col_w = w - margin * 2.0;
+    let keys: std::collections::HashSet<&str> = save.collected.keys().map(String::as_str).collect();
+    let tier = crate::combat::next_tier(save.collected.keys().map(String::as_str));
+    let region = crate::combat::tier_region(tier);
+
+    // Heading + tier counter.
+    let (q, _) = fonts.head.layout("Arena", margin, h * 0.028, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: q,
+        rgba: GOLD,
+    });
+    let tlabel = format!("Tier {tier} / {}", crate::combat::tier_count());
+    let tw = fonts.body.text_width(&tlabel);
+    let (q, _) = fonts
+        .body
+        .layout(&tlabel, w - margin - tw, h * 0.043, tw + 4.0);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: DIM,
+    });
+
+    // Foe showcase: region backdrop, then the headline foe portrait + name/type/stats.
+    let (sy, sh) = (h * 0.085, h * 0.165);
+    let backdrop = crate::scenes::scenery_grid(region as i64);
+    paint_colors(&mut rects, &backdrop, margin, sy, col_w / 28.0, sh / 11.0);
+    let foes = crate::combat::tier_foes(tier);
+    let foe_name = crate::arena::bestiary()
+        .into_iter()
+        .find(|e| e.n == tier)
+        .map(|e| e.name)
+        .unwrap_or_else(|| format!("Tier {tier}"));
+    if let Some(&(kind, pow, hp)) = foes.first() {
+        let (role, pal) = crate::art::foe_grid(tier, &foe_name, kind);
+        let pcell = sh * 0.72 / 16.0;
+        let px = w / 2.0 - 16.0 * pcell / 2.0;
+        paint_role(&mut rects, &role, &pal, px, sy + sh * 0.12, pcell);
+        // Foe name + "TYPE · N PWR · N HP".
+        let nm = centered(&fonts.body, &foe_name, w / 2.0, sy + sh, h * 0.04);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: nm,
+            rgba: BODY,
+        });
+        let stat = format!(
+            "{:?} · {} PWR · {} HP",
+            kind,
+            pow.round() as i64,
+            hp.round() as i64
+        );
+        let sline = centered(&fonts.tiny, &stat, w / 2.0, sy + sh + h * 0.035, h * 0.03);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: sline,
+            rgba: type_rgba(kind),
+        });
+    }
+
+    // Party-pick header.
+    let unlocked = crate::combat::unlocked_roster(&keys);
+    let pick = format!("Choose your party  {}/3", party.len());
+    let (q, _) = fonts.body.layout(&pick, margin, h * 0.355, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    // Hero cards (unlocked only).
+    let roster = crate::arena::roster();
+    for ((rx, ry, rw, rh), id) in arena_hero_rows(unlocked.len(), w, h)
+        .into_iter()
+        .zip(&unlocked)
+    {
+        let selected = party.iter().any(|p| p == id);
+        rects.push(RectRun {
+            x: rx,
+            y: ry,
+            w: rw,
+            h: rh,
+            rgba: if selected { GREEN } else { PANEL },
+        });
+        let hero = roster.iter().find(|hh| &hh.id == id);
+        let kind = hero.map(|hh| hh.kind).unwrap_or(crate::arena::Kind::Brawn);
+        let name = hero.map(|hh| hh.name.clone()).unwrap_or_else(|| id.clone());
+        // Portrait on the left.
+        let (role, pal) = crate::art::hero_icon(id, kind);
+        let pcell = (rh * 0.82) / 16.0;
+        paint_role(
+            &mut rects,
+            &role,
+            &pal,
+            rx + rh * 0.1,
+            ry + rh * 0.09,
+            pcell,
+        );
+        // Name + type dot + rating (top line); effective stat chips (bottom line).
+        let stats = crate::combat::effective_stats(id, &keys).unwrap_or_default();
+        let tx = rx + rh + w * 0.02;
+        let (q, _) = fonts.body.layout(&name, tx, ry + rh * 0.16, rw);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: if selected { INK } else { type_rgba(kind) },
+        });
+        let rating = format!("* {}", hero_rating(&stats));
+        let rw_txt = fonts.body.text_width(&rating);
+        let (q, _) = fonts.body.layout(
+            &rating,
+            rx + rw - rw_txt - w * 0.02,
+            ry + rh * 0.16,
+            rw_txt + 4.0,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: if selected { INK } else { GOLD },
+        });
+        let chips = format!(
+            "{} PWR  {} GRD  {} SPD  {} FOC",
+            stats.power, stats.guard, stats.speed, stats.focus
+        );
+        let (q, _) = fonts.tiny.layout(&chips, tx, ry + rh * 0.55, rw);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: if selected { INK } else { DIM },
+        });
+    }
+
+    // Outcome banner (if any).
+    if let Some(o) = last {
+        let (msg, col) = if o.win {
+            (
+                format!("Victory! Cleared tier {} (+{}g)", o.tier, o.gold_earned),
+                GREEN,
+            )
+        } else {
+            (
+                format!("Defeated at tier {} ({} rounds)", o.tier, o.rounds),
+                DIM,
+            )
+        };
+        let mw = fonts.body.text_width(&msg);
+        let (q, _) = fonts
+            .body
+            .layout(&msg, w / 2.0 - mw / 2.0, h * 0.805, mw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: col,
+        });
+    }
+
+    // Fight bar (gold when a party is picked, dim otherwise) + Back button.
+    let (fbx, fby, fbw, fbh) = arena_fight_button(w, h);
+    rects.push(RectRun {
+        x: fbx,
+        y: fby,
+        w: fbw,
+        h: fbh,
+        rgba: if party.is_empty() { KEYBG } else { GOLD },
+    });
+    let flabel = if party.is_empty() {
+        "Pick a hero".to_string()
+    } else {
+        format!("Fight Tier {tier}")
+    };
+    texts.push(TextRun {
+        atlas: &fonts.key,
+        quads: centered(&fonts.key, &flabel, fbx + fbw / 2.0, fby, fbh),
+        rgba: if party.is_empty() { DIM } else { INK },
+    });
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    (rects, texts)
+}
+
+/// The Arena "Fight" bar rect (just above the bottom Back button).
+fn arena_fight_button(w: f32, h: f32) -> (f32, f32, f32, f32) {
+    let bw = w * 0.6;
+    let bh = h * 0.05;
+    ((w - bw) / 2.0, h * 0.85, bw, bh)
+}
+
+/// Whether (`px`,`py`) hits the Arena Fight bar.
+fn arena_fight_hit(w: f32, h: f32, px: f32, py: f32) -> bool {
+    let (bx, by, bw, bh) = arena_fight_button(w, h);
+    px >= bx && px < bx + bw && py >= by && py < by + bh
+}
+
+/// The unlocked-hero id whose Arena card contains (`px`,`py`), if any (party-pick routing). Shares
+/// [`arena_hero_rows`] with the renderer, so taps land on exactly the painted cards.
+fn arena_hero_at(save: &Save, w: f32, h: f32, px: f32, py: f32) -> Option<String> {
+    let keys: std::collections::HashSet<&str> = save.collected.keys().map(String::as_str).collect();
+    let unlocked = crate::combat::unlocked_roster(&keys);
+    arena_hero_rows(unlocked.len(), w, h)
+        .into_iter()
+        .zip(&unlocked)
+        .find(|((rx, ry, rw, rh), _)| px >= *rx && px < rx + rw && py >= *ry && py < ry + rh)
+        .map(|(_, id)| id.clone())
+}
+
+/// The representative Arena state for the golden / visual-ref (some heroes unlocked, a prior win).
+fn arena_sample() -> (Save, Vec<String>, crate::save::ArenaOutcome) {
+    (
+        sample_save(),
+        // bram + tovar are both unlocked under the sample save (init: + mastery:).
+        vec!["bram".to_string(), "tovar".to_string()],
+        crate::save::ArenaOutcome {
+            tier: 3,
+            win: true,
+            rounds: 4,
+            heroes_alive: 2,
+            gold_earned: 38,
+            loot: vec!["loot:3:0".to_string()],
+            region_cleared: false,
+        },
+    )
+}
+
+/// Render the **Arena** screen for a representative save, headless. Shared by the golden blesser +
+/// golden test.
+pub fn render_arena(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (save, party, last) = arena_sample();
+    let (rects, texts) = arena_frame(&save, &party, Some(&last), &fonts, w, h);
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+/// The web visual-ref aspect (`content/gg1/visual-ref/*-web.png` are 430×880).
+pub const REF_W: u32 = 430;
+pub const REF_H: u32 = 880;
+
+/// Render the Arena screen at the **web reference aspect** (430×880) — committed to halves as
+/// `visual-ref/arena-prefight-brickmap.png` for the Babysitter's side-by-side perceptual review.
+pub fn render_arena_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (save, party, last) = arena_sample();
+    let (rects, texts) = arena_frame(&save, &party, Some(&last), &fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
 /// A contact sheet of every procedural generator (F1 heroes · F2 foes · F3 scenery · F4 crests),
 /// painted through the real engine rect path — a golden that proves the art renders correctly on the
 /// GPU, before the screens consume the same paint helpers.
@@ -2123,6 +2483,34 @@ mod tests {
                 m.id
             );
         }
+    }
+
+    /// Every unlocked Arena hero is tappable at its card centre, and the Fight bar is hittable — the
+    /// renderer + hit-test share `arena_hero_rows`, so party-pick taps land on the painted cards.
+    #[test]
+    fn arena_cards_are_tappable() {
+        let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+        let save = sample_save();
+        let keys: std::collections::HashSet<&str> =
+            save.collected.keys().map(String::as_str).collect();
+        let unlocked = crate::combat::unlocked_roster(&keys);
+        assert!(!unlocked.is_empty(), "the sample save unlocks some heroes");
+        for ((rx, ry, rw, rh), id) in arena_hero_rows(unlocked.len(), w, h)
+            .into_iter()
+            .zip(&unlocked)
+        {
+            let hit = arena_hero_at(&save, w, h, rx + rw / 2.0, ry + rh / 2.0);
+            assert_eq!(hit.as_deref(), Some(id.as_str()), "tap missed card {id}");
+        }
+        let (fbx, fby, fbw, fbh) = arena_fight_button(w, h);
+        assert!(
+            arena_fight_hit(w, h, fbx + fbw / 2.0, fby + fbh / 2.0),
+            "fight bar hittable"
+        );
+        assert!(
+            !arena_fight_hit(w, h, 1.0, 1.0),
+            "top-left is not the fight bar"
+        );
     }
 
     /// The single-column early-game layout (and the initial 1-row golden) must be unchanged: the

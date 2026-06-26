@@ -97,6 +97,26 @@ fn main() {
     );
     println!("wrote heroes/events/items");
 
+    // The Arena screen (foe showcase + party-pick, with portraits/backdrops).
+    let arena_rgba = app::render_arena(&painter, &font);
+    write_png(
+        &format!("{out_dir}/gg-arena.png"),
+        app::DRILL_W,
+        app::DRILL_H,
+        &arena_rgba,
+    );
+    println!("wrote arena");
+
+    // The Arena at the web reference aspect (430×880) → committed to halves visual-ref for review.
+    let arena_ref = app::render_arena_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/arena-prefight-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &arena_ref,
+    );
+    println!("wrote arena-prefight-brickmap (430x880 visual-ref)");
+
     // The procedural-art contact sheet (F1 heroes · F2 foes · F3 scenery · F4 crests).
     let art_rgba = app::render_art_sheet(&painter, &font);
     write_png(
@@ -125,6 +145,7 @@ fn main() {
             ("heroes.png", app::DRILL_W, app::DRILL_H, &heroes_rgba),
             ("events.png", app::DRILL_W, app::DRILL_H, &events_rgba),
             ("items.png", app::DRILL_W, app::DRILL_H, &items_rgba),
+            ("arena.png", app::DRILL_W, app::DRILL_H, &arena_rgba),
             ("art-sheet.png", app::DRILL_W, app::DRILL_H, &art_rgba),
         ] {
             let path = format!(

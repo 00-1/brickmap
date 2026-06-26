@@ -186,6 +186,20 @@ pub fn foe_kinds(n: u32) -> Vec<Kind> {
         .unwrap_or_default()
 }
 
+/// The enemy team at tier `n` as `(type, pow, hp)` triples — for the Arena screen's foe cards.
+pub fn tier_foes(n: u32) -> Vec<(Kind, f64, f64)> {
+    parse()
+        .enemy_teams
+        .get(&n.to_string())
+        .map(|team| team.iter().map(|f| (f.kind, f.pow, f.hp)).collect())
+        .unwrap_or_default()
+}
+
+/// The region index for tier `n` (`(n-1)/regionSize`) — selects the scenery backdrop + region label.
+pub fn tier_region(n: u32) -> u32 {
+    (n.max(1) - 1) / region_size()
+}
+
 /// The next tier to fight = one past the highest cleared `tier:n` key (capped at the ladder top).
 pub fn next_tier<'a>(collected: impl IntoIterator<Item = &'a str>) -> u32 {
     let max_cleared = collected
