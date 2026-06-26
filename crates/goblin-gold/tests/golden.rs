@@ -29,6 +29,7 @@ const COLLECTION_GOLDEN: &str =
 const LADDER_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/ladder.png");
 const RESULTS_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/results.png");
 const HEROES_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/heroes.png");
+const ART_SHEET_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/art-sheet.png");
 const EVENTS_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/events.png");
 const ITEMS_GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/items.png");
 
@@ -380,6 +381,43 @@ fn results_renders_and_matches_golden() {
     assert!(
         matches(&frame, &golden, 6, 0.001),
         "results drifted from the golden: {} / {} px changed (max Δ {})",
+        d.changed,
+        d.total,
+        d.max_delta
+    );
+}
+
+/// Pure: the committed art-sheet golden decodes + self-matches. (F1–F4 procedural art render proof.)
+#[test]
+fn art_sheet_golden_is_present_and_self_consistent() {
+    let (w, h, g) = rgba_from_png(ART_SHEET_GOLDEN);
+    assert!(
+        w == goblin_gold::app::DRILL_W && h == goblin_gold::app::DRILL_H,
+        "golden dims {w}x{h}"
+    );
+    assert!(
+        matches(&g, &g, 0, 0.0),
+        "the art-sheet golden must match itself"
+    );
+}
+
+/// GPU (`--ignored`, lavapipe): re-render the procedural-art contact sheet (every F1–F4 generator
+/// painted through the engine rect path) and assert it matches the committed golden.
+#[test]
+#[ignore = "needs a Vulkan adapter (lavapipe); run with --ignored"]
+fn art_sheet_renders_and_matches_golden() {
+    use ab_glyph::FontRef;
+    use goblin_gold::app::render_art_sheet;
+    use goblin_gold::headless::Painter;
+
+    let (_w, _h, golden) = rgba_from_png(ART_SHEET_GOLDEN);
+    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let painter = Painter::new();
+    let frame = render_art_sheet(&painter, &font);
+    let d = diff(&frame, &golden, 6);
+    assert!(
+        matches(&frame, &golden, 6, 0.001),
+        "art sheet drifted from the golden: {} / {} px changed (max Δ {})",
         d.changed,
         d.total,
         d.max_delta

@@ -97,6 +97,16 @@ fn main() {
     );
     println!("wrote heroes/events/items");
 
+    // The procedural-art contact sheet (F1 heroes · F2 foes · F3 scenery · F4 crests).
+    let art_rgba = app::render_art_sheet(&painter, &font);
+    write_png(
+        &format!("{out_dir}/gg-art-sheet.png"),
+        app::DRILL_W,
+        app::DRILL_H,
+        &art_rgba,
+    );
+    println!("wrote art-sheet");
+
     if std::env::var("GG_BLESS").is_ok() {
         std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens")).ok();
         for (name, w, h, data) in [
@@ -115,6 +125,7 @@ fn main() {
             ("heroes.png", app::DRILL_W, app::DRILL_H, &heroes_rgba),
             ("events.png", app::DRILL_W, app::DRILL_H, &events_rgba),
             ("items.png", app::DRILL_W, app::DRILL_H, &items_rgba),
+            ("art-sheet.png", app::DRILL_W, app::DRILL_H, &art_rgba),
         ] {
             let path = format!(
                 concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens/{}"),

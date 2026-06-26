@@ -1827,6 +1827,124 @@ pub fn render_collection(painter: &crate::headless::Painter, font: &FontRef<'_>)
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
+// ── procedural-art painting (F1–F4): role grids + colour grids → engine rects ──────────────────
+
+/// Paint a 16×16 **role grid** (hero/foe portrait) at `(x0,y0)` with `cell`-px cells, colouring each
+/// non-empty cell through `pal` ([`crate::art::Palette::role_hex`]). Cells overlap a hair to avoid
+/// seams. Shared by every screen that shows a portrait.
+pub fn paint_role(
+    rects: &mut Vec<RectRun>,
+    role: &crate::art::RoleGrid,
+    pal: &crate::art::Palette,
+    x0: f32,
+    y0: f32,
+    cell: f32,
+) {
+    for (y, row) in role.iter().enumerate() {
+        for (x, &c) in row.iter().enumerate() {
+            if let Some(hex) = pal.role_hex(c) {
+                rects.push(RectRun {
+                    x: x0 + x as f32 * cell,
+                    y: y0 + y as f32 * cell,
+                    w: cell + 0.5,
+                    h: cell + 0.5,
+                    rgba: crate::art::hex_rgba(hex),
+                });
+            }
+        }
+    }
+}
+
+/// Paint a full **colour grid** (a scenery backdrop or event crest) at `(x0,y0)` with `cw`×`ch` cells.
+pub fn paint_colors(
+    rects: &mut Vec<RectRun>,
+    grid: &crate::scenes::ColorGrid,
+    x0: f32,
+    y0: f32,
+    cw: f32,
+    ch: f32,
+) {
+    for (r, row) in grid.iter().enumerate() {
+        for (c, hex) in row.iter().enumerate() {
+            rects.push(RectRun {
+                x: x0 + c as f32 * cw,
+                y: y0 + r as f32 * ch,
+                w: cw + 0.6,
+                h: ch + 0.6,
+                rgba: crate::art::hex_rgba(hex),
+            });
+        }
+    }
+}
+
+/// A contact sheet of every procedural generator (F1 heroes · F2 foes · F3 scenery · F4 crests),
+/// painted through the real engine rect path — a golden that proves the art renders correctly on the
+/// GPU, before the screens consume the same paint helpers.
+pub fn render_art_sheet(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let margin = w * 0.04;
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    // A labelled section header — pushed inline (a closure capturing `fonts` would over-constrain the
+    // atlas borrow to `'static`).
+    let label = |s: &str, y: f32| -> TextRun {
+        TextRun {
+            atlas: &fonts.body,
+            quads: fonts.body.layout(s, margin, y, w).0,
+            rgba: GOLD,
+        }
+    };
+
+    // F1 heroes — 12 portraits, 6 per row.
+    texts.push(label("Heroes (F1)", h * 0.02));
+    let roster = crate::arena::roster();
+    let hcell = 4.0;
+    for (i, hero) in roster.iter().enumerate() {
+        let (role, pal) = crate::art::hero_icon(&hero.id, hero.kind);
+        let (col, row) = (i % 6, i / 6);
+        let x = margin + col as f32 * (16.0 * hcell + 8.0);
+        let y = h * 0.05 + row as f32 * (16.0 * hcell + 8.0);
+        paint_role(&mut rects, &role, &pal, x, y, hcell);
+    }
+
+    // F2 foes — the first 15 tiers, 5 per row.
+    texts.push(label("Foes (F2)", h * 0.20));
+    let bestiary = crate::arena::bestiary();
+    let fcell = 3.5;
+    for (i, foe) in bestiary.iter().take(15).enumerate() {
+        let (role, pal) = crate::art::foe_grid(foe.n, &foe.name, foe.kind);
+        let (col, row) = (i % 5, i / 5);
+        let x = margin + col as f32 * (16.0 * fcell + 8.0);
+        let y = h * 0.23 + row as f32 * (16.0 * fcell + 8.0);
+        paint_role(&mut rects, &role, &pal, x, y, fcell);
+    }
+
+    // F3 scenery — 10 region backdrops, 2 per row.
+    texts.push(label("Scenery (F3)", h * 0.42));
+    let scw = 3.4;
+    for region in 0..10i64 {
+        let grid = crate::scenes::scenery_grid(region);
+        let (col, row) = (region % 2, region / 2);
+        let x = margin + col as f32 * (28.0 * scw + 10.0);
+        let y = h * 0.45 + row as f32 * (11.0 * scw + 6.0);
+        paint_colors(&mut rects, &grid, x, y, scw, scw);
+    }
+
+    // F4 event crests — the first 8 events, 4 per row.
+    texts.push(label("Event crests (F4)", h * 0.74));
+    let ecw = 3.4;
+    for (i, ev) in crate::event_play::roster().iter().take(8).enumerate() {
+        let grid = crate::scenes::eventart_grid(ev.art_seed);
+        let (col, row) = (i % 4, i / 4);
+        let x = margin + col as f32 * (24.0 * ecw + 10.0);
+        let y = h * 0.77 + row as f32 * (16.0 * ecw + 6.0);
+        paint_colors(&mut rects, &grid, x, y, ecw, ecw);
+    }
+
+    painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Re-assert immersive-sticky fullscreen on every resume — the system clears the flags when

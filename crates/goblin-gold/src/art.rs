@@ -32,6 +32,29 @@ pub struct Palette {
     pub eye: Option<String>,
 }
 
+impl Palette {
+    /// The hex colour for a role cell (`1 outline · 2 body · 3 accent · 4 eye`); `None` for empty
+    /// (`0`) or a missing eye. The screens paint a role grid by mapping each cell through this.
+    pub fn role_hex(&self, role: u8) -> Option<&str> {
+        match role {
+            1 => Some(&self.outline),
+            2 => Some(&self.body),
+            3 => Some(&self.accent),
+            4 => self.eye.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+/// Parse a `#rrggbb` (or `#rgb`-less) hex string to linear-ish RGBA floats (0..1, alpha 1).
+pub fn hex_rgba(hex: &str) -> [f32; 4] {
+    let h = hex.trim_start_matches('#');
+    let v = |i: usize| {
+        u8::from_str_radix(h.get(i..i + 2).unwrap_or("0"), 16).unwrap_or(0) as f32 / 255.0
+    };
+    [v(0), v(2), v(4), 1.0]
+}
+
 /// The per-type hero base palette (`art.json` `constants.heroPal` / `main.js HERO_PAL`).
 fn hero_base(kind: Kind) -> (&'static str, &'static str, &'static str) {
     match kind {
