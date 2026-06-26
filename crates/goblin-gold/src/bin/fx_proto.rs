@@ -197,6 +197,26 @@ fn main() {
     );
     println!("wrote inventory-codex-brickmap (430x880 visual-ref)");
 
+    // The Arena Journey Map (10 region rows + current-foe portrait card) → halves visual-ref.
+    let arena_map = app::render_arena_map_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/arena-map-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &arena_map,
+    );
+    println!("wrote arena-map-brickmap (430x880 visual-ref)");
+
+    // The Arena CLEARED screen → halves visual-ref.
+    let arena_cleared = app::render_arena_cleared_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/arena-cleared-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &arena_cleared,
+    );
+    println!("wrote arena-cleared-brickmap (430x880 visual-ref)");
+
     // The Audio screen (Sound toggle + sliders + Music-style grid + Test sound) → halves visual-ref.
     let audio_ref = app::render_audio_ref(&painter, &font);
     write_png(

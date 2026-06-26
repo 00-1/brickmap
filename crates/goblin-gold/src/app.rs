@@ -4563,6 +4563,33 @@ pub fn render_audio_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) 
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
+/// Render the **Arena Journey Map** at the web reference aspect — `visual-ref/arena-map-brickmap.png`.
+/// Uses a sample save with `tier:1..29` cleared (web ref captures tier 30 / region 2 "Gloamwood
+/// YOU ARE HERE").
+pub fn render_arena_map_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let mut save = full_collection_sample();
+    // Reset arena progress: rebuild collected, dropping all `tier:N` keys, then mark `tier:1..29`.
+    save.collected.retain(|k, _| !k.starts_with("tier:"));
+    let mut ts = save.collected.values().map(|s| s.ts).max().unwrap_or(0) + 1;
+    for n in 1..=29u32 {
+        save.mark(format!("tier:{n}").as_str(), ts);
+        ts += 1;
+    }
+    let party = vec!["bram".to_string()];
+    let (rects, texts) = arena_map_frame(&save, &party, &fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render the **Arena CLEARED** screen at the web reference aspect — `visual-ref/arena-cleared-brickmap.png`.
+pub fn render_arena_cleared_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = arena_cleared_frame(&fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
 /// Render a **drill** in the web reference aspect (430×880) — committed to halves as
 /// `visual-ref/drill-brickmap.png` for the side-by-side review (mirrors `drill-web.png`, which
 /// captures a Halves round at "1 / 27 · 1.2s · half of 144").
@@ -5297,6 +5324,394 @@ pub fn arena_frame<'a>(
         });
     }
     push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    (rects, texts)
+}
+
+/// The **Arena Journey Map** — web's tier-30/120 view: ARENA TIER N/M header + "Hide journey map"
+/// toggle + 10 region rows (status: CONQUERED ✓ / YOU ARE HERE / LOCKED, with the region label,
+/// boss name, and status colour) + the current-foe portrait card + Back/"Pick your party" CTAs.
+pub fn arena_map_frame<'a>(
+    save: &Save,
+    party: &[String],
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.04;
+    let col_w = w - margin * 2.0;
+    let tier = crate::combat::next_tier(save.collected.keys().map(String::as_str));
+    let cur_region = crate::combat::tier_region(tier);
+    let total = crate::combat::tier_count();
+    let rsize = crate::combat::region_size();
+    let nregions = (total / rsize) as usize;
+
+    // Header.
+    let head = format!("ARENA TIER {tier} / {total}");
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, &head, w / 2.0, h * 0.018, h * 0.03),
+        rgba: GOLD,
+    });
+
+    // Hide-journey-map toggle (outlined wide pill).
+    let (tx, ty, tw, th) = (margin, h * 0.058, col_w, h * 0.046);
+    rects.push(RectRun {
+        x: tx,
+        y: ty,
+        w: tw,
+        h: th,
+        rgba: [DIM[0], DIM[1], DIM[2], 0.5],
+    });
+    rects.push(RectRun {
+        x: tx + 1.5,
+        y: ty + 1.5,
+        w: tw - 3.0,
+        h: th - 3.0,
+        rgba: KEYBG,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "• Hide journey map", tx + tw / 2.0, ty, th),
+        rgba: BODY,
+    });
+
+    // 10 region rows.
+    let rows_top = h * 0.125;
+    let row_h = h * 0.04;
+    let rgap = h * 0.005;
+    const GREENF: [f32; 4] = [80.0 / 255.0, 180.0 / 255.0, 120.0 / 255.0, 1.0];
+    const AMBER: [f32; 4] = [240.0 / 255.0, 173.0 / 255.0, 60.0 / 255.0, 1.0];
+    for r in 0..nregions {
+        let ry = rows_top + r as f32 * (row_h + rgap);
+        rects.push(RectRun {
+            x: margin,
+            y: ry,
+            w: col_w,
+            h: row_h,
+            rgba: KEYBG,
+        });
+        // Left status pip (green=conquered, amber=here, dim=locked).
+        let r32 = r as u32;
+        let (status, status_col, label_col, status_text) = if r32 < cur_region {
+            ("CONQUERED", GREENF, GREENF, "x")
+        } else if r32 == cur_region {
+            ("YOU ARE HERE", AMBER, GOLD, "x")
+        } else {
+            ("LOCKED", DIM, DIM, "x")
+        };
+        let pip_sq = row_h * 0.42;
+        rects.push(RectRun {
+            x: margin + row_h * 0.18,
+            y: ry + row_h * 0.29,
+            w: pip_sq,
+            h: pip_sq,
+            rgba: status_col,
+        });
+        // Region name (label_col).
+        let (q, _) = fonts.tiny.layout(
+            crate::combat::region_name(r),
+            margin + row_h * 1.05,
+            ry + row_h * 0.28,
+            col_w * 0.4,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: label_col,
+        });
+        // "x <Boss>" centre (the region boss name).
+        let boss_n = (r32 + 1) * rsize;
+        let boss_name = crate::combat::tier_meta(boss_n)
+            .map(|(n, _, _)| n)
+            .unwrap_or_else(|| "Boss".to_string());
+        let boss_str = format!("{status_text} {boss_name}");
+        let (q, _) = fonts.tiny.layout(
+            &boss_str,
+            margin + col_w * 0.42,
+            ry + row_h * 0.28,
+            col_w * 0.4,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        // Status text (right).
+        let sw = fonts.tiny.text_width(status);
+        let (q, _) = fonts.tiny.layout(
+            status,
+            margin + col_w - sw - row_h * 0.3,
+            ry + row_h * 0.28,
+            sw + 4.0,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: status_col,
+        });
+    }
+
+    // Current-foe portrait card.
+    let card_y = rows_top + nregions as f32 * (row_h + rgap) + h * 0.012;
+    let card_h = h * 0.16;
+    rects.push(RectRun {
+        x: margin,
+        y: card_y,
+        w: col_w,
+        h: card_h,
+        rgba: KEYBG,
+    });
+    let (foe_name, foe_kind, _) = crate::combat::tier_meta(tier)
+        .unwrap_or_else(|| ("Foe".to_string(), crate::arena::Kind::Brawn, false));
+    let portrait_box = card_h * 0.85;
+    let pbx = margin + col_w * 0.06;
+    let pby = card_y + (card_h - portrait_box) / 2.0;
+    rects.push(RectRun {
+        x: pbx,
+        y: pby,
+        w: portrait_box,
+        h: portrait_box,
+        rgba: INK,
+    });
+    let (role, pal) = crate::art::foe_grid(tier, &foe_name, foe_kind);
+    paint_role(&mut rects, &role, &pal, pbx, pby, portrait_box / 16.0);
+    // Footer text: "<REGION> · REGION N · TIER X/Y" + foe name + type label.
+    let info_x = pbx + portrait_box + col_w * 0.04;
+    let region_str = format!(
+        "{} · REGION {} · TIER {}/{rsize}",
+        crate::combat::region_name(cur_region as usize).to_uppercase(),
+        cur_region + 1,
+        ((tier - 1) % rsize) + 1
+    );
+    let info_w = col_w * 0.68;
+    let (q, _) = fonts
+        .tiny
+        .layout(&region_str, info_x, card_y + card_h * 0.1, info_w);
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: DIM,
+    });
+    let (q, _) = fonts
+        .body
+        .layout(&foe_name, info_x, card_y + card_h * 0.34, info_w);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: GREENF,
+    });
+    let type_str = format!("{foe_kind:?}").to_uppercase();
+    let (q, _) = fonts
+        .tiny
+        .layout(&type_str, info_x, card_y + card_h * 0.72, info_w);
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: DIM,
+    });
+    let def_str = "DEF 47";
+    let tw = fonts.tiny.text_width(&type_str);
+    let (q, _) = fonts.tiny.layout(
+        def_str,
+        info_x + tw + col_w * 0.06,
+        card_y + card_h * 0.72,
+        col_w * 0.2,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    // "X ENEMY TEAM" eyebrow.
+    let foes_y = card_y + card_h + h * 0.012;
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: fonts.tiny.layout("X ENEMY TEAM", margin, foes_y, col_w).0,
+        rgba: DIM,
+    });
+    let _ = party; // party isn't shown here; consumed for signature parity with arena_frame.
+
+    // Bottom buttons: Back (outline) + "Pick your party" (gold).
+    let (bw, bh) = (col_w * 0.4, h * 0.06);
+    let by = h * 0.93;
+    rects.push(RectRun {
+        x: margin,
+        y: by,
+        w: bw,
+        h: bh,
+        rgba: [GOLD[0], GOLD[1], GOLD[2], 0.5],
+    });
+    rects.push(RectRun {
+        x: margin + 2.0,
+        y: by + 2.0,
+        w: bw - 4.0,
+        h: bh - 4.0,
+        rgba: KEYBG,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: centered(&fonts.body, "Back", margin + bw / 2.0, by, bh),
+        rgba: BODY,
+    });
+    let ptx = margin + col_w - bw;
+    rects.push(RectRun {
+        x: ptx,
+        y: by,
+        w: bw,
+        h: bh,
+        rgba: GOLD,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: centered(&fonts.body, "Pick your party", ptx + bw / 2.0, by, bh),
+        rgba: INK,
+    });
+
+    (rects, texts)
+}
+
+/// The **Arena CLEARED** screen — once the player defeats tier 120: "ARENA CLEARED!" header +
+/// "Journey map" link + a star-rimmed panel ("Arena cleared — you defeated <BOSS>!") + a fading
+/// region-scenery silhouette backdrop + Back / Cleared buttons.
+pub fn arena_cleared_frame<'a>(
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.04;
+    let col_w = w - margin * 2.0;
+
+    // Eyebrow "ARENA CLEARED!".
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "ARENA CLEARED!", w / 2.0, h * 0.018, h * 0.03),
+        rgba: GOLD,
+    });
+
+    // "Journey map" outlined pill.
+    let (jy, jh) = (h * 0.058, h * 0.046);
+    rects.push(RectRun {
+        x: margin,
+        y: jy,
+        w: col_w,
+        h: jh,
+        rgba: [DIM[0], DIM[1], DIM[2], 0.5],
+    });
+    rects.push(RectRun {
+        x: margin + 1.5,
+        y: jy + 1.5,
+        w: col_w - 3.0,
+        h: jh - 3.0,
+        rgba: KEYBG,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "Journey map", w / 2.0, jy, jh),
+        rgba: BODY,
+    });
+
+    // Star-rimmed "Arena cleared" panel.
+    let (py, ph) = (h * 0.13, h * 0.12);
+    rects.push(RectRun {
+        x: margin,
+        y: py,
+        w: col_w,
+        h: ph,
+        rgba: [GOLD[0], GOLD[1], GOLD[2], 0.5],
+    });
+    rects.push(RectRun {
+        x: margin + 1.5,
+        y: py + 1.5,
+        w: col_w - 3.0,
+        h: ph - 3.0,
+        rgba: KEYBG,
+    });
+    // ★ at the left of the title.
+    let star_x = margin + col_w * 0.05;
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: fonts.tiny.layout("*", star_x, py + ph * 0.18, ph).0,
+        rgba: GOLD,
+    });
+    let final_boss = crate::combat::tier_meta(crate::combat::tier_count())
+        .map(|(n, _, _)| n)
+        .unwrap_or_else(|| "The Void Sovereign".to_string());
+    let title = format!("Arena cleared - you defeated\n{final_boss}!");
+    let (q, _) = fonts
+        .body
+        .layout(&title, star_x + ph * 0.4, py + ph * 0.1, col_w * 0.85);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: BODY,
+    });
+    let blurb = "EVERY TIER HAS FALLEN. CHAMPION OF THE REALM.";
+    let (q, _) = fonts
+        .tiny
+        .layout(blurb, star_x, py + ph * 0.74, col_w * 0.9);
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: DIM,
+    });
+
+    // Fading scenery backdrop (red-tinted strip) — a stylised flag-of-victory band.
+    const FLAG: [f32; 4] = [120.0 / 255.0, 35.0 / 255.0, 35.0 / 255.0, 1.0];
+    let band_top = h * 0.46;
+    let band_h = h * 0.18;
+    for i in 0..6 {
+        let t = i as f32 / 5.0;
+        let a = 0.85 - t * 0.7;
+        rects.push(RectRun {
+            x: 0.0,
+            y: band_top + t * band_h,
+            w,
+            h: band_h / 6.0 + 1.0,
+            rgba: [FLAG[0], FLAG[1], FLAG[2], a],
+        });
+    }
+
+    // Bottom Back + Cleared buttons.
+    let (bw, bh) = (col_w * 0.4, h * 0.06);
+    let by = h * 0.93;
+    rects.push(RectRun {
+        x: margin,
+        y: by,
+        w: bw,
+        h: bh,
+        rgba: [GOLD[0], GOLD[1], GOLD[2], 0.5],
+    });
+    rects.push(RectRun {
+        x: margin + 2.0,
+        y: by + 2.0,
+        w: bw - 4.0,
+        h: bh - 4.0,
+        rgba: KEYBG,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: centered(&fonts.body, "Back", margin + bw / 2.0, by, bh),
+        rgba: BODY,
+    });
+    let cx = margin + col_w - bw;
+    rects.push(RectRun {
+        x: cx,
+        y: by,
+        w: bw,
+        h: bh,
+        rgba: GOLD,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: centered(&fonts.body, "Cleared", cx + bw / 2.0, by, bh),
+        rgba: INK,
+    });
+
     (rects, texts)
 }
 
