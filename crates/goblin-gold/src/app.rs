@@ -1528,14 +1528,19 @@ pub fn home_frame<'a>(
     let margin = w * 0.05;
     let col_w = w - margin * 2.0;
 
-    // Purple backdrop wash (HOME_PALETTE bg→accent, vertical bands) under everything.
-    let bands = 18;
+    // Purple backdrop wash (HOME_PALETTE bg→accent, vertical bands). The web home's purple is a
+    // VIVID saturated band that crests around the tree zone (y≈0.35) and fades toward the dark header
+    // and the gold pile — so the wash follows a parabolic envelope peaking mid-screen, not a flat
+    // linear ramp (calibrated against `home-web.png`: ~[100,72,152] at y≈0.3).
+    let bands = 22;
     for i in 0..bands {
-        let t = i as f32 / (bands - 1) as f32;
+        let yc = (i as f32 + 0.5) / bands as f32;
+        let env = (1.0 - ((yc - 0.44) / 0.40).powi(2)).clamp(0.0, 1.0);
+        let f = 0.86 * env;
         let c = [
-            HOME_PALETTE[0][0] + (HOME_PALETTE[1][0] - HOME_PALETTE[0][0]) * t * 0.55,
-            HOME_PALETTE[0][1] + (HOME_PALETTE[1][1] - HOME_PALETTE[0][1]) * t * 0.55,
-            HOME_PALETTE[0][2] + (HOME_PALETTE[1][2] - HOME_PALETTE[0][2]) * t * 0.55,
+            HOME_PALETTE[0][0] + (HOME_PALETTE[1][0] - HOME_PALETTE[0][0]) * f,
+            HOME_PALETTE[0][1] + (HOME_PALETTE[1][1] - HOME_PALETTE[0][1]) * f,
+            HOME_PALETTE[0][2] + (HOME_PALETTE[1][2] - HOME_PALETTE[0][2]) * f,
         ];
         rects.push(RectRun {
             x: 0.0,
@@ -1543,24 +1548,6 @@ pub fn home_frame<'a>(
             w,
             h: h / bands as f32 + 1.0,
             rgba: [c[0], c[1], c[2], 1.0],
-        });
-    }
-
-    // The gold-HOARD pile (seedHoard) — coins fill from the surface down; level rides the balance.
-    let level = crate::hoard::hoard_level(save.gold);
-    for coin in crate::hoard::seed_hoard(level, 0x601d, &[], 480) {
-        let s = coin.size as f32 * (w / 430.0);
-        rects.push(RectRun {
-            x: coin.x as f32 * w - s / 2.0,
-            y: coin.y as f32 * h - s / 2.0,
-            w: s,
-            h: s * coin.aspect as f32,
-            rgba: [
-                coin.r as f32 / 255.0,
-                coin.g as f32 / 255.0,
-                coin.b as f32 / 255.0,
-                1.0,
-            ],
         });
     }
 
@@ -1587,7 +1574,7 @@ pub fn home_frame<'a>(
 
     // Daily-event banner (name + countdown + "Again").
     let ev = crate::event_play::live_event(now_ms);
-    let (by, bh) = (h * 0.055, h * 0.06);
+    let (by, bh) = (h * 0.048, h * 0.088);
     rects.push(RectRun {
         x: margin,
         y: by,
@@ -1595,21 +1582,30 @@ pub fn home_frame<'a>(
         h: bh,
         rgba: INK,
     });
+    // Eyebrow · title · countdown (web's 3-line banner structure).
     let (q, _) = fonts.tiny.layout(
-        &format!("Today's event — {}", ev.name),
+        "TODAY'S EVENT",
         margin + col_w * 0.03,
-        by + bh * 0.16,
+        by + bh * 0.12,
         col_w,
     );
     texts.push(TextRun {
         atlas: &fonts.tiny,
+        quads: q,
+        rgba: DIM,
+    });
+    let (q, _) = fonts
+        .body
+        .layout(&ev.name, margin + col_w * 0.03, by + bh * 0.36, col_w * 0.7);
+    texts.push(TextRun {
+        atlas: &fonts.body,
         quads: q,
         rgba: GOLD,
     });
     let (q, _) = fonts.tiny.layout(
         &format!("new event in {}", event_countdown(now_ms)),
         margin + col_w * 0.03,
-        by + bh * 0.56,
+        by + bh * 0.74,
         col_w,
     );
     texts.push(TextRun {
@@ -1631,45 +1627,205 @@ pub fn home_frame<'a>(
         rgba: INK,
     });
 
-    // Topic grid (over the purple; the connected tree-graph layout is the next refinement).
-    let unlocked: Vec<&progression::Mode> =
-        modes.iter().filter(|m| progress.is_unlocked(m)).collect();
-    let cols = if unlocked.len() > 12 { 3 } else { 2 };
-    let (gtop, gbot, ggap) = (h * 0.135, h * 0.80, w * 0.02);
-    let grows = unlocked.len().div_ceil(cols);
-    let cw = (col_w - ggap * (cols as f32 - 1.0)) / cols as f32;
-    let ch = ((gbot - gtop) / grows as f32 - ggap).clamp(h * 0.02, h * 0.05);
-    for (i, m) in unlocked.iter().enumerate() {
-        let (r, c) = (i / cols, i % cols);
-        let x = margin + c as f32 * (cw + ggap);
-        let y = gtop + r as f32 * (ch + ggap);
-        if y + ch > gbot {
-            break;
-        }
+    // The topic TREE-graph (web's signature home view; `main.js techGraph`/`topicParts`/`renderTree`).
+    // Build the SPINE (the main chain, the topics whose unlock is NOT a mastery gate, ordered by
+    // following the `Played(prev)` chain from the always-open root) and the BRANCH map (`Mastered(X)`
+    // → the topic gated on mastering X). Each spine topic is a ROW; its 1–N PARTS run left→right
+    // following the branch chain; a thin amber CHAIN connector drops to the next spine row, a purple
+    // MASTERY connector sits between parts. Lower rows fall behind the hoard + bottom card (the web
+    // tree scrolls under the fixed bottom UI), so the top ~8 rows read like the reference.
+    let spine = home_spine(modes);
+    let branch_of = home_branches(modes);
+    let tree_top = h * 0.15;
+    let row_pitch = h * 0.064;
+    let node_w = w * 0.165;
+    let node_h = h * 0.046;
+    let hgap = w * 0.012;
+    let cx = w / 2.0;
+    // Tree rows that would fall into the card/pile region are clipped (the web tree scrolls under the
+    // fixed bottom UI); the visible top ~8 rows read like the reference.
+    let card_top = h * 0.66;
+    let row_visible = |i: usize| tree_top + i as f32 * row_pitch + node_h <= card_top;
+
+    // The gold-HOARD pile (seedHoard), drawn BEHIND the tree — confined to a bottom band (the coins
+    // bank up the side walls and dip in the middle); the bottom card paints over its crest.
+    let level = crate::hoard::hoard_level(save.gold);
+    let band_top = 0.34; // the pile's wall crest reaches ~⅓ up; the mass sits in the bottom ⅔.
+
+    // The pile's BULK — a gold-mass gradient under the surface coins (the "imply the bulk, render the
+    // surface" trick). Web's bottom is near-solid gold; without this the purple backdrop shows through
+    // the coin gaps. Ramps from transparent at the pile crest to a deep gold floor. Scaled by the
+    // hoard `level` so a poorer save shows less mass.
+    let mass_top = 0.46;
+    let mbands = 16;
+    for i in 0..mbands {
+        let yc = mass_top + (i as f32 + 0.5) / mbands as f32 * (1.0 - mass_top);
+        let tt = (yc - mass_top) / (1.0 - mass_top);
+        let a = (0.15 + tt * 1.05).clamp(0.0, 1.0) * level as f32;
+        let g0 = [120.0 / 255.0, 84.0 / 255.0, 22.0 / 255.0]; // deep gold (GOLD_TONES darkest)
+        let g1 = [156.0 / 255.0, 112.0 / 255.0, 34.0 / 255.0];
+        let c = [
+            g0[0] + (g1[0] - g0[0]) * tt,
+            g0[1] + (g1[1] - g0[1]) * tt,
+            g0[2] + (g1[2] - g0[2]) * tt,
+        ];
         rects.push(RectRun {
-            x,
-            y,
-            w: cw,
-            h: ch,
-            rgba: INK,
+            x: 0.0,
+            y: h * (mass_top + i as f32 / mbands as f32 * (1.0 - mass_top)),
+            w,
+            h: h * (1.0 - mass_top) / mbands as f32 + 1.0,
+            rgba: [c[0], c[1], c[2], a],
         });
-        let col = if progress.is_mastered(&m.id) {
-            GREEN
+    }
+    for coin in crate::hoard::seed_hoard(level, 0x601d, &[], 480) {
+        let s = coin.size as f32 * (w / 430.0);
+        let cyn = band_top + coin.y as f32 * (1.0 - band_top);
+        rects.push(RectRun {
+            x: coin.x as f32 * w - s / 2.0,
+            y: cyn * h - s / 2.0,
+            w: s,
+            h: s * coin.aspect as f32,
+            rgba: [
+                coin.r as f32 / 255.0,
+                coin.g as f32 / 255.0,
+                coin.b as f32 / 255.0,
+                1.0,
+            ],
+        });
+    }
+
+    // The topic TREE on top of the pile.
+    for (i, m) in spine.iter().enumerate() {
+        if !row_visible(i) {
+            break; // rows are top-to-bottom; the rest are below the fold.
+        }
+        let parts = topic_parts(m, &branch_of);
+        let n = parts.len() as f32;
+        let total_w = n * node_w + (n - 1.0) * hgap;
+        let mut nx = cx - total_w / 2.0;
+        let ny = tree_top + i as f32 * row_pitch;
+        for (j, p) in parts.iter().enumerate() {
+            if j > 0 {
+                // Horizontal MASTERY connector (purple) before this part.
+                rects.push(RectRun {
+                    x: nx - hgap * 0.95,
+                    y: ny + node_h * 0.45,
+                    w: hgap * 0.9,
+                    h: node_h * 0.12,
+                    rgba: [
+                        HOME_PALETTE[2][0],
+                        HOME_PALETTE[2][1],
+                        HOME_PALETTE[2][2],
+                        if progress.is_unlocked(p) { 0.9 } else { 0.35 },
+                    ],
+                });
+            }
+            home_node(
+                &mut rects, &mut texts, fonts, save, progress, p, nx, ny, node_w, node_h,
+            );
+            nx += node_w + hgap;
+        }
+        // Vertical CHAIN connector (amber) down to the next spine row (only if it too is visible).
+        if i + 1 < spine.len() && row_visible(i + 1) {
+            let lit = progress.is_unlocked(spine[i + 1]);
+            rects.push(RectRun {
+                x: cx - w * 0.004,
+                y: ny + node_h,
+                w: w * 0.008,
+                h: row_pitch - node_h,
+                rgba: [GOLD[0], GOLD[1], GOLD[2], if lit { 0.85 } else { 0.3 }],
+            });
+        }
+    }
+
+    // The current-topic card on the pile (web's "<glyph> <name>  N/N · best…" footer card).
+    let card = spine.first().copied().unwrap_or(&modes[0]);
+    let (cy, chh) = (h * 0.665, h * 0.085);
+    rects.push(RectRun {
+        x: margin,
+        y: cy,
+        w: col_w,
+        h: chh,
+        rgba: INK,
+    });
+    home_glyph(
+        &mut rects,
+        card.id.as_str(),
+        margin + col_w * 0.02,
+        cy + chh * 0.2,
+        col_w * 0.14,
+        chh * 0.6,
+        false,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: fonts
+            .body
+            .layout(
+                &card.name,
+                margin + col_w * 0.2,
+                cy + chh * 0.18,
+                col_w * 0.6,
+            )
+            .0,
+        rgba: GOLD,
+    });
+    let (ch_have, ch_total) = mode_progress(save, &card.id);
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: fonts
+            .tiny
+            .layout(
+                &format!("{ch_have}/{ch_total} · No best yet"),
+                margin + col_w * 0.2,
+                cy + chh * 0.58,
+                col_w * 0.7,
+            )
+            .0,
+        rgba: DIM,
+    });
+
+    // Start / Practice / Guide — Start is the SOLID-gold primary (V17), the rest outlined.
+    let cta_labels = ["Start", "Practice", "Guide"];
+    let cgap = w * 0.02;
+    let cw3 = (col_w - cgap * 2.0) / 3.0;
+    let (cty, cth) = (h * 0.785, h * 0.06);
+    for (i, label) in cta_labels.iter().enumerate() {
+        let bx = margin + i as f32 * (cw3 + cgap);
+        if i == 0 {
+            rects.push(RectRun {
+                x: bx,
+                y: cty,
+                w: cw3,
+                h: cth,
+                rgba: GOLD,
+            });
+            texts.push(TextRun {
+                atlas: &fonts.key,
+                quads: centered(&fonts.key, label, bx + cw3 / 2.0, cty, cth),
+                rgba: INK,
+            });
         } else {
-            GOLD
-        };
-        let short: String = m.name.chars().take(12).collect();
-        let (q, _) = fonts.tiny.layout(
-            &short,
-            x + cw * 0.07,
-            y + ch / 2.0 - 0.59 * fonts.tiny.px,
-            cw,
-        );
-        texts.push(TextRun {
-            atlas: &fonts.tiny,
-            quads: q,
-            rgba: col,
-        });
+            rects.push(RectRun {
+                x: bx,
+                y: cty,
+                w: cw3,
+                h: cth,
+                rgba: [GOLD[0], GOLD[1], GOLD[2], 0.5],
+            });
+            rects.push(RectRun {
+                x: bx + 2.0,
+                y: cty + 2.0,
+                w: cw3 - 4.0,
+                h: cth - 4.0,
+                rgba: KEYBG,
+            });
+            texts.push(TextRun {
+                atlas: &fonts.key,
+                quads: centered(&fonts.key, label, bx + cw3 / 2.0, cty, cth),
+                rgba: GOLD,
+            });
+        }
     }
 
     // Bottom nav row.
@@ -1692,6 +1848,191 @@ pub fn home_frame<'a>(
         });
     }
     (rects, texts)
+}
+
+/// The home tree's SPINE: the main chain (topics whose unlock is not a mastery gate), ordered by
+/// following the `Played(prev)` chain from the always-open root, then any orphans appended. Mirrors
+/// `main.js techGraph` `order`.
+fn home_spine(modes: &[progression::Mode]) -> Vec<&progression::Mode> {
+    use progression::Unlock;
+    let spine_modes: Vec<&progression::Mode> = modes
+        .iter()
+        .filter(|m| !matches!(m.unlock, Unlock::Mastered(_)))
+        .collect();
+    let mut order: Vec<&progression::Mode> = Vec::new();
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut cur = spine_modes
+        .iter()
+        .find(|m| matches!(m.unlock, Unlock::Always))
+        .or_else(|| spine_modes.first())
+        .copied();
+    while let Some(c) = cur {
+        if seen.contains(c.id.as_str()) {
+            break;
+        }
+        order.push(c);
+        seen.insert(c.id.as_str());
+        let last = order[order.len() - 1].id.as_str();
+        cur = spine_modes
+            .iter()
+            .find(|m| matches!(&m.unlock, Unlock::Played(x) if x == last))
+            .copied();
+    }
+    for m in &spine_modes {
+        if seen.insert(m.id.as_str()) {
+            order.push(m);
+        }
+    }
+    order
+}
+
+/// The branch map: `id → the topic whose unlock is `Mastered(id)`` (the off-spine part-chain edges).
+fn home_branches(
+    modes: &[progression::Mode],
+) -> std::collections::HashMap<&str, &progression::Mode> {
+    let mut m = std::collections::HashMap::new();
+    for mode in modes {
+        if let progression::Unlock::Mastered(x) = &mode.unlock {
+            m.insert(x.as_str(), mode);
+        }
+    }
+    m
+}
+
+/// The full part-chain for a spine topic: `[m, branch_of[m], branch_of[that], …]` (`main.js topicParts`).
+fn topic_parts<'a>(
+    m: &'a progression::Mode,
+    branch_of: &std::collections::HashMap<&str, &'a progression::Mode>,
+) -> Vec<&'a progression::Mode> {
+    let mut parts = vec![m];
+    let mut cur = m;
+    while let Some(next) = branch_of.get(cur.id.as_str()) {
+        parts.push(next);
+        cur = next;
+    }
+    parts
+}
+
+/// Per-topic collection progress (`have`/`total`) — `main.js modeProgress`: the catalogue items
+/// tagged with this topic's `modeId`, and how many the save has collected.
+fn mode_progress(save: &Save, mode_id: &str) -> (usize, usize) {
+    let items: Vec<String> = crate::catalogue::catalog()
+        .into_iter()
+        .filter(|c| c.mode_id.as_deref() == Some(mode_id))
+        .map(|c| c.id)
+        .collect();
+    let have = items.iter().filter(|id| save.has(id)).count();
+    (have, items.len())
+}
+
+/// Paint one topic glyph (the `glyphs.rs` ink grid) as little squares inside the box, body
+/// `#E6E9EF` / accent `#F5B544` (dimmed when locked).
+fn home_glyph(
+    rects: &mut Vec<RectRun>,
+    id: &str,
+    gx: f32,
+    gy: f32,
+    gw: f32,
+    gh: f32,
+    locked: bool,
+) {
+    let g = crate::glyphs::build_grid(crate::glyphs::topic_glyph(id));
+    if g.w == 0 {
+        return;
+    }
+    let cell = (gw / g.w as f32).min(gh / g.h as f32).floor().max(1.0);
+    let ox = gx + ((gw - cell * g.w as f32) / 2.0).floor();
+    let oy = gy + ((gh - cell * g.h as f32) / 2.0).floor();
+    let body = if locked {
+        [0.55, 0.55, 0.62, 1.0]
+    } else {
+        [230.0 / 255.0, 233.0 / 255.0, 239.0 / 255.0, 1.0]
+    };
+    let accent = if locked {
+        [0.5, 0.45, 0.55, 1.0]
+    } else {
+        [245.0 / 255.0, 181.0 / 255.0, 68.0 / 255.0, 1.0]
+    };
+    for y in 0..g.h {
+        for x in 0..g.w {
+            let v = g.cells[y * g.w + x];
+            if v == 0 {
+                continue;
+            }
+            rects.push(RectRun {
+                x: ox + x as f32 * cell,
+                y: oy + y as f32 * cell,
+                w: cell,
+                h: cell,
+                rgba: if v == 2 { accent } else { body },
+            });
+        }
+    }
+}
+
+/// One tree node: a dark card with the topic glyph, a state badge (green ✓ when mastered), and the
+/// `have/total` progress. Locked topics render dimmer.
+#[allow(clippy::too_many_arguments)]
+fn home_node<'a>(
+    rects: &mut Vec<RectRun>,
+    texts: &mut Vec<TextRun<'a>>,
+    fonts: &'a Fonts,
+    save: &Save,
+    progress: &progression::Progress,
+    m: &progression::Mode,
+    x: f32,
+    y: f32,
+    nw: f32,
+    nh: f32,
+) {
+    let unlocked = progress.is_unlocked(m);
+    let mastered = progress.is_mastered(&m.id);
+    let fill = if unlocked {
+        [28.0 / 255.0, 24.0 / 255.0, 42.0 / 255.0, 1.0]
+    } else {
+        [18.0 / 255.0, 14.0 / 255.0, 26.0 / 255.0, 1.0]
+    };
+    rects.push(RectRun {
+        x,
+        y,
+        w: nw,
+        h: nh,
+        rgba: fill,
+    });
+    // The glyph in the upper portion of the node.
+    home_glyph(
+        rects,
+        &m.id,
+        x + nw * 0.06,
+        y + nh * 0.08,
+        nw * 0.88,
+        nh * 0.5,
+        !unlocked,
+    );
+    // Progress + state badge along the bottom.
+    let (have, total) = mode_progress(save, &m.id);
+    let prog_col = if mastered { GOLD } else { DIM };
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(
+            &fonts.tiny,
+            &format!("{have}/{total}"),
+            x + nw / 2.0,
+            y + nh * 0.62,
+            nh * 0.3,
+        ),
+        rgba: prog_col,
+    });
+    if mastered {
+        texts.push(TextRun {
+            atlas: &fonts.key,
+            quads: fonts
+                .key
+                .layout("✓", x + nw - nh * 0.5, y + nh * 0.02, nh)
+                .0,
+            rgba: GREEN,
+        });
+    }
 }
 
 /// Draw the shared bottom button (a gold bar with a dark inked label).
@@ -3005,10 +3346,12 @@ pub fn render_home_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
     let modes = progression::modes();
+    let sample = full_collection_sample();
+    let progress = sample.progress();
     let (rects, texts) = home_frame(
-        &full_collection_sample(),
+        &sample,
         &modes,
-        &all_unlocked(),
+        &progress,
         EVENT_SAMPLE_NOW_MS,
         &fonts,
         w,

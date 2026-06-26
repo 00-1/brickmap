@@ -81,6 +81,10 @@ pub mod gold;
 // Pure: surface-coin placement (mound profile + xorshift scatter); the screen paints the coins.
 pub mod hoard;
 
+// The topic pixel-glyphs (`glyphs.js` + `modes.js TOPIC_GLYPHS`) — the operator marks (`×/2`, `a×b`,
+// …) drawn in the Home tree's nodes. Pure: token DSL → ink-code grid; the screen paints the cells.
+pub mod glyphs;
+
 // Phase 4 (audio): the sound effects re-authored from sound.js as pure sample buffers (same DSP
 // style as scraped-again's Drone). Perceptual parity is owner-by-ear; tests gate the mechanics.
 pub mod sfx;
