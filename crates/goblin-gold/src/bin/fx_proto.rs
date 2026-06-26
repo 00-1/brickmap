@@ -157,7 +157,7 @@ fn main() {
     );
     println!("wrote inventory-awards-brickmap (430x880 visual-ref)");
 
-    // The Home hub at the web reference aspect → halves visual-ref.
+    // The Home hub at the web reference aspect → halves visual-ref (full + fresh + mid-progress).
     let home_ref = app::render_home_ref(&painter, &font);
     write_png(
         &format!("{out_dir}/home-brickmap.png"),
@@ -165,7 +165,21 @@ fn main() {
         app::REF_H,
         &home_ref,
     );
-    println!("wrote home-brickmap (430x880 visual-ref)");
+    let home_fresh = app::render_home_fresh_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/home-fresh-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &home_fresh,
+    );
+    let home_mid = app::render_home_midprogress_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/home-midprogress-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &home_mid,
+    );
+    println!("wrote home-brickmap + home-fresh + home-midprogress (430x880 visual-ref)");
 
     // The Results screen at the web reference aspect → halves visual-ref.
     let results_ref = app::render_results_ref(&painter, &font);

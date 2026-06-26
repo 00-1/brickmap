@@ -1621,9 +1621,21 @@ pub fn home_frame<'a>(
         h: bh * 0.6,
         rgba: GOLD,
     });
+    // "Again" once today's event is cleared (the `event:<id>` reward key is in the save), else "Play".
+    let ev_label = if save.has(&format!("event:{}", ev.id)) {
+        "Again"
+    } else {
+        "Play"
+    };
     texts.push(TextRun {
         atlas: &fonts.tiny,
-        quads: centered(&fonts.tiny, "Again", ax + aw / 2.0, by + bh * 0.2, bh * 0.6),
+        quads: centered(
+            &fonts.tiny,
+            ev_label,
+            ax + aw / 2.0,
+            by + bh * 0.2,
+            bh * 0.6,
+        ),
         rgba: INK,
     });
 
@@ -3408,25 +3420,67 @@ pub fn render_topic_select_full(painter: &crate::headless::Painter, font: &FontR
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
-/// Render the **Home** hub at the web reference aspect (430×880) — committed to halves as
-/// `visual-ref/home-brickmap.png`. (A progressed save: gold + every topic unlocked.)
-pub fn render_home_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+/// The synced `capture-states.json` — the exact localStorage `collected` states the web visual refs
+/// were captured with (+ the shared `gold`). Lets the state-dependent refs render against the SAME
+/// data as the web (N6), so the compare reflects VISUAL diffs only.
+const CAPTURE_STATES_JSON: &str = include_str!("../data/gg1/capture-states.json");
+
+/// Build a [`Save`] from a named capture state (`full`/`empty`/`sample`/`partial`): its `collected`
+/// keys + the shared `gold` balance.
+fn save_from_capture(state: &str) -> Save {
+    let v: serde_json::Value =
+        serde_json::from_str(CAPTURE_STATES_JSON).expect("capture-states.json");
+    let mut s = Save::default();
+    if let Some(obj) = v.get(state).and_then(|x| x.as_object()) {
+        let mut ts = 1u64;
+        for k in obj.keys() {
+            s.mark(k, ts);
+            ts += 1;
+        }
+    }
+    s.gold = v
+        .get("gold")
+        .and_then(|g| g.as_str())
+        .and_then(|g| g.parse().ok())
+        .unwrap_or(0.0);
+    s
+}
+
+/// Render the **Home** hub for a given save at the web reference aspect (430×880).
+fn render_home_with(
+    painter: &crate::headless::Painter,
+    font: &FontRef<'_>,
+    save: &Save,
+) -> Vec<u8> {
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
     let modes = progression::modes();
+    let progress = save.progress();
+    let (rects, texts) = home_frame(save, &modes, &progress, EVENT_SAMPLE_NOW_MS, &fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render the **Home** hub (fully-progressed `full` capture state) — committed to halves as
+/// `visual-ref/home-brickmap.png`. Gold + every topic unlocked/mastered + the cleared event.
+pub fn render_home_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let mut sample = full_collection_sample();
     sample.gold = 987_654_321.0; // the exact `capture-states.json` home balance ("988M" + ~½ pile).
-    let progress = sample.progress();
-    let (rects, texts) = home_frame(
-        &sample,
-        &modes,
-        &progress,
-        EVENT_SAMPLE_NOW_MS,
-        &fonts,
-        w,
-        h,
-    );
-    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+    render_home_with(painter, font, &sample)
+}
+
+/// Render the **Home** hub for a NEW player (`empty` capture state → only the root topic unlocked,
+/// every other node locked, "Play" event) — `visual-ref/home-fresh-brickmap.png`.
+pub fn render_home_fresh_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    render_home_with(painter, font, &save_from_capture("empty"))
+}
+
+/// Render the **Home** hub MID-GAME (`sample` capture state → a few topics unlocked/mastered, the
+/// rest locked) — `visual-ref/home-midprogress-brickmap.png`.
+pub fn render_home_midprogress_ref(
+    painter: &crate::headless::Painter,
+    font: &FontRef<'_>,
+) -> Vec<u8> {
+    render_home_with(painter, font, &save_from_capture("sample"))
 }
 
 /// A representative save for the Collection golden — a player who's made some progress, so earned
