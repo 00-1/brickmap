@@ -124,6 +124,36 @@ impl Drill {
         }
     }
 
+    /// Build the drill for a daily **event** from its deterministic gauntlet
+    /// ([`crate::event_play::build_gauntlet`]) — the themed, seed-shuffled question set (no submit
+    /// key, same auto-accept loop). The name/tag come from the live event itself, not `modes.json`
+    /// (a gauntlet spans several topics). Panics on an unknown event id.
+    pub fn from_gauntlet(eid: &str) -> Drill {
+        let ev = crate::event_play::roster()
+            .into_iter()
+            .find(|e| e.id == eid)
+            .unwrap_or_else(|| panic!("unknown event `{eid}`"));
+        let questions: Vec<Question> = crate::event_play::build_gauntlet(eid)
+            .into_iter()
+            .map(|gq| Question {
+                prompt: gq.p,
+                answer: gq.a,
+            })
+            .collect();
+        assert!(!questions.is_empty(), "empty gauntlet for {eid}");
+        Drill {
+            name: ev.name,
+            tag: ev.theme,
+            questions,
+            idx: 0,
+            typed: String::new(),
+            last: None,
+            revealed: None,
+            solved: 0,
+            skipped: 0,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.questions.len()
     }

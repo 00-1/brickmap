@@ -521,15 +521,23 @@ pub struct Fonts {
     tiny: Atlas,
 }
 
+/// Non-ASCII glyphs the game's text uses beyond printable ASCII: the math operators that appear in
+/// drill prompts (`−` U+2212 minus · `×` times · `÷` divide · `²` squared), the `·` middot that
+/// separates inline stat/label fields, and the `—`/`–` dashes used in event blurbs. Baked into every
+/// prose face so prompts like "91 − 37" and blurbs like "bondfire — close …" render their symbols
+/// (the default atlas is ASCII-only).
+const GLYPHS: &str = "−×÷²·—–";
+
 impl Fonts {
     pub fn bake(font: &FontRef<'_>, h: f32) -> Fonts {
         Fonts {
-            head: Atlas::bake(font, (h * 0.045).clamp(20.0, 120.0)),
-            q: Atlas::bake(font, (h * 0.044).clamp(20.0, 120.0)),
-            body: Atlas::bake(font, (h * 0.030).clamp(16.0, 80.0)),
+            head: Atlas::bake_chars(font, (h * 0.045).clamp(20.0, 120.0), GLYPHS),
+            q: Atlas::bake_chars(font, (h * 0.044).clamp(20.0, 120.0), GLYPHS),
+            body: Atlas::bake_chars(font, (h * 0.030).clamp(16.0, 80.0), GLYPHS),
             key: Atlas::bake_chars(font, (h * 0.034).clamp(16.0, 90.0), "✓⌫"),
-            // The build-watermark face — small, just digits/hex/punctuation.
-            tiny: Atlas::bake(font, (h * 0.018).clamp(11.0, 40.0)),
+            // The build-watermark + chip face — small; also carries the math/middot glyphs for the
+            // stat lines and gauntlet-size strings rendered at this size.
+            tiny: Atlas::bake_chars(font, (h * 0.018).clamp(11.0, 40.0), GLYPHS),
         }
     }
 }
@@ -587,6 +595,22 @@ fn scene_for(screen: Screen) -> &'static str {
     }
 }
 
+/// The wall clock as UTC epoch milliseconds (`u64` for save timestamps).
+fn now_ms_u64() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// The wall clock as UTC epoch milliseconds (`i64` for the event schedule, which floors over it).
+fn now_ms_i64() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// The full-width bottom button shared by Select ("Collection") and Collection ("Back"): its rect.
 fn bottom_button(w: f32, h: f32) -> (f32, f32, f32, f32) {
     let bw = w * 0.6;
@@ -630,6 +654,11 @@ struct App {
     arena_party: Vec<String>,
     /// The most recent Arena battle outcome — shown as a banner on the Arena screen.
     last_arena: Option<crate::save::ArenaOutcome>,
+    /// The id of the daily event the current drill is a gauntlet for (`None` = an ordinary topic
+    /// drill). Routes [`finish_round`](App::finish_round) to the event award instead of the topic one.
+    current_event: Option<String>,
+    /// The most recent finished event-play run — shown as a banner on the Daily-Event screen.
+    last_event: Option<EventOutcome>,
     keypad: Keypad,
     cursor: (f32, f32),
     fx_start: Option<Instant>,
@@ -668,6 +697,8 @@ impl App {
             last_outcome: None,
             arena_party: Vec::new(),
             last_arena: None,
+            current_event: None,
+            last_event: None,
             keypad: Keypad::layout(0.0, 0.0, 1.0, 1.0, 0.0),
             cursor: (0.0, 0.0),
             fx_start: None,
@@ -703,6 +734,56 @@ impl App {
         self.sfx(crate::sfx::Sfx::RoundStart);
     }
 
+    /// Start the daily **event** gauntlet for `eid`: build the deterministic gauntlet drill, flag the
+    /// round as an event (so [`finish_round`](App::finish_round) awards event tiers, not topic gold),
+    /// and switch to the drill screen. The drill loop/UI is shared with topic play.
+    fn start_event(&mut self, eid: &str) {
+        self.drill = Some(Drill::from_gauntlet(eid));
+        self.current_event = Some(eid.to_string());
+        self.current = None;
+        let now = Instant::now();
+        self.round_start = Some(now);
+        self.q_start = Some(now);
+        self.round_steps = Vec::new();
+        self.fx_start = None;
+        self.screen = Screen::Drill;
+        self.sfx(crate::sfx::Sfx::RoundStart);
+    }
+
+    /// Fold a finished event gauntlet into the save: grant the `eventTiersEarned` keys (participation
+    /// / well ≥ 0.7 / ace = flawless) — **no gold**, the reward IS the buff — then show the outcome
+    /// banner back on the Daily-Event screen.
+    fn finish_event(&mut self, eid: &str) {
+        let total = self.drill.as_ref().map(|d| d.len() as u32).unwrap_or(0);
+        let score = self.drill.as_ref().map(|d| d.solved()).unwrap_or(0);
+        let ts = now_ms_u64();
+        self.save.award_event(eid, score, total, ts);
+        self.progress = self.save.progress();
+        if let Some(store) = &self.store {
+            let _ = self.save.store(store);
+        }
+        let keys = crate::event_play::event_tiers_earned(eid, score, total);
+        let name = crate::event_play::roster()
+            .into_iter()
+            .find(|e| e.id == eid)
+            .map(|e| e.name)
+            .unwrap_or_else(|| eid.to_string());
+        self.last_event = Some(EventOutcome {
+            name,
+            score,
+            total,
+            well: keys.iter().any(|k| k.ends_with(":well")),
+            ace: keys.iter().any(|k| k.ends_with(":ace")),
+        });
+        self.drill = None;
+        self.round_start = None;
+        self.q_start = None;
+        self.round_steps = Vec::new();
+        self.fx_start = None;
+        self.screen = Screen::Events;
+        self.sfx(crate::sfx::Sfx::RoundComplete);
+    }
+
     /// Fire a one-shot SFX through the audio engine (a no-op when there's no output device).
     fn sfx(&self, e: crate::sfx::Sfx) {
         if let Some(a) = &self.audio {
@@ -723,6 +804,11 @@ impl App {
     /// Fold the finished round into progression (initiation + mastery) and return to the topic
     /// list — where any newly-unlocked topics now appear.
     fn finish_round(&mut self) {
+        // A daily-event gauntlet awards event tiers (no gold) and returns to the Daily-Event screen.
+        if let Some(eid) = self.current_event.take() {
+            self.finish_event(&eid);
+            return;
+        }
         let total = self.drill.as_ref().map(|d| d.len() as u32).unwrap_or(0);
         // Answered = solved (skipped questions don't count): initiation needs ≥ half answered, and
         // mastery needs zero skips, so the skip count feeds straight into progression.
@@ -802,13 +888,26 @@ impl App {
                         self.arena_party.clear();
                         self.last_arena = None;
                     }
+                    // Fresh Daily-Event visit → clear any stale run banner.
+                    if next == Screen::Events {
+                        self.last_event = None;
+                    }
                     self.screen = next;
                 }
             }
             // The drill-down screens return to the Collection via their Back button.
-            Screen::Ladder | Screen::Events | Screen::Items => {
+            Screen::Ladder | Screen::Items => {
                 if hit_bottom_button(w, h, x, y) {
                     self.screen = Screen::Collection;
+                }
+            }
+            Screen::Events => {
+                if hit_bottom_button(w, h, x, y) {
+                    self.screen = Screen::Collection;
+                } else if event_play_cta_hit(w, h, x, y) {
+                    // Play today's live event → its gauntlet drill.
+                    let eid = crate::event_play::live_event(now_ms_i64()).id;
+                    self.start_event(&eid);
                 }
             }
             Screen::Arena => {
@@ -937,7 +1036,14 @@ impl App {
                 (r, t, None)
             }
             Screen::Events => {
-                let (r, t) = events_frame(&self.save, fonts, w, h);
+                let (r, t) = event_play_frame(
+                    &self.save,
+                    now_ms_i64(),
+                    self.last_event.as_ref(),
+                    fonts,
+                    w,
+                    h,
+                );
                 (r, t, None)
             }
             Screen::Items => {
@@ -1713,36 +1819,207 @@ pub fn heroes_frame<'a>(
     list_screen("Heroes", "the Arena roster", &rows, fonts, w, h)
 }
 
-/// The **Events** drill-down: the 14 daily events, those with a reward earned shown in green.
-pub fn events_frame<'a>(
+/// The banner shown on the Daily-Event screen after a finished gauntlet run — the event, the
+/// score, and which reward tier it cleared.
+pub struct EventOutcome {
+    pub name: String,
+    pub score: u32,
+    pub total: u32,
+    /// Cleared the "well played" tier (≥ 70% solved).
+    pub well: bool,
+    /// A flawless run (every question solved).
+    pub ace: bool,
+}
+
+impl EventOutcome {
+    /// The headline reward tier reached (flawless ▸ well-played ▸ completed).
+    fn tier_label(&self) -> &'static str {
+        if self.ace {
+            "Flawless!"
+        } else if self.well {
+            "Well played!"
+        } else {
+            "Completed"
+        }
+    }
+}
+
+/// Format the time remaining until the next UTC day rotates the live event: `"9h 30m"` / `"45m"`.
+fn event_countdown(now_ms: i64) -> String {
+    let day = crate::event_play::day_ms();
+    let rem = day - now_ms.rem_euclid(day);
+    let (h, m) = (rem / 3_600_000, (rem % 3_600_000) / 60_000);
+    if h > 0 {
+        format!("{h}h {m}m")
+    } else {
+        format!("{m}m")
+    }
+}
+
+/// The **Daily Event** (event-play) screen: today's live event — its F4 crest banner, theme/rarity,
+/// blurb, the gauntlet size, the three reward tiers (earned vs locked), a countdown to the next
+/// rotation, and a **Play** CTA that launches the gauntlet drill. `now_ms` (UTC epoch ms) is injected
+/// so the render is deterministic — the live app passes the wall clock; the golden a fixed sample.
+pub fn event_play_frame<'a>(
     save: &Save,
+    now_ms: i64,
+    last: Option<&EventOutcome>,
     fonts: &'a Fonts,
     w: f32,
     h: f32,
 ) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
-    let keys: Vec<&str> = save.collected.keys().map(String::as_str).collect();
-    let touched: std::collections::HashSet<String> = crate::events::touched(keys.iter().copied())
-        .into_iter()
-        .map(|e| e.id)
-        .collect();
-    let evs = crate::events::events();
-    let rows: Vec<(String, String, [f32; 4])> = evs
-        .iter()
-        .map(|e| {
-            let got = touched.contains(&e.id);
-            (
-                e.name.clone(),
-                if got {
-                    "earned".into()
-                } else {
-                    "locked".into()
-                },
-                if got { GREEN } else { DIM },
-            )
-        })
-        .collect();
-    let sub = format!("{} / {} earned", touched.len(), evs.len());
-    list_screen("Daily Events", &sub, &rows, fonts, w, h)
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.05;
+    let col_w = w - margin * 2.0;
+    let ev = crate::event_play::live_event(now_ms);
+    let owned = |k: &str| save.collected.contains_key(k);
+
+    // Title + countdown.
+    let (q, _) = fonts.head.layout("Daily Event", margin, h * 0.028, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: q,
+        rgba: GOLD,
+    });
+    let cd = format!("next in {}", event_countdown(now_ms));
+    let cw = fonts.body.text_width(&cd);
+    let (q, _) = fonts.body.layout(&cd, w - margin - cw, h * 0.043, cw + 4.0);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: DIM,
+    });
+
+    // Crest banner (F4 eventart: a 24×16 colour grid stretched across the column).
+    let (by, bh) = (h * 0.085, h * 0.19);
+    let crest = crate::scenes::eventart_grid(ev.art_seed);
+    paint_colors(&mut rects, &crest, margin, by, col_w / 24.0, bh / 16.0);
+
+    // Event name below the banner, then theme · rarity, then the blurb.
+    let nm = centered(
+        &fonts.head,
+        &ev.name,
+        w / 2.0,
+        by + bh + h * 0.012,
+        h * 0.044,
+    );
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: nm,
+        rgba: BODY,
+    });
+    let tr = format!("{} · {}", ev.theme, ev.rarity);
+    let tline = centered(&fonts.tiny, &tr, w / 2.0, by + bh + h * 0.055, h * 0.03);
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: tline,
+        rgba: GOLD,
+    });
+    let (q, _) = fonts
+        .body
+        .layout(&ev.blurb, margin, by + bh + h * 0.085, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: DIM,
+    });
+
+    // Gauntlet size (below the blurb, which can wrap to two lines).
+    let total: usize = ev.question_mix.iter().map(|m| m.n).sum();
+    let gl = format!("{total} questions across {} topics", ev.question_mix.len());
+    let (q, _) = fonts.body.layout(&gl, margin, by + bh + h * 0.18, col_w);
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: q,
+        rgba: GOLD,
+    });
+
+    // The three reward tiers (participation / well-played / flawless), green once earned.
+    let tiers = [
+        ("Play", &ev.reward, format!("event:{}", ev.id)),
+        ("70%+", &ev.reward_well, format!("event:{}:well", ev.id)),
+        ("Flawless", &ev.reward_ace, format!("event:{}:ace", ev.id)),
+    ];
+    let (ty0, trow, tgap) = (h * 0.56, h * 0.058, h * 0.008);
+    for (i, (tag, name, key)) in tiers.iter().enumerate() {
+        let ry = ty0 + i as f32 * (trow + tgap);
+        let got = owned(key);
+        rects.push(RectRun {
+            x: margin,
+            y: ry,
+            w: col_w,
+            h: trow,
+            rgba: if got { GREEN } else { PANEL },
+        });
+        let lty = ry + trow / 2.0 - 0.59 * fonts.body.px;
+        let (q, _) = fonts.body.layout(
+            &format!("{tag} — {name}"),
+            margin + col_w * 0.04,
+            lty,
+            col_w,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: if got { INK } else { BODY },
+        });
+        let status = if got { "earned" } else { "locked" };
+        let sw = fonts.tiny.text_width(status);
+        let (q, _) = fonts
+            .tiny
+            .layout(status, margin + col_w * 0.96 - sw, lty, sw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: if got { INK } else { DIM },
+        });
+    }
+
+    // Outcome banner (after a finished run).
+    if let Some(o) = last {
+        let msg = format!("{} — {}/{} · {}", o.name, o.score, o.total, o.tier_label());
+        let mw = fonts.body.text_width(&msg);
+        let (q, _) = fonts
+            .body
+            .layout(&msg, w / 2.0 - mw / 2.0, h * 0.805, mw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: GREEN,
+        });
+    }
+
+    // Play CTA (gold) + Back.
+    let (px, py, pw, ph) = event_play_cta(w, h);
+    rects.push(RectRun {
+        x: px,
+        y: py,
+        w: pw,
+        h: ph,
+        rgba: GOLD,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.key,
+        quads: centered(&fonts.key, "Play today's event", px + pw / 2.0, py, ph),
+        rgba: INK,
+    });
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    (rects, texts)
+}
+
+/// The Daily-Event "Play" CTA rect (just above the bottom Back button) — shares geometry with the
+/// Arena Fight bar so the two action screens line up.
+fn event_play_cta(w: f32, h: f32) -> (f32, f32, f32, f32) {
+    let bw = w * 0.6;
+    let bh = h * 0.05;
+    ((w - bw) / 2.0, h * 0.85, bw, bh)
+}
+
+/// Whether (`px`,`py`) hits the Daily-Event Play CTA.
+fn event_play_cta_hit(w: f32, h: f32, px: f32, py: f32) -> bool {
+    let (bx, by, bw, bh) = event_play_cta(w, h);
+    px >= bx && px < bx + bw && py >= by && py < by + bh
 }
 
 /// The **Items** drill-down: the catalogue by category — how many of each the player owns.
@@ -1787,11 +2064,42 @@ pub fn render_heroes(painter: &crate::headless::Painter, font: &FontRef<'_>) -> 
     let (rects, texts) = heroes_frame(&sample_save(), &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
+/// A fixed sample wall-clock for the event-play golden/visual-ref: 2026-06-26 14:30 UTC, which puts
+/// `bondfire-night` (roster index 3) live — the event the sample save has already cleared
+/// (`event:bondfire-night`), so its "Play" tier renders earned — with 9h 30m left on the countdown.
+const EVENT_SAMPLE_NOW_MS: i64 = 1_782_052_200_000;
+
 pub fn render_events(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let (w, h) = (DRILL_W as f32, DRILL_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (rects, texts) = events_frame(&sample_save(), &fonts, w, h);
+    let (rects, texts) = event_play_frame(&sample_save(), EVENT_SAMPLE_NOW_MS, None, &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+/// Render the **gauntlet drill** at the web reference aspect (430×880) — committed to halves as
+/// `visual-ref/event-play-brickmap.png` to sit beside `event-play-web.png` (which captures the
+/// *drill in gauntlet mode*, not a menu). The drill UI is shared with topic play; the heading is the
+/// event name (a gauntlet spans several topics), the progress its size. Rendered mid-run (one solved)
+/// so the "N / M" counter reads like the reference's "1 / 12".
+pub fn render_event_play_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let eid = crate::event_play::live_event(EVENT_SAMPLE_NOW_MS).id;
+    let mut drill = Drill::from_gauntlet(&eid);
+    // Solve the first question so the render shows a mid-gauntlet state (progress advances; the next
+    // prompt is live) — typing its exact answer auto-accepts, no submit key.
+    for c in format!("{}", drill.expected()).chars() {
+        if let Some(k) = Keypad::key_for_char(c) {
+            drill.press(k);
+        }
+    }
+    let margin = w * 0.06;
+    let kp_w = w - margin * 2.0;
+    let kp_h = h * 0.46;
+    let kp_y = h - kp_h - margin;
+    let keypad = Keypad::layout(margin, kp_y, kp_w, kp_h, w * 0.018);
+    let (rects, texts) = drill_frame(&drill, &keypad, &fonts, w, h, None);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 pub fn render_items(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let (w, h) = (DRILL_W as f32, DRILL_H as f32);
@@ -2511,6 +2819,67 @@ mod tests {
             !arena_fight_hit(w, h, 1.0, 1.0),
             "top-left is not the fight bar"
         );
+    }
+
+    /// The event-play screen's sample timestamp puts the cleared event (`bondfire-night`) live, so its
+    /// crest/name/tiers all resolve and the "Play" tier renders earned (the green-tier path is hit).
+    #[test]
+    fn event_play_sample_is_the_cleared_event() {
+        let ev = crate::event_play::live_event(EVENT_SAMPLE_NOW_MS);
+        assert_eq!(ev.id, "bondfire-night");
+        // The sample save owns the participation key for that event.
+        assert!(sample_save()
+            .collected
+            .contains_key(&format!("event:{}", ev.id)));
+        // The countdown is a sane, non-empty remaining-time string.
+        let cd = event_countdown(EVENT_SAMPLE_NOW_MS);
+        assert!(cd.contains('m'), "countdown shows minutes: {cd}");
+        // The frame builds without panicking and emits content.
+        let (w, h) = (REF_W as f32, REF_H as f32);
+        let fonts = Fonts::bake(
+            &FontRef::try_from_slice(crate::FONT_INSTRUMENT_SANS).unwrap(),
+            h,
+        );
+        let (rects, texts) =
+            event_play_frame(&sample_save(), EVENT_SAMPLE_NOW_MS, None, &fonts, w, h);
+        assert!(!rects.is_empty() && !texts.is_empty());
+    }
+
+    /// The Play CTA is hittable at its centre (and a stray corner tap is not) — the renderer and the
+    /// tap-router share `event_play_cta`, so the gauntlet always launches where the button is painted.
+    #[test]
+    fn event_play_cta_is_tappable() {
+        let (w, h) = (DRILL_W as f32, DRILL_H as f32);
+        let (bx, by, bw, bh) = event_play_cta(w, h);
+        assert!(event_play_cta_hit(w, h, bx + bw / 2.0, by + bh / 2.0));
+        assert!(!event_play_cta_hit(w, h, 1.0, 1.0));
+    }
+
+    /// Finishing an event gauntlet folds the right tiers into the save (no gold) and builds the
+    /// outcome banner — a flawless run earns participation + well + ace; the save is unchanged on gold.
+    #[test]
+    fn finishing_an_event_awards_tiers_no_gold() {
+        let eid = "bondfire-night";
+        let g = crate::event_play::build_gauntlet(eid);
+        let total = g.len() as u32;
+        let mut save = Save::default();
+        let gold_before = save.gold;
+        // A flawless run: every gauntlet answer solved.
+        let newly = save.award_event(eid, total, total, 42);
+        assert!(newly.contains(&format!("event:{eid}")));
+        assert!(newly.contains(&format!("event:{eid}:well")));
+        assert!(newly.contains(&format!("event:{eid}:ace")));
+        assert_eq!(save.gold, gold_before, "events pay no gold");
+        // The banner classifies the run as flawless.
+        let keys = crate::event_play::event_tiers_earned(eid, total, total);
+        let o = EventOutcome {
+            name: "Bondfire Night".into(),
+            score: total,
+            total,
+            well: keys.iter().any(|k| k.ends_with(":well")),
+            ace: keys.iter().any(|k| k.ends_with(":ace")),
+        };
+        assert_eq!(o.tier_label(), "Flawless!");
     }
 
     /// The single-column early-game layout (and the initial 1-row golden) must be unchanged: the

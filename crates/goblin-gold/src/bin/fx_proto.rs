@@ -117,6 +117,16 @@ fn main() {
     );
     println!("wrote arena-prefight-brickmap (430x880 visual-ref)");
 
+    // The Daily-Event (event-play) screen at the web reference aspect → committed to halves visual-ref.
+    let event_ref = app::render_event_play_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/event-play-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &event_ref,
+    );
+    println!("wrote event-play-brickmap (430x880 visual-ref)");
+
     // The procedural-art contact sheet (F1 heroes · F2 foes · F3 scenery · F4 crests).
     let art_rgba = app::render_art_sheet(&painter, &font);
     write_png(
