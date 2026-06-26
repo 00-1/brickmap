@@ -127,6 +127,16 @@ fn main() {
     );
     println!("wrote event-play-brickmap (430x880 visual-ref)");
 
+    // The Heroes roster at the web reference aspect (430×880) → committed to halves visual-ref.
+    let heroes_ref = app::render_heroes_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/heroes-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &heroes_ref,
+    );
+    println!("wrote heroes-brickmap (430x880 visual-ref)");
+
     // The procedural-art contact sheet (F1 heroes · F2 foes · F3 scenery · F4 crests).
     let art_rgba = app::render_art_sheet(&painter, &font);
     write_png(

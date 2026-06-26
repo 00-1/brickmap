@@ -1858,27 +1858,178 @@ fn list_screen<'a>(
     (rects, texts)
 }
 
-/// The **Heroes** roster drill-down: each hero with its type and effective stats (base + the boosts
-/// of everything collected — the catalogue→Arena bridge).
+/// The three-letter section label for a hero type (the grouped `BRAWN` / `ARCANE` / `CUNNING`
+/// headers, matching web GG1's `renderHeroes`).
+fn hero_section_label(kind: crate::arena::Kind) -> &'static str {
+    match kind {
+        crate::arena::Kind::Brawn => "BRAWN",
+        crate::arena::Kind::Arcane => "ARCANE",
+        crate::arena::Kind::Cunning => "CUNNING",
+    }
+}
+
+/// How many **owned** items boost hero `id` (the "Boosted by N" line). Mirrors `hero_stats`'
+/// boost filter — an item counts once if its `boost.hero` targets this hero.
+fn boost_count(id: &str, keys: &[&str]) -> usize {
+    crate::catalogue::earned(keys.iter().copied())
+        .into_iter()
+        .filter(|item| item.boost.as_ref().is_some_and(|b| b.hero == id))
+        .count()
+}
+
+/// One laid-out Heroes card row: its type, its rect `(x,y,w,h)`, and whether it's the first card of a
+/// new type group (so the renderer draws a section header above it).
+type HeroCardRow = (crate::arena::Kind, (f32, f32, f32, f32), bool);
+
+/// The Heroes card-list layout: each card's row rect (single column), at a fixed comfortable height
+/// with section headers between type groups. Cards past the frame clip off-screen (the list scrolls
+/// on device — web GG1 captures the top of the same scroll). Shared by [`heroes_frame`] + a future
+/// hit-test for the detail tap.
+fn hero_card_rows(roster: &[crate::arena::Hero], w: f32, h: f32) -> Vec<HeroCardRow> {
+    // (kind, rect, is_first_of_group) — the renderer draws a section header above each group's first.
+    let margin = w * 0.05;
+    let card_h = h * 0.115;
+    let head_h = h * 0.04;
+    let gap = h * 0.014;
+    let mut out = Vec::new();
+    let mut y = h * 0.10;
+    let mut last_kind: Option<crate::arena::Kind> = None;
+    for hero in roster {
+        let first = last_kind != Some(hero.kind);
+        if first {
+            y += head_h;
+            last_kind = Some(hero.kind);
+        }
+        out.push((hero.kind, (margin, y, w - margin * 2.0, card_h), first));
+        y += card_h + gap;
+    }
+    out
+}
+
+/// The **Heroes** roster: a grouped, portrait-rich card list — section headers per type, a pixel
+/// portrait (F1), a type dot + name, the `★`rating, the four **effective** stat chips, and a
+/// "Boosted by N · tap for details" line. Built to the visual-parity bar against `heroes-web.png`.
 pub fn heroes_frame<'a>(
     save: &Save,
     fonts: &'a Fonts,
     w: f32,
     h: f32,
 ) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.05;
+    let col_w = w - margin * 2.0;
     let keys: Vec<&str> = save.collected.keys().map(String::as_str).collect();
-    let rows: Vec<(String, String, [f32; 4])> = crate::arena::roster()
-        .into_iter()
-        .map(|hero| {
-            let s = crate::arena::hero_stats(&hero.id, keys.iter().copied()).unwrap_or(hero.base);
-            (
-                format!("{} ({:?})", hero.name, hero.kind),
-                format!("P{} G{} S{} F{}", s.power, s.guard, s.speed, s.focus),
-                GOLD,
-            )
-        })
-        .collect();
-    list_screen("Heroes", "the Arena roster", &rows, fonts, w, h)
+    let roster = crate::arena::roster();
+
+    // Centred header "Heroes  N / 12".
+    let title = format!("Heroes  {} / {}", roster.len(), roster.len());
+    let tw = fonts.head.text_width(&title);
+    texts.push(TextRun {
+        atlas: &fonts.head,
+        quads: centered(&fonts.head, &title, w / 2.0, h * 0.03, h * 0.05),
+        rgba: GOLD,
+    });
+    let _ = tw;
+
+    for (hero, (kind, (rx, ry, rw, rh), first)) in roster.iter().zip(hero_card_rows(&roster, w, h))
+    {
+        // Section header above each type group's first card.
+        if first {
+            let (q, _) = fonts.tiny.layout(
+                hero_section_label(kind),
+                rx + col_w * 0.005,
+                ry - rh * 0.34,
+                col_w,
+            );
+            texts.push(TextRun {
+                atlas: &fonts.tiny,
+                quads: q,
+                rgba: DIM,
+            });
+        }
+        // Card panel.
+        rects.push(RectRun {
+            x: rx,
+            y: ry,
+            w: rw,
+            h: rh,
+            rgba: PANEL,
+        });
+        // Portrait (F1), boxed on a darker tile to read like the web's 48×48.
+        let tile = rh * 0.84;
+        let tx0 = rx + rh * 0.08;
+        let ty0 = ry + (rh - tile) / 2.0;
+        rects.push(RectRun {
+            x: tx0,
+            y: ty0,
+            w: tile,
+            h: tile,
+            rgba: INK,
+        });
+        let (role, pal) = crate::art::hero_icon(&hero.id, kind);
+        paint_role(&mut rects, &role, &pal, tx0, ty0, tile / 16.0);
+
+        let stats = crate::combat::effective_stats(&hero.id, &keys.iter().copied().collect())
+            .unwrap_or(hero.base);
+        let text_x = tx0 + tile + w * 0.03;
+        // Type dot + name.
+        let dot = rh * 0.13;
+        rects.push(RectRun {
+            x: text_x,
+            y: ry + rh * 0.16,
+            w: dot,
+            h: dot,
+            rgba: type_rgba(kind),
+        });
+        let (q, _) = fonts
+            .body
+            .layout(&hero.name, text_x + dot * 1.6, ry + rh * 0.12, rw);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: BODY,
+        });
+        // ★ rating (right).
+        let rating = format!("* {}", hero_rating(&stats));
+        let rtw = fonts.body.text_width(&rating);
+        let (q, _) =
+            fonts
+                .body
+                .layout(&rating, rx + rw - rtw - w * 0.02, ry + rh * 0.12, rtw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: GOLD,
+        });
+        // Effective stat chips.
+        let chips = format!(
+            "{} PWR   {} GRD   {} SPD   {} FOC",
+            stats.power, stats.guard, stats.speed, stats.focus
+        );
+        let (q, _) = fonts.tiny.layout(&chips, text_x, ry + rh * 0.44, rw - tile);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: BODY,
+        });
+        // Boost line.
+        let n = boost_count(&hero.id, &keys);
+        let boost = if n > 0 {
+            format!("Boosted by {n} · tap for details")
+        } else {
+            "No items yet — collect to boost".to_string()
+        };
+        let (q, _) = fonts.tiny.layout(&boost, text_x, ry + rh * 0.7, rw - tile);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: if n > 0 { GOLD } else { DIM },
+        });
+    }
+
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    (rects, texts)
 }
 
 /// The banner shown on the Daily-Event screen after a finished gauntlet run — the event, the
@@ -2120,11 +2271,51 @@ pub fn items_frame<'a>(
 }
 
 /// Headless renders for the drill-down goldens (the representative sample save).
+/// A **fully-collected** save (every catalogue item owned + a broad progression spread) — the state
+/// the web visual-refs are captured in (everything unlocked + boosted), so Heroes/Items show maxed
+/// effective stats and a full roster, matching `heroes-web.png`.
+fn full_collection_sample() -> Save {
+    let mut s = Save::default();
+    let mut ts = 1u64;
+    let mut mark = |s: &mut Save, k: String| {
+        s.mark(&k, ts);
+        ts += 1;
+    };
+    for m in crate::progression::modes() {
+        for p in ["init", "mastery", "flawless"] {
+            mark(&mut s, format!("{p}:{}", m.id));
+        }
+        for i in 0..4 {
+            mark(&mut s, format!("speed:{}:{i}", m.id));
+        }
+    }
+    for i in 1..=30 {
+        mark(&mut s, format!("collector:{i}"));
+    }
+    for i in 1..=crate::combat::tier_count() {
+        mark(&mut s, format!("tier:{i}"));
+    }
+    for c in crate::catalogue::catalog() {
+        mark(&mut s, c.id.clone());
+    }
+    s.gold = 99_999.0;
+    s
+}
+
 pub fn render_heroes(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let (w, h) = (DRILL_W as f32, DRILL_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (rects, texts) = heroes_frame(&sample_save(), &fonts, w, h);
+    let (rects, texts) = heroes_frame(&full_collection_sample(), &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
+}
+
+/// Render the **Heroes** screen at the web reference aspect (430×880) — committed to halves as
+/// `visual-ref/heroes-brickmap.png` for the Babysitter's side-by-side review.
+pub fn render_heroes_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let (rects, texts) = heroes_frame(&full_collection_sample(), &fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 /// A fixed sample wall-clock for the event-play golden/visual-ref: 2026-06-26 14:30 UTC, which puts
 /// `bondfire-night` (roster index 3) live — the event the sample save has already cleared
@@ -3097,6 +3288,28 @@ mod tests {
             ace: keys.iter().any(|k| k.ends_with(":ace")),
         };
         assert_eq!(o.tier_label(), "Flawless!");
+    }
+
+    /// The Heroes card list lays out one row per hero, grouped by type — exactly three section-firsts
+    /// (one per Brawn/Arcane/Cunning group), and the full-collection sample unlocks every hero so the
+    /// roster + boosted effective stats render (matching the web ref's seeded-everything state).
+    #[test]
+    fn heroes_card_list_groups_by_type() {
+        let roster = crate::arena::roster();
+        let rows = hero_card_rows(&roster, DRILL_W as f32, DRILL_H as f32);
+        assert_eq!(rows.len(), roster.len(), "one card per hero");
+        let firsts = rows.iter().filter(|(_, _, first)| *first).count();
+        assert_eq!(firsts, 3, "one section header per type group");
+        // Every hero is boosted under the full-collection sample (its effective stats lift over base).
+        let save = full_collection_sample();
+        let keys: Vec<&str> = save.collected.keys().map(String::as_str).collect();
+        for hero in &roster {
+            assert!(
+                boost_count(&hero.id, &keys) > 0,
+                "{} should have owned boosts in the full collection",
+                hero.id
+            );
+        }
     }
 
     /// The single-column early-game layout (and the initial 1-row golden) must be unchanged: the
