@@ -197,6 +197,26 @@ fn main() {
     );
     println!("wrote inventory-codex-brickmap (430x880 visual-ref)");
 
+    // The Settings screen (3 nav cards + Danger Zone) → halves visual-ref.
+    let settings_ref = app::render_settings_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/settings-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &settings_ref,
+    );
+    println!("wrote settings-brickmap (430x880 visual-ref)");
+
+    // The drill mid-question (Halves, "1/27 · 1.2s · half of 144") → halves visual-ref.
+    let drill_ref = app::render_drill_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/drill-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &drill_ref,
+    );
+    println!("wrote drill-brickmap (430x880 visual-ref)");
+
     // The Hero Detail screens (one per type) → halves visual-ref. Brannon = Brawn, Wisp = Arcane,
     // Pocket = Cunning — the same 3 heroes the web refs were captured against.
     for (hid, suffix) in [("bram", "brawn"), ("wisp", "arcane"), ("pip", "cunning")] {
