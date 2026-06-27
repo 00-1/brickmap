@@ -61,6 +61,11 @@ pub struct Collectible {
     #[serde(rename = "modeId", default)]
     pub mode_id: Option<String>,
     pub desc: String,
+    /// The procedural flavour name (`collectibles.js uniqueFlavour(id)` — globally unique,
+    /// deterministic per id, e.g. "Cinder-flecked Cabochon of the Cellar"). The screens show THIS
+    /// in detail rows (web's `it.flavour || it.name`), not the bare title in `name`.
+    #[serde(default)]
+    pub flavour: String,
     /// Collect-N threshold (Collector tiers only).
     #[serde(default)]
     pub n: Option<u32>,

@@ -1021,7 +1021,7 @@ impl App {
             }
             Screen::Results => {
                 let (r, t) = match &self.last_outcome {
-                    Some(o) => results_frame(o, fonts, w, h),
+                    Some(o) => results_frame(o, None, fonts, w, h),
                     // Defensive: no outcome (shouldn't happen) → an empty frame.
                     None => (Vec::new(), Vec::new()),
                 };
@@ -2393,6 +2393,7 @@ pub fn render_ladder(painter: &crate::headless::Painter, font: &FontRef<'_>) -> 
 /// then accuracy/time/gold and the count of collectibles earned this run, with a Continue button.
 pub fn results_frame<'a>(
     o: &RoundOutcome,
+    momentum: Option<u32>,
     fonts: &'a Fonts,
     w: f32,
     h: f32,
@@ -2414,6 +2415,45 @@ pub fn results_frame<'a>(
             w: s,
             h: s,
             rgba: [lum, lum, lum * 1.1, 1.0],
+        });
+    }
+
+    // V16: MOMENTUM pill — overlays the FINAL TIME header (web shows "MOMENTUM · N day(s)" when the
+    // streak is positive; nothing when it's zero). A green calendar mark + the count + the label.
+    if let Some(d) = momentum.filter(|d| *d > 0) {
+        let pw = col_w * 0.46;
+        let ph = h * 0.06;
+        let px = cx - pw / 2.0;
+        let py = h * 0.04;
+        rects.push(RectRun {
+            x: px,
+            y: py,
+            w: pw,
+            h: ph,
+            rgba: KEYBG,
+        });
+        // Calendar pip — a small green square (the font has no calendar glyph).
+        let pip = ph * 0.5;
+        rects.push(RectRun {
+            x: px + ph * 0.18,
+            y: py + (ph - pip) / 2.0,
+            w: pip,
+            h: pip,
+            rgba: GREEN,
+        });
+        let label_x = px + ph * 0.18 + pip + ph * 0.18;
+        let (q, _) = fonts.tiny.layout("MOMENTUM", label_x, py + ph * 0.16, pw);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        let day_str = format!("{d} day{}", if d == 1 { "" } else { "s" });
+        let (q, _) = fonts.body.layout(&day_str, label_x, py + ph * 0.44, pw);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: BODY,
         });
     }
 
@@ -2566,7 +2606,7 @@ pub fn render_results(painter: &crate::headless::Painter, font: &FontRef<'_>) ->
         total: 10,
         total_time: 14.2,
     };
-    let (rects, texts) = results_frame(&outcome, &fonts, w, h);
+    let (rects, texts) = results_frame(&outcome, Some(1), &fonts, w, h);
     painter.paint_rgba(DRILL_W, DRILL_H, BG, &rects, &texts)
 }
 
@@ -2588,7 +2628,7 @@ fn results_sample() -> RoundOutcome {
 pub fn render_results_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (rects, texts) = results_frame(&results_sample(), &fonts, w, h);
+    let (rects, texts) = results_frame(&results_sample(), Some(1), &fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 
@@ -2995,9 +3035,14 @@ pub fn hero_detail_frame<'a>(
             h: sq,
             rgba: rarity_rgba(&item.rarity),
         });
-        // Flavour name.
+        // Flavour name (web's `it.flavour || it.name`).
+        let display = if item.flavour.is_empty() {
+            &item.name
+        } else {
+            &item.flavour
+        };
         let (q, _) = fonts.body.layout(
-            &item.name,
+            display,
             margin + col_w * 0.085,
             ry + row_h * 0.18,
             col_w * 0.65,
@@ -4061,10 +4106,19 @@ pub fn items_frame<'a>(
     if tab == 2 {
         let ev = crate::event_play::live_event(now_ms);
         let earned = owned.contains(format!("event:{}", ev.id).as_str());
+        // V15: pass the procedural FLAVOUR name (web's `it.flavour || it.name`) so the grid
+        // shows "Emberbond Ring" / "Phoenix Bond" etc., not the bare category title.
         let ev_items: Vec<(String, String, String)> = crate::catalogue::catalog()
             .into_iter()
             .filter(|c| matches!(c.cat, crate::catalogue::Category::Events))
-            .map(|c| (c.id, c.name, c.rarity))
+            .map(|c| {
+                let display = if c.flavour.is_empty() {
+                    c.name
+                } else {
+                    c.flavour
+                };
+                (c.id, display, c.rarity)
+            })
             .collect();
         let ev_total = ev_items.len() as u32;
         let ev_have = ev_items
@@ -4412,10 +4466,20 @@ pub fn items_frame<'a>(
 
     // Detail strip: the first category's item tiles (icons), like web's "RANK 23/23" row.
     if let Some(first) = cats.first() {
+        // V15: the detail strip uses the procedural FLAVOUR name (web's `it.flavour || it.name`),
+        // not `name` (which for the Rank category is the bare title "Adept/Apprentice/…"). The
+        // catalogue order is the export order — already what web shows.
         let strip: Vec<(String, String, String)> = crate::catalogue::catalog()
             .into_iter()
             .filter(|c| &c.cat == first)
-            .map(|c| (c.id, c.name, c.rarity))
+            .map(|c| {
+                let display = if c.flavour.is_empty() {
+                    c.name
+                } else {
+                    c.flavour
+                };
+                (c.id, display, c.rarity)
+            })
             .collect();
         let (q, _) = fonts.tiny.layout(
             &format!("{first:?}").to_uppercase(),
