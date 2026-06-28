@@ -217,6 +217,16 @@ fn main() {
     );
     println!("wrote arena-cleared-brickmap (430x880 visual-ref)");
 
+    // The Best Times screen (D3) → halves visual-ref.
+    let summary_ref = app::render_summary_ref(&painter, &font);
+    write_png(
+        &format!("{out_dir}/summary-brickmap.png"),
+        app::REF_W,
+        app::REF_H,
+        &summary_ref,
+    );
+    println!("wrote summary-brickmap (430x880 visual-ref)");
+
     // The Audio screen (Sound toggle + sliders + Music-style grid + Test sound) → halves visual-ref.
     let audio_ref = app::render_audio_ref(&painter, &font);
     write_png(

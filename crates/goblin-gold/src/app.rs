@@ -1157,18 +1157,10 @@ pub fn drill_frame<'a>(
     let mut rects: Vec<RectRun> = Vec::new();
     let mut texts: Vec<TextRun> = Vec::new();
 
-    // Heading + progress counter; a per-question timer under the counter (it drives Spark scoring).
-    let (q, _hh) = fonts.head.layout(&drill.name, margin, h * 0.035, col_w);
-    texts.push(TextRun {
-        atlas: &fonts.head,
-        quads: q,
-        rgba: GOLD,
-    });
+    // D1: drop the persistent topic/event title from the header — web's drill/event-play just shows
+    // the progress counter on the LEFT and the per-question timer on the RIGHT.
     let prog = format!("{} / {}", drill.solved(), drill.len());
-    let pw = fonts.body.text_width(&prog);
-    let (q, _hh) = fonts
-        .body
-        .layout(&prog, w - margin - pw, h * 0.05, pw + 4.0);
+    let (q, _hh) = fonts.body.layout(&prog, margin, h * 0.035, col_w);
     texts.push(TextRun {
         atlas: &fonts.body,
         quads: q,
@@ -1177,11 +1169,11 @@ pub fn drill_frame<'a>(
     if let Some(t) = timer {
         let ts = format!("{t:.1}s");
         let tw = fonts.body.text_width(&ts);
-        let (q, _) = fonts.body.layout(&ts, w - margin - tw, h * 0.085, tw + 4.0);
+        let (q, _) = fonts.body.layout(&ts, w - margin - tw, h * 0.035, tw + 4.0);
         texts.push(TextRun {
             atlas: &fonts.body,
             quads: q,
-            rgba: GOLD,
+            rgba: BODY,
         });
     }
 
@@ -1210,13 +1202,14 @@ pub fn drill_frame<'a>(
     }
 
     // The question — BORDERLESS large text (web's look; no card), the transform's prompt verbatim
-    // (e.g. "100", "3 × 7", "area 10×7"). The heading gives it topic context.
+    // (e.g. "100", "3 × 7", "area 10×7"). D2: rendered in BODY (white-ish) — web uses the neutral
+    // drill look (not the gold theme).
     let cy = h * 0.16;
     let ch = h * 0.16;
     texts.push(TextRun {
         atlas: &fonts.q,
         quads: centered(&fonts.q, drill.prompt(), cx, cy, ch),
-        rgba: GOLD,
+        rgba: BODY,
     });
 
     // The answer — BORDERLESS large text over a thin verdict-tinted underline (web shows no box). The
@@ -1862,7 +1855,14 @@ pub fn home_frame<'a>(
         quads: fonts
             .tiny
             .layout(
-                &format!("{ch_have}/{ch_total} · No best yet"),
+                &{
+                    // D3: pull this topic's best time from the save when one exists; else "No best yet".
+                    let detail = match save.best_time(&card.id) {
+                        Some(t) => format!("{ch_have}/{ch_total} · best {t:.1}s"),
+                        None => format!("{ch_have}/{ch_total} · No best yet"),
+                    };
+                    detail
+                },
                 margin + col_w * 0.2,
                 cy + chh * 0.58,
                 col_w * 0.7,
@@ -3371,6 +3371,103 @@ pub fn audio_frame<'a>(fonts: &'a Fonts, w: f32, h: f32) -> (Vec<RectRun>, Vec<T
 /// The **Settings** screen — web's setup page: 3 nav cards (Audio · Developer · Fullscreen), each
 /// with a label + an action chip on the right, then a red-bordered "DANGER ZONE" with the wipe-data
 /// blurb + a coral "Clear all data" button. Pure UI, no state.
+/// The **Best Times** screen (`renderSummary` / `#/best-times`) — a per-topic leaderboard of the
+/// player's lowest finished-round `total_time_secs`. Topics without a recorded best are dimmed at
+/// the bottom (locked or never finished flawlessly). **D3**: backed by `save.best_times`. Built to
+/// the visual-parity bar against `summary-web.png`.
+pub fn summary_frame<'a>(
+    save: &Save,
+    fonts: &'a Fonts,
+    w: f32,
+    h: f32,
+) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
+    let mut rects: Vec<RectRun> = Vec::new();
+    let mut texts: Vec<TextRun> = Vec::new();
+    let margin = w * 0.05;
+    let col_w = w - margin * 2.0;
+
+    // Eyebrow + count.
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "BEST TIMES", w / 2.0, h * 0.018, h * 0.03),
+        rgba: GOLD,
+    });
+    let modes = crate::progression::modes();
+    let have: u32 = modes
+        .iter()
+        .filter(|m| save.best_time(&m.id).is_some())
+        .count() as u32;
+    let total = modes.len() as u32;
+    let sc = format!("{have} / {total}");
+    let scw = fonts.tiny.text_width(&sc);
+    let (q, _) = fonts
+        .tiny
+        .layout(&sc, w - margin - scw, h * 0.022, scw + 4.0);
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: q,
+        rgba: DIM,
+    });
+
+    // Sort: recorded best times asc, then never-finished (alphabetical fallback) at the bottom.
+    let mut rows: Vec<(&str, &str, Option<f64>)> = modes
+        .iter()
+        .map(|m| (m.id.as_str(), m.name.as_str(), save.best_time(&m.id)))
+        .collect();
+    rows.sort_by(|a, b| match (a.2, b.2) {
+        (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.1.cmp(b.1),
+    });
+
+    // Row list — name on the left, time on the right (or "—" for unrecorded).
+    let band_top = h * 0.06;
+    let row_h = h * 0.044;
+    let rgap = h * 0.005;
+    let band_bot = h * 0.92;
+    for (i, (_id, name, bt)) in rows.iter().enumerate() {
+        let ry = band_top + i as f32 * (row_h + rgap);
+        if ry + row_h > band_bot {
+            break;
+        }
+        rects.push(RectRun {
+            x: margin,
+            y: ry,
+            w: col_w,
+            h: row_h,
+            rgba: PANEL,
+        });
+        let name_col = if bt.is_some() { BODY } else { DIM };
+        let (q, _) = fonts
+            .body
+            .layout(name, margin + col_w * 0.04, ry + row_h * 0.18, col_w * 0.6);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: name_col,
+        });
+        let time_str = match bt {
+            Some(t) => format!("{t:.1}s"),
+            None => "—".to_string(),
+        };
+        let tw = fonts.body.text_width(&time_str);
+        let (q, _) = fonts.body.layout(
+            &time_str,
+            margin + col_w - tw - row_h * 0.4,
+            ry + row_h * 0.18,
+            tw + 4.0,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: if bt.is_some() { GOLD } else { DIM },
+        });
+    }
+
+    (rects, texts)
+}
+
 pub fn settings_frame<'a>(fonts: &'a Fonts, w: f32, h: f32) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
     let mut rects: Vec<RectRun> = Vec::new();
     let mut texts: Vec<TextRun> = Vec::new();
@@ -4701,6 +4798,24 @@ pub fn render_settings_ref(painter: &crate::headless::Painter, font: &FontRef<'_
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
     let (rects, texts) = settings_frame(&fonts, w, h);
+    painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
+}
+
+/// Render the **Best Times** screen at the web reference aspect — `visual-ref/summary-brickmap.png`.
+/// Uses a representative save with seeded `best_times` (else every row would read "—").
+pub fn render_summary_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
+    let (w, h) = (REF_W as f32, REF_H as f32);
+    let fonts = Fonts::bake(font, h);
+    let mut save = full_collection_sample();
+    // Seed deterministic best times for the most-progressed topics (rest stay unrecorded).
+    for (i, m) in crate::progression::modes().iter().enumerate() {
+        // Pace per-topic best as ~3.5s + 1.5s·i/N — a plausible ladder, sub-50s — over the first 32 modes.
+        if i < 32 {
+            save.best_times
+                .insert(m.id.clone(), 3.5 + 1.5 * i as f64 / 32.0);
+        }
+    }
+    let (rects, texts) = summary_frame(&save, &fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 

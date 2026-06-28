@@ -91,6 +91,13 @@ pub struct Save {
     /// Total rounds played (the `games` running total gating the meta-milestones).
     #[serde(default)]
     pub games: u64,
+    /// Per-topic **best total time** (seconds) — the lowest `total_time_secs` recorded across
+    /// finished rounds of that mode. **D3**: feeds the Best Times screen, the home "<topic> · best…"
+    /// detail line, and Practice's per-question best-time tiles. Mirrors web's
+    /// `boardKey "per-mode best-time boards"` (we store just the headline scalar — sufficient for
+    /// the three surfaces and stable under save migration). Empty for modes never finished.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub best_times: BTreeMap<String, f64>,
 }
 
 /// GG1 persists `gold` as a string-float (e.g. `"125.5"`); (de)serialise our `f64` through that
@@ -145,6 +152,12 @@ impl Save {
     /// keys). The single source of truth for "what's unlocked" lives in the save, not a side table.
     pub fn progress(&self) -> Progress {
         progression::Progress::from_collected(self.collected.keys().map(String::as_str))
+    }
+
+    /// The best total time (seconds) ever recorded for `mode_id`, or `None` if never finished
+    /// flawlessly. **D3**: drives the Best Times screen + home "<topic> · best…" detail line.
+    pub fn best_time(&self, mode_id: &str) -> Option<f64> {
+        self.best_times.get(mode_id).copied()
     }
 
     /// Fold a finished round into the save: bump the games counter, run the earning rule
@@ -224,6 +237,19 @@ impl Save {
             rank_idx as u32,
         );
         self.gold += gold_earned as f64;
+
+        // D3: track per-mode best (lowest) `total_time_secs` across finished rounds — feeds the
+        // Best Times screen + home `<topic> · best…` + Practice qbest. Only count fully-answered
+        // rounds (a partial skip doesn't beat a clean run on time).
+        if run.skips() == 0 && run.total > 0 {
+            let entry = self
+                .best_times
+                .entry(mode.id.clone())
+                .or_insert(f64::INFINITY);
+            if run.total_time_secs < *entry {
+                *entry = run.total_time_secs;
+            }
+        }
 
         RoundOutcome {
             rank_idx,
