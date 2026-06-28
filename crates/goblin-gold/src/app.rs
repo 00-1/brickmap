@@ -569,7 +569,7 @@ pub struct Fonts {
 /// separates inline stat/label fields, and the `—`/`–` dashes used in event blurbs. Baked into every
 /// prose face so prompts like "91 − 37" and blurbs like "bondfire — close …" render their symbols
 /// (the default atlas is ASCII-only).
-const GLYPHS: &str = "−×÷²·—–✓↓▶";
+const GLYPHS: &str = "−×÷²·—–✓↓▶›";
 
 impl Fonts {
     pub fn bake(font: &FontRef<'_>, h: f32) -> Fonts {
@@ -598,6 +598,97 @@ fn centered(atlas: &Atlas, text: &str, cx: f32, top: f32, h: f32) -> Vec<Quad> {
             f32::INFINITY,
         )
         .0
+}
+
+/// V46: lay `text` as up-to-`max_lines` centred lines wrapped to `max_w`, top-anchored at
+/// `(cx, top)`, each line `h` tall. Used by tile captions (codex BEASTS, arena-map foe names)
+/// so long names ("Goblin Warrens · Brawn") wrap instead of truncating ("Goblin Warr…").
+/// V30: render one stat PILL (rounded dark bg + "<val> <ABBR>" inline) at `(x, y)`, `h` tall.
+/// Width adapts to the label so a 3-digit GRD fits cleanly next to a 1-digit FOC. Returns the
+/// right edge so callers can lay chips in a row.
+fn push_stat_chip<'a>(
+    rects: &mut Vec<RectRun>,
+    texts: &mut Vec<TextRun<'a>>,
+    fonts: &'a Fonts,
+    val: i64,
+    abbr: &str,
+    x: f32,
+    y: f32,
+    h: f32,
+) -> f32 {
+    let txt = format!("{val} {abbr}");
+    let pad = h * 0.7;
+    let cw = fonts.tiny.text_width(&txt) + pad;
+    rects.push(RectRun {
+        x,
+        y,
+        w: cw,
+        h,
+        rgba: KEYBG,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, &txt, x + cw / 2.0, y, h),
+        rgba: BODY,
+    });
+    x + cw
+}
+
+fn centered_wrapped(
+    atlas: &Atlas,
+    text: &str,
+    cx: f32,
+    top: f32,
+    h: f32,
+    max_w: f32,
+    max_lines: usize,
+) -> Vec<Quad> {
+    let lines = wrap_lines(atlas, text, max_w, max_lines);
+    let mut out: Vec<Quad> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let lw = atlas.text_width(line);
+        let (q, _) = atlas.layout(
+            line,
+            cx - lw / 2.0,
+            top + i as f32 * h + h / 2.0 - 0.59 * atlas.px,
+            f32::INFINITY,
+        );
+        out.extend(q);
+    }
+    out
+}
+
+/// Greedy word-wrap into at most `max_lines` lines that each fit `max_w`. If the text overflows
+/// the line budget, the last line is allowed to overflow rather than dropping characters — we'd
+/// rather see a slightly wide last line than a truncated label (V46).
+fn wrap_lines(atlas: &Atlas, text: &str, max_w: f32, max_lines: usize) -> Vec<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() {
+        return vec![String::new()];
+    }
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for w in words {
+        let trial = if cur.is_empty() {
+            w.to_string()
+        } else {
+            format!("{cur} {w}")
+        };
+        if cur.is_empty() || atlas.text_width(&trial) <= max_w {
+            cur = trial;
+        } else {
+            lines.push(std::mem::take(&mut cur));
+            if lines.len() >= max_lines {
+                cur = w.to_string();
+                break;
+            }
+            cur = w.to_string();
+        }
+    }
+    if !cur.is_empty() && lines.len() < max_lines {
+        lines.push(cur);
+    }
+    lines
 }
 
 /// Which screen the app is showing.
@@ -2357,7 +2448,7 @@ pub fn collection_frame<'a>(
     let tiers_cleared = count_pre("tier:");
     let arena_total = crate::combat::tier_count();
 
-    let (q, _hh) = fonts.head.layout("Collection", margin, h * 0.05, col_w);
+    let (q, _hh) = fonts.head.layout("COLLECTION", margin, h * 0.05, col_w);
     texts.push(TextRun {
         atlas: &fonts.head,
         quads: q,
@@ -2416,7 +2507,7 @@ pub fn collection_frame<'a>(
         });
     }
 
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
@@ -2505,7 +2596,7 @@ pub fn ladder_frame<'a>(
         });
     }
 
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
@@ -2830,8 +2921,8 @@ pub fn heroes_frame<'a>(
         .filter(|h| crate::combat::is_hero_unlocked(&h.id, &keyset))
         .count();
 
-    // Centred header "Heroes  unlocked / total".
-    let title = format!("Heroes  {} / {}", unlocked_n, roster.len());
+    // Centred header "HEROES  unlocked / total" — V42 ALL-CAPS chrome.
+    let title = format!("HEROES  {} / {}", unlocked_n, roster.len());
     texts.push(TextRun {
         atlas: &fonts.head,
         quads: centered(&fonts.head, &title, w / 2.0, h * 0.03, h * 0.05),
@@ -2942,21 +3033,27 @@ pub fn heroes_frame<'a>(
             quads: q,
             rgba: GOLD,
         });
-        // Effective stat chips.
-        let chips = format!(
-            "{} PWR   {} GRD   {} SPD   {} FOC",
-            stats.power, stats.guard, stats.speed, stats.focus
-        );
-        let (q, _) = fonts.tiny.layout(&chips, text_x, ry + rh * 0.44, rw - tile);
-        texts.push(TextRun {
-            atlas: &fonts.tiny,
-            quads: q,
-            rgba: BODY,
-        });
-        // Boost line.
+        // V30: per-stat PILL chips (rounded dark bg + bright number + dim 3-letter abbrev) — web's
+        // stat-chip row. Adapt each chip width to its label so a 3-digit GRD doesn't collide.
+        let chip_y = ry + rh * 0.44;
+        let chip_h = rh * 0.22;
+        let chip_gap = w * 0.012;
+        let labels = [
+            ("PWR", stats.power),
+            ("GRD", stats.guard),
+            ("SPD", stats.speed),
+            ("FOC", stats.focus),
+        ];
+        let mut cx = text_x;
+        for (lbl, val) in labels {
+            cx = push_stat_chip(&mut rects, &mut texts, fonts, val, lbl, cx, chip_y, chip_h);
+            cx += chip_gap;
+        }
+        // V31: "Boosted by N · tap for details ›" (gold + chevron) when boosted, neutral hint
+        // otherwise — matches web's `renderHeroes` affordance.
         let n = boost_count(&hero.id, &keys);
         let boost = if n > 0 {
-            format!("Boosted by {n} · tap for details")
+            format!("Boosted by {n} · tap for details ›")
         } else {
             "No items yet — collect to boost".to_string()
         };
@@ -2968,7 +3065,7 @@ pub fn heroes_frame<'a>(
         });
     }
 
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
@@ -3205,7 +3302,7 @@ pub fn hero_detail_frame<'a>(
         }
     }
 
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
@@ -3426,7 +3523,7 @@ pub fn audio_frame<'a>(fonts: &'a Fonts, w: f32, h: f32) -> (Vec<RectRun>, Vec<T
         rgba: GOLD,
     });
 
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
@@ -3729,7 +3826,7 @@ pub fn settings_frame<'a>(fonts: &'a Fonts, w: f32, h: f32) -> (Vec<RectRun>, Ve
         rgba: INK,
     });
 
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
@@ -3918,7 +4015,7 @@ pub fn event_play_frame<'a>(
         quads: centered(&fonts.key, "Play today's event", px + pw / 2.0, py, ph),
         rgba: INK,
     });
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
@@ -3938,7 +4035,7 @@ fn event_play_cta_hit(w: f32, h: f32, px: f32, py: f32) -> bool {
 
 /// The **Items** drill-down: the catalogue by category — how many of each the player owns.
 /// The five Inventory tabs (web's `renderInventory`) and the catalogue categories each gathers.
-const INV_TABS: [&str; 5] = ["Topics", "Awards", "Events", "Loot", "Codex"];
+const INV_TABS: [&str; 5] = ["TOPICS", "AWARDS", "EVENTS", "LOOT", "CODEX"];
 fn inv_tab_cats(tab: usize) -> &'static [crate::catalogue::Category] {
     use crate::catalogue::Category::*;
     match tab {
@@ -4116,15 +4213,17 @@ fn push_item_grid<'a>(
                 tile * 0.84 / 16.0,
             );
         }
-        let short: String = name.chars().take(9).collect();
+        // V46: wrap the full name into ≤2 lines under the tile, not truncate at 9 chars.
         texts.push(TextRun {
             atlas: &fonts.tiny,
-            quads: centered(
+            quads: centered_wrapped(
                 &fonts.tiny,
-                &short,
+                name,
                 x + tile / 2.0,
                 y + tile + h * 0.002,
                 h * 0.016,
+                tile,
+                2,
             ),
             rgba: if have_it { BODY } else { DIM },
         });
@@ -4187,20 +4286,22 @@ fn push_codex_beast_grid<'a>(
             let dim = crate::art::Palette::mono("#3a3a4a");
             paint_role(rects, &role, &dim, x + tile * 0.08, y + tile * 0.08, cell);
         }
-        // Caption "<Realm> · <Type>".
+        // Caption "<Realm> · <Type>" — V46: WRAP into ≤2 lines (was truncated at 11 chars,
+        // losing the " · Brawn/Cunning/Arcane" suffix on long region names).
         let cap = format!(
             "{} · {kind:?}",
             crate::combat::region_name(*region as usize)
         );
-        let short: String = cap.chars().take(11).collect();
         texts.push(TextRun {
             atlas: &fonts.tiny,
-            quads: centered(
+            quads: centered_wrapped(
                 &fonts.tiny,
-                &short,
+                &cap,
                 x + tile / 2.0,
                 y + tile + h * 0.002,
                 h * 0.014,
+                tile,
+                2,
             ),
             rgba: if *enc { BODY } else { DIM },
         });
@@ -4237,10 +4338,12 @@ pub fn items_frame<'a>(
         .filter(|id| owned.contains(id.as_str()))
         .count();
     let grand_total = crate::catalogue::total() as usize + loot_ids.len();
-    let title = format!("Inventory  {} / {}", cat_owned + loot_owned, grand_total);
+    // V42: ALL-CAPS title is wider than its title-case predecessor — use `body` atlas (vs head)
+    // so "INVENTORY  2702 / 2702" doesn't clip at 430 px.
+    let title = format!("INVENTORY  {} / {}", cat_owned + loot_owned, grand_total);
     texts.push(TextRun {
-        atlas: &fonts.head,
-        quads: centered(&fonts.head, &title, w / 2.0, h * 0.028, h * 0.045),
+        atlas: &fonts.body,
+        quads: centered(&fonts.body, &title, w / 2.0, h * 0.028, h * 0.034),
         rgba: GOLD,
     });
 
@@ -4341,7 +4444,7 @@ pub fn items_frame<'a>(
                 &mut rects, &mut texts, fonts, &m.name, hv, t, margin, col_w, ry, row_h,
             );
         }
-        push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+        push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
         return (rects, texts);
     }
 
@@ -4397,7 +4500,7 @@ pub fn items_frame<'a>(
                 &mut rects, &mut texts, fonts, &label, hv, t, margin, col_w, ry, row_h,
             );
         }
-        push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+        push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
         return (rects, texts);
     }
 
@@ -4540,7 +4643,7 @@ pub fn items_frame<'a>(
             w,
         );
 
-        push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+        push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
         return (rects, texts);
     }
 
@@ -4649,7 +4752,7 @@ pub fn items_frame<'a>(
             &mut rects, &mut texts, fonts, &beasts, margin, col_w, beasts_top, h, w,
         );
 
-        push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+        push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
         return (rects, texts);
     }
 
@@ -4823,22 +4926,24 @@ pub fn items_frame<'a>(
                     tile * 0.84 / 16.0,
                 );
             }
-            let short: String = name.chars().take(9).collect();
+            // V46: wrap full flavour name into ≤2 lines instead of truncating at 9 chars.
             texts.push(TextRun {
                 atlas: &fonts.tiny,
-                quads: centered(
+                quads: centered_wrapped(
                     &fonts.tiny,
-                    &short,
+                    name,
                     x + tile / 2.0,
                     sy + tile + h * 0.003,
                     h * 0.018,
+                    tile,
+                    2,
                 ),
                 rgba: if have_it { BODY } else { DIM },
             });
         }
     }
 
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
@@ -5421,7 +5526,7 @@ pub fn arena_frame<'a>(
     let region = crate::combat::tier_region(tier);
 
     // Heading + tier counter.
-    let (q, _) = fonts.head.layout("Arena", margin, h * 0.028, col_w);
+    let (q, _) = fonts.head.layout("ARENA", margin, h * 0.028, col_w);
     texts.push(TextRun {
         atlas: &fonts.head,
         quads: q,
@@ -5713,7 +5818,7 @@ pub fn arena_frame<'a>(
             rgba: DIM,
         });
     }
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
