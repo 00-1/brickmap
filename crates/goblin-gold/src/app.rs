@@ -569,7 +569,7 @@ pub struct Fonts {
 /// separates inline stat/label fields, and the `—`/`–` dashes used in event blurbs. Baked into every
 /// prose face so prompts like "91 − 37" and blurbs like "bondfire — close …" render their symbols
 /// (the default atlas is ASCII-only).
-const GLYPHS: &str = "−×÷²·—–✓";
+const GLYPHS: &str = "−×÷²·—–✓↓▶";
 
 impl Fonts {
     pub fn bake(font: &FontRef<'_>, h: f32) -> Fonts {
@@ -1201,10 +1201,19 @@ pub fn drill_frame<'a>(
         });
     }
 
+    // V34: the per-prompt cue ("half of ↓" / "solve ↓") shown ABOVE the big number — web's
+    // `modes.js eyebrow`. Gold-ish (the only gold the drill carries — V35 says everything else is
+    // neutral).
+    texts.push(TextRun {
+        atlas: &fonts.body,
+        quads: centered(&fonts.body, &drill.eyebrow, cx, h * 0.135, h * 0.04),
+        rgba: GOLD,
+    });
+
     // The question — BORDERLESS large text (web's look; no card), the transform's prompt verbatim
     // (e.g. "100", "3 × 7", "area 10×7"). D2: rendered in BODY (white-ish) — web uses the neutral
     // drill look (not the gold theme).
-    let cy = h * 0.16;
+    let cy = h * 0.19;
     let ch = h * 0.16;
     texts.push(TextRun {
         atlas: &fonts.q,
@@ -1266,12 +1275,13 @@ pub fn drill_frame<'a>(
     // The hint button (outlined) just above the numpad — opens the "how to approach this" primer.
     let hint_h = cell_h * 0.82;
     let hint_y = kp_top - hint_h - h * 0.012;
+    // V35: neutral DIM-outlined hint button (web keeps it grey — gold is for tiny accents only).
     rects.push(RectRun {
         x: kp_left,
         y: hint_y,
         w: kp_right - kp_left,
         h: hint_h,
-        rgba: [GOLD[0], GOLD[1], GOLD[2], 0.45],
+        rgba: [DIM[0], DIM[1], DIM[2], 0.5],
     });
     rects.push(RectRun {
         x: kp_left + 2.0,
@@ -1289,20 +1299,21 @@ pub fn drill_frame<'a>(
             hint_y,
             hint_h,
         ),
-        rgba: GOLD,
+        rgba: BODY,
     });
 
     let mut key_quads: Vec<Quad> = Vec::new();
     for cell in &keypad.cells {
         match cell.key {
             Key::Enter => {
-                // Outlined Skip bar (gold border + key-coloured fill) — the subtle action bar.
+                // V35: NEUTRAL outlined Skip bar (DIM border + key-coloured fill + BODY label) —
+                // web keeps Skip grey, not gold.
                 rects.push(RectRun {
                     x: cell.x,
                     y: cell.y,
                     w: cell.w,
                     h: cell.h,
-                    rgba: [GOLD[0], GOLD[1], GOLD[2], 0.55],
+                    rgba: [DIM[0], DIM[1], DIM[2], 0.5],
                 });
                 rects.push(RectRun {
                     x: cell.x + 2.0,
@@ -1314,7 +1325,7 @@ pub fn drill_frame<'a>(
                 texts.push(TextRun {
                     atlas: &fonts.key,
                     quads: centered(&fonts.key, "Skip", cell.x + cell.w / 2.0, cell.y, cell.h),
-                    rgba: GOLD,
+                    rgba: BODY,
                 });
             }
             Key::Back => {
@@ -1703,8 +1714,11 @@ pub fn home_frame<'a>(
     // The home pile rides the CANONICAL log-scaled wealth fraction (`gold::hoard_level`, the value
     // `main.js homeFxState` feeds `seedHoard`) — NOT the fxgl `gold/(gold+K)` helper, which saturates
     // far too early (987M → ~1.0 full pile instead of the web's ~half pile).
-    let level = crate::gold::hoard_level(save.gold);
-    let band_top = 0.34; // the pile's wall crest reaches ~⅓ up; the mass sits in the bottom ⅔.
+    // V36: web's coin-pile is DENSER than the sparse-fleck B was showing — fills ~bottom 45% with
+    // side "wings". Lower the band top (so coins occupy more vertical real estate) and clamp the
+    // level UP so high-gold saves render the full coin cap.
+    let level = (crate::gold::hoard_level(save.gold) * 1.4).min(1.0);
+    let band_top = 0.55;
 
     // The pile's BULK — a gold-mass gradient under the surface coins (the "imply the bulk, render the
     // surface" trick). Web's bottom is near-SOLID gold even at a moderate level; without this the
@@ -2031,11 +2045,20 @@ fn arrow_down(rects: &mut Vec<RectRun>, cx: f32, top: f32, half: f32, height: f3
 /// A small pixel **★ filled star** drawn as art (the bundled font has no U+2605 glyph), top-left
 /// at `(x, y)`, `size` tall. Used as the "rating" prefix on hero cards / hero-detail (V28).
 fn push_star(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
-    // 7×7 filled five-pointed star bitmap (rows top→bottom).
-    const ST: [&str; 7] = [
-        "...#...", "...#...", ".#####.", "#######", ".##.##.", "##...##", "#.....#",
+    // V28 v2: 9×9 filled five-pointed star — clearer arms + two distinct bottom legs (the
+    // previous 7×7 read as a "space-invader sprite" per the agent review).
+    const ST: [&str; 9] = [
+        "....#....",
+        "...###...",
+        "..#####..",
+        "#########",
+        ".#######.",
+        "..#####..",
+        "..##.##..",
+        ".##...##.",
+        "##.....##",
     ];
-    let cell = size / 7.0;
+    let cell = size / 9.0;
     for (r, row) in ST.iter().enumerate() {
         for (c, &b) in row.as_bytes().iter().enumerate() {
             if b == b'#' {
@@ -3386,86 +3409,152 @@ pub fn summary_frame<'a>(
     let margin = w * 0.05;
     let col_w = w - margin * 2.0;
 
-    // Eyebrow + count.
+    // "BEST TIMES" centred eyebrow (letter-spaced, gold).
     texts.push(TextRun {
         atlas: &fonts.tiny,
-        quads: centered(&fonts.tiny, "BEST TIMES", w / 2.0, h * 0.018, h * 0.03),
+        quads: centered(&fonts.tiny, "BEST TIMES", w / 2.0, h * 0.025, h * 0.034),
         rgba: GOLD,
     });
-    let modes = crate::progression::modes();
-    let have: u32 = modes
-        .iter()
-        .filter(|m| save.best_time(&m.id).is_some())
-        .count() as u32;
-    let total = modes.len() as u32;
-    let sc = format!("{have} / {total}");
-    let scw = fonts.tiny.text_width(&sc);
-    let (q, _) = fonts
-        .tiny
-        .layout(&sc, w - margin - scw, h * 0.022, scw + 4.0);
+    // Subtitle (centred) — web's "Your best in each topic — tap one to play it." rendered in tiny
+    // font so the full line fits the 430px ref width without truncating.
+    let sub = "Your best in each topic — tap one to play it.";
     texts.push(TextRun {
         atlas: &fonts.tiny,
-        quads: q,
-        rgba: DIM,
+        quads: centered(&fonts.tiny, sub, w / 2.0, h * 0.06, h * 0.026),
+        rgba: BODY,
     });
 
-    // Sort: recorded best times asc, then never-finished (alphabetical fallback) at the bottom.
-    let mut rows: Vec<(&str, &str, Option<f64>)> = modes
-        .iter()
-        .map(|m| (m.id.as_str(), m.name.as_str(), save.best_time(&m.id)))
-        .collect();
-    rows.sort_by(|a, b| match (a.2, b.2) {
-        (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.1.cmp(b.1),
-    });
-
-    // Row list — name on the left, time on the right (or "—" for unrecorded).
-    let band_top = h * 0.06;
-    let row_h = h * 0.044;
-    let rgap = h * 0.005;
+    // Cards (one per topic), in `modes.json` order. Each card: topic name (bold) + per-row status
+    // line ("□ Not played" / a "□ best Xs · score N" line) + TIME column + SCORE column + Play ▶
+    // button. Tap routes to the topic (live UI only — golden/ref shows the visual state).
+    let modes = crate::progression::modes();
+    let band_top = h * 0.115;
+    let card_h = h * 0.075;
+    let cgap = h * 0.008;
     let band_bot = h * 0.92;
-    for (i, (_id, name, bt)) in rows.iter().enumerate() {
-        let ry = band_top + i as f32 * (row_h + rgap);
-        if ry + row_h > band_bot {
+    for (i, m) in modes.iter().enumerate() {
+        let ry = band_top + i as f32 * (card_h + cgap);
+        if ry + card_h > band_bot {
             break;
         }
+        let bt = save.best_time(&m.id);
+        // Outlined card (web's bordered panels — DIM border + KEYBG fill).
         rects.push(RectRun {
             x: margin,
             y: ry,
             w: col_w,
-            h: row_h,
-            rgba: PANEL,
+            h: card_h,
+            rgba: [DIM[0], DIM[1], DIM[2], 0.5],
         });
-        let name_col = if bt.is_some() { BODY } else { DIM };
-        let (q, _) = fonts
-            .body
-            .layout(name, margin + col_w * 0.04, ry + row_h * 0.18, col_w * 0.6);
+        rects.push(RectRun {
+            x: margin + 1.5,
+            y: ry + 1.5,
+            w: col_w - 3.0,
+            h: card_h - 3.0,
+            rgba: KEYBG,
+        });
+        // Topic name (top-left, body weight).
+        let (q, _) = fonts.body.layout(
+            &m.name,
+            margin + col_w * 0.04,
+            ry + card_h * 0.16,
+            col_w * 0.55,
+        );
         texts.push(TextRun {
             atlas: &fonts.body,
             quads: q,
-            rgba: name_col,
+            rgba: BODY,
         });
+        // Status line "□ Not played" / "□ best Xs" with a small unchecked-square glyph.
+        let sq = card_h * 0.16;
+        let sq_x = margin + col_w * 0.04;
+        let sq_y = ry + card_h * 0.62;
+        rects.push(RectRun {
+            x: sq_x,
+            y: sq_y,
+            w: sq,
+            h: sq,
+            rgba: [DIM[0], DIM[1], DIM[2], 0.6],
+        });
+        rects.push(RectRun {
+            x: sq_x + 1.0,
+            y: sq_y + 1.0,
+            w: sq - 2.0,
+            h: sq - 2.0,
+            rgba: KEYBG,
+        });
+        let status = match bt {
+            Some(t) => format!("best {t:.1}s"),
+            None => "Not played".to_string(),
+        };
+        let (q, _) = fonts
+            .tiny
+            .layout(&status, sq_x + sq * 1.4, ry + card_h * 0.62, col_w * 0.5);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        // TIME column (mid-right) — "—" if unrecorded, "Xs" otherwise.
         let time_str = match bt {
             Some(t) => format!("{t:.1}s"),
             None => "—".to_string(),
         };
         let tw = fonts.body.text_width(&time_str);
-        let (q, _) = fonts.body.layout(
-            &time_str,
-            margin + col_w - tw - row_h * 0.4,
-            ry + row_h * 0.18,
-            tw + 4.0,
-        );
+        let time_cx = margin + col_w * 0.62;
+        let (q, _) = fonts
+            .body
+            .layout(&time_str, time_cx - tw / 2.0, ry + card_h * 0.32, tw + 4.0);
         texts.push(TextRun {
             atlas: &fonts.body,
             quads: q,
             rgba: if bt.is_some() { GOLD } else { DIM },
         });
+        // SCORE column (further right) — "—" if unrecorded, score otherwise. (Score isn't tracked
+        // alongside best-time in the save yet — V32 future: extend `best_times` to carry score too.)
+        let score_str = "—".to_string();
+        let sw = fonts.body.text_width(&score_str);
+        let score_cx = margin + col_w * 0.78;
+        let (q, _) = fonts.body.layout(
+            &score_str,
+            score_cx - sw / 2.0,
+            ry + card_h * 0.32,
+            sw + 4.0,
+        );
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: DIM,
+        });
+        // Play ▶ button (far right) — a tiny right-pointing triangle.
+        let bx = margin + col_w - card_h * 0.6;
+        let by = ry + card_h * 0.36;
+        let bh = card_h * 0.3;
+        push_play_triangle(&mut rects, bx, by, bh, GOLD);
     }
 
+    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
+}
+
+/// A small right-pointing ▶ triangle (the play affordance), top-left at `(x, y)`, `size` tall.
+/// Drawn as a stack of horizontal RectRun bars (RectRun has no triangles).
+fn push_play_triangle(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
+    let steps = 7;
+    let half_full = size / 2.0;
+    for k in 0..steps {
+        let t = k as f32 / (steps - 1) as f32;
+        let dist = (t - 0.5).abs() * 2.0; // 0 centre → 1 edge
+        let bar_w = (1.0 - dist) * size * 0.7;
+        rects.push(RectRun {
+            x,
+            y: y + k as f32 * size / steps as f32,
+            w: bar_w,
+            h: size / steps as f32 + 0.6,
+            rgba,
+        });
+        let _ = half_full;
+    }
 }
 
 pub fn settings_frame<'a>(fonts: &'a Fonts, w: f32, h: f32) -> (Vec<RectRun>, Vec<TextRun<'a>>) {
@@ -4806,15 +4895,9 @@ pub fn render_settings_ref(painter: &crate::headless::Painter, font: &FontRef<'_
 pub fn render_summary_ref(painter: &crate::headless::Painter, font: &FontRef<'_>) -> Vec<u8> {
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
-    let mut save = full_collection_sample();
-    // Seed deterministic best times for the most-progressed topics (rest stay unrecorded).
-    for (i, m) in crate::progression::modes().iter().enumerate() {
-        // Pace per-topic best as ~3.5s + 1.5s·i/N — a plausible ladder, sub-50s — over the first 32 modes.
-        if i < 32 {
-            save.best_times
-                .insert(m.id.clone(), 3.5 + 1.5 * i as f64 / 32.0);
-        }
-    }
+    // V33: web `summary-web.png` is the EMPTY "Not played" capture-state — match it. Every card
+    // reads "—" / "Not played" until the Babysitter re-captures the web ref against a seeded profile.
+    let save = Save::default();
     let (rects, texts) = summary_frame(&save, &fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }

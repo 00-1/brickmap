@@ -61,6 +61,53 @@ struct ModeRaw {
     unlock: Option<UnlockRaw>,
 }
 
+/// The per-topic **prompt eyebrow** shown above each drill question (`modes.js eyebrow:`). Ported
+/// straight from source — the field isn't in the export (presentation data, like `TOPIC_GLYPHS`).
+/// Defaults to "solve ↓" for any unknown id (web's most-common eyebrow).
+pub fn mode_eyebrow(id: &str) -> &'static str {
+    match id {
+        "halves" => "half of ↓",
+        "times" => "product of ↓",
+        "doubles" => "double ↓",
+        "addsub" | "addsub2" => "solve ↓",
+        "bonds" | "bonds2" => "fill the gap ↓",
+        "placevalue" | "placevalue2" => "solve ↓",
+        "fractionsof" | "fractionsof2" => "solve ↓",
+        "percentages" | "percentages2" => "solve ↓",
+        "fractions" | "fractions2" => "as a decimal ↓",
+        "squares" => "square of ↓",
+        "rounding" => "round ↓",
+        "largermd" => "solve ↓",
+        "metric" => "convert ↓",
+        "sequences" => "continue the pattern ↓",
+        "sequences2" => "evaluate the rule ↓",
+        "scaling" => "same rule — in proportion ↓",
+        "percentoff" | "partwhole" => "solve ↓",
+        "balance" => "make both sides equal ↓",
+        "lcmhcf" | "mean" => "solve ↓",
+        "timegap" => "minutes between ↓",
+        "ratioshare" => "solve ↓",
+        "cubes" => "evaluate ↓",
+        "money" => "answer in £ ↓",
+        "digitsum" => "solve ↓",
+        "roman" => "as a number ↓",
+        "primes" => "next prime ↓",
+        "pctup" => "new total ↓",
+        "fdp" => "convert ↓",
+        "bodmas" => "work it out ↓",
+        "algebra" => "in → out ↓",
+        "xtricks" => "use the trick ↓",
+        "negatives" => "answer is 0 or more ↓",
+        "area" => "work it out ↓",
+        "volume" => "volume ↓",
+        "angles" => "missing angle ↓",
+        "mmr" => "find it ↓",
+        "sdt" => "solve ↓",
+        "factors" => "solve ↓",
+        _ => "solve ↓",
+    }
+}
+
 /// Load the topic graph (in `modes.json` order — importance/unlock order).
 pub fn modes() -> Vec<Mode> {
     let raw: Vec<ModeRaw> = serde_json::from_str(MODES_JSON).expect("modes.json");

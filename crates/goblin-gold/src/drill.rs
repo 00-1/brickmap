@@ -52,6 +52,9 @@ const MAX_DIGITS: usize = 5;
 pub struct Drill {
     pub name: String,
     pub tag: String,
+    /// The per-prompt cue shown above the number (web's `modes.js eyebrow`, e.g. "half of ↓",
+    /// "solve ↓"). Set per-topic for topic drills; "solve ↓" for event gauntlets (multi-topic).
+    pub eyebrow: String,
     questions: Vec<Question>,
     idx: usize,
     typed: String,
@@ -84,6 +87,7 @@ impl Drill {
         Drill {
             name: meta.name,
             tag: meta.tag,
+            eyebrow: crate::progression::mode_eyebrow(mode_id).to_string(),
             questions,
             idx: 0,
             typed: String::new(),
@@ -114,6 +118,7 @@ impl Drill {
         Drill {
             name: meta.name,
             tag: meta.tag,
+            eyebrow: crate::progression::mode_eyebrow(mode_id).to_string(),
             questions,
             idx: 0,
             typed: String::new(),
@@ -144,6 +149,7 @@ impl Drill {
         Drill {
             name: ev.name,
             tag: ev.theme,
+            eyebrow: "solve ↓".to_string(),
             questions,
             idx: 0,
             typed: String::new(),
@@ -275,6 +281,7 @@ impl Drill {
         Drill {
             name: "Test".into(),
             tag: String::new(),
+            eyebrow: "solve ↓".into(),
             questions,
             idx: 0,
             typed: String::new(),
