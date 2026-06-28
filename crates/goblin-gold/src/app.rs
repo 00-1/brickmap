@@ -1221,46 +1221,44 @@ pub fn drill_frame<'a>(
         rgba: BODY,
     });
 
-    // The answer — BORDERLESS large text over a thin verdict-tinted underline (web shows no box). The
-    // value is the typed string (EMPTY on the first frame → an empty text run, exercising the guard).
+    // The answer — BORDERLESS large text (web shows no box, no underline). V41: the empty state
+    // renders a centred "– –" placeholder (dim) in place of the lone underline rule. The value is
+    // the typed string (or revealed answer after Skip).
     let ink = match drill.last_mark() {
         Some(Mark::Right) => GREEN,
         Some(Mark::Skipped) => DIM,
         None => BODY,
     };
-    let box_text = drill.revealed().unwrap_or_else(|| drill.typed());
+    let typed = drill.typed();
     let by = h * 0.35;
     let bh = h * 0.085;
-    let bw = col_w * 0.5;
-    let bx = cx - bw / 2.0;
+    let (box_text, box_ink) = if let Some(r) = drill.revealed() {
+        (r, ink)
+    } else if typed.is_empty() {
+        ("– –", DIM)
+    } else {
+        (typed, ink)
+    };
     texts.push(TextRun {
         atlas: &fonts.q,
         quads: centered(&fonts.q, box_text, cx, by, bh),
-        rgba: ink,
-    });
-    // A thin underline marks the input slot (dim until typed; verdict-tinted after).
-    rects.push(RectRun {
-        x: bx,
-        y: by + bh * 0.92,
-        w: bw,
-        h: h * 0.004,
-        rgba: ink,
+        rgba: box_ink,
     });
 
-    // Verdict banner. There's no wrong state — the answer auto-checks as you type; the action bar
-    // skips (revealing the answer).
-    let (msg, col) = match drill.last_mark() {
-        Some(Mark::Right) => ("Correct!", GREEN),
-        Some(Mark::Skipped) => ("Skipped", DIM),
-        None => ("Tap the digits — it checks itself", DIM),
-    };
-    let mw = fonts.body.text_width(msg);
-    let (q, _hh) = fonts.body.layout(msg, cx - mw / 2.0, h * 0.46, mw + 4.0);
-    texts.push(TextRun {
-        atlas: &fonts.body,
-        quads: q,
-        rgba: col,
-    });
+    // Verdict banner — only shows after a verdict lands (web omits the "tap the digits" helper).
+    if let Some((msg, col)) = match drill.last_mark() {
+        Some(Mark::Right) => Some(("Correct!", GREEN)),
+        Some(Mark::Skipped) => Some(("Skipped", DIM)),
+        None => None,
+    } {
+        let mw = fonts.body.text_width(msg);
+        let (q, _hh) = fonts.body.layout(msg, cx - mw / 2.0, h * 0.46, mw + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.body,
+            quads: q,
+            rgba: col,
+        });
+    }
 
     // Keypad zone — a "How to approach this" hint button above the calculator-order numpad, a pixel
     // backspace, and an OUTLINED Skip bar (web's subtle action bar, not a solid slab).
@@ -1324,7 +1322,7 @@ pub fn drill_frame<'a>(
                 });
                 texts.push(TextRun {
                     atlas: &fonts.key,
-                    quads: centered(&fonts.key, "Skip", cell.x + cell.w / 2.0, cell.y, cell.h),
+                    quads: centered(&fonts.key, "SKIP", cell.x + cell.w / 2.0, cell.y, cell.h),
                     rgba: BODY,
                 });
             }
@@ -1714,11 +1712,13 @@ pub fn home_frame<'a>(
     // The home pile rides the CANONICAL log-scaled wealth fraction (`gold::hoard_level`, the value
     // `main.js homeFxState` feeds `seedHoard`) — NOT the fxgl `gold/(gold+K)` helper, which saturates
     // far too early (987M → ~1.0 full pile instead of the web's ~half pile).
-    // V36: web's coin-pile is DENSER than the sparse-fleck B was showing — fills ~bottom 45% with
-    // side "wings". Lower the band top (so coins occupy more vertical real estate) and clamp the
-    // level UP so high-gold saves render the full coin cap.
+    // V36 v2: web's coin-pile fills the bottom ~45% as a DENSE pile with rising side "wings"
+    // (mound_profile already banks against the walls). v1 bumped level + lowered band but kept
+    // tiny 6–13 px coins, so the layer still read as a sparse fleck-band. v2 keeps `level` and
+    // `band_top`, then chunks up the coin size by 1.8× in the renderer below so neighbours
+    // visibly overlap into the web's gold mass.
     let level = (crate::gold::hoard_level(save.gold) * 1.4).min(1.0);
-    let band_top = 0.55;
+    let band_top = 0.52;
 
     // The pile's BULK — a gold-mass gradient under the surface coins (the "imply the bulk, render the
     // surface" trick). Web's bottom is near-SOLID gold even at a moderate level; without this the
@@ -1748,7 +1748,8 @@ pub fn home_frame<'a>(
         });
     }
     for coin in crate::hoard::seed_hoard(level, 0x601d, &[], 480) {
-        let s = coin.size as f32 * (w / 430.0);
+        // V36 v2: 1.8× chunkier coins so the seedHoard surface overlaps into web's dense pile.
+        let s = coin.size as f32 * (w / 430.0) * 1.8;
         let cyn = band_top + coin.y as f32 * (1.0 - band_top);
         rects.push(RectRun {
             x: coin.x as f32 * w - s / 2.0,
@@ -2045,20 +2046,23 @@ fn arrow_down(rects: &mut Vec<RectRun>, cx: f32, top: f32, half: f32, height: f3
 /// A small pixel **★ filled star** drawn as art (the bundled font has no U+2605 glyph), top-left
 /// at `(x, y)`, `size` tall. Used as the "rating" prefix on hero cards / hero-detail (V28).
 fn push_star(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
-    // V28 v2: 9×9 filled five-pointed star — clearer arms + two distinct bottom legs (the
-    // previous 7×7 read as a "space-invader sprite" per the agent review).
-    const ST: [&str; 9] = [
-        "....#....",
-        "...###...",
-        "..#####..",
-        "#########",
-        ".#######.",
-        "..#####..",
-        "..##.##..",
-        ".##...##.",
-        "##.....##",
+    // V28 v3: 11×11 filled five-pointed star — apex → widening, full-width upper arms, narrowing
+    // body, splitting into two splayed legs with a clear V-gap between (the v2 9×9 read as a
+    // "lumpy blob"). Mirrored about the centre column.
+    const ST: [&str; 11] = [
+        ".....#.....",
+        "....###....",
+        "....###....",
+        "###########",
+        ".#########.",
+        "..#######..",
+        "..#######..",
+        ".##.###.##.",
+        ".##..#..##.",
+        ".##.....##.",
+        "##.......##",
     ];
-    let cell = size / 9.0;
+    let cell = size / 11.0;
     for (r, row) in ST.iter().enumerate() {
         for (c, &b) in row.as_bytes().iter().enumerate() {
             if b == b'#' {
@@ -2259,6 +2263,39 @@ fn push_button<'a>(
         atlas: &fonts.key,
         quads: centered(&fonts.key, label, bx + bw / 2.0, by, bh),
         rgba: GOLD,
+    });
+}
+
+/// A neutral (non-gold) variant of [`push_button`] — DIM outline + BODY label. Used by screens
+/// whose web reference keeps the bottom Back button grey-on-grey (e.g. Best Times, summary —
+/// parity ledger V40).
+fn push_neutral_button<'a>(
+    rects: &mut Vec<RectRun>,
+    texts: &mut Vec<TextRun<'a>>,
+    fonts: &'a Fonts,
+    label: &str,
+    w: f32,
+    h: f32,
+) {
+    let (bx, by, bw, bh) = bottom_button(w, h);
+    rects.push(RectRun {
+        x: bx,
+        y: by,
+        w: bw,
+        h: bh,
+        rgba: [DIM[0], DIM[1], DIM[2], 0.5],
+    });
+    rects.push(RectRun {
+        x: bx + 2.0,
+        y: by + 2.0,
+        w: bw - 4.0,
+        h: bh - 4.0,
+        rgba: KEYBG,
+    });
+    texts.push(TextRun {
+        atlas: &fonts.key,
+        quads: centered(&fonts.key, label, bx + bw / 2.0, by, bh),
+        rgba: BODY,
     });
 }
 
@@ -2889,10 +2926,12 @@ pub fn heroes_frame<'a>(
             quads: q,
             rgba: BODY,
         });
-        // ★ rating (right) — pixel star (V28) + the count.
+        // ★ rating (right) — pixel star (V28 v3) + the count. Star kept on the NAME row only
+        // (sw = rh * 0.22) so its vertical extent ends well above the stat-chip row at rh*0.44 —
+        // v2 used 0.36 which spilled into the chips and clobbered the trailing "FOC".
         let count = format!("{}", hero_rating(&stats));
         let ctw = fonts.body.text_width(&count);
-        let sw = rh * 0.36;
+        let sw = rh * 0.22;
         let star_x = rx + rw - ctw - sw * 1.4 - w * 0.02;
         push_star(&mut rects, star_x, ry + rh * 0.18, sw, GOLD);
         let (q, _) = fonts
@@ -3409,11 +3448,11 @@ pub fn summary_frame<'a>(
     let margin = w * 0.05;
     let col_w = w - margin * 2.0;
 
-    // "BEST TIMES" centred eyebrow (letter-spaced, gold).
+    // V40: "BEST TIMES" centred eyebrow (letter-spaced, DIM — web uses muted grey, not gold).
     texts.push(TextRun {
         atlas: &fonts.tiny,
         quads: centered(&fonts.tiny, "BEST TIMES", w / 2.0, h * 0.025, h * 0.034),
-        rgba: GOLD,
+        rgba: DIM,
     });
     // Subtitle (centred) — web's "Your best in each topic — tap one to play it." rendered in tiny
     // font so the full line fits the 430px ref width without truncating.
@@ -3508,7 +3547,8 @@ pub fn summary_frame<'a>(
         texts.push(TextRun {
             atlas: &fonts.body,
             quads: q,
-            rgba: if bt.is_some() { GOLD } else { DIM },
+            // V40: neutral BODY for an existing record (web doesn't gold-accent the time column).
+            rgba: if bt.is_some() { BODY } else { DIM },
         });
         // SCORE column (further right) — "—" if unrecorded, score otherwise. (Score isn't tracked
         // alongside best-time in the save yet — V32 future: extend `best_times` to carry score too.)
@@ -3526,14 +3566,15 @@ pub fn summary_frame<'a>(
             quads: q,
             rgba: DIM,
         });
-        // Play ▶ button (far right) — a tiny right-pointing triangle.
+        // Play ▶ button (far right) — a tiny right-pointing triangle. V40: muted DIM (web's
+        // affordance is a quiet grey, not gold).
         let bx = margin + col_w - card_h * 0.6;
         let by = ry + card_h * 0.36;
         let bh = card_h * 0.3;
-        push_play_triangle(&mut rects, bx, by, bh, GOLD);
+        push_play_triangle(&mut rects, bx, by, bh, DIM);
     }
 
-    push_button(&mut rects, &mut texts, fonts, "Back", w, h);
+    push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
     (rects, texts)
 }
 
