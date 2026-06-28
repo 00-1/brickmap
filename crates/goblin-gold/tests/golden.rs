@@ -87,7 +87,7 @@ fn fx_moment_matches_golden_and_regressions_do_not() {
     const FRAC: f32 = 0.001; // ≤0.1% of pixels may differ
 
     let (_w, _h, golden) = rgba_from_png(GOLDEN);
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
 
     // The real frame matches the golden.
@@ -148,7 +148,7 @@ fn initial_drill_frame_renders_and_matches_golden() {
     use goblin_gold::headless::Painter;
 
     let (_w, _h, golden) = rgba_from_png(DRILL_GOLDEN);
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
     // Before the fix this call panicked ("buffer slices can not be empty") on the empty answer run.
     let frame = render_initial_drill(&painter, &font);
@@ -186,7 +186,7 @@ fn topic_select_renders_and_matches_golden() {
     use goblin_gold::headless::Painter;
 
     let (_w, _h, golden) = rgba_from_png(SELECT_GOLDEN);
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
     let frame = render_topic_select(&painter, &font);
     let d = diff(&frame, &golden, 6);
@@ -224,7 +224,7 @@ fn topic_select_full_renders_and_matches_golden() {
     use goblin_gold::headless::Painter;
 
     let (_w, _h, golden) = rgba_from_png(SELECT_FULL_GOLDEN);
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
     let frame = render_topic_select_full(&painter, &font);
     let d = diff(&frame, &golden, 6);
@@ -261,7 +261,7 @@ fn collection_renders_and_matches_golden() {
     use goblin_gold::headless::Painter;
 
     let (_w, _h, golden) = rgba_from_png(COLLECTION_GOLDEN);
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
     let frame = render_collection(&painter, &font);
     let d = diff(&frame, &golden, 6);
@@ -298,7 +298,7 @@ fn ladder_renders_and_matches_golden() {
     use goblin_gold::headless::Painter;
 
     let (_w, _h, golden) = rgba_from_png(LADDER_GOLDEN);
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
     let frame = render_ladder(&painter, &font);
     let d = diff(&frame, &golden, 6);
@@ -332,7 +332,7 @@ fn drilldowns_render_and_match_goldens() {
     use goblin_gold::app::{render_events, render_heroes, render_items};
     use goblin_gold::headless::Painter;
 
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
     for (golden_path, frame) in [
         (HEROES_GOLDEN, render_heroes(&painter, &font)),
@@ -375,7 +375,7 @@ fn results_renders_and_matches_golden() {
     use goblin_gold::headless::Painter;
 
     let (_w, _h, golden) = rgba_from_png(RESULTS_GOLDEN);
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
     let frame = render_results(&painter, &font);
     let d = diff(&frame, &golden, 6);
@@ -412,7 +412,7 @@ fn art_sheet_renders_and_matches_golden() {
     use goblin_gold::headless::Painter;
 
     let (_w, _h, golden) = rgba_from_png(ART_SHEET_GOLDEN);
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
     let frame = render_art_sheet(&painter, &font);
     let d = diff(&frame, &golden, 6);
@@ -449,7 +449,7 @@ fn arena_renders_and_matches_golden() {
     use goblin_gold::headless::Painter;
 
     let (_w, _h, golden) = rgba_from_png(ARENA_GOLDEN);
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
     let frame = render_arena(&painter, &font);
     let d = diff(&frame, &golden, 6);

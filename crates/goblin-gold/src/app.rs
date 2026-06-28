@@ -29,16 +29,59 @@ use brickmap::save::FileStore;
 // The on-screen UI surface draws the engine's `ui2d` primitives with the engine's quad shader.
 use brickmap::ui2d::UI_SHADER as SHADER;
 
-const BG: [f32; 3] = [20.0 / 255.0, 12.0 / 255.0, 34.0 / 255.0];
-const PANEL: [f32; 4] = [34.0 / 255.0, 22.0 / 255.0, 54.0 / 255.0, 1.0];
-const KEYBG: [f32; 4] = [46.0 / 255.0, 32.0 / 255.0, 72.0 / 255.0, 1.0];
-const INK: [f32; 4] = [16.0 / 255.0, 10.0 / 255.0, 28.0 / 255.0, 1.0];
+// V26: web GG1's UI palette is a NEUTRAL near-black scheme (`#0E1116`); the home backdrop is the
+// only screen that paints the purple HOME_PALETTE wash over it. The previous deep-violet defaults
+// (`#140C22` / `#221636` / `#2E2048`) cast every other screen purple. Now all-neutral; only
+// `home_frame` overlays its own purple bands.
+const BG: [f32; 3] = [
+    0x0e as f32 / 255.0,
+    0x11 as f32 / 255.0,
+    0x16 as f32 / 255.0,
+];
+const PANEL: [f32; 4] = [
+    0x1c as f32 / 255.0,
+    0x20 as f32 / 255.0,
+    0x26 as f32 / 255.0,
+    1.0,
+];
+const KEYBG: [f32; 4] = [
+    0x16 as f32 / 255.0,
+    0x1a as f32 / 255.0,
+    0x20 as f32 / 255.0,
+    1.0,
+];
+const INK: [f32; 4] = [
+    0x08 as f32 / 255.0,
+    0x0a as f32 / 255.0,
+    0x0e as f32 / 255.0,
+    1.0,
+];
 const GOLD: [f32; 4] = [1.0, 214.0 / 255.0, 110.0 / 255.0, 1.0];
-const BODY: [f32; 4] = [232.0 / 255.0, 228.0 / 255.0, 244.0 / 255.0, 1.0];
-const DIM: [f32; 4] = [150.0 / 255.0, 140.0 / 255.0, 172.0 / 255.0, 1.0];
-const GREEN: [f32; 4] = [120.0 / 255.0, 222.0 / 255.0, 142.0 / 255.0, 1.0];
-/// Low-contrast build-watermark ink (a hair above the deep-violet background).
-const WATERMARK: [f32; 4] = [78.0 / 255.0, 66.0 / 255.0, 104.0 / 255.0, 1.0];
+const BODY: [f32; 4] = [
+    0xe8 as f32 / 255.0,
+    0xeb as f32 / 255.0,
+    0xf2 as f32 / 255.0,
+    1.0,
+];
+const DIM: [f32; 4] = [
+    0x8c as f32 / 255.0,
+    0x93 as f32 / 255.0,
+    0xa0 as f32 / 255.0,
+    1.0,
+];
+const GREEN: [f32; 4] = [
+    0x3f as f32 / 255.0,
+    0xce as f32 / 255.0,
+    0x8c as f32 / 255.0,
+    1.0,
+];
+/// Low-contrast build-watermark ink (a hair above the neutral near-black background).
+const WATERMARK: [f32; 4] = [
+    0x32 as f32 / 255.0,
+    0x36 as f32 / 255.0,
+    0x40 as f32 / 255.0,
+    1.0,
+];
 
 /// How long the FX bloom plays after a correct answer.
 const FX_SECS: f32 = 0.9;
@@ -531,8 +574,11 @@ const GLYPHS: &str = "−×÷²·—–✓";
 impl Fonts {
     pub fn bake(font: &FontRef<'_>, h: f32) -> Fonts {
         Fonts {
-            head: Atlas::bake_chars(font, (h * 0.045).clamp(20.0, 120.0), GLYPHS),
-            q: Atlas::bake_chars(font, (h * 0.044).clamp(20.0, 120.0), GLYPHS),
+            // V27: web GG1's headline ramp DOMINATES the screen (drill "144" + results "22.7s" each
+            // ~⅕ of the height). Bump `head` (eyebrows) and especially `q` (the big drill prompt +
+            // gold seconds count) so they read as the headlines they are.
+            head: Atlas::bake_chars(font, (h * 0.058).clamp(24.0, 140.0), GLYPHS),
+            q: Atlas::bake_chars(font, (h * 0.12).clamp(40.0, 220.0), GLYPHS),
             body: Atlas::bake_chars(font, (h * 0.030).clamp(16.0, 80.0), GLYPHS),
             key: Atlas::bake_chars(font, (h * 0.034).clamp(16.0, 90.0), "✓⌫"),
             // The build-watermark + chip face — small; also carries the math/middot glyphs for the
@@ -677,7 +723,7 @@ impl App {
     /// Build the app, persisting the save under `data_dir` if given (the platform's writable app
     /// directory). Loads any existing save and seeds progression from it.
     fn new(data_dir: Option<std::path::PathBuf>) -> App {
-        let font = FontRef::try_from_slice(crate::FONT_INSTRUMENT_SANS).expect("font");
+        let font = FontRef::try_from_slice(crate::FONT_JETBRAINS_MONO).expect("font");
         let store = data_dir.and_then(|d| FileStore::open(d).ok());
         let save = store.as_ref().map(|s| Save::load(s)).unwrap_or_default();
         let progress = save.progress();
@@ -1982,6 +2028,29 @@ fn arrow_down(rects: &mut Vec<RectRun>, cx: f32, top: f32, half: f32, height: f3
     }
 }
 
+/// A small pixel **★ filled star** drawn as art (the bundled font has no U+2605 glyph), top-left
+/// at `(x, y)`, `size` tall. Used as the "rating" prefix on hero cards / hero-detail (V28).
+fn push_star(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
+    // 7×7 filled five-pointed star bitmap (rows top→bottom).
+    const ST: [&str; 7] = [
+        "...#...", "...#...", ".#####.", "#######", ".##.##.", "##...##", "#.....#",
+    ];
+    let cell = size / 7.0;
+    for (r, row) in ST.iter().enumerate() {
+        for (c, &b) in row.as_bytes().iter().enumerate() {
+            if b == b'#' {
+                rects.push(RectRun {
+                    x: x + c as f32 * cell,
+                    y: y + r as f32 * cell,
+                    w: cell + 0.6,
+                    h: cell + 0.6,
+                    rgba,
+                });
+            }
+        }
+    }
+}
+
 /// A small pixel **checkmark** ✓ drawn as art (the bundled font has no U+2713 glyph), top-left at
 /// `(x, y)`, `size` tall. Used for the "complete" badges (inventory rows + mastered tree nodes).
 fn push_check(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
@@ -2797,13 +2866,15 @@ pub fn heroes_frame<'a>(
             quads: q,
             rgba: BODY,
         });
-        // ★ rating (right).
-        let rating = format!("* {}", hero_rating(&stats));
-        let rtw = fonts.body.text_width(&rating);
-        let (q, _) =
-            fonts
-                .body
-                .layout(&rating, rx + rw - rtw - w * 0.02, ry + rh * 0.12, rtw + 4.0);
+        // ★ rating (right) — pixel star (V28) + the count.
+        let count = format!("{}", hero_rating(&stats));
+        let ctw = fonts.body.text_width(&count);
+        let sw = rh * 0.36;
+        let star_x = rx + rw - ctw - sw * 1.4 - w * 0.02;
+        push_star(&mut rects, star_x, ry + rh * 0.18, sw, GOLD);
+        let (q, _) = fonts
+            .body
+            .layout(&count, star_x + sw * 1.3, ry + rh * 0.12, ctw + 4.0);
         texts.push(TextRun {
             atlas: &fonts.body,
             quads: q,
@@ -2934,14 +3005,16 @@ pub fn hero_detail_frame<'a>(
         quads: q,
         rgba: DIM,
     });
-    let star = format!("* {rating}");
-    let stw = fonts.body.text_width(&star);
-    let (q, _) = fonts.body.layout(
-        &star,
-        margin + col_w - stw - w * 0.02,
-        cy + chh * 0.14,
-        stw + 4.0,
-    );
+    // V28: ★ pixel star + the rating number (web's filled-star prefix).
+    let count = format!("{rating}");
+    let ctw = fonts.body.text_width(&count);
+    let sw = chh * 0.18;
+    let count_x = margin + col_w - ctw - w * 0.02;
+    let star_x = count_x - sw * 1.3;
+    push_star(&mut rects, star_x, cy + chh * 0.18, sw, GOLD);
+    let (q, _) = fonts
+        .body
+        .layout(&count, count_x, cy + chh * 0.14, ctw + 4.0);
     texts.push(TextRun {
         atlas: &fonts.body,
         quads: q,
@@ -5292,14 +5365,16 @@ pub fn arena_frame<'a>(
             quads: q,
             rgba: type_rgba(kind),
         });
-        let rating = format!("* {}", hero_rating(&stats));
-        let rw_txt = fonts.body.text_width(&rating);
-        let (q, _) = fonts.body.layout(
-            &rating,
-            rx + rw - rw_txt - w * 0.02,
-            ry + rh * 0.16,
-            rw_txt + 4.0,
-        );
+        // V28: ★ pixel star + the rating number.
+        let count = format!("{}", hero_rating(&stats));
+        let ctw = fonts.body.text_width(&count);
+        let sw = rh * 0.36;
+        let count_x = rx + rw - ctw - w * 0.02;
+        let star_x = count_x - sw * 1.3;
+        push_star(&mut rects, star_x, ry + rh * 0.22, sw, GOLD);
+        let (q, _) = fonts
+            .body
+            .layout(&count, count_x, ry + rh * 0.16, ctw + 4.0);
         texts.push(TextRun {
             atlas: &fonts.body,
             quads: q,
@@ -6174,7 +6249,7 @@ mod tests {
         // The frame builds without panicking and emits content.
         let (w, h) = (REF_W as f32, REF_H as f32);
         let fonts = Fonts::bake(
-            &FontRef::try_from_slice(crate::FONT_INSTRUMENT_SANS).unwrap(),
+            &FontRef::try_from_slice(crate::FONT_JETBRAINS_MONO).unwrap(),
             h,
         );
         let (rects, texts) =
@@ -6247,7 +6322,7 @@ mod tests {
     fn inventory_builds_for_every_tab() {
         let (w, h) = (REF_W as f32, REF_H as f32);
         let fonts = Fonts::bake(
-            &FontRef::try_from_slice(crate::FONT_INSTRUMENT_SANS).unwrap(),
+            &FontRef::try_from_slice(crate::FONT_JETBRAINS_MONO).unwrap(),
             h,
         );
         let save = full_collection_sample();
@@ -6291,7 +6366,7 @@ mod tests {
         );
         let (w, h) = (REF_W as f32, REF_H as f32);
         let fonts = Fonts::bake(
-            &FontRef::try_from_slice(crate::FONT_INSTRUMENT_SANS).unwrap(),
+            &FontRef::try_from_slice(crate::FONT_JETBRAINS_MONO).unwrap(),
             h,
         );
         let (rects, texts) = heroes_frame(&partial, &fonts, w, h);

@@ -121,6 +121,13 @@ pub mod immersive;
 /// The font under test (Instrument Sans, OFL — see `assets/InstrumentSans-OFL.txt`).
 pub const FONT_INSTRUMENT_SANS: &[u8] = include_bytes!("../assets/InstrumentSans-Regular.ttf");
 
+/// **JetBrains Mono** (OFL — see `assets/JetBrainsMono-OFL.txt`) — web GG1's monospace face for
+/// every headline number / count / chip (`mark`, `eb-tag`, `eb-count`, …). The owner's V25 side-by-
+/// side flagged "looks nothing alike" because the previous all-Instrument-Sans render was a smooth
+/// rounded sans where web shows a crisp, uniform-width mono. Bundled and used as the default UI
+/// face here on (Instrument Sans is kept as a fallback for any later display-face needs).
+pub const FONT_JETBRAINS_MONO: &[u8] = include_bytes!("../assets/JetBrainsMono-Regular.ttf");
+
 /// The short git SHA captured at build time (see `build.rs`) — the build-watermark stamped on every
 /// on-device screen so screenshots are traceable.
 pub const BUILD_SHA: &str = env!("GG_BUILD_SHA");

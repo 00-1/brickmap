@@ -16,7 +16,7 @@ use goblin_gold::headless::{write_png, Painter};
 fn main() {
     let out_dir = std::env::args().nth(1).unwrap_or_else(|| ".".to_string());
     std::fs::create_dir_all(&out_dir).ok();
-    let font = FontRef::try_from_slice(goblin_gold::FONT_INSTRUMENT_SANS).expect("font");
+    let font = FontRef::try_from_slice(goblin_gold::FONT_JETBRAINS_MONO).expect("font");
     let painter = Painter::new();
 
     // The real FX moment → the deliverable screenshot.
