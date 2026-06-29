@@ -619,12 +619,14 @@ fn push_stat_chip<'a>(
     let txt = format!("{val} {abbr}");
     let pad = h * 0.7;
     let cw = fonts.tiny.text_width(&txt) + pad;
+    // V30 v2: chip BG = INK (near-black). KEYBG was too close to PANEL — pills read as plain
+    // text in the agent gate. INK is a clear darker chip against the hero-card panel.
     rects.push(RectRun {
         x,
         y,
         w: cw,
         h,
-        rgba: KEYBG,
+        rgba: INK,
     });
     texts.push(TextRun {
         atlas: &fonts.tiny,
@@ -1803,20 +1805,18 @@ pub fn home_frame<'a>(
     // The home pile rides the CANONICAL log-scaled wealth fraction (`gold::hoard_level`, the value
     // `main.js homeFxState` feeds `seedHoard`) — NOT the fxgl `gold/(gold+K)` helper, which saturates
     // far too early (987M → ~1.0 full pile instead of the web's ~half pile).
-    // V36 v2: web's coin-pile fills the bottom ~45% as a DENSE pile with rising side "wings"
-    // (mound_profile already banks against the walls). v1 bumped level + lowered band but kept
-    // tiny 6–13 px coins, so the layer still read as a sparse fleck-band. v2 keeps `level` and
-    // `band_top`, then chunks up the coin size by 1.8× in the renderer below so neighbours
-    // visibly overlap into the web's gold mass.
+    // V36 v3: agent gate STILL sees the pile as sparse after v2's 1.8× bump. Push harder —
+    // 2.4× coin size + band_top 0.48 (wider vertical extent) so neighbours overlap into a
+    // contiguous gold mass with rising side wings.
     let level = (crate::gold::hoard_level(save.gold) * 1.4).min(1.0);
-    let band_top = 0.52;
+    let band_top = 0.48;
 
     // The pile's BULK — a gold-mass gradient under the surface coins (the "imply the bulk, render the
     // surface" trick). Web's bottom is near-SOLID gold even at a moderate level; without this the
     // purple backdrop shows through the coin gaps. Ramps from transparent at the crest to a solid
     // deep-gold floor. The floor stays solid regardless of `level` (any non-trivial pile has one);
     // `level` only gates a poorer save toward less mass (the `0.5 + 0.5·level` envelope).
-    let mass_top = 0.52;
+    let mass_top = 0.48;
     let lvlf = (0.5 + 0.5 * level as f32).clamp(0.0, 1.0);
     let mbands = 16;
     for i in 0..mbands {
@@ -1839,8 +1839,8 @@ pub fn home_frame<'a>(
         });
     }
     for coin in crate::hoard::seed_hoard(level, 0x601d, &[], 480) {
-        // V36 v2: 1.8× chunkier coins so the seedHoard surface overlaps into web's dense pile.
-        let s = coin.size as f32 * (w / 430.0) * 1.8;
+        // V36 v3: 2.4× chunkier coins (v2's 1.8× still read as fleck-band per the agent gate).
+        let s = coin.size as f32 * (w / 430.0) * 2.4;
         let cyn = band_top + coin.y as f32 * (1.0 - band_top);
         rects.push(RectRun {
             x: coin.x as f32 * w - s / 2.0,
@@ -2137,23 +2137,27 @@ fn arrow_down(rects: &mut Vec<RectRun>, cx: f32, top: f32, half: f32, height: f3
 /// A small pixel **★ filled star** drawn as art (the bundled font has no U+2605 glyph), top-left
 /// at `(x, y)`, `size` tall. Used as the "rating" prefix on hero cards / hero-detail (V28).
 fn push_star(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
-    // V28 v3: 11×11 filled five-pointed star — apex → widening, full-width upper arms, narrowing
-    // body, splitting into two splayed legs with a clear V-gap between (the v2 9×9 read as a
-    // "lumpy blob"). Mirrored about the centre column.
-    const ST: [&str; 11] = [
-        ".....#.....",
-        "....###....",
-        "....###....",
-        "###########",
-        ".#########.",
-        "..#######..",
-        "..#######..",
-        ".##.###.##.",
-        ".##..#..##.",
-        ".##.....##.",
-        "##.......##",
+    // V28 v4: 13×13 filled five-pointed star — derived from the regular pentagram geometry
+    // (apex (6,0), upper arms (12,4)/(0,4), lower legs (10,12)/(2,12), inner vertices at
+    // (4,4)/(8,4)/(11,8)/(7,11)/(5,11)/(1,8)). Each row's left/right outline is linearly
+    // interpolated along the outline edges and filled inward, so the shape reads as a clean ★
+    // (the v3 11×11 grid was too coarse and got read as a blob by the agent gate).
+    const ST: [&str; 13] = [
+        "......#......", // y=0  apex point
+        "......#......", // y=1  apex stem
+        ".....###.....", // y=2  apex widening
+        ".....###.....", // y=3
+        "#############", // y=4  arms reach full width (left/right arm tips)
+        ".###########.", // y=5
+        "..#########..", // y=6  body narrows toward bottom inner vertices
+        "..#########..", // y=7
+        ".###.###.###.", // y=8  legs split with central spine + V-gaps
+        ".###.....###.", // y=9  clean legs only
+        ".##.......##.", // y=10
+        ".##.......##.", // y=11
+        "##.........##", // y=12 leg tips at the bottom corners
     ];
-    let cell = size / 11.0;
+    let cell = size / 13.0;
     for (r, row) in ST.iter().enumerate() {
         for (c, &b) in row.as_bytes().iter().enumerate() {
             if b == b'#' {
@@ -3206,12 +3210,13 @@ pub fn hero_detail_frame<'a>(
     let mut cx_run = chips_left;
     for (i, txt) in chip_strs.iter().enumerate() {
         let cw = chip_widths[i];
+        // V30 v2: chip BG = INK (chip needs to read distinctly against the card panel).
         rects.push(RectRun {
             x: cx_run,
             y: chip_y,
             w: cw,
             h: chip_h,
-            rgba: KEYBG,
+            rgba: INK,
         });
         texts.push(TextRun {
             atlas: &fonts.tiny,
@@ -4131,6 +4136,8 @@ fn push_progress_row<'a>(
         quads: q,
         rgba: lc,
     });
+    // V51: extend the bar track flush with the row's right edge (col_w*0.96) so a 100% pile
+    // visually reads as filled to the count number rather than stopping short at col_w*0.92.
     let (bx, by, bw, bh) = (
         margin + col_w * 0.04,
         ry + row_h * 0.62,
@@ -4145,7 +4152,7 @@ fn push_progress_row<'a>(
         rgba: INK,
     });
     let frac = if total > 0 {
-        have as f32 / total as f32
+        (have as f32 / total as f32).min(1.0)
     } else {
         0.0
     };
