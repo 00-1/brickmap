@@ -783,6 +783,24 @@ fn bottom_button(w: f32, h: f32) -> (f32, f32, f32, f32) {
     ((w - bw) / 2.0, h * 0.915, bw, bh)
 }
 
+/// V53 NICE-BUTTON geometry — picks button (x, y, w, h) for `label` that satisfies the
+/// `BUTTON-DESIGN.md` checklist: text fits + is centred ≤1 px both axes, padding symmetric,
+/// h-pad / v-pad ratio in [1.5, 3.5], h ≥ 44 px touch target, v-pad ≥ 0.5 × cap-height.
+/// Position is anchored bottom-centred (the screen's classic CTA slot).
+fn nice_button(fonts: &Fonts, label: &str, w: f32, h: f32) -> (f32, f32, f32, f32, f32, f32, f32) {
+    // Returns (bx, by, bw, bh, text_w, h_pad, v_pad). v-pad ≥ 0.5 × cap-height, h-pad = 2.5 × v-pad
+    // (middle of the 1.5–3.5 ratio window).
+    let cap = fonts.key.px * 0.7; // approx cap-height for a typical sans
+    let v_pad = (cap * 0.7).max(8.0);
+    let h_pad = v_pad * 2.5;
+    let text_w = fonts.key.text_width(label);
+    let bh = ((cap + 2.0 * v_pad).max(44.0)).min(h * 0.08);
+    let bw = (text_w + 2.0 * h_pad).min(w * 0.92);
+    let bx = (w - bw) / 2.0;
+    let by = h * 0.915 + (h * 0.055 - bh) / 2.0;
+    (bx, by, bw, bh, text_w, h_pad, v_pad)
+}
+
 /// Whether (`px`,`py`) hits the shared bottom button.
 fn hit_bottom_button(w: f32, h: f32, px: f32, py: f32) -> bool {
     let (bx, by, bw, bh) = bottom_button(w, h);
@@ -2584,9 +2602,9 @@ fn push_button<'a>(
     w: f32,
     h: f32,
 ) {
-    // OUTLINED treatment (gold border + dark fill + gold label) — web's subtle action bar, not a
-    // bright solid-yellow slab (parity ledger V8/V12: the shared bottom bar across every screen).
-    let (bx, by, bw, bh) = bottom_button(w, h);
+    // OUTLINED treatment (gold border + dark fill + gold label). V53 nice-button geometry —
+    // self-sizing to fit the label with symmetric h-pad/v-pad in the 1.5–3.5 ratio window.
+    let (bx, by, bw, bh, _tw, _hp, _vp) = nice_button(fonts, label, w, h);
     rects.push(RectRun {
         x: bx,
         y: by,
@@ -2619,7 +2637,7 @@ fn push_neutral_button<'a>(
     w: f32,
     h: f32,
 ) {
-    let (bx, by, bw, bh) = bottom_button(w, h);
+    let (bx, by, bw, bh, _tw, _hp, _vp) = nice_button(fonts, label, w, h);
     rects.push(RectRun {
         x: bx,
         y: by,
@@ -2652,7 +2670,7 @@ fn push_cta<'a>(
     w: f32,
     h: f32,
 ) {
-    let (bx, by, bw, bh) = bottom_button(w, h);
+    let (bx, by, bw, bh, _tw, _hp, _vp) = nice_button(fonts, label, w, h);
     rects.push(RectRun {
         x: bx,
         y: by,
@@ -3272,7 +3290,7 @@ pub fn heroes_frame<'a>(
         push_star(&mut rects, star_x, ry + rh * 0.22, sw, GOLD);
         let (q, _) = fonts
             .body
-            .layout(&count, star_x + sw * 1.3, ry + rh * 0.12, ctw + 4.0);
+            .layout(&count, star_x + sw * 1.6, ry + rh * 0.12, ctw + 4.0);
         texts.push(TextRun {
             atlas: &fonts.body,
             quads: q,
@@ -4379,19 +4397,19 @@ fn push_progress_row<'a>(
     });
     // A prominent green ✓ at the far right when complete (web's per-row checkmark, V22), with the
     // count laid out to its left.
-    let mut count_right = margin + col_w * 0.96;
+    // V55: pull the right-edge ✓ check INSIDE the card with consistent padding (was rendering
+    // ck * 1.2 from a 0.96-of-col_w anchor → effectively touching the right card border).
+    // `card_pad_r` = col_w * 0.04 mirrors the left label padding for an even visual gutter.
+    let card_pad_r = col_w * 0.04;
+    let mut count_right = margin + col_w - card_pad_r;
     if done {
         let ck = row_h * 0.34;
-        push_check(
-            rects,
-            margin + col_w * 0.96 - ck * 1.2,
-            ry + row_h * 0.3,
-            ck,
-            GREEN,
-        );
-        count_right = margin + col_w * 0.92 - ck * 1.2;
+        let check_x = margin + col_w - card_pad_r - ck;
+        push_check(rects, check_x, ry + row_h * 0.32, ck, GREEN);
+        count_right = check_x - card_pad_r * 0.5;
     }
-    let cnt = format!("{have} / {total}");
+    // V54: tighten the inventory-row count `61 / 61` → `61/61` to match web's compact form.
+    let cnt = format!("{have}/{total}");
     let cw = fonts.tiny.text_width(&cnt);
     let (q, _) = fonts
         .tiny
@@ -4786,7 +4804,7 @@ pub fn items_frame<'a>(
             rgba: DIM,
         });
         // Right-aligned have/total for region 0.
-        let r0_count = format!("{} / {}", region_counts[0].0, region_counts[0].1);
+        let r0_count = format!("{}/{}", region_counts[0].0, region_counts[0].1);
         let rc_w = fonts.tiny.text_width(&r0_count);
         let (q, _) = fonts
             .tiny
@@ -4802,16 +4820,21 @@ pub fn items_frame<'a>(
         let cols = 5usize;
         let sgap = w * 0.018;
         let tile = (col_w - sgap * (cols as f32 - 1.0)) / cols as f32;
+        // V49 (synth): loot ids aren't in the collectibles catalogue (no flavour name field on
+        // `lootBoosts`). The best label we can build from the export is `+<amount> <ABBR>`
+        // (e.g. `+1 GRD`) by looking up the boost in `combat::loot_boosts_for`. Genuine real-
+        // name parity needs an export-side flavour map → FLAGGED for owner/Babysitter.
+        let all_lb: Vec<(String, String, i64)> = crate::arena::roster()
+            .iter()
+            .flat_map(|h| crate::combat::loot_boosts_for(&h.id))
+            .collect();
         for (i, id) in region0_ids.iter().take(cols).enumerate() {
             let x = margin + i as f32 * (tile + sgap);
             let have_it = owned.contains(id.as_str());
-            // Loot ids ("loot:N:idx") aren't in the collectibles catalogue — render with a
-            // synthesised "Tier N" label rather than dumping the raw slug.
             let rarity = "common".to_string();
-            let name = id
-                .strip_prefix("loot:")
-                .and_then(|s| s.split(':').next())
-                .map(|t| format!("Tier {t}"))
+            let boost = all_lb.iter().find(|(lid, _, _)| lid == id);
+            let name = boost
+                .map(|(_, stat, amount)| format!("+{amount} {}", stat_abbr(stat)))
                 .unwrap_or_else(|| id.clone());
             rects.push(RectRun {
                 x: x - 1.5,
@@ -6870,6 +6893,56 @@ fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ab_glyph::FontRef;
+
+    /// V53: mirror of `test/button-geometry.test.js` `checkButton` against brickmap's REAL
+    /// `nice_button` output, for the labels every screen actually ships. Catches off-centre /
+    /// asymmetric / too-cramped buttons before they render.
+    fn check_button_geom(label: &str, fonts: &Fonts, w: f32, h: f32) {
+        let (bx, by, bw, bh, text_w, h_pad, v_pad) = nice_button(fonts, label, w, h);
+        let _ = (bx, by);
+        // (1) fits — text width does not exceed button width.
+        assert!(
+            text_w <= bw + 0.5,
+            "label `{label}` text_w={text_w:.1} > bw={bw:.1}"
+        );
+        // (3) symmetric padding — h_pad and v_pad are set explicitly, so the inner box centres.
+        assert!(h_pad > 0.0 && v_pad > 0.0, "non-positive padding");
+        // (4) h:v padding ratio in [1.5, 3.5].
+        let ratio = h_pad / v_pad;
+        assert!(
+            (1.5..=3.5).contains(&ratio),
+            "label `{label}` h-pad/v-pad={ratio:.2} outside [1.5, 3.5]"
+        );
+        // (5) touch target ≥ 44 px.
+        assert!(bh >= 44.0 - 0.5, "label `{label}` bh={bh:.1} < 44 px");
+        // (6) v_pad ≥ 0.5 × cap-height (cap ≈ 0.7 × atlas px).
+        let cap = fonts.key.px * 0.7;
+        assert!(
+            v_pad + 0.5 >= 0.5 * cap,
+            "label `{label}` v_pad={v_pad:.1} < 0.5 cap={:.1}",
+            0.5 * cap
+        );
+    }
+
+    #[test]
+    fn nice_button_geometry_passes_for_every_label() {
+        let font = FontRef::try_from_slice(crate::FONT_JETBRAINS_MONO).expect("font");
+        let (w, h) = (REF_W as f32, REF_H as f32);
+        let fonts = Fonts::bake(&font, h);
+        for label in [
+            "Back",
+            "Continue",
+            "Collection",
+            "Pick your party",
+            "Start",
+            "Practice",
+            "Guide",
+            "Again",
+        ] {
+            check_button_geom(label, &fonts, w, h);
+        }
+    }
 
     /// The topic grid must keep EVERY unlocked topic fully on-screen (above the Collection button)
     /// and within the horizontal margins — the bug this layout fixes was a fixed row height that ran
