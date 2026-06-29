@@ -1983,7 +1983,11 @@ pub fn home_frame<'a>(
                 arrow_down(&mut rects, cx_child, y0 + shaft_h, w * 0.030, head_h, acol);
             }
             progression::Unlock::Mastered(parent_id) => {
-                // PURPLE horizontal branch — parent's right edge → child's left edge (or mirror).
+                // V37 v4: PURPLE horizontal branch — parent's right edge → child's left edge.
+                // The intra-row gap between parts is small (~5 px at 430 wide), so the geometry
+                // has to FIT inside the actual gap width. v3 sized the head at `node_h*0.28`
+                // which exceeded the gap, so the shaft length went negative + nothing drew. v4
+                // computes the head from the gap so a thin shaft + half-gap head ALWAYS fits.
                 let Some(&(cx_parent, ny_parent)) = node_pos.get(parent_id.as_str()) else {
                     continue;
                 };
@@ -1997,27 +2001,23 @@ pub fn home_frame<'a>(
                     HOME_PALETTE[2][2],
                     pa,
                 ];
-                // Same-row branch (typical): horizontal arrow from parent-right to child-left.
                 if (ny_parent - ny_child).abs() < ph * 0.5 {
                     let py = ny_parent + ph * 0.5;
                     let x0 = cx_parent + pw * 0.5;
                     let x1 = cx_child - nw_child * 0.5;
-                    if x1 > x0 {
+                    let gap = x1 - x0;
+                    if gap > 1.0 {
+                        let head = (gap * 0.5).min(node_h * 0.22);
+                        // Thin shaft fills the gap up to the arrowhead's base.
                         rects.push(RectRun {
                             x: x0,
-                            y: py - node_h * 0.11,
-                            w: x1 - x0 - node_h * 0.24,
-                            h: node_h * 0.22,
+                            y: py - node_h * 0.06,
+                            w: (gap - head).max(0.5),
+                            h: node_h * 0.12,
                             rgba: pcol,
                         });
-                        arrow_right(
-                            &mut rects,
-                            x1 - node_h * 0.28,
-                            py,
-                            node_h * 0.28,
-                            node_h * 0.28,
-                            pcol,
-                        );
+                        // Compact arrowhead in the trailing half of the gap, apex AT x1.
+                        arrow_right(&mut rects, x1 - head, py, node_h * 0.20, head, pcol);
                     }
                 }
             }
