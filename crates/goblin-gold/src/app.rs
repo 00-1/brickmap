@@ -1701,15 +1701,9 @@ pub fn home_frame<'a>(
         });
     }
 
-    // Gold-bar header.
+    // Gold-bar header — V38: coin glyph (pixel disc) instead of a plain square.
     let coin = h * 0.022;
-    rects.push(RectRun {
-        x: margin,
-        y: h * 0.022,
-        w: coin,
-        h: coin,
-        rgba: GOLD,
-    });
+    push_coin(&mut rects, margin, h * 0.022, coin, GOLD);
     let (q, _) = fonts.body.layout(
         &format!("{} Goblin Gold", crate::gold::fmt_gold(save.gold)),
         margin + coin * 1.4,
@@ -2150,6 +2144,70 @@ fn arrow_down(rects: &mut Vec<RectRun>, cx: f32, top: f32, half: f32, height: f3
 
 /// A small pixel **★ filled star** drawn as art (the bundled font has no U+2605 glyph), top-left
 /// at `(x, y)`, `size` tall. Used as the "rating" prefix on hero cards / hero-detail (V28).
+/// V48: pixel crossed-swords ⚔ glyph (7×7) — top-left at `(x, y)`, `size` tall. Stands in for
+/// U+2694 across the arena screens (the bundled font has no ⚔).
+fn push_swords(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
+    const SW: [&str; 7] = [
+        "#.....#", "##...##", ".##.##.", "..###..", ".##.##.", "##...##", "#.....#",
+    ];
+    let cell = size / 7.0;
+    for (r, row) in SW.iter().enumerate() {
+        for (c, &b) in row.as_bytes().iter().enumerate() {
+            if b == b'#' {
+                rects.push(RectRun {
+                    x: x + c as f32 * cell,
+                    y: y + r as f32 * cell,
+                    w: cell + 0.6,
+                    h: cell + 0.6,
+                    rgba,
+                });
+            }
+        }
+    }
+}
+
+/// V39: pixel calendar glyph (5×6) — the top "spine" + grid of date pips. Top-left at `(x, y)`,
+/// `size` tall. Replaces the plain green square in the results MOMENTUM pill.
+fn push_calendar(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
+    const CAL: [&str; 6] = ["#...#", "#####", "#####", "#.#.#", "#####", "#.#.#"];
+    let cell = size / 6.0;
+    for (r, row) in CAL.iter().enumerate() {
+        for (c, &b) in row.as_bytes().iter().enumerate() {
+            if b == b'#' {
+                rects.push(RectRun {
+                    x: x + c as f32 * cell,
+                    y: y + r as f32 * cell,
+                    w: cell + 0.6,
+                    h: cell + 0.6,
+                    rgba,
+                });
+            }
+        }
+    }
+}
+
+/// V39: pixel coin glyph (7×7) — round-ish disc with a centre `$`-like notch. Used in place of
+/// a plain square wherever a gold-coin icon belongs (header gold tally, results gold tag).
+fn push_coin(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
+    const C: [&str; 7] = [
+        ".#####.", "#######", "###.###", "##.#.##", "###.###", "#######", ".#####.",
+    ];
+    let cell = size / 7.0;
+    for (r, row) in C.iter().enumerate() {
+        for (c, &b) in row.as_bytes().iter().enumerate() {
+            if b == b'#' {
+                rects.push(RectRun {
+                    x: x + c as f32 * cell,
+                    y: y + r as f32 * cell,
+                    w: cell + 0.6,
+                    h: cell + 0.6,
+                    rgba,
+                });
+            }
+        }
+    }
+}
+
 fn push_star(rects: &mut Vec<RectRun>, x: f32, y: f32, size: f32, rgba: [f32; 4]) {
     // V28 v4: 13×13 filled five-pointed star — derived from the regular pentagram geometry
     // (apex (6,0), upper arms (12,4)/(0,4), lower legs (10,12)/(2,12), inner vertices at
@@ -2338,7 +2396,50 @@ fn home_node<'a>(
         rgba: prog_col,
     });
     if mastered {
-        push_check(rects, x + nw - nh * 0.42, y + nh * 0.08, nh * 0.3, GREEN);
+        // V37 corner ✓ BADGE — dark circular bg + green ✓ pinned top-right (web's "stamp"
+        // treatment; replaces the earlier inline ✓ that read as just a tick over the card BG).
+        let bs = nh * 0.34;
+        let bx = x + nw - bs - 2.0;
+        let by = y + 2.0;
+        // Outer dark "circle" (square w/ rounded look once the cell ≥ ~4 px).
+        rects.push(RectRun {
+            x: bx,
+            y: by,
+            w: bs,
+            h: bs,
+            rgba: [0.0, 0.0, 0.0, 0.85],
+        });
+        // 1-px green border so the badge reads as a distinct cap, not just a hole.
+        rects.push(RectRun {
+            x: bx,
+            y: by,
+            w: bs,
+            h: 1.0,
+            rgba: [GREEN[0], GREEN[1], GREEN[2], 0.7],
+        });
+        rects.push(RectRun {
+            x: bx,
+            y: by + bs - 1.0,
+            w: bs,
+            h: 1.0,
+            rgba: [GREEN[0], GREEN[1], GREEN[2], 0.7],
+        });
+        rects.push(RectRun {
+            x: bx,
+            y: by,
+            w: 1.0,
+            h: bs,
+            rgba: [GREEN[0], GREEN[1], GREEN[2], 0.7],
+        });
+        rects.push(RectRun {
+            x: bx + bs - 1.0,
+            y: by,
+            w: 1.0,
+            h: bs,
+            rgba: [GREEN[0], GREEN[1], GREEN[2], 0.7],
+        });
+        // Centred ✓ inside the badge.
+        push_check(rects, bx + bs * 0.18, by + bs * 0.2, bs * 0.65, GREEN);
     }
 }
 
@@ -2670,15 +2771,11 @@ pub fn results_frame<'a>(
             h: ph,
             rgba: KEYBG,
         });
-        // Calendar pip — a small green square (the font has no calendar glyph).
+        // V39: calendar glyph — a small 5×6 pixel-art "calendar" instead of a plain square.
         let pip = ph * 0.5;
-        rects.push(RectRun {
-            x: px + ph * 0.18,
-            y: py + (ph - pip) / 2.0,
-            w: pip,
-            h: pip,
-            rgba: GREEN,
-        });
+        let cal_x = px + ph * 0.18;
+        let cal_y = py + (ph - pip) / 2.0;
+        push_calendar(&mut rects, cal_x, cal_y, pip, GREEN);
         let label_x = px + ph * 0.18 + pip + ph * 0.18;
         let (q, _) = fonts.tiny.layout("MOMENTUM", label_x, py + ph * 0.16, pw);
         texts.push(TextRun {
@@ -2775,16 +2872,10 @@ pub fn results_frame<'a>(
         });
     }
 
-    // Goblin Gold (with a coin pip).
+    // Goblin Gold (with a coin pip) — V39: pixel coin glyph, not a plain square.
     let gy = h * 0.54;
     let coin = h * 0.026;
-    rects.push(RectRun {
-        x: cx - w * 0.20,
-        y: gy,
-        w: coin,
-        h: coin,
-        rgba: GOLD,
-    });
+    push_coin(&mut rects, cx - w * 0.20, gy, coin, GOLD);
     texts.push(TextRun {
         atlas: &fonts.body,
         quads: {
@@ -4113,11 +4204,20 @@ fn push_progress_row<'a>(
     ry: f32,
     row_h: f32,
 ) {
+    // V45: row as a BORDERED CARD (DIM outline + KEYBG fill) instead of a flat PANEL strip,
+    // matching the per-row card framing on every other web inventory row.
     rects.push(RectRun {
         x: margin,
         y: ry,
         w: col_w,
         h: row_h,
+        rgba: [DIM[0], DIM[1], DIM[2], 0.45],
+    });
+    rects.push(RectRun {
+        x: margin + 1.0,
+        y: ry + 1.0,
+        w: col_w - 2.0,
+        h: row_h - 2.0,
         rgba: PANEL,
     });
     let done = total > 0 && have >= total;
@@ -4126,11 +4226,11 @@ fn push_progress_row<'a>(
     // "<Realm> · tiers a–b" loot labels would otherwise wrap over the progress bar).
     let avail = col_w * 0.66;
     let (la, ly) = if fonts.body.text_width(label) <= avail {
-        (&fonts.body, row_h * 0.12)
+        (&fonts.body, row_h * 0.08)
     } else {
-        (&fonts.tiny, row_h * 0.2)
+        (&fonts.tiny, row_h * 0.16)
     };
-    let (q, _) = la.layout(label, margin + col_w * 0.04, ry + ly, col_w);
+    let (q, _) = la.layout(label, margin + col_w * 0.05, ry + ly, col_w);
     texts.push(TextRun {
         atlas: la,
         quads: q,
@@ -4160,13 +4260,13 @@ fn push_progress_row<'a>(
         quads: q,
         rgba: lc,
     });
-    // V51: extend the bar track flush with the row's right edge (col_w*0.96) so a 100% pile
-    // visually reads as filled to the count number rather than stopping short at col_w*0.92.
+    // V45 v2: bar on its OWN LINE below the label, with vertical breathing room — the row is
+    // visually a "label row + bar row" stack, not a strip with text striking through it.
     let (bx, by, bw, bh) = (
-        margin + col_w * 0.04,
-        ry + row_h * 0.62,
-        col_w * 0.92,
-        row_h * 0.18,
+        margin + col_w * 0.05,
+        ry + row_h * 0.72,
+        col_w * 0.90,
+        row_h * 0.16,
     );
     rects.push(RectRun {
         x: bx,
@@ -4518,10 +4618,11 @@ pub fn items_frame<'a>(
             quads: q,
             rgba: DIM,
         });
-        // Rows, one per region.
+        // Rows, one per region — slightly shorter than before so a per-region carousel can
+        // fit at the bottom (V49 adds the loot-item strip web shows under the rows).
         let band_top = h * 0.175;
-        let rgap = h * 0.012;
-        let row_h = h * 0.058;
+        let rgap = h * 0.010;
+        let row_h = h * 0.048;
         for (r, &(hv, t)) in region_counts.iter().enumerate() {
             let ry = band_top + r as f32 * (row_h + rgap);
             let lo = r as u32 * rsize + 1;
@@ -4531,6 +4632,85 @@ pub fn items_frame<'a>(
                 &mut rects, &mut texts, fonts, &label, hv, t, margin, col_w, ry, row_h,
             );
         }
+
+        // V49: bottom carousel — `<REGION> · TIERS lo-hi  N/N` sub-header + a horizontal strip
+        // of the first region's loot tiles (web shows the active region's loot in this slot).
+        let cy = band_top + nregions as f32 * (row_h + rgap) + h * 0.012;
+        let (q, _) = fonts
+            .tiny
+            .layout("GOBLIN WARREN · TIERS 1-12", margin, cy, col_w);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        // Right-aligned have/total for region 0.
+        let r0_count = format!("{} / {}", region_counts[0].0, region_counts[0].1);
+        let rc_w = fonts.tiny.text_width(&r0_count);
+        let (q, _) = fonts
+            .tiny
+            .layout(&r0_count, w - margin - rc_w, cy, rc_w + 4.0);
+        texts.push(TextRun {
+            atlas: &fonts.tiny,
+            quads: q,
+            rgba: DIM,
+        });
+        // Strip of 5 tiles for region-0 loot ids (rarity border + icon + short name).
+        let cy2 = cy + h * 0.024;
+        let region0_ids: Vec<String> = (1..=rsize).flat_map(crate::combat::loot_for).collect();
+        let cols = 5usize;
+        let sgap = w * 0.018;
+        let tile = (col_w - sgap * (cols as f32 - 1.0)) / cols as f32;
+        for (i, id) in region0_ids.iter().take(cols).enumerate() {
+            let x = margin + i as f32 * (tile + sgap);
+            let have_it = owned.contains(id.as_str());
+            // Loot ids ("loot:N:idx") aren't in the collectibles catalogue — render with a
+            // synthesised "Tier N" label rather than dumping the raw slug.
+            let rarity = "common".to_string();
+            let name = id
+                .strip_prefix("loot:")
+                .and_then(|s| s.split(':').next())
+                .map(|t| format!("Tier {t}"))
+                .unwrap_or_else(|| id.clone());
+            rects.push(RectRun {
+                x: x - 1.5,
+                y: cy2 - 1.5,
+                w: tile + 3.0,
+                h: tile + 3.0,
+                rgba: if have_it { rarity_rgba(&rarity) } else { DIM },
+            });
+            rects.push(RectRun {
+                x,
+                y: cy2,
+                w: tile,
+                h: tile,
+                rgba: INK,
+            });
+            if let Some((role, pal)) = crate::art::item_icon_for(id, &rarity) {
+                paint_role(
+                    &mut rects,
+                    &role,
+                    &pal,
+                    x + tile * 0.08,
+                    cy2 + tile * 0.08,
+                    tile * 0.84 / 16.0,
+                );
+            }
+            texts.push(TextRun {
+                atlas: &fonts.tiny,
+                quads: centered_wrapped(
+                    &fonts.tiny,
+                    &name,
+                    x + tile / 2.0,
+                    cy2 + tile + h * 0.002,
+                    h * 0.014,
+                    tile,
+                    2,
+                ),
+                rgba: if have_it { BODY } else { DIM },
+            });
+        }
+
         push_neutral_button(&mut rects, &mut texts, fonts, "Back", w, h);
         return (rects, texts);
     }
@@ -5951,15 +6131,23 @@ pub fn arena_map_frame<'a>(
             quads: q,
             rgba: label_col,
         });
-        // "x <Boss>" centre (the region boss name).
+        // V48: "⚔ <Boss>" centre (pixel crossed-swords + name; was an ASCII `x`).
+        let _ = status_text;
         let boss_n = (r32 + 1) * rsize;
         let boss_name = crate::combat::tier_meta(boss_n)
             .map(|(n, _, _)| n)
             .unwrap_or_else(|| "Boss".to_string());
-        let boss_str = format!("{status_text} {boss_name}");
-        let (q, _) = fonts.tiny.layout(
-            &boss_str,
+        let sword_size = row_h * 0.42;
+        push_swords(
+            &mut rects,
             margin + col_w * 0.42,
+            ry + row_h * 0.29,
+            sword_size,
+            DIM,
+        );
+        let (q, _) = fonts.tiny.layout(
+            &boss_name,
+            margin + col_w * 0.42 + sword_size + row_h * 0.18,
             ry + row_h * 0.28,
             col_w * 0.4,
         );
@@ -6009,8 +6197,9 @@ pub fn arena_map_frame<'a>(
     paint_role(&mut rects, &role, &pal, pbx, pby, portrait_box / 16.0);
     // Footer text: "<REGION> · REGION N · TIER X/Y" + foe name + type label.
     let info_x = pbx + portrait_box + col_w * 0.04;
+    // V48: include the `/10` region denominator (web shows "REGION 3/10", not bare "REGION 3").
     let region_str = format!(
-        "{} · REGION {} · TIER {}/{rsize}",
+        "{} · REGION {}/{nregions} · TIER {}/{rsize}",
         crate::combat::region_name(cur_region as usize).to_uppercase(),
         cur_region + 1,
         ((tier - 1) % rsize) + 1
@@ -6055,8 +6244,8 @@ pub fn arena_map_frame<'a>(
         let stat_x = info_x + tw + col_w * 0.06;
         let stat_y = card_y + card_h * 0.72;
         let mark_size = card_h * 0.12;
-        // Tiny crossed-swords mark in gold.
-        push_check(&mut rects, stat_x, stat_y + card_h * 0.06, mark_size, GOLD);
+        // V48: real ⚔ pixel mark (was a checkmark stand-in).
+        push_swords(&mut rects, stat_x, stat_y + card_h * 0.06, mark_size, GOLD);
         let (q, _) = fonts.tiny.layout(
             &stat_str,
             stat_x + mark_size + card_h * 0.04,
@@ -6070,11 +6259,16 @@ pub fn arena_map_frame<'a>(
         });
     }
 
-    // "X ENEMY TEAM" eyebrow.
+    // V48: "⚔ ENEMY TEAM" eyebrow — pixel swords + label.
     let foes_y = card_y + card_h + h * 0.012;
+    let sw_size = h * 0.018;
+    push_swords(&mut rects, margin, foes_y + h * 0.003, sw_size, DIM);
     texts.push(TextRun {
         atlas: &fonts.tiny,
-        quads: fonts.tiny.layout("X ENEMY TEAM", margin, foes_y, col_w).0,
+        quads: fonts
+            .tiny
+            .layout("ENEMY TEAM", margin + sw_size + h * 0.008, foes_y, col_w)
+            .0,
         rgba: DIM,
     });
     let _ = party; // party isn't shown here; consumed for signature parity with arena_frame.
@@ -6109,9 +6303,10 @@ pub fn arena_map_frame<'a>(
         h: bh,
         rgba: GOLD,
     });
+    // V48: shrink CTA label to fit the bw (web's "Pick your party" overflowed/truncated).
     texts.push(TextRun {
-        atlas: &fonts.body,
-        quads: centered(&fonts.body, "Pick your party", ptx + bw / 2.0, by, bh),
+        atlas: &fonts.tiny,
+        quads: centered(&fonts.tiny, "Pick your party", ptx + bw / 2.0, by, bh),
         rgba: INK,
     });
 
