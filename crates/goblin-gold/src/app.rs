@@ -1810,14 +1810,16 @@ pub fn home_frame<'a>(
     let spine = home_spine(modes);
     let branch_of = home_branches(modes);
     let tree_top = h * 0.15;
-    let row_pitch = h * 0.064;
-    // V37 v5 LAYOUT FIX: shrink node_w + widen hgap so each intra-row gap is large enough to
-    // host a real left→right sibling arrow (Babysitter `1b209a6`: the v4 "fit into the gap"
-    // attempt failed because the gap was ~5 px — not a drawing bug, a layout bug). The new
-    // gap is ≈ 13 px at 430 wide, comfortable for arrowhead + short shaft.
-    let node_w = w * 0.152;
-    let node_h = h * 0.046;
-    let hgap = w * 0.030;
+    let row_pitch = h * 0.072;
+    // V37a TOPIC-BOX PLACEMENT (owner-spec, web-DOM-measured at 360 px tree width on a 430 px
+    // device):
+    //   4-part row → 4 × 60 px node + 3 × ~38 px gap  → node 0.140 w, gap 0.088 w
+    //   2-part row → 2 × 96 px node + 116 px gap      → node 0.223 w, gap 0.270 w
+    //   1-part row → 1 × 96 px node centred           → node 0.223 w
+    //   node height 52 px → 0.059 h
+    // node_w/hgap now depend on the row's part count (set inside the per-row loop). row_pitch
+    // bumped to leave vertical room for the connectors AND for the slightly taller node box.
+    let node_h = h * 0.059;
     let cx = w / 2.0;
     // Tree rows that would fall into the card/pile region are clipped (the web tree scrolls under the
     // fixed bottom UI); the visible top ~8 rows read like the reference.
@@ -1895,20 +1897,30 @@ pub fn home_frame<'a>(
     let mut node_pos: HashMap<&str, (f32, f32)> = HashMap::new(); // id → (centre-x, top-y)
     let mut node_size: HashMap<&str, (f32, f32)> = HashMap::new(); // id → (w, h)
     let mut visible_ids: Vec<&str> = Vec::new();
+    // V37a: pick node_w / hgap from the row's part count to match web's measured placement
+    // (4-part → 60+38 px = 0.140 + 0.088 w; 2-part → 96+116 px = 0.223 + 0.270 w; 1-part → 96).
+    let row_geom = |n: usize| -> (f32, f32) {
+        match n {
+            1 => (w * 0.223, 0.0),
+            2 => (w * 0.223, w * 0.270),
+            _ => (w * 0.140, w * 0.088),
+        }
+    };
     for (i, m) in spine.iter().enumerate() {
         if !row_visible(i) {
             break;
         }
         let parts = topic_parts(m, &branch_of);
         let n = parts.len() as f32;
-        let total_w = n * node_w + (n - 1.0) * hgap;
+        let (rnw, rhg) = row_geom(parts.len());
+        let total_w = n * rnw + (n - 1.0).max(0.0) * rhg;
         let mut nx = cx - total_w / 2.0;
         let ny = tree_top + i as f32 * row_pitch;
         for p in parts.iter() {
-            node_pos.insert(p.id.as_str(), (nx + node_w / 2.0, ny));
-            node_size.insert(p.id.as_str(), (node_w, node_h));
+            node_pos.insert(p.id.as_str(), (nx + rnw / 2.0, ny));
+            node_size.insert(p.id.as_str(), (rnw, node_h));
             visible_ids.push(p.id.as_str());
-            nx += node_w + hgap;
+            nx += rnw + rhg;
         }
     }
 
@@ -2029,21 +2041,24 @@ pub fn home_frame<'a>(
         }
     }
 
-    // PASS 3 — paint every node ON TOP of the edges (badges + checks).
+    // PASS 3 — paint every node ON TOP of the edges (badges + checks). V37a uses the same
+    // per-row `row_geom` widths as PASS 1 so nodes land exactly where their positions were
+    // recorded.
     for (i, m) in spine.iter().enumerate() {
         if !row_visible(i) {
             break;
         }
         let parts = topic_parts(m, &branch_of);
         let n = parts.len() as f32;
-        let total_w = n * node_w + (n - 1.0) * hgap;
+        let (rnw, rhg) = row_geom(parts.len());
+        let total_w = n * rnw + (n - 1.0).max(0.0) * rhg;
         let mut nx = cx - total_w / 2.0;
         let ny = tree_top + i as f32 * row_pitch;
         for p in parts.iter() {
             home_node(
-                &mut rects, &mut texts, fonts, save, progress, p, nx, ny, node_w, node_h,
+                &mut rects, &mut texts, fonts, save, progress, p, nx, ny, rnw, node_h,
             );
-            nx += node_w + hgap;
+            nx += rnw + rhg;
         }
     }
 
