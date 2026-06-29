@@ -556,12 +556,21 @@ fn make_scene(
 
 /// Baked atlases sized to the current window (re-baked on resize). Public so the golden test can
 /// render the same drill frame the device does (via [`drill_frame`]).
+///
+/// V44 KEYSTONE — **mixed type system**. JBMono carries the chrome + numeric faces (`head`, `q`,
+/// `body`, `key`, `tiny`); InstrumentSans is baked into the **proportional** `name` faces used
+/// for *content names* only (topic / region / hero / item names). Numbers + chrome + math glyphs
+/// stay mono; everything called by name reads as web's proportional bold sans.
 pub struct Fonts {
     head: Atlas,
     q: Atlas,
     body: Atlas,
     key: Atlas,
     tiny: Atlas,
+    /// Proportional content-name face (InstrumentSans), body-row size.
+    name: Atlas,
+    /// Proportional content-name face (InstrumentSans), card-title size.
+    name_big: Atlas,
 }
 
 /// Non-ASCII glyphs the game's text uses beyond printable ASCII: the math operators that appear in
@@ -573,6 +582,8 @@ const GLYPHS: &str = "−×÷²·—–✓↓▶›";
 
 impl Fonts {
     pub fn bake(font: &FontRef<'_>, h: f32) -> Fonts {
+        // V44: proportional InstrumentSans for content NAMES (separate from the mono `font`).
+        let prop = FontRef::try_from_slice(crate::FONT_INSTRUMENT_SANS).expect("InstrumentSans");
         Fonts {
             // V27: web GG1's headline ramp DOMINATES the screen (drill "144" + results "22.7s" each
             // ~⅕ of the height). Bump `head` (eyebrows) and especially `q` (the big drill prompt +
@@ -584,6 +595,11 @@ impl Fonts {
             // The build-watermark + chip face — small; also carries the math/middot glyphs for the
             // stat lines and gauntlet-size strings rendered at this size.
             tiny: Atlas::bake_chars(font, (h * 0.018).clamp(11.0, 40.0), GLYPHS),
+            // V44 proportional content-name faces (InstrumentSans) — content names ONLY (topic,
+            // region, hero, item names). Sized to match the body/head rows they replace so the
+            // existing layout positions still hit the right vertical centre.
+            name: Atlas::bake_chars(&prop, (h * 0.032).clamp(16.0, 80.0), GLYPHS),
+            name_big: Atlas::bake_chars(&prop, (h * 0.040).clamp(20.0, 90.0), GLYPHS),
         }
     }
 }
@@ -1876,10 +1892,12 @@ pub fn home_frame<'a>(
         let ny = tree_top + i as f32 * row_pitch;
         for (j, p) in parts.iter().enumerate() {
             if j > 0 {
-                // Horizontal MASTERY arrow (purple ►) before this part: a shaft + an arrowhead
-                // pointing into the node, lit once the gate is crossed (web's directional edge).
+                // V37 v2: BOLD purple MASTERY connector — thicker shaft (≈3× the v1 width) +
+                // larger arrowhead reaching deeper into the gap. Web's branch is a clear coloured
+                // bar between the parts, not a hairline; bumping it so the connectors actually
+                // read at the rendered scale.
                 let cy = ny + node_h * 0.5;
-                let pa = if progress.is_unlocked(p) { 0.95 } else { 0.35 };
+                let pa = if progress.is_unlocked(p) { 0.95 } else { 0.40 };
                 let pcol = [
                     HOME_PALETTE[2][0],
                     HOME_PALETTE[2][1],
@@ -1888,17 +1906,17 @@ pub fn home_frame<'a>(
                 ];
                 rects.push(RectRun {
                     x: nx - hgap * 1.0,
-                    y: cy - node_h * 0.045,
-                    w: hgap * 0.6,
-                    h: node_h * 0.09,
+                    y: cy - node_h * 0.11,
+                    w: hgap * 0.72,
+                    h: node_h * 0.22,
                     rgba: pcol,
                 });
                 arrow_right(
                     &mut rects,
-                    nx - hgap * 0.42,
+                    nx - hgap * 0.32,
                     cy,
-                    node_h * 0.18,
-                    hgap * 0.42,
+                    node_h * 0.28,
+                    hgap * 0.36,
                     pcol,
                 );
             }
@@ -1907,16 +1925,16 @@ pub fn home_frame<'a>(
             );
             nx += node_w + hgap;
         }
-        // Vertical CHAIN arrow (amber ▼) down to the next spine row: a shaft + an arrowhead landing
-        // on the next node, so each edge reads as a discrete directional link (not one long spine).
+        // V37 v2: BOLD gold CHAIN arrow down to the next spine row — thicker shaft (≈2× v1) +
+        // larger arrowhead so the spine reads clearly through the textured hoard backdrop.
         if i + 1 < spine.len() && row_visible(i + 1) {
             let lit = progress.is_unlocked(spine[i + 1]);
-            let acol = [GOLD[0], GOLD[1], GOLD[2], if lit { 0.9 } else { 0.3 }];
-            let head_h = (row_pitch - node_h) * 0.45;
+            let acol = [GOLD[0], GOLD[1], GOLD[2], if lit { 0.95 } else { 0.40 }];
+            let head_h = (row_pitch - node_h) * 0.50;
             rects.push(RectRun {
-                x: cx - w * 0.004,
+                x: cx - w * 0.008,
                 y: ny + node_h,
-                w: w * 0.008,
+                w: w * 0.016,
                 h: row_pitch - node_h - head_h,
                 rgba: acol,
             });
@@ -1924,7 +1942,7 @@ pub fn home_frame<'a>(
                 &mut rects,
                 cx,
                 ny + row_pitch - head_h,
-                w * 0.018,
+                w * 0.030,
                 head_h,
                 acol,
             );
@@ -1951,9 +1969,10 @@ pub fn home_frame<'a>(
         false,
     );
     texts.push(TextRun {
-        atlas: &fonts.body,
+        // V44: footer-card topic NAME in proportional name face.
+        atlas: &fonts.name,
         quads: fonts
-            .body
+            .name
             .layout(
                 &card.name,
                 margin + col_w * 0.2,
@@ -3091,9 +3110,10 @@ pub fn heroes_frame<'a>(
                 ),
                 rgba: DIM,
             });
-            let (q, _) = fonts.body.layout(&hero.name, text_x, ry + rh * 0.16, rw);
+            // V44: locked hero name also proportional.
+            let (q, _) = fonts.name.layout(&hero.name, text_x, ry + rh * 0.16, rw);
             texts.push(TextRun {
-                atlas: &fonts.body,
+                atlas: &fonts.name,
                 quads: q,
                 rgba: DIM,
             });
@@ -3120,11 +3140,12 @@ pub fn heroes_frame<'a>(
             h: dot,
             rgba: type_rgba(kind),
         });
+        // V44: hero NAME in proportional name face (was mono body).
         let (q, _) = fonts
-            .body
+            .name
             .layout(&hero.name, text_x + dot * 1.6, ry + rh * 0.12, rw);
         texts.push(TextRun {
-            atlas: &fonts.body,
+            atlas: &fonts.name,
             quads: q,
             rgba: BODY,
         });
@@ -3253,16 +3274,17 @@ pub fn hero_detail_frame<'a>(
         h: dot,
         rgba: type_rgba(hero.kind),
     });
+    // V44: hero-detail NAME in proportional name_big (was mono body).
     let name_x = text_x + dot * 1.5;
     let (q, _) = fonts
-        .body
+        .name_big
         .layout(&hero.name, name_x, cy + chh * 0.14, col_w);
     texts.push(TextRun {
-        atlas: &fonts.body,
+        atlas: &fonts.name_big,
         quads: q,
         rgba: BODY,
     });
-    let name_w = fonts.body.text_width(&hero.name);
+    let name_w = fonts.name_big.text_width(&hero.name);
     let type_label = format!("{:?}", hero.kind).to_uppercase();
     let (q, _) = fonts.tiny.layout(
         &type_label,
@@ -6213,11 +6235,12 @@ pub fn arena_map_frame<'a>(
         quads: q,
         rgba: DIM,
     });
+    // V44: foe NAME in proportional name_big (was mono body) — content name, not chrome.
     let (q, _) = fonts
-        .body
+        .name_big
         .layout(&foe_name, info_x, card_y + card_h * 0.34, info_w);
     texts.push(TextRun {
-        atlas: &fonts.body,
+        atlas: &fonts.name_big,
         quads: q,
         rgba: GREENF,
     });
