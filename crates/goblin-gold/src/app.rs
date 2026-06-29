@@ -1814,19 +1814,19 @@ pub fn home_frame<'a>(
     // The home pile rides the CANONICAL log-scaled wealth fraction (`gold::hoard_level`, the value
     // `main.js homeFxState` feeds `seedHoard`) — NOT the fxgl `gold/(gold+K)` helper, which saturates
     // far too early (987M → ~1.0 full pile instead of the web's ~half pile).
-    // V36 v5: contain the pile to the LOWER band (web's hoard sits in the bottom ~35% — v4's
-    // 0.50 made the pile climb into mid-screen, behind the summary/CTAs). Texture (v4's gaps)
-    // is preserved; only the top edge moves down.
+    // V36 v6: agent gate (`e2e1569`) — pile texture landed, but v5 went TOO LOW (~30%) and
+    // the SIDE WINGS were weak. Lift the band to 0.55 (web's ~45% coverage) and below the
+    // coin loop shift wing coins higher per-column so the edges climb to mid-screen.
     let level = (crate::gold::hoard_level(save.gold) * 1.4).min(1.0);
-    let band_top = 0.62;
+    let band_top = 0.55;
 
     // The pile's BULK — a gold-mass gradient under the surface coins (the "imply the bulk, render the
     // surface" trick). Web's bottom is near-SOLID gold even at a moderate level; without this the
     // purple backdrop shows through the coin gaps. Ramps from transparent at the crest to a solid
     // deep-gold floor. The floor stays solid regardless of `level` (any non-trivial pile has one);
     // `level` only gates a poorer save toward less mass (the `0.5 + 0.5·level` envelope).
-    // V36 v5: mass_top tracks band_top — bulk underlay also moves down to the lower band.
-    let mass_top = 0.62;
+    // V36 v6: mass_top tracks band_top.
+    let mass_top = 0.55;
     let lvlf = (0.5 + 0.5 * level as f32).clamp(0.0, 1.0);
     let mbands = 16;
     for i in 0..mbands {
@@ -1851,7 +1851,11 @@ pub fn home_frame<'a>(
     for coin in crate::hoard::seed_hoard(level, 0x601d, &[], 480) {
         // V36 v4: 2.0× coins (v3's 2.4× over-blended into solid gold; v2's 1.8× was sparse).
         let s = coin.size as f32 * (w / 430.0) * 2.0;
-        let cyn = band_top + coin.y as f32 * (1.0 - band_top);
+        // V36 v6 side WINGS: coins near the walls (x close to 0 or 1) get a per-column lift so
+        // the edges climb to mid-screen (web shows clear rising side-wings, not a flat band).
+        let wall = ((coin.x as f32 - 0.5).abs() * 2.0).powf(1.5);
+        let band_top_col = (band_top - wall * 0.18).max(0.30);
+        let cyn = band_top_col + coin.y as f32 * (1.0 - band_top_col);
         rects.push(RectRun {
             x: coin.x as f32 * w - s / 2.0,
             y: cyn * h - s / 2.0,
@@ -5035,7 +5039,11 @@ pub fn render_heroes_partial_ref(
 ) -> Vec<u8> {
     let (w, h) = (REF_W as f32, REF_H as f32);
     let fonts = Fonts::bake(font, h);
-    let (rects, texts) = heroes_frame(&sample_save(), &fonts, w, h);
+    // N6 alignment: the heroes-partial web ref was captured against the `sample` capture state
+    // (per `manifest.json`: `heroes-partial` → state `sample`), which yields 7/12 heroes
+    // unlocked. The local `sample_save()` had a slightly different mix and rendered 3/12.
+    let save = save_from_capture("sample");
+    let (rects, texts) = heroes_frame(&save, &fonts, w, h);
     painter.paint_rgba(REF_W, REF_H, BG, &rects, &texts)
 }
 /// A fixed sample wall-clock for the event-play golden/visual-ref: 2026-06-26 14:30 UTC, which puts
