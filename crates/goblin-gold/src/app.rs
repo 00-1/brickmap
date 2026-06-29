@@ -1811,9 +1811,13 @@ pub fn home_frame<'a>(
     let branch_of = home_branches(modes);
     let tree_top = h * 0.15;
     let row_pitch = h * 0.064;
-    let node_w = w * 0.165;
+    // V37 v5 LAYOUT FIX: shrink node_w + widen hgap so each intra-row gap is large enough to
+    // host a real left→right sibling arrow (Babysitter `1b209a6`: the v4 "fit into the gap"
+    // attempt failed because the gap was ~5 px — not a drawing bug, a layout bug). The new
+    // gap is ≈ 13 px at 430 wide, comfortable for arrowhead + short shaft.
+    let node_w = w * 0.152;
     let node_h = h * 0.046;
-    let hgap = w * 0.012;
+    let hgap = w * 0.030;
     let cx = w / 2.0;
     // Tree rows that would fall into the card/pile region are clipped (the web tree scrolls under the
     // fixed bottom UI); the visible top ~8 rows read like the reference.
