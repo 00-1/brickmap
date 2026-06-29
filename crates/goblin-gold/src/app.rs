@@ -617,16 +617,25 @@ fn push_stat_chip<'a>(
     h: f32,
 ) -> f32 {
     let txt = format!("{val} {abbr}");
-    let pad = h * 0.7;
+    // V30 v4 — agent gate caught v3: pills need a LIGHTER fill than the card PANEL (web's
+    // chips read as "raised capsules ABOVE the card", not "holes punched into it"). PILL_BG
+    // sits one luminance step lighter than PANEL (`#1c2026`) — distinct silhouette at every
+    // render scale without the harsh inset look INK gave. Padding doubled for less cramped
+    // chips (16 px total horizontal).
+    const PILL_BG: [f32; 4] = [
+        0x2c as f32 / 255.0,
+        0x33 as f32 / 255.0,
+        0x3d as f32 / 255.0,
+        1.0,
+    ];
+    let pad = 16.0;
     let cw = fonts.tiny.text_width(&txt) + pad;
-    // V30 v2: chip BG = INK (near-black). KEYBG was too close to PANEL — pills read as plain
-    // text in the agent gate. INK is a clear darker chip against the hero-card panel.
     rects.push(RectRun {
         x,
         y,
         w: cw,
         h,
-        rgba: INK,
+        rgba: PILL_BG,
     });
     texts.push(TextRun {
         atlas: &fonts.tiny,
@@ -1805,24 +1814,25 @@ pub fn home_frame<'a>(
     // The home pile rides the CANONICAL log-scaled wealth fraction (`gold::hoard_level`, the value
     // `main.js homeFxState` feeds `seedHoard`) — NOT the fxgl `gold/(gold+K)` helper, which saturates
     // far too early (987M → ~1.0 full pile instead of the web's ~half pile).
-    // V36 v3: agent gate STILL sees the pile as sparse after v2's 1.8× bump. Push harder —
-    // 2.4× coin size + band_top 0.48 (wider vertical extent) so neighbours overlap into a
-    // contiguous gold mass with rising side wings.
+    // V36 v5: contain the pile to the LOWER band (web's hoard sits in the bottom ~35% — v4's
+    // 0.50 made the pile climb into mid-screen, behind the summary/CTAs). Texture (v4's gaps)
+    // is preserved; only the top edge moves down.
     let level = (crate::gold::hoard_level(save.gold) * 1.4).min(1.0);
-    let band_top = 0.48;
+    let band_top = 0.62;
 
     // The pile's BULK — a gold-mass gradient under the surface coins (the "imply the bulk, render the
     // surface" trick). Web's bottom is near-SOLID gold even at a moderate level; without this the
     // purple backdrop shows through the coin gaps. Ramps from transparent at the crest to a solid
     // deep-gold floor. The floor stays solid regardless of `level` (any non-trivial pile has one);
     // `level` only gates a poorer save toward less mass (the `0.5 + 0.5·level` envelope).
-    let mass_top = 0.48;
+    // V36 v5: mass_top tracks band_top — bulk underlay also moves down to the lower band.
+    let mass_top = 0.62;
     let lvlf = (0.5 + 0.5 * level as f32).clamp(0.0, 1.0);
     let mbands = 16;
     for i in 0..mbands {
         let yc = mass_top + (i as f32 + 0.5) / mbands as f32 * (1.0 - mass_top);
         let tt = (yc - mass_top) / (1.0 - mass_top);
-        let a = (0.18 + tt * 1.4).clamp(0.0, 1.0) * lvlf;
+        let a = (0.05 + tt * 0.45).clamp(0.0, 0.5) * lvlf;
         let g0 = [120.0 / 255.0, 84.0 / 255.0, 22.0 / 255.0]; // deep gold (GOLD_TONES darkest)
         let g1 = [156.0 / 255.0, 112.0 / 255.0, 34.0 / 255.0];
         let c = [
@@ -1839,8 +1849,8 @@ pub fn home_frame<'a>(
         });
     }
     for coin in crate::hoard::seed_hoard(level, 0x601d, &[], 480) {
-        // V36 v3: 2.4× chunkier coins (v2's 1.8× still read as fleck-band per the agent gate).
-        let s = coin.size as f32 * (w / 430.0) * 2.4;
+        // V36 v4: 2.0× coins (v3's 2.4× over-blended into solid gold; v2's 1.8× was sparse).
+        let s = coin.size as f32 * (w / 430.0) * 2.0;
         let cyn = band_top + coin.y as f32 * (1.0 - band_top);
         rects.push(RectRun {
             x: coin.x as f32 * w - s / 2.0,
@@ -2452,9 +2462,9 @@ pub fn collection_frame<'a>(
     let tiers_cleared = count_pre("tier:");
     let arena_total = crate::combat::tier_count();
 
-    let (q, _hh) = fonts.head.layout("COLLECTION", margin, h * 0.05, col_w);
+    let (q, _hh) = fonts.body.layout("COLLECTION", margin, h * 0.05, col_w);
     texts.push(TextRun {
-        atlas: &fonts.head,
+        atlas: &fonts.body,
         quads: q,
         rgba: GOLD,
     });
@@ -2925,11 +2935,13 @@ pub fn heroes_frame<'a>(
         .filter(|h| crate::combat::is_hero_unlocked(&h.id, &keyset))
         .count();
 
-    // Centred header "HEROES  unlocked / total" — V42 ALL-CAPS chrome.
+    // Centred header "HEROES  unlocked / total" — V42 ALL-CAPS chrome. v2: scale back from
+    // `head` to `body` (web uses small tracked caps, not a giant headline — gate flagged the
+    // v1 size as over-corrected).
     let title = format!("HEROES  {} / {}", unlocked_n, roster.len());
     texts.push(TextRun {
-        atlas: &fonts.head,
-        quads: centered(&fonts.head, &title, w / 2.0, h * 0.03, h * 0.05),
+        atlas: &fonts.body,
+        quads: centered(&fonts.body, &title, w / 2.0, h * 0.028, h * 0.034),
         rgba: GOLD,
     });
 
@@ -3021,14 +3033,14 @@ pub fn heroes_frame<'a>(
             quads: q,
             rgba: BODY,
         });
-        // ★ rating (right) — pixel star (V28 v3) + the count. Star kept on the NAME row only
-        // (sw = rh * 0.22) so its vertical extent ends well above the stat-chip row at rh*0.44 —
-        // v2 used 0.36 which spilled into the chips and clobbered the trailing "FOC".
+        // ★ rating (right) — pixel star (V28 v5) + the count. Per Babysitter pixel spec: star
+        // at the rank-number's cap-height (≈ 0.7 × font px ≈ rh * 0.14), positioned LEFT of the
+        // number on the same baseline, no overlap with the trailing FOC chip below.
         let count = format!("{}", hero_rating(&stats));
         let ctw = fonts.body.text_width(&count);
-        let sw = rh * 0.22;
+        let sw = rh * 0.14;
         let star_x = rx + rw - ctw - sw * 1.4 - w * 0.02;
-        push_star(&mut rects, star_x, ry + rh * 0.18, sw, GOLD);
+        push_star(&mut rects, star_x, ry + rh * 0.22, sw, GOLD);
         let (q, _) = fonts
             .body
             .layout(&count, star_x + sw * 1.3, ry + rh * 0.12, ctw + 4.0);
@@ -3168,13 +3180,14 @@ pub fn hero_detail_frame<'a>(
         quads: q,
         rgba: DIM,
     });
-    // V28: ★ pixel star + the rating number (web's filled-star prefix).
+    // V28 v6: ★ pixel star sized to the rating number's cap-height (chh * 0.12) — v5 used
+    // chh*0.18 which read as oversized on the hero-detail card per the agent gate.
     let count = format!("{rating}");
     let ctw = fonts.body.text_width(&count);
-    let sw = chh * 0.18;
+    let sw = chh * 0.12;
     let count_x = margin + col_w - ctw - w * 0.02;
     let star_x = count_x - sw * 1.3;
-    push_star(&mut rects, star_x, cy + chh * 0.18, sw, GOLD);
+    push_star(&mut rects, star_x, cy + chh * 0.21, sw, GOLD);
     let (q, _) = fonts
         .body
         .layout(&count, count_x, cy + chh * 0.14, ctw + 4.0);
@@ -3210,13 +3223,20 @@ pub fn hero_detail_frame<'a>(
     let mut cx_run = chips_left;
     for (i, txt) in chip_strs.iter().enumerate() {
         let cw = chip_widths[i];
-        // V30 v2: chip BG = INK (chip needs to read distinctly against the card panel).
+        // V30 v4: lighter pill BG (`#2c333d`) above the card panel so the chip reads as a
+        // raised capsule rather than an inset hole.
+        const PILL_BG: [f32; 4] = [
+            0x2c as f32 / 255.0,
+            0x33 as f32 / 255.0,
+            0x3d as f32 / 255.0,
+            1.0,
+        ];
         rects.push(RectRun {
             x: cx_run,
             y: chip_y,
             w: cw,
             h: chip_h,
-            rgba: INK,
+            rgba: PILL_BG,
         });
         texts.push(TextRun {
             atlas: &fonts.tiny,
@@ -5533,9 +5553,9 @@ pub fn arena_frame<'a>(
     let region = crate::combat::tier_region(tier);
 
     // Heading + tier counter.
-    let (q, _) = fonts.head.layout("ARENA", margin, h * 0.028, col_w);
+    let (q, _) = fonts.body.layout("ARENA", margin, h * 0.028, col_w);
     texts.push(TextRun {
-        atlas: &fonts.head,
+        atlas: &fonts.body,
         quads: q,
         rgba: GOLD,
     });
