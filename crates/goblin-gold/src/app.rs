@@ -596,10 +596,11 @@ impl Fonts {
             // stat lines and gauntlet-size strings rendered at this size.
             tiny: Atlas::bake_chars(font, (h * 0.018).clamp(11.0, 40.0), GLYPHS),
             // V44 proportional content-name faces (InstrumentSans) — content names ONLY (topic,
-            // region, hero, item names). Sized to match the body/head rows they replace so the
-            // existing layout positions still hit the right vertical centre.
-            name: Atlas::bake_chars(&prop, (h * 0.032).clamp(16.0, 80.0), GLYPHS),
-            name_big: Atlas::bake_chars(&prop, (h * 0.040).clamp(20.0, 90.0), GLYPHS),
+            // region, hero, item names). v2 trims the size so the variable-width face doesn't
+            // overflow rows that the body/tiny mono faces fit; web's content names sit close to
+            // the chrome size, not noticeably larger.
+            name: Atlas::bake_chars(&prop, (h * 0.026).clamp(14.0, 70.0), GLYPHS),
+            name_big: Atlas::bake_chars(&prop, (h * 0.036).clamp(18.0, 84.0), GLYPHS),
         }
     }
 }
@@ -1880,72 +1881,165 @@ pub fn home_frame<'a>(
         });
     }
 
-    // The topic TREE on top of the pile.
+    // V37 v3: route REAL graph edges from `modes.json` unlock data. Two passes:
+    //   1. lay out every visible row's part positions (id → (x_centre, y_top)).
+    //   2. for each visible mode, look up its actual `unlock.by` / `unlock.mastery` parent
+    //      and draw the edge from the parent's centre to the child's incoming edge.
+    // This is the load-bearing fix the previous "v2 thicker spine" half-measure didn't do:
+    // edges now follow the data, not a hard-coded centre column.
+    use std::collections::HashMap;
+    let mut node_pos: HashMap<&str, (f32, f32)> = HashMap::new(); // id → (centre-x, top-y)
+    let mut node_size: HashMap<&str, (f32, f32)> = HashMap::new(); // id → (w, h)
+    let mut visible_ids: Vec<&str> = Vec::new();
     for (i, m) in spine.iter().enumerate() {
         if !row_visible(i) {
-            break; // rows are top-to-bottom; the rest are below the fold.
+            break;
         }
         let parts = topic_parts(m, &branch_of);
         let n = parts.len() as f32;
         let total_w = n * node_w + (n - 1.0) * hgap;
         let mut nx = cx - total_w / 2.0;
         let ny = tree_top + i as f32 * row_pitch;
-        for (j, p) in parts.iter().enumerate() {
-            if j > 0 {
-                // V37 v2: BOLD purple MASTERY connector — thicker shaft (≈3× the v1 width) +
-                // larger arrowhead reaching deeper into the gap. Web's branch is a clear coloured
-                // bar between the parts, not a hairline; bumping it so the connectors actually
-                // read at the rendered scale.
-                let cy = ny + node_h * 0.5;
-                let pa = if progress.is_unlocked(p) { 0.95 } else { 0.40 };
+        for p in parts.iter() {
+            node_pos.insert(p.id.as_str(), (nx + node_w / 2.0, ny));
+            node_size.insert(p.id.as_str(), (node_w, node_h));
+            visible_ids.push(p.id.as_str());
+            nx += node_w + hgap;
+        }
+    }
+
+    // PASS 2 — draw the EDGES first (so the nodes paint OVER the shaft ends).
+    for id in &visible_ids {
+        // Resolve the mode's unlock parent + edge kind.
+        let m = match modes.iter().find(|mm| mm.id.as_str() == *id) {
+            Some(m) => m,
+            None => continue,
+        };
+        let (&(cx_child, ny_child), &(nw_child, _nh_child)) =
+            match (node_pos.get(id), node_size.get(id)) {
+                (Some(p), Some(s)) => (p, s),
+                _ => continue,
+            };
+        let lit = progress.is_unlocked(m);
+        match &m.unlock {
+            progression::Unlock::Played(parent_id) => {
+                // GOLD vertical/diagonal chain — parent's bottom-centre → child's top-centre.
+                let Some(&(cx_parent, ny_parent)) = node_pos.get(parent_id.as_str()) else {
+                    continue;
+                };
+                let Some(&(_pw, ph)) = node_size.get(parent_id.as_str()) else {
+                    continue;
+                };
+                let acol = [GOLD[0], GOLD[1], GOLD[2], if lit { 0.95 } else { 0.40 }];
+                let y0 = ny_parent + ph;
+                let y1 = ny_child;
+                let span = y1 - y0;
+                if span <= 0.0 {
+                    continue;
+                }
+                let head_h = (span * 0.50).min(node_h * 0.40);
+                let shaft_h = span - head_h;
+                // Straight shaft if columns align (within node width); otherwise an L-route.
+                if (cx_parent - cx_child).abs() < nw_child * 0.25 {
+                    rects.push(RectRun {
+                        x: cx_child - w * 0.008,
+                        y: y0,
+                        w: w * 0.016,
+                        h: shaft_h.max(0.0),
+                        rgba: acol,
+                    });
+                } else {
+                    let mid_y = y0 + shaft_h * 0.5;
+                    // Vertical from parent down to mid-y.
+                    rects.push(RectRun {
+                        x: cx_parent - w * 0.008,
+                        y: y0,
+                        w: w * 0.016,
+                        h: (mid_y - y0).max(0.0),
+                        rgba: acol,
+                    });
+                    // Horizontal at mid-y from parent column to child column.
+                    let (hx, hw) = if cx_parent < cx_child {
+                        (cx_parent, cx_child - cx_parent)
+                    } else {
+                        (cx_child, cx_parent - cx_child)
+                    };
+                    rects.push(RectRun {
+                        x: hx,
+                        y: mid_y - w * 0.008,
+                        w: hw,
+                        h: w * 0.016,
+                        rgba: acol,
+                    });
+                    // Vertical from mid-y down to child top, leaving room for the arrowhead.
+                    rects.push(RectRun {
+                        x: cx_child - w * 0.008,
+                        y: mid_y,
+                        w: w * 0.016,
+                        h: (shaft_h - (mid_y - y0)).max(0.0),
+                        rgba: acol,
+                    });
+                }
+                arrow_down(&mut rects, cx_child, y0 + shaft_h, w * 0.030, head_h, acol);
+            }
+            progression::Unlock::Mastered(parent_id) => {
+                // PURPLE horizontal branch — parent's right edge → child's left edge (or mirror).
+                let Some(&(cx_parent, ny_parent)) = node_pos.get(parent_id.as_str()) else {
+                    continue;
+                };
+                let Some(&(pw, ph)) = node_size.get(parent_id.as_str()) else {
+                    continue;
+                };
+                let pa = if lit { 0.95 } else { 0.40 };
                 let pcol = [
                     HOME_PALETTE[2][0],
                     HOME_PALETTE[2][1],
                     HOME_PALETTE[2][2],
                     pa,
                 ];
-                rects.push(RectRun {
-                    x: nx - hgap * 1.0,
-                    y: cy - node_h * 0.11,
-                    w: hgap * 0.72,
-                    h: node_h * 0.22,
-                    rgba: pcol,
-                });
-                arrow_right(
-                    &mut rects,
-                    nx - hgap * 0.32,
-                    cy,
-                    node_h * 0.28,
-                    hgap * 0.36,
-                    pcol,
-                );
+                // Same-row branch (typical): horizontal arrow from parent-right to child-left.
+                if (ny_parent - ny_child).abs() < ph * 0.5 {
+                    let py = ny_parent + ph * 0.5;
+                    let x0 = cx_parent + pw * 0.5;
+                    let x1 = cx_child - nw_child * 0.5;
+                    if x1 > x0 {
+                        rects.push(RectRun {
+                            x: x0,
+                            y: py - node_h * 0.11,
+                            w: x1 - x0 - node_h * 0.24,
+                            h: node_h * 0.22,
+                            rgba: pcol,
+                        });
+                        arrow_right(
+                            &mut rects,
+                            x1 - node_h * 0.28,
+                            py,
+                            node_h * 0.28,
+                            node_h * 0.28,
+                            pcol,
+                        );
+                    }
+                }
             }
+            _ => {}
+        }
+    }
+
+    // PASS 3 — paint every node ON TOP of the edges (badges + checks).
+    for (i, m) in spine.iter().enumerate() {
+        if !row_visible(i) {
+            break;
+        }
+        let parts = topic_parts(m, &branch_of);
+        let n = parts.len() as f32;
+        let total_w = n * node_w + (n - 1.0) * hgap;
+        let mut nx = cx - total_w / 2.0;
+        let ny = tree_top + i as f32 * row_pitch;
+        for p in parts.iter() {
             home_node(
                 &mut rects, &mut texts, fonts, save, progress, p, nx, ny, node_w, node_h,
             );
             nx += node_w + hgap;
-        }
-        // V37 v2: BOLD gold CHAIN arrow down to the next spine row — thicker shaft (≈2× v1) +
-        // larger arrowhead so the spine reads clearly through the textured hoard backdrop.
-        if i + 1 < spine.len() && row_visible(i + 1) {
-            let lit = progress.is_unlocked(spine[i + 1]);
-            let acol = [GOLD[0], GOLD[1], GOLD[2], if lit { 0.95 } else { 0.40 }];
-            let head_h = (row_pitch - node_h) * 0.50;
-            rects.push(RectRun {
-                x: cx - w * 0.008,
-                y: ny + node_h,
-                w: w * 0.016,
-                h: row_pitch - node_h - head_h,
-                rgba: acol,
-            });
-            arrow_down(
-                &mut rects,
-                cx,
-                ny + row_pitch - head_h,
-                w * 0.030,
-                head_h,
-                acol,
-            );
         }
     }
 
@@ -4243,12 +4337,18 @@ fn push_progress_row<'a>(
         rgba: PANEL,
     });
     let done = total > 0 && have >= total;
-    let lc = if done { GREEN } else { BODY };
-    // Keep the label on ONE line: the body face when it fits, else the smaller tiny face (the long
-    // "<Realm> · tiers a–b" loot labels would otherwise wrap over the progress bar).
+    // V44 v2: NAMES stay WHITE — the V44 keystone reserves green for the progress bar + count,
+    // not for the label itself (the wave-9 review caught the screen going monochromatic green
+    // because completed-row labels inherited GREEN). Web shows the realm/topic name in white +
+    // the bar+count alone in green; mirror that.
+    let lc = BODY;
+    let count_col = if done { GREEN } else { BODY };
+    // V44: realm/region/topic NAME in the proportional `name` face (was mono body) so list
+    // labels read like web. Falls back to mono `tiny` only when even the proportional face is
+    // too wide to fit one line.
     let avail = col_w * 0.66;
-    let (la, ly) = if fonts.body.text_width(label) <= avail {
-        (&fonts.body, row_h * 0.08)
+    let (la, ly) = if fonts.name.text_width(label) <= avail {
+        (&fonts.name, row_h * 0.06)
     } else {
         (&fonts.tiny, row_h * 0.16)
     };
@@ -4280,7 +4380,7 @@ fn push_progress_row<'a>(
     texts.push(TextRun {
         atlas: &fonts.tiny,
         quads: q,
-        rgba: lc,
+        rgba: count_col,
     });
     // V45 v2: bar on its OWN LINE below the label, with vertical breathing room — the row is
     // visually a "label row + bar row" stack, not a strip with text striking through it.
