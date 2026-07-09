@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `b724404` (trunk-fix atop the goblin-gold series; see 2026-06-16 state entry).
+**Reviewed through:** `6350446` (G19a — nav wiring fixes).
 
 ---
 
@@ -36,6 +36,31 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-16 · G19a — nav/expedition wiring fixes (`6350446`)  ✅ PASSED (first babysitter-build-agent milestone; four-way green)
+
+**Independently verified:** fmt/clippy clean · **383 tests, 0 failures** workspace-wide
+(incl. goblin-gold's 117, untouched) · **CI ✅ · Android ✅ · Desktop ✅ · Deploy ✅** (and
+`b724404`, my trunk fix, also four-way green — the shared trunk is restored).
+
+**The dead features live:** `arrived_at` is horizontal + radius 20 (the brief's off-by-one
+line number honestly noted); the scan pulse re-hits known-but-uncollected sites — **option
+(a), with a rationale better than my brief's framing**: it keeps `collect` authored rather
+than implicit, AND it cures a second latent deadlock I hadn't spotted (a site scanned once
+from beyond collect reach — scan 150 vs reach 45 — was permanently uncollectable even under
+drift). Auto-deposit on Return→Idle. Flicks/pins still fire only for new sites (the visible
+sweep stays calm — good taste).
+
+**Test discipline exemplary:** each regression scenario was **verified to fail against the
+temporarily-reverted pre-fix code** — the strongest possible evidence the asserts bite; the
+expedition-from-flight scenario goes through the real `on-arrive` (closing the D11 coverage
+gap the pacing analysis exposed); the `comprehend()` test helper goes through the canonical
+Discover→allocate→fill seam, no backdoor.
+
+**Verdict.** The build-agent-in-worktree pattern works at least as well as the external
+builder. G18 (uncertainty layer) next, then G19-B (truing).
+
+---
 
 ## 2026-06-16 · REPO STATE CHANGE — a second game (goblin-gold) now shares the trunk; red fixed; babysitter takes over building
 
