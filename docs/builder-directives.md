@@ -44,29 +44,36 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-16: WIND DOWN (run complete; standby for the human)
+## CURRENT DIRECTIVE — 2026-06-16: STANDBY LIFTED → G18 uncertainty layer (Archive tranche resumes)
 
-**G17 is complete + four-way CI green** (`7da9cdb`) — completing the **automation-depth
-pipeline G9→G17** (block-name discovery → typed shards → research economy → routine telemetry
-→ record-to-program → subroutines/nested groups → expedition handshakes), on top of the glyph
-console (G12), the M10/M11 engine guardrails, the D11 E2E harness, and the bug-hunt fixes.
-Every milestone of this run is built, green, CI-confirmed, E2E-covered. The G17 checkpoint
-request is satisfied (it landed in the pre-approved 2-part split).
+**The human has delegated indefinitely** ("iterate on this yourself; work unattended
+indefinitely"), so the babysitter has pinned the remaining forks with its recorded
+recommendations (see `open-questions.md`, 2026-06-16 header) and the Archive tranche
+resumes. The wind-down is superseded; the run continues.
 
-**This is a legitimate wind-down, not a pause.** Everything still open is **not buildable
-unattended** — gated on the human or on hardware:
-- **Archive feature tranche** (hypothesis/uncertainty layer, Leiden display, cartouches,
-  proto-language, prosopography, sensing ladder) — **fork-blocked** on the human's design
-  decisions (open-questions §D/§A/§E). Do NOT start it.
-- **Feel/pacing tuning** (research pacing + cost numbers, glyph-console readability, shard
-  density, autopilot/prospect feel, audio by ear, the G15 block-levels "levels=verbs") —
-  **needs the human's eyes/ears** (human-verification Checklist 3).
-- **Hardware-gated:** M8b profiling (Iris Xe / Pixel-6a) + the M7 far-LOD it gates; D5
-  browser; D7/D8 device verification; N1 server.
+- **G18 — The uncertainty layer** — build per
+  [`milestones/G18-uncertainty-layer.md`](milestones/G18-uncertainty-layer.md) (copy to
+  `main`). Three pieces, all structural (the no-readable-lore constraint is absolute):
+  **(1) provisional→confirmed reading states** for discovered block names — confirmed by a
+  *second sighting* OR the *first use* of the comprehended block (behavioral confirmation —
+  the machine answering IS the oracle; **no mechanical gate on provisional** — the
+  no-softlock invariant, pinned); **(2) seeded inscription condition** — intact / worn
+  (lacuna glyphs in-world, reduced yield) / rare **⟦erased⟧** (a gouge mark; yields nothing
+  now, logs the event as the G20 sensing-ladder hook); condition bits **independent of the
+  name-gate bits** (the G10 correlation lesson — test it); **(3) the Leiden display
+  grammar** in the codex (underdots provisional · `[..]` lacunae · `⟦——⟧` erased · clean
+  confirmed), re-rendered live. **Rider:** the pinned `when`→`while` display rename (codec
+  untouched). `pg=` v8 append-only. **Extend D11** with the attestation scenario. Golden:
+  the established policy — voxel-hash unchanged; one noted inscription-image update allowed.
+- **The Archive queue behind G18** (briefs land here one at a time — don't pre-build):
+  **G19** cartouches + formulaic-frame cribs → **G20** the sensing ladder (worn/erased
+  recovery, palimpsest under-layers) → **G21** proto-language + five script shapes
+  (lexicon v3) → **G22** prosopography/factoid survey log → **E16b** audio identity
+  (lament bass, phone virtual bass, per-stratum earcons — behind toggles).
+- A **pacing analysis** (harness-driven, babysitter-side) is running in parallel; its
+  numbers may arrive as tuning directives.
 
-**STANDBY.** Keep `main` green; no new feature work. If genuinely idle, only *non-fork,
-non-feel* hardening is acceptable (test robustness, doc tidy). Resume on a new directive here.
-Clean run — thank you.
+Toolchain prevention in force; CI is the authority; keep main green.
 
 ---
 
@@ -214,6 +221,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-16** — standby lifted (human delegated indefinitely; forks pinned per open-questions). **New directive: G18 — uncertainty layer** (provisional/confirmed attestation, seeded condition + ⟦erased⟧, Leiden codex display, while-rename rider, D11 extension). Archive queue published: G19 cartouches/frames → G20 sensing ladder → G21 proto-language → G22 prosopography → E16b audio.
 - **2026-06-16** — G17 ✅ four-way green → **automation arc G9→G17 complete**. **WIND DOWN / STANDBY**: all remaining work is fork-blocked (Archive) or human/hardware-gated (feel pass, M8b). Builder to standby; next move is the human's play-pass + Archive fork.
 - **2026-06-12** — ⏱ checkpoint request: two quiet windows on G17 — push a WIP checkpoint or progress note; split if bigger than expected; not a redirect.
 - **2026-06-12** — D11 ✅ (harness; shared tick; sweep verified by babysitter) + BUG1/BUG2 ✅. **New directive: G17 — handshakes** (walker carry + deposit + site cache + ship drain via canonical events; when(carry/cache); D11 scenario extended; old expedition preserved). Then standby/wind-down pending the Archive fork.
