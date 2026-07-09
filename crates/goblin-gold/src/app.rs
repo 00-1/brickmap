@@ -623,6 +623,7 @@ fn centered(atlas: &Atlas, text: &str, cx: f32, top: f32, h: f32) -> Vec<Quad> {
 /// V30: render one stat PILL (rounded dark bg + "<val> <ABBR>" inline) at `(x, y)`, `h` tall.
 /// Width adapts to the label so a 3-digit GRD fits cleanly next to a 1-digit FOC. Returns the
 /// right edge so callers can lay chips in a row.
+#[allow(clippy::too_many_arguments)] // a draw-list emitter: two sinks + font + 5 layout scalars
 fn push_stat_chip<'a>(
     rects: &mut Vec<RectRun>,
     texts: &mut Vec<TextRun<'a>>,
