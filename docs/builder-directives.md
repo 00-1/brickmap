@@ -44,34 +44,37 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
-## CURRENT DIRECTIVE — 2026-06-16: STANDBY LIFTED → G18 uncertainty layer (Archive tranche resumes)
+## CURRENT DIRECTIVE — 2026-06-16 (updated): G18, then **G19 economy truing (has an URGENT bug part)**
 
-**The human has delegated indefinitely** ("iterate on this yourself; work unattended
-indefinitely"), so the babysitter has pinned the remaining forks with its recorded
-recommendations (see `open-questions.md`, 2026-06-16 header) and the Archive tranche
-resumes. The wind-down is superseded; the run continues.
+**G18 (uncertainty layer) stands as dispatched** — finish it per its brief. **Then chain
+straight into G19** — the first quantitative playtest is in
+([`pacing-analysis.md`](pacing-analysis.md): the real loop, 6 seeds, driven through your D11
+seam) and it found **two wiring bugs that make shipped features dead**, plus measured
+tuning:
 
-- **G18 — The uncertainty layer** — build per
-  [`milestones/G18-uncertainty-layer.md`](milestones/G18-uncertainty-layer.md) (copy to
-  `main`). Three pieces, all structural (the no-readable-lore constraint is absolute):
-  **(1) provisional→confirmed reading states** for discovered block names — confirmed by a
-  *second sighting* OR the *first use* of the comprehended block (behavioral confirmation —
-  the machine answering IS the oracle; **no mechanical gate on provisional** — the
-  no-softlock invariant, pinned); **(2) seeded inscription condition** — intact / worn
-  (lacuna glyphs in-world, reduced yield) / rare **⟦erased⟧** (a gouge mark; yields nothing
-  now, logs the event as the G20 sensing-ladder hook); condition bits **independent of the
-  name-gate bits** (the G10 correlation lesson — test it); **(3) the Leiden display
-  grammar** in the codex (underdots provisional · `[..]` lacunae · `⟦——⟧` erased · clean
-  confirmed), re-rendered live. **Rider:** the pinned `when`→`while` display rename (codec
-  untouched). `pg=` v8 append-only. **Extend D11** with the attestation scenario. Golden:
-  the established policy — voxel-hash unchanged; one noted inscription-image update allowed.
-- **The Archive queue behind G18** (briefs land here one at a time — don't pre-build):
-  **G19** cartouches + formulaic-frame cribs → **G20** the sensing ladder (worn/erased
-  recovery, palimpsest under-layers) → **G21** proto-language + five script shapes
-  (lexicon v3) → **G22** prosopography/factoid survey log → **E16b** audio identity
-  (lament bass, phone virtual bass, per-stratum earcons — behind toggles).
-- A **pacing analysis** (harness-driven, babysitter-side) is running in parallel; its
-  numbers may arrive as tuning directives.
+- **G19 — Economy truing** — build per
+  [`milestones/G19-economy-truing.md`](milestones/G19-economy-truing.md) (copy to `main`).
+  **Part A is URGENT (own commit, first):** (1) `arrived_at` can never fire in flight
+  (3D distance + radius 12 vs cruise height 22 — babysitter-verified; `on-arrive` /
+  automated `run(foot)` / expedition-from-air are dead, measured 0/hour) → horizontal
+  distance + radius 20; (2) the seek+collect deadlock (no scan event once in-cone sites are
+  known → the on-scan collect starves; ship orbits forever) → scan re-hits uncollected or
+  collect-on-arrive; (3) auto-`deposit` on Return→Idle; (4) a **D11 expedition-from-flight
+  scenario through the real `on-arrive`** (the existing scenario kicked `run(foot)` directly
+  and missed this). **Part B (measured truing):** `FACULTY_COSTS → [150,450,900]`; block
+  cost → `25 << stratum` (25/50/100/200/400); **rare-count gates** on Relics/Signals-tier
+  targets (≥4/≥8 rare pickups — the unimplemented half of the human's "rarer blocks demand
+  rarer shards" decision); flatten the colossus `DEEP` label table + ambient name rate
+  1/4→1/6 (re-pin coverage/uniformity tests); delete `DECODE_COST`; **port
+  `docs/probes/pacing_probe.rs`** (this branch) into a bounded envelope CI test (seed 1337;
+  recompute bounds post-truing; full run env-gated).
+- If G18 is mid-flight and Part A is quick, you may land Part A *before* finishing G18
+  (dead shipped features outrank new features); otherwise G18 → G19-A → G19-B.
+- **The Archive queue renumbers** (truing takes G19): **G20** cartouches + formulaic
+  frames → **G21** sensing ladder (worn/⟦erased⟧ recovery — also the expedition's
+  *raison d'être* and the Signals-tier vocabulary) → **G22** proto-language + script shapes
+  (+ a strata-data sink) → **G23** prosopography → **E16b** audio identity. Briefs land one
+  at a time; don't pre-build.
 
 Toolchain prevention in force; CI is the authority; keep main green.
 
@@ -221,6 +224,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-16** — pacing analysis in (docs/pacing-analysis.md): 2 wiring bugs (arrived_at dead in flight — verified; seek/collect deadlock) + measured truing. **G19 — economy truing dispatched** (URGENT part A bugs first; part B constants + rare-count gates + envelope CI test from docs/probes/pacing_probe.rs). Archive queue renumbered G20-G23.
 - **2026-06-16** — standby lifted (human delegated indefinitely; forks pinned per open-questions). **New directive: G18 — uncertainty layer** (provisional/confirmed attestation, seeded condition + ⟦erased⟧, Leiden codex display, while-rename rider, D11 extension). Archive queue published: G19 cartouches/frames → G20 sensing ladder → G21 proto-language → G22 prosopography → E16b audio.
 - **2026-06-16** — G17 ✅ four-way green → **automation arc G9→G17 complete**. **WIND DOWN / STANDBY**: all remaining work is fork-blocked (Archive) or human/hardware-gated (feel pass, M8b). Builder to standby; next move is the human's play-pass + Archive fork.
 - **2026-06-12** — ⏱ checkpoint request: two quiet windows on G17 — push a WIP checkpoint or progress note; split if bigger than expected; not a redirect.
