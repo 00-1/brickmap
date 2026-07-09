@@ -733,28 +733,32 @@ impl App {
     /// map) but doesn't bank (a cheap off-screen agent, game-system §7). (G8a)
     fn scan_from(&mut self, cam: Vec3, fwd: Vec3, do_on_scan: bool) {
         let now = self.time;
-        // Gather candidates ahead (immutable borrow), then mark them known (mutable) — keeping
-        // only the newly-known ones for flicks/map.
+        // Gather every **uncollected** site in the cone (immutable borrow) — known ones included.
+        // G19a: a known-but-uncollected site is still an opportunity (its map pin says so), so the
+        // pulse **re-hits** it and the on-scan routines get another chance to collect. Previously
+        // only *newly*-known sites counted as a hit, so under `seek` nav — once everything in the
+        // cone was already known — `on-scan → collect` never fired again and the ship orbited one
+        // uncollected site forever (measured: economy flatline, ~+14 yield/h vs ~950 under drift).
         let candidates: Vec<(u64, [f32; 3])> = self
             .collectible
             .iter()
             .filter(|c| {
-                !self.progress.is_scanned(c.find_id)
-                    && scan::in_cone(
-                        Vec3::from(c.pos),
-                        cam,
-                        fwd,
-                        scan::RANGE * self.progress.faculties().sensing, // G10 `sensing`
-                    )
+                scan::in_cone(
+                    Vec3::from(c.pos),
+                    cam,
+                    fwd,
+                    scan::RANGE * self.progress.faculties().sensing, // G10 `sensing`
+                )
             })
             .map(|c| (c.find_id, c.pos))
             .collect();
+        let found = !candidates.is_empty();
+        // Flicks + the map only mark the **newly**-known ones (the visible "sweep" stays calm).
         let fresh: Vec<[f32; 3]> = candidates
             .into_iter()
             .filter(|(id, _)| self.progress.scan(*id))
             .map(|(_, p)| p)
             .collect();
-        let found = !fresh.is_empty();
         let nch = world::Section::SIZE as f32;
         let nose = cam + fwd * 1.5;
         for (i, p) in fresh.into_iter().enumerate() {
@@ -1716,10 +1720,16 @@ impl App {
 
     /// G8c: has an agent at `pos` **arrived** at a site? — the nearest known-uncollected site is
     /// within arrival range. Drives the `on-arrive` trigger (seek → arrive → act).
+    ///
+    /// G19a: measured **horizontally** (XZ). The ship cruises at `ground + CRUISE_HEIGHT` (22 u)
+    /// while sites sit near the ground, so a 3-D distance never closed below the old radius of 12
+    /// and `on-arrive` could not fire in flight (measured: 0 automated expeditions/hour). The
+    /// radius is 20 u — above Seek's minimum turn-clamp orbit (`AUTO_FLY_SPEED / 1.5 ≈ 17.3 u`),
+    /// so an orbiting ship counts as arrived.
     fn arrived_at(&self, pos: Vec3) -> bool {
-        const ARRIVE_RADIUS: f32 = 12.0;
+        const ARRIVE_RADIUS: f32 = 20.0;
         self.seek_target()
-            .is_some_and(|t| (t - pos).length() < ARRIVE_RADIUS)
+            .is_some_and(|t| (t - pos).with_y(0.0).length() < ARRIVE_RADIUS)
     }
 
     /// Has the **ship** arrived at a site? (Arrival measured from the ship's position.)
@@ -1896,6 +1906,15 @@ impl App {
         // couldn't reach, plus in-reach shards into its carry (G17 — banked on the ship's drain).
         if prev != expedition::Phase::Harvest && now == expedition::Phase::Harvest {
             self.foot_collect_act(self.walker_pos, None);
+        }
+        // G19a: on Return→Idle the walker **auto-deposits** anything it still carries into the
+        // site cache. Foot routines don't tick between back-to-back expeditions, so a
+        // `when(carry) → deposit` wiring can starve — the haul would ride dead in the carry.
+        if prev == expedition::Phase::Return
+            && now == expedition::Phase::Idle
+            && self.progress.carry_count() > 0
+        {
+            self.deposit_carry();
         }
     }
 

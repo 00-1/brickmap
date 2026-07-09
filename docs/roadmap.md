@@ -957,6 +957,16 @@ player-authored, failed handoffs visible as honest state (not errors). Built in 
   flow), the world-visible cache marker (a budgeted emissive cluster that clears when emptied), and
   the D11 harness extended with the full fill → deposit → ship-drain → credit handshake.
 
+### ✨ G19a — nav/expedition wiring fixes ✅ &nbsp;→ [`milestones/G19-economy-truing.md`](milestones/G19-economy-truing.md)
+The urgent Part A of **G19 — economy truing** (Part B, the measured constant truing + rarity
+gates, is still open): the first quantitative playtest ([`pacing-analysis.md`](pacing-analysis.md))
+proved three shipped features dead, all wiring — `arrived_at` now measures **horizontal** distance
+(radius 20 > the seek orbit) so `on-arrive` fires in flight (was 0 automated expeditions/hour),
+the scan pulse **re-hits known-but-uncollected sites** so `seek` + `on-scan → collect` progresses
+instead of orbiting one site forever, and the expedition **auto-deposits** the walker's carry into
+the site cache on Return→Idle. Three D11 e2e scenarios pin each fix through the real frame loop
+(each verified to fail pre-fix); golden voxel-hash + headless render unchanged.
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear

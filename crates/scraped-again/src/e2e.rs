@@ -571,6 +571,215 @@ fn default_share() -> share::ShareState {
 }
 
 // ----------------------------------------------------------------------------------------------
+// 7b) G19a regression asserts — the nav/expedition wiring the first quantitative playtest proved
+//     dead (docs/pacing-analysis.md, 2026-06-16). Every scenario drives the REAL frame loop; none
+//     kicks the fixed machinery directly (the gap that let the old expedition scenario pass while
+//     `arrived_at` could never fire in flight).
+// ----------------------------------------------------------------------------------------------
+
+/// Discover + comprehend a gated block through the canonical progress seam (Discover → allocate →
+/// domain-shard fill) so authored routines using it are legal vocabulary — no test backdoor.
+fn comprehend(app: &mut App, block: console::Block) {
+    app.progress.apply(&Event::Discover { block });
+    let Some(domain) = block.required() else {
+        return; // a starter — always comprehended
+    };
+    assert!(
+        app.progress.allocate(ResearchTarget::Block(block)),
+        "allocate({block:?}) as the research target"
+    );
+    let mut guard = 0;
+    while !app.progress.is_block_comprehended(block) && guard < 100_000 {
+        app.progress.apply(&Event::CollectShard {
+            domain,
+            rarity: Rarity::Rare,
+        });
+        guard += 1;
+    }
+    assert!(
+        app.progress.is_block_comprehended(block),
+        "comprehend({block:?}) stalled"
+    );
+    app.sync_console_unlock();
+}
+
+/// G19a fix 1 + 3: an **expedition from flight through the real `on-arrive` path**. The ship flies
+/// a `seek` nav at cruise altitude; an authored `on-arrive → run(foot)` routine must deploy the
+/// walker when `arrived_at` fires (horizontal distance — pre-fix the ~22 u vertical gap alone kept
+/// the 3-D distance above the radius and this NEVER happened: measured 0 automated
+/// expeditions/hour on every seed). The expedition must then harvest, return, **auto-deposit** the
+/// walker's carry into the site cache on Return→Idle, and the handshake must bank the value.
+#[test]
+fn expedition_from_flight_fires_through_the_real_on_arrive() {
+    let seed = 1337u32;
+    let mut app = App::headless(seed);
+    // Author the advertised loop through the canonical seams: comprehend `seek` + `run(foot)`,
+    // steer the given nav routine to seek, and wire `on-arrive → run(foot)`.
+    comprehend(&mut app, console::Block::Seek);
+    comprehend(&mut app, console::Block::RunFoot);
+    app.console.routines[0].body = vec![console::Step::Do(console::Block::Seek)];
+    // Isolate the on-arrive path: the given on-scan collect would otherwise harvest the target
+    // from the air (reach 45 > arrive 20) before the ship ever counts as arrived.
+    for r in app.console.routines.iter_mut() {
+        if matches!(r.trigger, console::Trigger::OnScan) {
+            r.enabled = false;
+        }
+    }
+    let rid = app.console.create_routine(console::Agent::Ship);
+    app.console.routines[rid].trigger = console::Trigger::OnArrive;
+    app.console.routines[rid].body = vec![console::Step::Do(console::Block::RunFoot)];
+    app.console.routines[rid].enabled = true;
+    app.sync_console_unlock();
+    let bank_before = app.progress.shard_bank();
+
+    // Fly the loop for real: streaming fills the site field, seek closes on the nearest site at
+    // cruise height, arrival fires the routine, and the phase machine runs a full cycle.
+    let mut deployed = false;
+    let mut seen_harvest = false;
+    let mut injected_return_carry = false;
+    let mut completed = false;
+    for _ in 0..30_000 {
+        app.run_frame(DT);
+        assert_finite(&app, "on-arrive expedition");
+        if app.expedition.active() {
+            deployed = true;
+        }
+        if app.expedition.phase == expedition::Phase::Harvest {
+            seen_harvest = true;
+        }
+        if app.expedition.phase == expedition::Phase::Return && !injected_return_carry {
+            // Guarantee the walker returns *carrying* value (harvest shard luck varies by site)
+            // so the Return→Idle auto-deposit is deterministically observable.
+            app.progress.carry_shard(Stratum::Records, Rarity::Common);
+            injected_return_carry = true;
+        }
+        if deployed && !app.expedition.active() {
+            completed = true;
+            break; // assert at the transition frame, before any later tick can drain the cache
+        }
+    }
+    assert!(
+        deployed,
+        "seek → arrive → run(foot) deployed an expedition from cruise altitude \
+         (pre-G19a `arrived_at` never fired in flight)"
+    );
+    assert!(
+        app.console.routines[rid].stats.fires > 0,
+        "the on-arrive routine itself fired (the real trigger path, not a direct kick)"
+    );
+    assert!(seen_harvest, "the expedition reached Harvest");
+    assert!(completed, "the expedition returned and went Idle");
+    assert!(injected_return_carry, "the Return phase was observed");
+    // Fix 3: Return→Idle auto-deposited the carry into the site cache (no foot routine ticked).
+    assert_eq!(
+        app.progress.carry_count(),
+        0,
+        "auto-deposit emptied the walker's carry on Return→Idle"
+    );
+    assert!(
+        app.progress.cache_count() > 0,
+        "the carry landed in the site cache"
+    );
+    // The handshake banks the value: the ship, holding over the site, drains the cache home.
+    let (items, _) = app.drain_cache_if_near();
+    assert!(items > 0, "the holding ship drained the site cache");
+    assert!(
+        app.progress.shard_bank() > bank_before,
+        "the handshake banked value"
+    );
+}
+
+/// G19a fix 2: the **seek + on-scan collect loop makes progress on a fully-known site field**.
+/// Pre-fix, on-scan only fired when a site became *newly* known, so once everything in the cone
+/// was already known no collect ever ran again — the ship orbited one uncollected site forever
+/// (measured: ~+14 yield/h vs ~950 under drift). The scan pulse now re-hits known-but-uncollected
+/// sites, so seek → scan-hit → collect → move-on keeps cycling.
+#[test]
+fn seek_collect_loop_progresses_on_a_known_site_field() {
+    fn mark_all_known(app: &mut App) {
+        let ids: Vec<u64> = app.collectible.iter().map(|c| c.find_id).collect();
+        for id in ids {
+            app.progress.scan(id);
+        }
+    }
+    let seed = 1337u32;
+    let mut app = App::headless(seed);
+    comprehend(&mut app, console::Block::Seek);
+    app.console.routines[0].body = vec![console::Step::Do(console::Block::Seek)];
+    app.sync_console_unlock();
+    drive(&mut app, 300); // stream the opening site field in
+    assert!(
+        !app.collectible.is_empty(),
+        "sites streamed in near the start"
+    );
+
+    // The deadlock precondition: every site the run ever sees is *already known* — mark the field
+    // scanned up front and re-mark each frame (streaming keeps adding sites), so no "fresh" scan
+    // hit can ever fire. Only the re-hit path can collect here.
+    let before = app.progress.collected_count();
+    let mut collected = 0;
+    for _ in 0..20_000 {
+        mark_all_known(&mut app);
+        app.run_frame(DT);
+        assert_finite(&app, "seek/collect known field");
+        collected = app.progress.collected_count() - before;
+        if collected >= 2 {
+            break; // ≥2 proves the move-on (arrive → collect → next site), not a one-off
+        }
+    }
+    assert!(
+        collected >= 2,
+        "seek + on-scan collect progressed on a fully-known field (collected {collected} \
+         sites; pre-G19a this deadlocked at 0)"
+    );
+}
+
+/// G19a fix 3 in isolation: a directly-kicked expedition (the G17-style scripted helm) whose
+/// walker carries shards **auto-deposits into the site cache on Return→Idle** — foot routines
+/// don't tick between back-to-back expeditions, so `when(carry) → deposit` alone can starve.
+#[test]
+fn expedition_return_auto_deposits_the_carry() {
+    let seed = 7u32;
+    let mut app = App::headless(seed);
+    drive(&mut app, 300); // stream sites in
+    let target = app
+        .seek_target()
+        .expect("a site streamed in near the start");
+    // Park the piloted ship just off the site at cruise height and kick the expedition.
+    app.auto_fly = false;
+    let g = worldgen::height(target.x.floor() as i32, target.z.floor() as i32, seed) as f32;
+    app.camera.position = Vec3::new(target.x + 6.0, g + CRUISE_HEIGHT, target.z);
+    app.start_expedition();
+    assert!(app.expedition.active(), "expedition deployed");
+    app.progress.carry_shard(Stratum::Relics, Rarity::Common);
+    // Keep the ship's own collect quiet so the cache is observably the auto-deposit's work.
+    for r in app.console.routines.iter_mut() {
+        if matches!(r.trigger, console::Trigger::OnScan) {
+            r.enabled = false;
+        }
+    }
+    let mut completed = false;
+    for _ in 0..6000 {
+        app.run_frame(DT);
+        assert_finite(&app, "auto-deposit expedition");
+        if !app.expedition.active() {
+            completed = true;
+            break;
+        }
+    }
+    assert!(completed, "the expedition completed its cycle");
+    assert_eq!(
+        app.progress.carry_count(),
+        0,
+        "Return→Idle auto-deposited the walker's carry"
+    );
+    assert!(
+        app.progress.cache_count() > 0,
+        "the deposited carry sits in the site cache"
+    );
+}
+
+// ----------------------------------------------------------------------------------------------
 // 8) Render-robustness sweep — several vantages + after state changes render without panic/NaN.
 //    Needs a (software) Vulkan adapter, so it's `#[ignore]` (local / opt-in, not CI).
 // ----------------------------------------------------------------------------------------------
