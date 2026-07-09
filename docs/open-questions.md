@@ -1,5 +1,26 @@
 # Open questions for the human (2026-06-11 session)
 
+> **2026-06-16 — INDEFINITE DELEGATION.** The human instructed: "iterate on this yourself.
+> you can work unattended indefinitely." Per that delegation, the babysitter has **pinned
+> every remaining open fork with its recorded recommendation** (each still vetoable — a
+> veto becomes a redirect, not a rework, since everything ships behind the usual
+> append-only codecs and toggles):
+> - **§D uncertainty layer → GREEN-LIT** (the Archive tranche's next step, G18): provisional
+>   readings confirmed by second-sighting *or first use* (behavioral confirmation — no
+>   softlock), Leiden display grammar in the survey log, seeded erosion, ⟦erased⟧ marks.
+> - **§E script difficulty shapes → YES** as the long-term shape; enters via the
+>   proto-language milestone (G21/lexicon v3), not before.
+> - **§I.2 `when` → `while` rename → DO IT** (display-level; the measured TAP confusion
+>   fix; folded into G18's console touch).
+> - **§I.3 audio direction → BUILD behind toggles** (E16b: lament-bass ostinato, phone-mode
+>   virtual bass — a real weak-hardware gap — per-stratum earcons, FDN vastness tune);
+>   ear-tuning remains on the human checklist, defaults conservative.
+> - **§G god-rays → still skipped** (its entire deliverable is the look; zero blind value).
+> - **Feel/pacing numbers → quantitative proxy now, eyes later**: a harness-driven pacing
+>   analysis (time-to-discovery / time-to-comprehension / income rates across seeds) will
+>   sanity-set the placeholder numbers; the human's play pass remains the final word.
+
+
 > The "answer later" doc: every fork I hit during the planning/dispatch run that's genuinely
 > yours to call. I kept working past each one with a pinned conservative default (noted), so
 > nothing here blocks the run — your answers redirect later milestones. Ordered by how much
