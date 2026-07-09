@@ -44,6 +44,16 @@ risks; resist both.
   **Monitor** on `origin/claude/core-mechanics-planning-0TpOA` (poll `git ls-remote`, emit on tip
   change), and **resume** when this file changes.
 
+## ⚠ STATE NOTE — 2026-06-16 (read first)
+
+`main` now also hosts a **second game** (`crates/goblin-gold`, another agent's run — do not
+touch it). Its final cluster left the shared trunk red (a clippy lint); the babysitter fixed
+it (`b724404`). The Scraped-Again builder is presumed gone (G18 unclaimed for weeks), so
+**the babysitter's own build agents are now executing: G19-A → G18 → G19-B.** If you are
+the original builder returning: do NOT build these three — check `agent-review.md` for
+what's landed and take the next undispatched item from the Archive queue (G20+) after
+they're done.
+
 ## CURRENT DIRECTIVE — 2026-06-16 (updated): G18, then **G19 economy truing (has an URGENT bug part)**
 
 **G18 (uncertainty layer) stands as dispatched** — finish it per its brief. **Then chain
@@ -224,6 +234,7 @@ later, don't park buildable work behind "needs play".
 are **not** stopping points. Human review is end-of-run. Chain straight into the next milestone.
 
 ## Directive log (newest on top)
+- **2026-06-16** — goblin-gold discovered on main (93 commits, second game, our code untouched); red trunk fixed (b724404); builder presumed gone → babysitter build-agents take G19-A → G18 → G19-B.
 - **2026-06-16** — pacing analysis in (docs/pacing-analysis.md): 2 wiring bugs (arrived_at dead in flight — verified; seek/collect deadlock) + measured truing. **G19 — economy truing dispatched** (URGENT part A bugs first; part B constants + rare-count gates + envelope CI test from docs/probes/pacing_probe.rs). Archive queue renumbered G20-G23.
 - **2026-06-16** — standby lifted (human delegated indefinitely; forks pinned per open-questions). **New directive: G18 — uncertainty layer** (provisional/confirmed attestation, seeded condition + ⟦erased⟧, Leiden codex display, while-rename rider, D11 extension). Archive queue published: G19 cartouches/frames → G20 sensing ladder → G21 proto-language → G22 prosopography → E16b audio.
 - **2026-06-16** — G17 ✅ four-way green → **automation arc G9→G17 complete**. **WIND DOWN / STANDBY**: all remaining work is fork-blocked (Archive) or human/hardware-gated (feel pass, M8b). Builder to standby; next move is the human's play-pass + Archive fork.

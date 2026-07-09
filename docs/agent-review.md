@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `7da9cdb` (G17 — handshakes; automation arc complete).
+**Reviewed through:** `b724404` (trunk-fix atop the goblin-gold series; see 2026-06-16 state entry).
 
 ---
 
@@ -36,6 +36,39 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-06-16 · REPO STATE CHANGE — a second game (goblin-gold) now shares the trunk; red fixed; babysitter takes over building
+
+While this session was suspended, **another agent run landed ~93 commits on `main`**: a
+second game, **`crates/goblin-gold`** (a hero/arena UI game with its own V-checklist +
+"wave" gates), built on the brickmap engine — the M9 split doing exactly what it exists
+for. **Blast radius audited:** `crates/scraped-again` untouched (our pacing measurements at
+`68c5ff7` remain valid); toolchain/CI/workflow files untouched; the engine gained additive
+generic capabilities for their game (`bm-platform/save.rs`, `bm-render/{text2d,ui2d,
+keypad}` — ~748 lines; queued for a boundary skim). Our G9→G17 history is intact beneath.
+
+**The shared trunk was RED** at their tip (`68c5ff7`): the final "wave-14" cluster landed
+without seeing CI — one clippy `too_many_arguments` in `goblin-gold/src/app.rs`. Since a
+red trunk gates *our* CI-as-authority too, the babysitter pushed the minimal respectful
+fix directly (`b724404`: an `#[allow]` + rationale; goblin-gold clippy + workspace fmt
+verified clean locally). First-ever babysitter push to `main` — logged as such; scope was
+one line, unblocking, on an abandoned-run breakage.
+
+**Builder status → takeover.** The Scraped-Again builder never picked up G18 (dispatched
+before the suspension; weeks of wall-clock have passed) and is presumed gone. Under the
+human's indefinite delegation, **the babysitter now runs its own build agents** (isolated
+worktrees; local gates + golden checks before push; the babysitter reviews each landing
+with four-way CI exactly as before — the two-role quality loop preserved inside one
+session). Execution order: **G19 Part A (urgent wiring bugs: `arrived_at` dead in flight +
+seek/collect deadlock + auto-deposit) → G18 (uncertainty layer) → G19 Part B (measured
+truing)**. If the original builder returns: read this log, take the next *undispatched*
+item — do not double-build these.
+
+**Also this session:** the pacing analysis landed ([`pacing-analysis.md`](pacing-analysis.md)
++ the preserved probe) — the run's first quantitative playtest; its two verified wiring
+bugs and measured truing constants are what G19 encodes.
+
+---
 
 ## 2026-06-16 · G17 — handshakes & expedition economy (`dc190a2` + `7da9cdb`)  ✅ PASSED — automation arc complete
 
