@@ -100,12 +100,19 @@ impl ResearchTarget {
             ResearchTarget::Faculty(f) => 0xF0 + f.idx() as u8,
         }
     }
-    /// Player-facing label: a block by its **glyphs** (G12, unreadable), a faculty by its
-    /// minimal-English instrumentation name (faculties are machine instrumentation, not vocabulary).
-    pub fn glyphs(self) -> String {
+    /// Player-facing label: a block by its **glyphs** (G12, unreadable); a faculty by its seeded
+    /// vocabulary word rendered glyph (G20 — the same word `spend(…)` shows, in the spend block's
+    /// Records/Latin script, so the research bar never re-leaks the English the palette hides).
+    pub fn glyphs(self, seed: u32) -> String {
         match self {
-            ResearchTarget::Block(b) => b.glyphs(),
-            ResearchTarget::Faculty(f) => f.label().to_string(),
+            ResearchTarget::Block(b) => b.glyphs(seed),
+            ResearchTarget::Faculty(f) => {
+                let word = crate::lexicon::vocab_word(seed, f.label());
+                crate::text::to_overlay(
+                    &crate::structures::transliterate(&word, Script::Latin),
+                    Script::Latin,
+                )
+            }
         }
     }
     /// Resolve a `pg=` key byte back to a target (lenient — unknown → `None`).

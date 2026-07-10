@@ -1575,7 +1575,7 @@ impl App {
                 out.push_str(&format!("{tag}  {line}\n"));
                 // Underdot a provisional name-reading (live attestation — re-renders as the
                 // state improves; a confirmed name loses the dots).
-                if let Some(b) = structures::name_of_text(&e.text, e.script) {
+                if let Some(b) = structures::name_of_text(self.seed, &e.text, e.script) {
                     if self.progress.attestation(b) == Some(progress::Attestation::Provisional) {
                         out.push_str(&format!("     {dots}\n"));
                     }
@@ -1704,7 +1704,7 @@ impl App {
         }
         let inscriptions: Vec<structures::Inscription> = marks
             .into_iter()
-            .chain(colossi.iter().map(structures::colossus_label))
+            .chain(colossi.iter().map(|p| structures::colossus_label(seed, p)))
             .collect();
         // G1: the still-collectible inscriptions in range (already-collected ones filtered
         // out), used as the collect pick's targets.
@@ -3388,7 +3388,7 @@ impl App {
                 // instrumentation; the block's *name* never does).
                 if let Some((blk, t)) = self.last_discovery {
                     if self.time - t < 5.0 {
-                        mode.push_str(&format!(" · NAME RECOVERED — {}", blk.glyphs()));
+                        mode.push_str(&format!(" · NAME RECOVERED — {}", blk.glyphs(self.seed)));
                     }
                 }
                 // G11: the one lit goal — the single nearest-to-done thing.
@@ -3729,7 +3729,11 @@ fn assemble_app(
         progress,
         collectible: Vec::new(),
         codex_open: false,
-        console: console::Console::default(),
+        // G20: the console renders the per-world lexicon names — it needs the world seed.
+        console: console::Console {
+            seed: view.seed,
+            ..Default::default()
+        },
         beam: None,
         ride_t: None,
         scan_timer: 0.0,

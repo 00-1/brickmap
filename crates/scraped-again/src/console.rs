@@ -91,13 +91,15 @@ impl MatchField {
     /// G12: the filter argument as glyphs — a world-vocabulary item: the rarity tier (in the
     /// `match` step's own Rites script), or a stratum **domain** rendered in *that stratum's own*
     /// script so it reads as that family's glyphs. Mapped to overlay codepoints for the flat HUD.
-    pub fn glyphs(self) -> String {
+    /// G20: the word itself is the seeded lexicon vocabulary word (never English).
+    pub fn glyphs(self, seed: u32) -> String {
         use crate::progress::script_for;
-        let (word, script) = match self {
+        let (key, script) = match self {
             MatchField::Rare => ("rare", script_for(self.required())),
             MatchField::Domain(d) => (self.label(), script_for(d)),
         };
-        crate::text::to_overlay(&crate::structures::transliterate(word, script), script)
+        let word = crate::lexicon::vocab_word(seed, key);
+        crate::text::to_overlay(&crate::structures::transliterate(&word, script), script)
     }
 }
 
@@ -236,26 +238,24 @@ impl Block {
         }
     }
 
-    /// G12: the block's **glyph-name** — its bare [`name`](Self::name) transliterated into its
-    /// stratum's script and mapped to the self-identifying overlay codepoints the flat HUD renders
-    /// (via [`crate::text::to_overlay`]). Visually the *exact* glyph cluster the player finds carved
-    /// in the world for this block (same `transliterate` + script — the world↔console recognition
-    /// loop), recognisable *as a symbol* though unreadable *as a word*. This is the player-facing
-    /// identity (palette, routine rows, codex, discovery toast); [`name`](Self::name)/
-    /// [`label`](Self::label) stay for internal codes/tests/the `co=` codec.
-    pub fn glyphs(self) -> String {
+    /// G12: the block's **glyph-name** — its seeded true name (G20: a lexicon word per world,
+    /// never the internal English [`name`](Self::name)) transliterated into its stratum's script
+    /// and mapped to the self-identifying overlay codepoints the flat HUD renders (via
+    /// [`crate::text::to_overlay`]). Visually the *exact* glyph cluster the player finds carved
+    /// in the world for this block (same [`crate::structures::name_text`] — the world↔console
+    /// recognition loop), recognisable *as a symbol* though unreadable *as a word*. This is the
+    /// player-facing identity (palette, routine rows, codex, discovery toast);
+    /// [`name`](Self::name)/[`label`](Self::label) stay for internal codes/tests/the `co=` codec.
+    pub fn glyphs(self, seed: u32) -> String {
         let script = crate::structures::block_script(self);
-        crate::text::to_overlay(
-            &crate::structures::transliterate(self.name(), script),
-            script,
-        )
+        crate::text::to_overlay(&crate::structures::name_text(seed, self), script)
     }
 
     /// G12: the full player-facing form — the glyph-name plus, for a parameterised block, its
     /// world-vocabulary argument rendered glyph too (the scan target, the spent faculty), in the
     /// block's own stratum script. Structural punctuation (the parens) stays; pure quantities
-    /// never appear here.
-    pub fn glyph_label(self) -> String {
+    /// never appear here. G20: the argument word is a seeded lexicon word too.
+    pub fn glyph_label(self, seed: u32) -> String {
         let arg = match self {
             Block::Scan(i) => Some(i.label()),
             Block::Spend(f) => Some(f.label()),
@@ -264,11 +264,14 @@ impl Block {
         match arg {
             Some(a) => {
                 let script = crate::structures::block_script(self);
-                let arg =
-                    crate::text::to_overlay(&crate::structures::transliterate(a, script), script);
-                format!("{}({})", self.glyphs(), arg)
+                let word = crate::lexicon::vocab_word(seed, a);
+                let arg = crate::text::to_overlay(
+                    &crate::structures::transliterate(&word, script),
+                    script,
+                );
+                format!("{}({})", self.glyphs(seed), arg)
             }
-            None => self.glyphs(),
+            None => self.glyphs(seed),
         }
     }
 
@@ -376,15 +379,15 @@ impl Step {
     /// modifiers (`match`/`repeat`/`group`) stay minimal-English instrumentation, only their
     /// vocabulary argument goes glyph. (`Run`/`Group` inner content resolves in
     /// [`Console::step_render`], which knows the routine set.)
-    pub fn glyph_label(&self) -> String {
+    pub fn glyph_label(&self, seed: u32) -> String {
         match self {
-            Step::Do(b) => b.glyph_label(),
-            Step::Match(f) => format!("match({})", f.glyphs()),
+            Step::Do(b) => b.glyph_label(seed),
+            Step::Match(f) => format!("match({})", f.glyphs(seed)),
             Step::Repeat(n) => format!("repeat ×{n}"),
             Step::Run(id) => format!("run(#{id})"),
             Step::Group { times, filter, .. } => {
                 let f = filter
-                    .map(|f| format!(" match({})", f.glyphs()))
+                    .map(|f| format!(" match({})", f.glyphs(seed)))
                     .unwrap_or_default();
                 format!("group ×{times}{f}")
             }
@@ -737,6 +740,9 @@ pub struct Console {
     /// G14: the next stable [`RoutineId`] to mint (monotonic; survives reorder/rename). Persisted
     /// implicitly — `restore` advances it past the largest loaded id.
     pub next_id: RoutineId,
+    /// G20: the **world seed** (set once by the app) — the true-name source. Every glyph render
+    /// (palette, rows, ticker, goals) draws the per-world lexicon names through it.
+    pub seed: u32,
 }
 
 impl Default for Console {
@@ -797,6 +803,7 @@ impl Default for Console {
             traces: std::collections::HashMap::new(),
             active_agent: Agent::Ship,
             next_id: 0,
+            seed: 0,
         };
         // G14: the givens get stable ids 0..n; the next mint continues past them.
         for (i, r) in c.routines.iter_mut().enumerate() {
@@ -968,7 +975,7 @@ impl Console {
                 body,
             } => {
                 let f = filter
-                    .map(|f| format!(" match({})", f.glyphs()))
+                    .map(|f| format!(" match({})", f.glyphs(self.seed)))
                     .unwrap_or_default();
                 let inner = body
                     .iter()
@@ -977,7 +984,7 @@ impl Console {
                     .join(" → ");
                 format!("group ×{times}{f} {{{inner}}}")
             }
-            other => other.glyph_label(),
+            other => other.glyph_label(self.seed),
         }
     }
 
@@ -1961,7 +1968,7 @@ impl Console {
             };
             return Some(format!(
                 "{}: research {}/{cost}{rare}",
-                b.glyphs(),
+                b.glyphs(self.seed),
                 filled.min(cost)
             ));
         }
@@ -2010,7 +2017,7 @@ impl Console {
                     && p.is_block_comprehended(*b)
                     && p.attestation(*b) == Some(crate::progress::Attestation::Provisional)
             })
-            .map(|b| format!("{}: use once", b.glyphs()))
+            .map(|b| format!("{}: use once", b.glyphs(self.seed)))
     }
 
     // ---- render -----------------------------------------------------------------------------
@@ -2076,7 +2083,7 @@ impl Console {
         } else {
             trace
                 .iter()
-                .map(|b| b.glyph_label())
+                .map(|b| b.glyph_label(self.seed))
                 .collect::<Vec<_>>()
                 .join(" ")
         };
@@ -2113,9 +2120,17 @@ impl Console {
             // G12: the block shows by its glyph-name; the `(locked: decode SCH)` tag stays
             // minimal-English instrumentation (a stratum gauge, not the block's vocabulary).
             if !self.is_unlocked(b) && b.required().is_some() {
-                s.push_str(&format!("{cur} · {}{mark}{}\n", b.glyph_label(), tag));
+                s.push_str(&format!(
+                    "{cur} · {}{mark}{}\n",
+                    b.glyph_label(self.seed),
+                    tag
+                ));
             } else {
-                s.push_str(&format!("{cur} {}{mark}{}\n", b.glyph_label(), tag));
+                s.push_str(&format!(
+                    "{cur} {}{mark}{}\n",
+                    b.glyph_label(self.seed),
+                    tag
+                ));
             }
             row += 1;
         }
@@ -2136,7 +2151,7 @@ impl Console {
                 let params = match r.body.get(gs) {
                     Some(Step::Group { times, filter, .. }) => {
                         let f = filter
-                            .map(|f| format!(" · match({})", f.glyphs()))
+                            .map(|f| format!(" · match({})", f.glyphs(self.seed)))
                             .unwrap_or_else(|| " · match(none)".into());
                         format!("group: repeat ×{times}{f}")
                     }
@@ -2187,64 +2202,68 @@ impl Console {
 mod tests {
     use super::*;
 
-    /// G12: a block's console glyph-name is the overlay form of the **exact** cluster a world
-    /// name-inscription spells for it (same `transliterate` + stratum script) — the world↔console
-    /// recognition loop. Stable, non-empty, every char HUD-renderable (never a fallback dot), and
-    /// (across the unique names) distinct.
+    /// G12 (re-proven under G20's true names): a block's console glyph-name is the overlay form
+    /// of the **exact** cluster a world name-inscription spells for it (same
+    /// [`structures::name_text`] — one source). Stable, non-empty, every char HUD-renderable
+    /// (never a fallback dot), and (across the unique names) distinct. Seeded: checked across
+    /// several world seeds.
     #[test]
     fn block_glyphs_match_world_inscriptions() {
         use crate::structures;
-        for b in Block::ALL {
-            let script = structures::block_script(b);
-            let world = structures::transliterate(b.name(), script);
-            assert_eq!(
-                b.glyphs(),
-                crate::text::to_overlay(&world, script),
-                "console glyphs must be the overlay of the world inscription for {b:?}"
-            );
-            assert_eq!(b.glyphs(), b.glyphs(), "deterministic");
-            assert!(!b.glyphs().is_empty());
-            // Every glyph the console emits is renderable by the HUD (no fallback dots).
-            for c in b.glyphs().chars() {
-                assert!(
-                    c.is_ascii_graphic() || crate::text::overlay_glyph(c).is_some(),
-                    "char {c:?} of {b:?} glyphs is not HUD-renderable"
+        for seed in [0u32, 42, 1337] {
+            for b in Block::ALL {
+                let script = structures::block_script(b);
+                let world = structures::name_text(seed, b);
+                assert_eq!(
+                    b.glyphs(seed),
+                    crate::text::to_overlay(&world, script),
+                    "console glyphs must be the overlay of the world inscription for {b:?}"
                 );
+                assert_eq!(b.glyphs(seed), b.glyphs(seed), "deterministic");
+                assert!(!b.glyphs(seed).is_empty());
+                // Every glyph the console emits is renderable by the HUD (no fallback dots).
+                for c in b.glyphs(seed).chars() {
+                    assert!(
+                        c.is_ascii_graphic() || crate::text::overlay_glyph(c).is_some(),
+                        "char {c:?} of {b:?} glyphs is not HUD-renderable"
+                    );
+                }
             }
-        }
-        // Parameterised families share a name → share a glyph cluster (by design).
-        use std::collections::{HashMap, HashSet};
-        let mut by_name: HashMap<&str, String> = HashMap::new();
-        for b in Block::ALL {
-            if let Some(prev) = by_name.insert(b.name(), b.glyphs()) {
-                assert_eq!(prev, b.glyphs(), "same name ⇒ identical glyphs");
+            // Parameterised families share a name → share a glyph cluster (by design).
+            use std::collections::{HashMap, HashSet};
+            let mut by_name: HashMap<&str, String> = HashMap::new();
+            for b in Block::ALL {
+                if let Some(prev) = by_name.insert(b.name(), b.glyphs(seed)) {
+                    assert_eq!(prev, b.glyphs(seed), "same name ⇒ identical glyphs");
+                }
             }
+            // Distinct *names* produce distinct clusters (collision guard, G9 spirit).
+            let clusters: HashSet<String> = Block::ALL.iter().map(|b| b.glyphs(seed)).collect();
+            let names: HashSet<&str> = Block::ALL.iter().map(|b| b.name()).collect();
+            assert_eq!(
+                clusters.len(),
+                names.len(),
+                "distinct block names ⇒ distinct glyph clusters (seed {seed})"
+            );
         }
-        // Distinct *names* produce distinct clusters (collision guard, G9 spirit).
-        let clusters: HashSet<String> = Block::ALL.iter().map(|b| b.glyphs()).collect();
-        let names: HashSet<&str> = Block::ALL.iter().map(|b| b.name()).collect();
-        assert_eq!(
-            clusters.len(),
-            names.len(),
-            "distinct block names ⇒ distinct glyph clusters"
-        );
     }
 
     /// G12: a parameterised block's `glyph_label` is its glyphs plus its argument rendered glyph
     /// (so the two `scan` variants read distinctly); a plain block is just its glyphs.
     #[test]
     fn glyph_label_renders_parameter_as_glyphs() {
+        let seed = 1337;
         let shards = Block::Scan(ScanItem::Shards);
-        let lbl = shards.glyph_label();
-        assert!(lbl.starts_with(&shards.glyphs()) && lbl.ends_with(')') && lbl.contains('('));
+        let lbl = shards.glyph_label(seed);
+        assert!(lbl.starts_with(&shards.glyphs(seed)) && lbl.ends_with(')') && lbl.contains('('));
         assert_ne!(
-            Block::Scan(ScanItem::Shards).glyph_label(),
-            Block::Scan(ScanItem::Sites).glyph_label(),
+            Block::Scan(ScanItem::Shards).glyph_label(seed),
+            Block::Scan(ScanItem::Sites).glyph_label(seed),
             "the scan variants must read distinctly"
         );
-        assert_eq!(Block::Drift.glyph_label(), Block::Drift.glyphs());
+        assert_eq!(Block::Drift.glyph_label(seed), Block::Drift.glyphs(seed));
         // A `match` step glyphs its field but keeps the structural keyword (instrumentation).
-        let m = Step::Match(MatchField::Rare).glyph_label();
+        let m = Step::Match(MatchField::Rare).glyph_label(seed);
         assert!(m.starts_with("match(") && m.ends_with(')'));
     }
 
@@ -2609,7 +2628,7 @@ mod tests {
         // G12: the discovered name is listed by its **glyph** cluster (not the English "seek"),
         // still tagged with its stratum (instrumentation stays English).
         assert!(
-            home.contains(&Block::Seek.glyphs()),
+            home.contains(&Block::Seek.glyphs(0)),
             "discovered name should be listed as its glyphs"
         );
         assert!(
@@ -2828,7 +2847,7 @@ mod tests {
         p2.allocate(crate::progress::ResearchTarget::Block(Block::Seek));
         let goal = c.lit_goal(&p2).expect("active research is the lit goal");
         assert!(
-            goal.contains(&Block::Seek.glyphs()) && goal.contains("research"),
+            goal.contains(&Block::Seek.glyphs(0)) && goal.contains("research"),
             "names the active research target by its glyphs: {goal}"
         );
         assert!(
@@ -2875,7 +2894,7 @@ mod tests {
         // Comprehended, unconfirmed, nothing else pending → the nudge.
         let goal = c.lit_goal(&p).expect("the attestation nudge lights");
         assert!(
-            goal.contains(&Block::Seek.glyphs()) && goal.contains("use once"),
+            goal.contains(&Block::Seek.glyphs(0)) && goal.contains("use once"),
             "nudges the unconfirmed reading by its glyphs: {goal}"
         );
         assert!(!goal.contains("seek"), "no English name: {goal}");
@@ -2915,7 +2934,7 @@ mod tests {
         let mut c = Console::default();
         c.discovered.insert(Block::Seek); // provisional: discovered, not confirmed
         assert!(!c.is_confirmed(Block::Seek));
-        let marked = format!("{}{}", Block::Seek.glyph_label(), mark);
+        let marked = format!("{}{}", Block::Seek.glyph_label(0), mark);
         assert!(
             c.render_home().contains(&marked),
             "a provisional reading is underdotted in the palette"

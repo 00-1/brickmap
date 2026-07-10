@@ -102,6 +102,141 @@ fn content_token(idx: u32) -> String {
     content_word(idx, idx as usize % SUFFIXES.len())
 }
 
+// ---- G20: the vocabulary (true names) --------------------------------------------------------
+//
+// Every player-facing *vocabulary word* — block display names and their parameters — is a seeded
+// lexicon word drawn from the same phonotactics/morphology as the corpus (so names are Kober-able
+// later: same syllable grammar, same closed suffix slot). Deterministic per (world seed, key);
+// distinct across the whole vocabulary *after transliteration into every script* (collision-free
+// by construction — a rejected candidate deterministically retries). Internal English keys
+// (`Block::name()`, labels) never render: they're codec/test identifiers only.
+
+/// The canonical vocabulary keys, in a fixed order (append-only — the retry cascade means a
+/// reordering could reshuffle every world's names). Block bare names first, then the parameter
+/// words (scan items, spend faculties, match fields/domains).
+const VOCAB_KEYS: [&str; 24] = [
+    "scan",
+    "collect",
+    "beam",
+    "decode",
+    "spend",
+    "goto",
+    "drift",
+    "seek",
+    "circle",
+    "walk",
+    "hail",
+    "runfoot",
+    "deposit",
+    "shards",
+    "sites",
+    "sensing",
+    "reach",
+    "drive",
+    "rare",
+    "records",
+    "schematics",
+    "rites",
+    "relics",
+    "signals",
+];
+
+/// FNV-ish mix of (seed, key, attempt) → the candidate RNG seed.
+fn vocab_hash(seed: u32, key: &str, attempt: u32) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut mix = |b: u8| {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    for b in key.bytes() {
+        mix(b);
+    }
+    for b in seed.to_le_bytes() {
+        mix(b);
+    }
+    for b in attempt.to_le_bytes() {
+        mix(b);
+    }
+    h
+}
+
+/// One candidate true-name: 2–3 syllables + the deterministic suffix slot (same morphology as
+/// the corpus' content words — names segment like everything else).
+fn vocab_candidate(seed: u32, key: &str, attempt: u32) -> String {
+    let mut r = Rng::new(vocab_hash(seed, key, attempt));
+    let syllables = 2 + usize::from(r.below(3) == 0);
+    let mut w: String = (0..syllables).map(|_| syllable(&mut r)).collect();
+    w.push_str(SUFFIXES[r.below(SUFFIXES.len())]);
+    w
+}
+
+/// The full seeded vocabulary: `(key, true name)` for every canonical key. Distinctness is
+/// guaranteed **after transliteration into every script** (two names that collide only once
+/// mapped into a smaller glyph pool would still read as one name — the G9 lesson), and no name
+/// may spell an internal English key or a function word.
+pub fn vocabulary(seed: u32) -> Vec<(&'static str, String)> {
+    let mut out: Vec<(&'static str, String)> = Vec::with_capacity(VOCAB_KEYS.len());
+    for key in VOCAB_KEYS {
+        let mut attempt = 0u32;
+        let word = loop {
+            let mut w = vocab_candidate(seed, key, attempt);
+            // Deterministic escape hatch: after many rejections, *grow* the candidate until it
+            // clears (guaranteed to terminate — length eventually exceeds every prior name).
+            if attempt > 64 {
+                let mut r = Rng::new(vocab_hash(seed, key, attempt) ^ 0x6772_6f77); // "grow"
+                while w.chars().count() < 4
+                    || VOCAB_KEYS.contains(&w.as_str())
+                    || vocab_collides(&w, &out)
+                {
+                    w.push_str(&syllable(&mut r));
+                }
+                break w;
+            }
+            attempt += 1;
+            if w.chars().count() < 4 {
+                continue; // a name should read as a word, not a particle
+            }
+            if VOCAB_KEYS.contains(&w.as_str()) || FUNCTION_WORDS.contains(&w.as_str()) {
+                continue; // never English (the internal keys) nor a grammar particle
+            }
+            if !vocab_collides(&w, &out) {
+                break w;
+            }
+        };
+        out.push((key, word));
+    }
+    out
+}
+
+/// Does `w` collide with an already-assigned name in **any** script's transliteration?
+fn vocab_collides(w: &str, out: &[(&'static str, String)]) -> bool {
+    use crate::structures::transliterate;
+    out.iter().any(|(_, prev)| {
+        crate::text::Script::ALL
+            .iter()
+            .any(|s| transliterate(w, *s) == transliterate(prev, *s))
+    })
+}
+
+/// The seeded true name for a vocabulary `key` (a block bare name or a parameter word). Unknown
+/// keys are a programmer error (debug-asserted); release falls back to a bare candidate.
+pub fn vocab_word(seed: u32, key: &str) -> String {
+    debug_assert!(
+        VOCAB_KEYS.contains(&key),
+        "vocab_word: {key:?} is not a canonical vocabulary key"
+    );
+    vocabulary(seed)
+        .into_iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, w)| w)
+        .unwrap_or_else(|| vocab_candidate(seed, key, 0))
+}
+
+/// The seeded true name a block **displays** (never its internal English `name()`).
+pub fn block_name(seed: u32, b: crate::console::Block) -> String {
+    vocab_word(seed, b.name())
+}
+
 // ---- the token stream ----------------------------------------------------------------------
 
 /// How many distinct content roots the world's vocabulary can draw on (the Heaps ceiling — large
@@ -551,6 +686,71 @@ mod tests {
             !(-1.4..=-0.6).contains(&slope) || !(0.4..=0.85).contains(&beta),
             "the broken generator must fail Zipf and/or Heaps (slope {slope}, β {beta})"
         );
+    }
+
+    // ---- G20: the vocabulary (true names) -----------------------------------------------------
+
+    #[test]
+    fn vocabulary_deterministic_distinct_and_never_english() {
+        for seed in [0u32, 7, 1337, 0xFFFF_FFFF] {
+            let v = vocabulary(seed);
+            assert_eq!(v, vocabulary(seed), "deterministic per seed");
+            assert_eq!(v.len(), VOCAB_KEYS.len());
+            for (key, w) in &v {
+                assert!(w.chars().count() >= 4, "a true name is a word: {w:?}");
+                assert!(
+                    w.bytes().all(|b| b.is_ascii_lowercase()),
+                    "romanized: {w:?}"
+                );
+                assert_ne!(w, key, "a true name never spells its English key");
+                assert!(
+                    !VOCAB_KEYS.contains(&w.as_str()),
+                    "…nor any other internal key: {w:?}"
+                );
+                assert!(!FUNCTION_WORDS.contains(&w.as_str()));
+            }
+            // Distinct after transliteration into every script (the G20 collision test — two
+            // names that merge in a smaller glyph pool would read as one name).
+            for i in 0..v.len() {
+                for j in (i + 1)..v.len() {
+                    for s in crate::text::Script::ALL {
+                        assert_ne!(
+                            crate::structures::transliterate(&v[i].1, s),
+                            crate::structures::transliterate(&v[j].1, s),
+                            "seed {seed}: {:?} vs {:?} collide in {s:?}",
+                            v[i],
+                            v[j]
+                        );
+                    }
+                }
+            }
+        }
+        // Per-world names (Decision 3): different worlds, different tongues.
+        assert_ne!(vocabulary(1), vocabulary(2));
+    }
+
+    #[test]
+    fn vocab_keys_cover_the_whole_player_facing_vocabulary() {
+        use crate::console::{Block, MatchField, ScanItem};
+        use crate::progress::{Faculty, Stratum};
+        // Every block bare name is a canonical key (a display name exists for it)…
+        for b in Block::ALL {
+            assert!(VOCAB_KEYS.contains(&b.name()), "missing key {:?}", b.name());
+            assert!(!block_name(1337, b).is_empty());
+        }
+        // …and so is every parameter word (scan items, spend faculties, match fields/domains).
+        for i in [ScanItem::Shards, ScanItem::Sites] {
+            assert!(VOCAB_KEYS.contains(&i.label()));
+        }
+        for f in Faculty::ALL {
+            assert!(VOCAB_KEYS.contains(&f.label()));
+        }
+        for m in [MatchField::Rare]
+            .into_iter()
+            .chain(Stratum::ALL.map(MatchField::Domain))
+        {
+            assert!(VOCAB_KEYS.contains(&m.label()));
+        }
     }
 
     // ---- corpus-shape rules -----------------------------------------------------------------

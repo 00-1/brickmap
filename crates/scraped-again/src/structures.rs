@@ -203,15 +203,16 @@ pub fn is_erased_text(text: &str) -> bool {
 }
 
 /// G18: which block (if any) a stored inscription text **names** — the inverse of
-/// [`transliterate`] over the vocabulary, tolerant of lacuna marks (a worn name still reads as
+/// [`name_text`] over the vocabulary, tolerant of lacuna marks (a worn name still reads as
 /// its name from the surviving glyph positions). Drives the codex's live attestation rendering.
-pub fn name_of_text(text: &str, script: Script) -> Option<crate::console::Block> {
+/// G20: seeded — names are per-world lexicon words now.
+pub fn name_of_text(seed: u32, text: &str, script: Script) -> Option<crate::console::Block> {
     if is_erased_text(text) {
         return None;
     }
     crate::console::Block::ALL.iter().copied().find(|b| {
         block_script(*b) == script && {
-            let full = transliterate(b.name(), script);
+            let full = name_text(seed, *b);
             full.chars().count() == text.chars().count()
                 && full
                     .chars()
@@ -219,6 +220,20 @@ pub fn name_of_text(text: &str, script: Script) -> Option<crate::console::Block>
                     .all(|(f, t)| t == crate::text::MARK_LACUNA || t == f)
         }
     })
+}
+
+/// G20: a block's player-facing **true name** — its seeded lexicon word (never the internal
+/// English `name()`; that stays for codes/codecs/tests only). Per-world (Decision 3: each dead
+/// world had its own tongue), deterministic, distinct across the vocabulary (lexicon-tested).
+pub fn display_name(seed: u32, b: crate::console::Block) -> String {
+    crate::lexicon::block_name(seed, b)
+}
+
+/// G20: the exact glyph text a name-bearing inscription spells for block `b`: its true name
+/// transliterated into its stratum script. The console renders the overlay form of this same
+/// string — the world↔console recognition loop's single source.
+pub fn name_text(seed: u32, b: crate::console::Block) -> String {
+    transliterate(&display_name(seed, b), block_script(b))
 }
 
 /// Per-script character pool to assemble abstract "words" from (Latin/Galactic/Runic all draw
@@ -319,7 +334,7 @@ fn compose(h: u32) -> (String, Script, f32, [f32; 3]) {
 /// the pacing probe's worst seeds Relics-first onboarding roulette (25–26 min to a first
 /// comprehension) and stretched the per-block discovery tail to 63 min. Revisit the deep bias
 /// when the Archive milestones grow real Relics/Signals-tier vocabulary.)*
-pub fn colossus_label(p: &Placement) -> Inscription {
+pub fn colossus_label(seed: u32, p: &Placement) -> Inscription {
     use crate::console::Block;
     let h = p.seed ^ 0x00C0_1055;
     let (_text, _script, _h, color) = compose(h);
@@ -333,7 +348,7 @@ pub fn colossus_label(p: &Placement) -> Inscription {
         ),
         // Float a few blocks above the giant's feet so it reads as a plaque at the base.
         pos: p.pos + Vec3::new(0.0, 3.0, 0.0),
-        text: transliterate(block.name(), script),
+        text: name_text(seed, block),
         script,
         height: 1.8,
         color,
@@ -382,10 +397,9 @@ pub fn inscriptions_near(
             // finds, not wallpaper. The coverage test still guarantees every name findable.)
             let name = (h >> 5).is_multiple_of(6).then(|| name_pick(h));
             let (text, script) = match name {
-                Some(b) => {
-                    let s = block_script(b);
-                    (transliterate(b.name(), s), s)
-                }
+                // G20: a name-bearer spells the block's seeded **true name** (lexicon, never
+                // English) in its stratum script.
+                Some(b) => (name_text(seed, b), block_script(b)),
                 None => (text, script),
             };
             // G18: seeded condition off a **fresh-salt hash** — independent of the name-gate bits
@@ -456,8 +470,8 @@ mod tests {
             solid: false,
             human: false,
         };
-        let a = colossus_label(&p);
-        let b = colossus_label(&p);
+        let a = colossus_label(1337, &p);
+        let b = colossus_label(1337, &p);
         assert_eq!(a.text, b.text); // same colossus → same inscription
         assert!(!a.text.is_empty());
         assert!(
@@ -467,36 +481,47 @@ mod tests {
     }
 
     #[test]
-    fn transliteration_stable_and_distinct_across_vocabulary() {
+    fn lexicon_names_stable_and_distinct_across_vocabulary() {
         use crate::console::Block;
-        // Deterministic: same block+script → the same glyphs every time (a recurring *name*).
-        for b in Block::ALL {
-            let s = block_script(b);
-            assert_eq!(transliterate(b.name(), s), transliterate(b.name(), s));
-            assert!(!transliterate(b.name(), s).is_empty());
-        }
-        // Distinct: no two DIFFERENT names collide after transliteration — each reads as ITS
-        // name. (Parameterised families — scan items, spend faculties — intentionally share one
-        // family name, so distinctness is over unique names.)
-        let mut names: Vec<&str> = Block::ALL.iter().map(|b| b.name()).collect();
-        names.sort_unstable();
-        names.dedup();
-        let all: Vec<String> = names
-            .iter()
-            .map(|n| {
-                let b = Block::ALL.iter().find(|b| b.name() == *n).unwrap();
-                transliterate(n, block_script(*b))
-            })
-            .collect();
-        for i in 0..all.len() {
-            for j in (i + 1)..all.len() {
+        for seed in [0u32, 1, 42, 1337, 0xDEAD_BEEF] {
+            // Deterministic: same block+seed → the same glyphs every time (a recurring *name*).
+            for b in Block::ALL {
+                assert_eq!(name_text(seed, b), name_text(seed, b));
+                assert!(!name_text(seed, b).is_empty());
+                // G20: the displayed name is a lexicon word, never the internal English name.
                 assert_ne!(
-                    all[i], all[j],
-                    "name collision: {:?} vs {:?}",
-                    all[i], all[j]
+                    display_name(seed, b),
+                    b.name(),
+                    "seed {seed}: display name must not spell the English key"
                 );
             }
+            // Distinct: no two DIFFERENT names collide after transliteration — each reads as ITS
+            // name. (Parameterised families — scan items, spend faculties — intentionally share
+            // one family name, so distinctness is over unique names.)
+            let mut names: Vec<&str> = Block::ALL.iter().map(|b| b.name()).collect();
+            names.sort_unstable();
+            names.dedup();
+            let all: Vec<String> = names
+                .iter()
+                .map(|n| {
+                    let b = Block::ALL.iter().find(|b| b.name() == *n).unwrap();
+                    name_text(seed, *b)
+                })
+                .collect();
+            for i in 0..all.len() {
+                for j in (i + 1)..all.len() {
+                    assert_ne!(
+                        all[i], all[j],
+                        "seed {seed}: name collision: {:?} vs {:?}",
+                        all[i], all[j]
+                    );
+                }
+            }
         }
+        // Per-world names (Decision 3): different seeds name at least *some* blocks differently.
+        let a: Vec<String> = Block::ALL.iter().map(|b| display_name(1, *b)).collect();
+        let b: Vec<String> = Block::ALL.iter().map(|b| display_name(2, *b)).collect();
+        assert_ne!(a, b, "each world has its own tongue");
     }
 
     #[test]
@@ -524,15 +549,13 @@ mod tests {
                 // G18: an intact bearer spells the exact transliteration; a worn one keeps it
                 // recoverable from the surviving glyph positions (lacunae are wildcards).
                 match m.condition {
-                    Condition::Intact => assert_eq!(
-                        m.text,
-                        transliterate(b.name(), m.script),
-                        "stable name text"
-                    ),
+                    Condition::Intact => {
+                        assert_eq!(m.text, name_text(1337, b), "stable name text")
+                    }
                     // (Compared by *name*: parameterised families share one name, so the
                     // inverse read resolves to the family's first member.)
                     Condition::Worn(_) => assert_eq!(
-                        name_of_text(&m.text, m.script).map(|x| x.name()),
+                        name_of_text(1337, &m.text, m.script).map(|x| x.name()),
                         Some(b.name()),
                         "a worn name still reads as its block: {:?}",
                         m.text
@@ -558,7 +581,7 @@ mod tests {
             }
             // Colossus monuments also surface deep names.
             for p in colossi_near(seed, Vec3::ZERO, 2500.0, g) {
-                if let Some(b) = colossus_label(&p).name {
+                if let Some(b) = colossus_label(seed, &p).name {
                     found.insert(b.code());
                 }
             }
@@ -620,16 +643,16 @@ mod tests {
         assert!(!placements.is_empty());
         let mut seen: std::collections::HashSet<u8> = std::collections::HashSet::new();
         for p in &placements {
-            let l = colossus_label(p);
+            let l = colossus_label(7, p);
             let b = l.name.expect("every monument label is name-bearing (G9)");
             assert!(
                 b.required().is_some(),
                 "monuments name the gated vocabulary"
             );
-            assert_eq!(l.text, transliterate(b.name(), l.script));
+            assert_eq!(l.text, name_text(7, b));
             seen.insert(b.code());
             // Deterministic per colossus.
-            assert_eq!(colossus_label(p).name, l.name);
+            assert_eq!(colossus_label(7, p).name, l.name);
         }
         // G19: the label table is FLAT over the gated vocabulary (the RunFoot-×3 bias made
         // Relics-first onboarding roulette) — every gated name should turn up on monuments.
@@ -739,29 +762,31 @@ mod tests {
         assert_eq!(weather_text("AB C", Condition::Intact), "AB C");
     }
 
-    /// G18: `name_of_text` inverts `transliterate` for every block, tolerates lacunae (a worn
-    /// name still reads), and declines erased/ambient text.
+    /// G18: `name_of_text` inverts [`name_text`] for every block, tolerates lacunae (a worn
+    /// name still reads), and declines erased/ambient text. G20: over the seeded lexicon names.
     #[test]
     fn name_of_text_reads_intact_and_worn_names() {
         use crate::console::Block;
-        for b in Block::ALL {
-            let script = block_script(b);
-            let full = transliterate(b.name(), script);
-            let read = name_of_text(&full, script).expect("intact name reads");
-            assert_eq!(read.name(), b.name(), "reads as its (family) name");
-            // Wear the first glyph away: still reads (recoverable from partial glyphs, v1).
-            let worn = weather_text(&full, Condition::Worn(1));
-            assert_eq!(
-                name_of_text(&worn, script).map(|x| x.name()),
-                Some(b.name())
-            );
+        for seed in [1u32, 1337] {
+            for b in Block::ALL {
+                let script = block_script(b);
+                let full = name_text(seed, b);
+                let read = name_of_text(seed, &full, script).expect("intact name reads");
+                assert_eq!(read.name(), b.name(), "reads as its (family) name");
+                // Wear the first glyph away: still reads (recoverable from partial glyphs, v1).
+                let worn = weather_text(&full, Condition::Worn(1));
+                assert_eq!(
+                    name_of_text(seed, &worn, script).map(|x| x.name()),
+                    Some(b.name())
+                );
+            }
         }
         // Erased text and ambient noise are not names.
         assert_eq!(
-            name_of_text(&weather_text("ABC", Condition::Erased), Script::Latin),
+            name_of_text(1337, &weather_text("ABC", Condition::Erased), Script::Latin),
             None
         );
-        assert_eq!(name_of_text("QQQQQQQQQ", Script::Latin), None);
+        assert_eq!(name_of_text(1337, "QQQQQQQQQ", Script::Latin), None);
     }
 
     /// G18: an ⟦erased⟧ cell strips its name (content unrecoverable — no discovery from a

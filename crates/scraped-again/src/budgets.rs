@@ -131,7 +131,7 @@ pub fn scene_stats(seed: u32, pos: Vec3) -> SceneStats {
         }
         st.structure_meshes += meshes.len() as u32;
         st.labels += 1; // the monument label
-        st.label_glyphs += structures::colossus_label(&p).text.chars().count() as u32;
+        st.label_glyphs += structures::colossus_label(seed, &p).text.chars().count() as u32;
     }
     for m in structures::inscriptions_near(seed, pos, crate::TEXT_RADIUS, ground) {
         st.labels += 1;

@@ -60,7 +60,7 @@ fn nearest_gated_name_bearer(seed: u32) -> (console::Block, Stratum, Vec3) {
     let mut found: Vec<structures::Inscription> =
         structures::colossi_near(seed, Vec3::ZERO, 3000.0, g)
             .iter()
-            .map(structures::colossus_label)
+            .map(|p| structures::colossus_label(seed, p))
             .filter(|insc| insc.name.is_some_and(|b| b.required().is_some()))
             .collect();
     found.sort_by(|a, b| a.pos.length_squared().total_cmp(&b.pos.length_squared()));
@@ -897,7 +897,7 @@ fn uncertainty_attestation_condition_and_erasure() {
         .lit_goal(&app.progress)
         .expect("the attestation nudge lights the goal");
     assert!(
-        goal.contains(&b_block.glyphs()) && goal.contains("use once"),
+        goal.contains(&b_block.glyphs(seed)) && goal.contains("use once"),
         "nudge names the reading by its glyphs: {goal}"
     );
     // First execution — the given nav routine steers by `seek`; the real frame loop answers.
@@ -916,10 +916,7 @@ fn uncertainty_attestation_condition_and_erasure() {
         .find(|m| matches!(m.condition, structures::Condition::Worn(_)) && m.name.is_some())
         .expect("a worn name-bearer within 2500 units");
     let surviving = progress::glyph_count(&worn.text);
-    let full = progress::glyph_count(&structures::transliterate(
-        worn.name.unwrap().name(),
-        worn.script,
-    ));
+    let full = progress::glyph_count(&structures::name_text(seed, worn.name.unwrap()));
     assert!(surviving < full, "the worn text lost glyph positions");
     let before = app.progress.strata.total();
     let discovered_before = app.progress.is_discovered(worn.name.unwrap());

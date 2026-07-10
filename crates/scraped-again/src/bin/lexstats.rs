@@ -44,4 +44,9 @@ fn main() {
     println!("sample_record={}", lexicon::record(seed, (5, 5)));
     println!("sample_frame_a={}", lexicon::frame(seed, (1, 0)));
     println!("sample_frame_b={}", lexicon::frame(seed, (9, 9)));
+    // G20: this world's true names (block display names + parameter words) — eyeballable, and a
+    // quick way to confirm no candidate accidentally spells English.
+    for (key, word) in lexicon::vocabulary(seed) {
+        println!("vocab_{key}={word}");
+    }
 }

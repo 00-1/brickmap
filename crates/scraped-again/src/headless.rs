@@ -740,7 +740,10 @@ pub fn capture_view(
     // words. Off by default → the standard/CI render is byte-identical.
     let mut hud = crate::hud::HudOverlay::new(&device, COLOR_FORMAT);
     let hud_text = if std::env::var("SCRAPED_CONSOLE").is_ok() {
-        let mut console = crate::console::Console::default();
+        let mut console = crate::console::Console {
+            seed: crate::WORLD_SEED, // G20: glyph-names are per-world lexicon words
+            ..Default::default()
+        };
         console.discovered.insert(crate::console::Block::Seek); // Schematics → Greek
         console.discovered.insert(crate::console::Block::RunFoot); // Relics → Runic
         console.open = true;
