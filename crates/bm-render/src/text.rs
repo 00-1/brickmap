@@ -304,26 +304,59 @@ pub fn rasterize(text: &str) -> (u32, u32, Vec<u8>) {
 /// transparent background** (one 8×8 cell per char), so a billboard can alpha-test the glyphs
 /// and tint them. Unknown glyphs render blank (a space). Returns `(width, height, pixels)`.
 pub fn rasterize_script(text: &str, script: Script) -> (u32, u32, Vec<u8>) {
+    rasterize_script_offsets(text, script, &[])
+}
+
+/// The largest per-glyph baseline offset [`rasterize_script_offsets`] honours (px); larger
+/// caller values clamp here, so the texture height stays bounded whatever is passed in.
+pub const MAX_BASELINE_OFFSET: i8 = 4;
+
+/// As [`rasterize_script`], with an optional caller-supplied **per-glyph baseline offset**
+/// (generic typography — the engine knows nothing about what an offset *means*): glyph `i`
+/// draws `offsets[i]` pixels below (+) or above (−) the common baseline, each clamped to
+/// [`MAX_BASELINE_OFFSET`]. The canvas grows just enough to fit the extremes (no glyph rows are
+/// ever clipped); missing entries (`i >= offsets.len()`) sit on the baseline. An **empty**
+/// `offsets` is the default path and is byte-identical to [`rasterize_script`] (tested).
+pub fn rasterize_script_offsets(text: &str, script: Script, offsets: &[i8]) -> (u32, u32, Vec<u8>) {
     let n = text.chars().count().max(1);
+    let clamp = |o: i8| o.clamp(-MAX_BASELINE_OFFSET, MAX_BASELINE_OFFSET) as i32;
+    // Canvas padding from the offset extremes (0 when offsets is empty/all-zero — the
+    // default path stays byte-identical to the flat rasterization).
+    let lo = offsets.iter().map(|o| clamp(*o)).min().unwrap_or(0).min(0);
+    let hi = offsets.iter().map(|o| clamp(*o)).max().unwrap_or(0).max(0);
     let w = (n * GLYPH) as u32;
-    let h = GLYPH as u32;
+    let h = (GLYPH as i32 + (hi - lo)) as u32;
     let mut px = vec![0u8; (w * h * 4) as usize]; // transparent (alpha 0)
     for (gi, c) in text.chars().enumerate() {
         let Some(bits_rows) = glyph(script, c) else {
             continue;
         };
+        let dy = offsets.get(gi).map(|o| clamp(*o)).unwrap_or(0) - lo;
         for (row, bits) in bits_rows.iter().enumerate() {
             for col in 0..GLYPH {
                 // font8x8 packs each row LSB-first (bit 0 = leftmost column).
                 if bits & (1 << col) != 0 {
                     let x = gi * GLYPH + col;
-                    let idx = (row * w as usize + x) * 4;
+                    let y = row + dy as usize;
+                    let idx = (y * w as usize + x) * 4;
                     px[idx..idx + 4].copy_from_slice(&[255, 255, 255, 255]);
                 }
             }
         }
     }
     (w, h, px)
+}
+
+/// One world-text label — what [`WorldText`] draws and where. Plain data so callers can build
+/// label sets without threading every field through a tuple; `offsets` is the optional
+/// per-glyph baseline-offset slice ([`rasterize_script_offsets`]; empty = flat baseline).
+pub struct Label {
+    pub text: String,
+    pub script: Script,
+    pub center: Vec3,
+    pub height: f32,
+    pub color: [f32; 3],
+    pub offsets: Vec<i8>,
 }
 
 /// Per-label uniform (std140): world centre, billboard half-extents, emissive tint.
@@ -482,7 +515,32 @@ impl WorldText {
         world_height: f32,
         color: [f32; 3],
     ) {
-        let (w, h, px) = rasterize_script(text, script);
+        self.add_label(
+            device,
+            queue,
+            &Label {
+                text: text.to_string(),
+                script,
+                center,
+                height: world_height,
+                color,
+                offsets: Vec::new(),
+            },
+        );
+    }
+
+    /// Add an inscription from a [`Label`] — the full path, including the optional per-glyph
+    /// baseline offsets ([`rasterize_script_offsets`]). An empty `offsets` renders exactly as
+    /// [`WorldText::add_script`].
+    pub fn add_label(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, label: &Label) {
+        let (text, script, center, world_height, color) = (
+            label.text.as_str(),
+            label.script,
+            label.center,
+            label.height,
+            label.color,
+        );
+        let (w, h, px) = rasterize_script_offsets(text, script, &label.offsets);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("worldtext-tex"),
             size: wgpu::Extent3d {
@@ -611,6 +669,67 @@ mod tests {
                 px.chunks_exact(4).any(|p| p == [255, 255, 255, 255]),
                 "expected glyph pixels for {script:?}"
             );
+        }
+    }
+
+    /// The per-glyph baseline-offset path: an **empty** (or all-zero) offsets slice is
+    /// byte-identical to the flat rasterization — the default path can never drift.
+    #[test]
+    fn empty_or_zero_offsets_are_byte_identical_to_the_flat_path() {
+        for script in Script::ALL {
+            for s in ["ABC xyz", "ΑΒΓ ΔΕ", "あい う", "q"] {
+                let flat = rasterize_script(s, script);
+                assert_eq!(
+                    rasterize_script_offsets(s, script, &[]),
+                    flat,
+                    "empty offsets must be byte-identical ({script:?} {s:?})"
+                );
+                let zeros = vec![0i8; s.chars().count()];
+                assert_eq!(
+                    rasterize_script_offsets(s, script, &zeros),
+                    flat,
+                    "all-zero offsets must be byte-identical ({script:?} {s:?})"
+                );
+            }
+        }
+    }
+
+    /// Baseline offsets are deterministic, bounded (clamped to [`MAX_BASELINE_OFFSET`], so the
+    /// canvas height is bounded whatever a caller passes), shift a glyph's rows exactly, leave
+    /// un-offset glyphs on the baseline, and render in **every** script.
+    #[test]
+    fn offsets_shift_rows_bounded_and_deterministic() {
+        for script in Script::ALL {
+            let s = "AB";
+            let (w, h0, flat) = rasterize_script(s, script);
+            // Glyph 0 down one pixel; glyph 1 flat. Canvas grows by exactly the extreme.
+            let (w1, h1, px) = rasterize_script_offsets(s, script, &[1, 0]);
+            assert_eq!((w1, h1), (w, h0 + 1), "canvas fits the +1 extreme");
+            assert_eq!(
+                px,
+                rasterize_script_offsets(s, script, &[1, 0]).2,
+                "deterministic"
+            );
+            let at = |buf: &[u8], w: u32, x: usize, y: usize| buf[(y * w as usize + x) * 4 + 3];
+            for y in 0..GLYPH {
+                for x in 0..GLYPH {
+                    // Glyph 0's rows all moved down one; glyph 1's stayed put.
+                    assert_eq!(at(&px, w, x, y + 1), at(&flat, w, x, y), "{script:?} g0");
+                    assert_eq!(at(&px, w, GLYPH + x, y), at(&flat, w, GLYPH + x, y));
+                }
+            }
+            // A negative offset shifts up (canvas pads above; the flat glyph re-bases).
+            let (_, hn, up) = rasterize_script_offsets(s, script, &[-1, 0]);
+            assert_eq!(hn, h0 + 1);
+            for y in 0..GLYPH {
+                for x in 0..GLYPH {
+                    assert_eq!(at(&up, w, x, y), at(&flat, w, x, y), "{script:?} up g0");
+                    assert_eq!(at(&up, w, GLYPH + x, y + 1), at(&flat, w, GLYPH + x, y));
+                }
+            }
+            // Wild caller values clamp: the canvas height stays bounded.
+            let (_, hb, _) = rasterize_script_offsets(s, script, &[i8::MAX, i8::MIN]);
+            assert_eq!(hb, (GLYPH as i32 + 2 * MAX_BASELINE_OFFSET as i32) as u32);
         }
     }
 

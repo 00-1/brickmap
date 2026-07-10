@@ -759,29 +759,19 @@ impl State {
     }
 
     /// Replace the in-world inscriptions (E17): clears the current labels and rebuilds them
-    /// from `labels` = `(text, script, center, world_height, color)`. Called by the app only
-    /// when the in-range set changes (not every frame), so the per-label texture upload is rare.
-    pub fn set_text_labels(
-        &mut self,
-        labels: &[(String, crate::text::Script, Vec3, f32, [f32; 3])],
-    ) {
+    /// from `labels`. Called by the app only when the in-range set changes (not every frame),
+    /// so the per-label texture upload is rare. A label may carry per-glyph baseline offsets
+    /// ([`crate::text::rasterize_script_offsets`]); empty offsets = the flat default.
+    pub fn set_text_labels(&mut self, labels: &[crate::text::Label]) {
         self.text.clear();
         // M10: label textures re-rasterise on a set change — approximate their upload as the
         // glyph-pixel payload (8×8 RGBA per char).
         self.pending_upload += labels
             .iter()
-            .map(|(t, ..)| t.chars().count() as u64 * 8 * 8 * 4)
+            .map(|l| l.text.chars().count() as u64 * 8 * 8 * 4)
             .sum::<u64>();
-        for (s, script, center, height, color) in labels {
-            self.text.add_script(
-                &self.device,
-                &self.queue,
-                s,
-                *script,
-                *center,
-                *height,
-                *color,
-            );
+        for label in labels {
+            self.text.add_label(&self.device, &self.queue, label);
         }
     }
 

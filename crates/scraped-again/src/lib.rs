@@ -1984,19 +1984,33 @@ impl App {
         // G22: a dual-spelling name-bearer renders its partner line as a second, stacked
         // billboard just below the primary (an ordinary extra label on the existing text path —
         // one cartouched name, two scripts, visibly the same-but-shifted word).
-        let dual_labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
+        let label = |m: &structures::Inscription,
+                     txt: String,
+                     script: text::Script,
+                     pos: Vec3,
+                     height: f32| {
+            text::Label {
+                text: txt,
+                script,
+                center: pos,
+                height,
+                color: m.color,
+                offsets: Vec::new(),
+            }
+        };
+        let dual_labels: Vec<text::Label> = inscriptions
             .iter()
             .filter_map(|m| {
                 m.dual.as_ref().map(|(t, s)| {
                     let below = m.pos - Vec3::new(0.0, m.height * 0.75, 0.0);
-                    (t.clone(), *s, below, m.height * 0.8, m.color)
+                    label(m, t.clone(), *s, below, m.height * 0.8)
                 })
             })
             .collect();
-        let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
-            .into_iter()
+        let labels: Vec<text::Label> = inscriptions
+            .iter()
             .map(|m| match m.name {
-                Some(_) => (m.text, m.script, m.pos, m.height, m.color),
+                Some(_) => label(m, m.text.clone(), m.script, m.pos, m.height),
                 None if m.condition == structures::Condition::Intact
                     && self.progress.is_legible(m.script) =>
                 {
@@ -2020,9 +2034,9 @@ impl App {
                     if m.under.is_some() {
                         translated.push(text::MARK_BASELINE);
                     }
-                    (translated, text::Script::Latin, m.pos, m.height, m.color)
+                    label(m, translated, text::Script::Latin, m.pos, m.height)
                 }
-                None => (m.text, m.script, m.pos, m.height, m.color),
+                None => label(m, m.text.clone(), m.script, m.pos, m.height),
             })
             .chain(dual_labels)
             .collect();
