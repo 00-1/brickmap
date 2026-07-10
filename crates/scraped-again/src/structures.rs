@@ -133,6 +133,9 @@ pub struct Inscription {
     /// Collecting it banks both lines and logs a **cognate candidate**. Ambient cells and
     /// ⟦erased⟧ cells never carry one.
     pub dual: Option<(String, Script)>,
+    /// G23: the **hand** that cut this inscription ([`hand_of`] — region-local pool). Rendered
+    /// only as ductus (per-glyph baseline wobble); recorded in the collect factoid.
+    pub hand: HandId,
 }
 
 /// G18: an inscription's seeded material condition. `Worn(mask)` — bit `i` set ⇒ the `i`-th
@@ -579,6 +582,93 @@ pub fn dual_spelling(
     ))
 }
 
+// ---- G23: hands (writer identities) ----------------------------------------------------------
+
+/// G23: a **hand** — a writer identity from the world's deterministic pool. Only ever visible
+/// *materially* (its ductus — per-glyph baseline wobble at layout time); no hand-id is ever
+/// shown as a UI judgment. The player recognises a recurring hand the way they learned to
+/// recognise cartouches. Nonzero (0 is "no hand" in codecs).
+pub type HandId = u64;
+
+/// Hand-region size in inscription-grid cells: a hand only ever attests **within its home
+/// region** (geographic clustering by construction — a hand's sites are near one another,
+/// never world-wide). 8 cells ≈ 656 world units a side.
+const HAND_REGION: i32 = 8;
+/// Local hands per region, sized against the region's expected inscription count (~32 of the
+/// 64 cells at ~50% presence) so **most hands attest once** and a recurrent hand is a rare
+/// find (the Trismegistos ratio as a tuning target, not an invariant — tested statistically).
+const HANDS_PER_REGION: u32 = 32;
+
+/// G23: the hand that cut the inscription in `cell` — deterministic, drawn from the cell's
+/// **region-local** pool off a fresh salt (independent of the name/condition/frame bits — the
+/// standing correlation discipline). The id anchors to `(region, slot)`, so the same hand
+/// recurs only at nearby sites.
+pub fn hand_of(seed: u32, cell: (i32, i32)) -> HandId {
+    let (rx, rz) = (
+        cell.0.div_euclid(HAND_REGION),
+        cell.1.div_euclid(HAND_REGION),
+    );
+    let slot = hash(cell.0 ^ 0x6A3D, cell.1 ^ 0x19C4, seed.wrapping_add(0x4841_4E44)) // "HAND"
+        % HANDS_PER_REGION;
+    // FNV-mix (region, slot, seed) → a well-spread, stable u64 identity.
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for v in [rx as u32, rz as u32, slot, seed] {
+        for b in v.to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    h | 1 // nonzero
+}
+
+/// G23: hand `hand`'s **ductus** — the baseline offset (px, + = down) it cuts glyph-cell `i`
+/// at. ±1 px class, deterministic in `(hand, i)`, with a per-hand *steadiness* (some pens are
+/// near-flat, some visibly shaky), so a hand looks like itself in **any** script and its
+/// recurrence is discoverable materially. The game computes these and hands the slice to the
+/// engine's offset-aware rasterize path — `bm-render` stays hand-ignorant.
+pub fn ductus(hand: HandId, glyph_index: usize) -> i8 {
+    // splitmix-style avalanche over (hand, index).
+    let mut z = hand ^ (glyph_index as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    // Per-hand steadiness: 1..=4 of every 8 cells waver (steady pens → shaky ones).
+    let waver = 1 + (hand >> 3) % 4;
+    if z % 8 < waver {
+        if z & 0x100 != 0 {
+            1
+        } else {
+            -1
+        }
+    } else {
+        0
+    }
+}
+
+/// Is this char a cell the *writer's* stroke never moves — whitespace or a structural/damage
+/// mark (a lacuna or gouge is the stone's loss, an underdot/baseline-tell/Leiden bracket the
+/// surveyor's annotation)? These stay on the flat baseline; everything the hand actually cut
+/// (glyphs and the cartouche enclosure) carries its ductus.
+fn baseline_cell(c: char) -> bool {
+    c.is_whitespace()
+        || c == crate::text::MARK_LACUNA
+        || c == crate::text::MARK_GOUGE
+        || c == crate::text::MARK_BASELINE
+        || c == crate::text::MARK_UNDERDOT
+        || c == '['
+        || c == ']'
+}
+
+/// G23: the per-glyph baseline-offset slice a billboard hands the engine for `text` as cut by
+/// `hand`: the writer's [`ductus`] on every cut cell, the flat baseline on whitespace and
+/// structural/damage marks.
+pub fn ductus_offsets(hand: HandId, text: &str) -> Vec<i8> {
+    text.chars()
+        .enumerate()
+        .map(|(i, c)| if baseline_cell(c) { 0 } else { ductus(hand, i) })
+        .collect()
+}
+
 /// Per-script character pool to assemble abstract "words" from (Latin/Galactic/Runic all draw
 /// from Latin letters — Galactic/Runic remap them to their own glyphs).
 fn pool(script: Script) -> &'static str {
@@ -710,6 +800,14 @@ pub fn colossus_label(seed: u32, p: &Placement) -> Inscription {
         // G22: monuments stay single-line (the coverage/intactness guarantees hold untouched);
         // dual spellings live on the streamed name-bearers.
         dual: None,
+        // G23: monuments have writers too (the colossi cell grid shares the hand pool).
+        hand: hand_of(
+            seed,
+            (
+                (p.pos.x / CELL).floor() as i32,
+                (p.pos.z / CELL).floor() as i32,
+            ),
+        ),
     }
 }
 
@@ -837,6 +935,7 @@ pub fn inscriptions_near(
                 pristine,
                 under,
                 dual,
+                hand: hand_of(seed, (cx, cz)),
             });
         }
     }
@@ -1845,6 +1944,125 @@ mod tests {
         // Ambient cells never carry one (duals are the name-bearers' gift).
         for m in marks.iter().filter(|m| m.name.is_none()) {
             assert!(m.dual.is_none());
+        }
+    }
+
+    // ---- G23: hands + ductus -------------------------------------------------------------------
+
+    /// G23: the hand pool is deterministic, **geographically clustered** (a hand's attestation
+    /// sites all sit in its home region — near one another, never world-wide), and its
+    /// recurrence distribution is Trismegistos-shaped: most hands attest exactly once; a few
+    /// recur (the discoveries).
+    #[test]
+    fn hands_deterministic_clustered_and_mostly_once() {
+        let seed = 1337u32;
+        let g = |_x: f32, _z: f32| 0.0;
+        let marks = inscriptions_near(seed, Vec3::ZERO, 3000.0, g);
+        assert!(marks.len() > 100, "need a large field");
+        let mut sites: std::collections::HashMap<HandId, Vec<(i32, i32)>> = Default::default();
+        for m in &marks {
+            assert_eq!(m.hand, hand_of(seed, m.cell), "deterministic + streamed");
+            assert_ne!(m.hand, 0, "0 is reserved for 'no hand'");
+            sites.entry(m.hand).or_default().push(m.cell);
+        }
+        // Geographic clustering: every attestation of one hand shares its home region.
+        let region = |c: (i32, i32)| (c.0.div_euclid(HAND_REGION), c.1.div_euclid(HAND_REGION));
+        for (h, cells) in &sites {
+            for c in cells {
+                assert_eq!(
+                    region(*c),
+                    region(cells[0]),
+                    "hand {h:#x} attests across regions (never world-wide)"
+                );
+            }
+        }
+        // Recurrence: most hands once; some recur; the attestations-per-hand ratio stays in a
+        // Trismegistos-ish band (a tuning target, not a hard invariant — hence the wide band).
+        let once = sites.values().filter(|v| v.len() == 1).count();
+        let recur = sites.values().filter(|v| v.len() >= 2).count();
+        assert!(
+            once * 2 > sites.len(),
+            "most hands attest once ({once}/{})",
+            sites.len()
+        );
+        assert!(recur >= 3, "the field holds recurrent hands, got {recur}");
+        let ratio = marks.len() as f32 / sites.len() as f32;
+        assert!(
+            (1.05..2.5).contains(&ratio),
+            "attestations-per-hand ratio {ratio} out of band"
+        );
+        // Fresh worlds write with fresh pools.
+        assert_ne!(hand_of(1, (3, 4)), hand_of(2, (3, 4)));
+    }
+
+    /// G23: ductus offsets are bounded to the ±1 px class, deterministic, and carry a per-hand
+    /// character (steady pens vs shaky ones — recognisable signatures).
+    #[test]
+    fn ductus_bounded_deterministic_with_per_hand_character() {
+        for hand in [
+            hand_of(7, (0, 0)),
+            hand_of(7, (100, -3)),
+            0x1234_5678_9ABC_DEF1,
+        ] {
+            for i in 0..64 {
+                let d = ductus(hand, i);
+                assert!((-1..=1).contains(&d), "ductus out of the ±1 class: {d}");
+                assert_eq!(d, ductus(hand, i), "deterministic");
+            }
+        }
+        // Character: across a pool of hands the wobble density differs (shaky vs steady)…
+        let counts: Vec<usize> = (0..16)
+            .map(|k| {
+                let hand = hand_of(42, (k * 9, -k * 17));
+                (0..64).filter(|i| ductus(hand, *i) != 0).count()
+            })
+            .collect();
+        assert!(
+            counts.iter().min() < counts.iter().max(),
+            "hands differ in steadiness: {counts:?}"
+        );
+        // …and two specific hands disagree at some cell (a signature, not a global tremor).
+        let (a, b) = (hand_of(42, (0, 0)), hand_of(42, (50, 50)));
+        assert!((0..64).any(|i| ductus(a, i) != ductus(b, i)));
+    }
+
+    /// G23: the ductus renders in **every** script (compose-level pixel test through the
+    /// engine's offset path) and never moves a structural/damage cell — the wobble is the
+    /// writer's stroke, not the stone's loss or the surveyor's annotation.
+    #[test]
+    fn ductus_offsets_render_in_every_script_and_spare_the_marks() {
+        // A hand with a wobble inside the first cells (deterministic search).
+        let hand = (0..200)
+            .map(|i| hand_of(1337, (i, i)))
+            .find(|h| (0..4).any(|i| ductus(*h, i) != 0))
+            .expect("a wobbly hand in 200 cells");
+        for script in crate::text::Script::ALL {
+            let word = transliterate("tarnis", script);
+            let offs = ductus_offsets(hand, &word);
+            assert_eq!(offs.len(), word.chars().count());
+            assert!(
+                offs.iter().any(|o| *o != 0),
+                "the hand wobbles in {script:?}"
+            );
+            assert!(offs.iter().all(|o| (-1..=1).contains(o)));
+            let flat = crate::text::rasterize_script(&word, script);
+            let wob = crate::text::rasterize_script_offsets(&word, script, &offs);
+            assert_ne!(flat.2, wob.2, "ductus is visible in {script:?}");
+        }
+        // Structural cells stay on the baseline: damage marks, the tell, the underdot,
+        // Leiden brackets, spaces. (The cartouche is the writer's own cut — it may wobble.)
+        let text = format!(
+            "AB{} {}{}[C]{}",
+            crate::text::MARK_LACUNA,
+            crate::text::MARK_GOUGE,
+            crate::text::MARK_BASELINE,
+            crate::text::MARK_UNDERDOT
+        );
+        let offs = ductus_offsets(hand, &text);
+        for (i, c) in text.chars().enumerate() {
+            if baseline_cell(c) {
+                assert_eq!(offs[i], 0, "cell {i} ({c:?}) is not the writer's stroke");
+            }
         }
     }
 

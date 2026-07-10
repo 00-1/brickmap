@@ -1984,18 +1984,23 @@ impl App {
         // G22: a dual-spelling name-bearer renders its partner line as a second, stacked
         // billboard just below the primary (an ordinary extra label on the existing text path —
         // one cartouched name, two scripts, visibly the same-but-shifted word).
+        // G23: every billboard carries its writer's **ductus** — the hand's per-glyph baseline
+        // offsets, computed game-side and handed to the engine's offset-aware rasterize path
+        // (the engine stays hand-ignorant). The dual line was cut by the same hand; translated
+        // display keeps the ductus too (the stone is still the stone).
         let label = |m: &structures::Inscription,
                      txt: String,
                      script: text::Script,
                      pos: Vec3,
                      height: f32| {
+            let offsets = structures::ductus_offsets(m.hand, &txt);
             text::Label {
                 text: txt,
                 script,
                 center: pos,
                 height,
                 color: m.color,
-                offsets: Vec::new(),
+                offsets,
             }
         };
         let dual_labels: Vec<text::Label> = inscriptions
