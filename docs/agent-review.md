@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `6350446` (G19a — nav wiring fixes).
+**Reviewed through:** `b8c3408` (G18 — uncertainty layer).
 
 ---
 
@@ -36,6 +36,37 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-07-10 · G18 — the uncertainty layer (`b8c3408`)  ✅ PASSED (four-way green; rendered + eyeballed)
+
+**Independently verified:** fmt/clippy clean · **395 tests, 0 failures** workspace-wide ·
+**CI ✅ · Android ✅ · Desktop ✅ · Deploy ✅** · console A/B rendered here: the underdot
+marks visibly ride the provisional glyph clusters on the locked palette rows; world render
+healthy.
+
+**Built to the brief with three deviations, all better than the spec:** (1) colossus
+monuments stay intact — eroding them would gamble the every-name-findable coverage
+guarantee (right); (2) legible ambient text only translates when intact — worn/erased
+recovery is *exactly* G20's ladder, correctly left as its hook; (3) no golden image test
+covers scraped-again inscriptions, so the "one noted update" reduced to a commit note; the
+voxel-hash stands. Behavioral confirmation wired at every *executing* dispatch site (a
+click that answers "no longer a direct action" deliberately does not attest — world-as-
+oracle fidelity, a subtle correct call). Condition bits from a fresh salt with a 40k-cell
+independence test (the G10 lesson, honored). The engine touch is three content-agnostic
+mark glyphs in a PUA range — boundary clean. 12 new tests incl. the D11 scenario.
+
+**Follow-up surfaced by MY render check (routed to G20, not a G18 defect):** Tier-0/
+Records-stratum block names render as **readable English** ("SCAN(SHARDS)", "COLLECT") —
+`transliterate` into Latin script is the identity map, so English-derived internal names
+leak through the on-ramp script. Violates the spirit of the human's "names unreadable"
+decision. Fix belongs in **G20** (which touches naming for cartouches anyway): source
+display names from the **G16 lexicon** (seeded nonsense words) instead of the English
+internal name, all five scripts. Internal names/codes/codecs unchanged.
+
+**Verdict.** The Archive tranche's first feature milestone is live: collecting now *feels*
+like deciphering — hypotheses, damage, erasures, and a codex that firms up. G19-B next.
+
+---
 
 ## 2026-06-16 · G19a — nav/expedition wiring fixes (`6350446`)  ✅ PASSED (first babysitter-build-agent milestone; four-way green)
 
