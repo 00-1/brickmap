@@ -750,6 +750,15 @@ pub fn capture_view(
         console
             .senses_discovered
             .insert(crate::progress::Sense::CloseReading);
+        // G22: a pending cognate candidate — the collation row (two cartouched daughter
+        // forms of one word + the pair's per-side cost gauges).
+        console.cognates = vec![(
+            crate::console::Block::Collect,
+            (
+                crate::progress::Stratum::Records,
+                crate::progress::Stratum::Schematics,
+            ),
+        )];
         console.open = true;
         console.render()
     } else {
