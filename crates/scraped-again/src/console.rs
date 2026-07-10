@@ -700,6 +700,8 @@ pub enum Sel {
     /// G13: build a draft routine from the active agent's recorded manual trace.
     TraceToRoutine,
     Block(Block),
+    /// G21: a discovered sensing instrument — Enter allocates its research (the remedy).
+    Sense(crate::progress::Sense),
 }
 
 /// Which screen the console is showing.
@@ -734,6 +736,11 @@ pub struct Console {
     /// here is *provisional* and renders with the underdot sub-mark (Leiden display grammar).
     /// Starters are implicitly confirmed. Display-only (nothing gates on it — Decision 1).
     pub confirmed: HashSet<Block>,
+    /// G21: **discovered** sensing instruments (synced from `progress`) — a frustration event
+    /// fired, so the console lists the instrument as a research target (the remedy on offer).
+    pub senses_discovered: HashSet<crate::progress::Sense>,
+    /// G21: **comprehended** sensing instruments (synced) — held ladder rungs (render clean).
+    pub senses_comprehended: HashSet<crate::progress::Sense>,
     /// G11: the app's clock (set each frame before `tick`) — drives last-fired age + yield rates.
     pub now: f32,
     /// G13: per-agent rolling memory of the player's last manual block actions (session-local,
@@ -804,6 +811,8 @@ impl Default for Console {
             comprehended: HashSet::new(),
             discovered: HashSet::new(),
             confirmed: HashSet::new(),
+            senses_discovered: HashSet::new(),
+            senses_comprehended: HashSet::new(),
             now: 0.0,
             traces: std::collections::HashMap::new(),
             active_agent: Agent::Ship,
@@ -1258,10 +1267,20 @@ impl Console {
         out
     }
 
+    /// G21: the home screen's sensing-instrument listing — every *discovered* instrument (the
+    /// frustration events fired), research targets first as-needed. Undiscovered are absent
+    /// (you can't covet an instrument whose lack you haven't felt).
+    pub fn visible_senses(&self) -> Vec<crate::progress::Sense> {
+        crate::progress::Sense::ALL
+            .into_iter()
+            .filter(|s| self.senses_discovered.contains(s))
+            .collect()
+    }
+
     /// Home rows: routines (toggle/edit), a "new routine" row, a "trace → routine" row (G13),
-    /// then the visible block listing.
+    /// then the visible block listing, then (G21) the discovered sensing instruments.
     pub fn home_rows(&self) -> usize {
-        self.routines.len() + 2 + self.visible_palette().len()
+        self.routines.len() + 2 + self.visible_palette().len() + self.visible_senses().len()
     }
 
     /// Editor rows for routine `i`: the trigger row, each body step, then an "add step" row.
@@ -1329,7 +1348,13 @@ impl Console {
         } else if self.cursor == nr + 1 {
             Sel::TraceToRoutine
         } else {
-            Sel::Block(self.visible_palette()[self.cursor - nr - 2])
+            let pal = self.visible_palette();
+            let i = self.cursor - nr - 2;
+            if i < pal.len() {
+                Sel::Block(pal[i])
+            } else {
+                Sel::Sense(self.visible_senses()[i - pal.len()]) // G21
+            }
         }
     }
 
@@ -2136,6 +2161,19 @@ impl Console {
                     b.glyph_label(self.seed),
                     tag
                 ));
+            }
+            row += 1;
+        }
+        // G21: the discovered sensing instruments — recovered faculties of the dead machine.
+        // Listed only once their frustration event fired; a not-yet-researched one is a locked
+        // research target (Enter allocates), a comprehended one renders clean (a held rung).
+        for sense in self.visible_senses() {
+            let cur = if row == self.cursor { ">" } else { " " };
+            let glyphs = crate::progress::ResearchTarget::Sense(sense).glyphs(self.seed);
+            if self.senses_comprehended.contains(&sense) {
+                s.push_str(&format!("{cur} {glyphs}\n"));
+            } else {
+                s.push_str(&format!("{cur} · {glyphs}  (locked: research)\n"));
             }
             row += 1;
         }

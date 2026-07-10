@@ -117,6 +117,11 @@ pub struct Inscription {
     /// so distribution-watchers can spot the recurrence in raw glyphs. `None` for names,
     /// plain ambient noise, and ⟦erased⟧ cells (erased recovery is G21).
     pub frame: Option<u64>,
+    /// G21: for a **worn** inscription, its full pre-weathered composition (same enclosure as
+    /// `text`, so positions align char-for-char) — what rung 1's close reading recovers on foot.
+    /// `None` for intact (nothing lost) and ⟦erased⟧ (that recovery is rung 2's, from
+    /// [`hidden_text`], not from the surface).
+    pub pristine: Option<String>,
 }
 
 /// G18: an inscription's seeded material condition. `Worn(mask)` — bit `i` set ⇒ the `i`-th
@@ -216,6 +221,9 @@ pub fn name_of_text(seed: u32, text: &str, script: Script) -> Option<crate::cons
         return None;
     }
     let text = strip_cartouche(text); // G20: the enclosure is structure, not content
+                                      // G21: the Leiden restoration brackets are structure too — a recovered name (close
+                                      // reading / a frame restore) still reads as its name.
+    let text: String = text.chars().filter(|c| *c != '[' && *c != ']').collect();
     crate::console::Block::ALL.iter().copied().find(|b| {
         block_script(*b) == script && {
             let full = name_text(seed, *b);
@@ -356,6 +364,42 @@ pub fn restore_worn(text: &str, script: Script, known: &[FrameSkeleton]) -> Opti
     Some(out.join(" "))
 }
 
+/// G21: **close reading** (rung 1) — recover a worn text's lost glyphs from its `pristine`
+/// (pre-weathered) composition, wrapping each recovered run in the Leiden restoration brackets
+/// `[` `]` (the same structural marks G20's frame restore uses — visually distinct from `[..]`
+/// lacunae, excluded from the data glyph count, so the recovered text pays **full** yield).
+/// Positions align char-for-char ([`weather_text`] preserves length; the caller applies the same
+/// enclosure to both). `None` when nothing was lost or the texts can't align.
+pub fn recover_worn(weathered: &str, pristine: &str) -> Option<String> {
+    if weathered.chars().count() != pristine.chars().count() {
+        return None;
+    }
+    if !weathered.chars().any(|c| c == crate::text::MARK_LACUNA) {
+        return None; // nothing lost, nothing to recover
+    }
+    let mut out = String::new();
+    let mut open = false;
+    for (c, p) in weathered.chars().zip(pristine.chars()) {
+        if c == crate::text::MARK_LACUNA {
+            if !open {
+                out.push('[');
+                open = true;
+            }
+            out.push(p);
+        } else {
+            if open {
+                out.push(']');
+                open = false;
+            }
+            out.push(c);
+        }
+    }
+    if open {
+        out.push(']');
+    }
+    Some(out)
+}
+
 /// G20: the exact glyph text a name-bearing inscription spells for block `b`: its true name
 /// transliterated into its stratum script. The console renders the overlay form of this same
 /// string — the world↔console recognition loop's single source.
@@ -489,6 +533,7 @@ pub fn colossus_label(seed: u32, p: &Placement) -> Inscription {
         // every-name-findable coverage guarantee (no discovery softlock) keeps holding.
         condition: Condition::Intact,
         frame: None,
+        pristine: None,
     }
 }
 
@@ -556,6 +601,7 @@ pub fn inscriptions_near(
             let ch = hash(cx ^ 0x51AB, cz ^ 0x2E77, seed.wrapping_add(0x00C0_5D17));
             let glyphs = text.chars().filter(|c| !c.is_whitespace()).count();
             let condition = condition_pick(ch, glyphs);
+            let full = text.clone(); // G21: the pre-weathered composition (close reading's source)
             let text = weather_text(&text, condition);
             // An erasure hides everything — its name AND its frame membership (G21's ladder).
             let (name, frame) = if condition == Condition::Erased {
@@ -566,10 +612,15 @@ pub fn inscriptions_near(
             // G20: a name-bearer's text is **cartouched** (after weathering, so the enclosure
             // survives wear — the frame outlives its glyphs). Ambient text never; an erasure
             // dropped its name above, so the gouge stays a bare gouge (G21's sensing tease).
-            let text = if name.is_some() {
-                cartouche(&text)
-            } else {
-                text
+            // G21: a worn cell keeps its `pristine` composition under the same enclosure, so
+            // close reading's char-for-char recovery aligns.
+            let (text, pristine) = {
+                let worn = matches!(condition, Condition::Worn(_));
+                if name.is_some() {
+                    (cartouche(&text), worn.then(|| cartouche(&full)))
+                } else {
+                    (text, worn.then_some(full))
+                }
             };
             out.push(Inscription {
                 cell: (cx, cz),
@@ -582,6 +633,7 @@ pub fn inscriptions_near(
                 name,
                 condition,
                 frame,
+                pristine,
             });
         }
     }
@@ -1199,6 +1251,84 @@ mod tests {
         let r = restore_worn(&ambiguous, script, &one).expect("unique match restores");
         let un: String = r.chars().filter(|c| *c != '[' && *c != ']').collect();
         assert_eq!(un, full2);
+    }
+
+    /// G21: close reading's `recover_worn` — every lacuna fills from the pristine composition,
+    /// bracketed Leiden-style; full yield falls out (brackets are structure); a cartouched worn
+    /// name recovers to its cartouched full name and still reads via `name_of_text`.
+    #[test]
+    fn recover_worn_fills_all_lacunae_bracketed_and_full_yield() {
+        use crate::console::Block;
+        let seed = 1337;
+        // A generic worn text: positions 0 and 2 lost.
+        let full = "ΑΒΓ ΔΕ";
+        let worn = weather_text(full, Condition::Worn(0b101));
+        let rec = recover_worn(&worn, full).expect("a worn text recovers");
+        assert!(!rec.contains(crate::text::MARK_LACUNA), "no lacunae remain");
+        assert!(rec.contains('[') && rec.contains(']'), "Leiden-bracketed");
+        let unbracketed: String = rec.chars().filter(|c| *c != '[' && *c != ']').collect();
+        assert_eq!(unbracketed, full, "recovers the exact lost glyphs");
+        assert_eq!(
+            crate::progress::glyph_count(&rec),
+            crate::progress::glyph_count(full),
+            "recovered pays full (brackets are structure)"
+        );
+        // Nothing lost / misaligned → no recovery.
+        assert_eq!(recover_worn(full, full), None);
+        assert_eq!(recover_worn(&worn, "ΑΒ"), None);
+        // A cartouched worn name recovers under its enclosure and reads as its block.
+        let name = name_text(seed, Block::Seek);
+        let worn_name = cartouche(&weather_text(&name, Condition::Worn(1)));
+        let pristine = cartouche(&name);
+        let rec = recover_worn(&worn_name, &pristine).expect("worn name recovers");
+        assert!(rec.starts_with(crate::text::MARK_CARTOUCHE_OPEN));
+        assert_eq!(
+            name_of_text(seed, &rec, block_script(Block::Seek)).map(|b| b.name()),
+            Some("seek"),
+            "a recovered name still reads (brackets are structure): {rec:?}"
+        );
+    }
+
+    /// G21: the streamed field carries close reading's recovery source — every worn inscription
+    /// has a `pristine` that aligns char-for-char and recovers; intact/erased carry none.
+    #[test]
+    fn worn_inscriptions_carry_an_aligned_pristine() {
+        let g = |_x: f32, _z: f32| 0.0;
+        let seed = 1337;
+        let marks = inscriptions_near(seed, Vec3::ZERO, 2500.0, g);
+        let mut worn_seen = 0;
+        for m in &marks {
+            match m.condition {
+                Condition::Worn(_) => {
+                    worn_seen += 1;
+                    let p = m.pristine.as_deref().expect("worn carries pristine");
+                    assert_eq!(
+                        p.chars().count(),
+                        m.text.chars().count(),
+                        "pristine aligns char-for-char (same enclosure)"
+                    );
+                    assert!(!p.contains(crate::text::MARK_LACUNA), "pristine is whole");
+                    let rec = recover_worn(&m.text, p).expect("every worn cell recovers");
+                    assert!(!rec.contains(crate::text::MARK_LACUNA));
+                    // Surviving glyphs agree with the pristine (recovery is honest, not invention).
+                    for (c, pc) in m.text.chars().zip(p.chars()) {
+                        if c != crate::text::MARK_LACUNA {
+                            assert_eq!(c, pc, "survivors match the pristine: {:?}", m.text);
+                        }
+                    }
+                    // Full yield: the recovered text pays what the intact composition would.
+                    assert_eq!(
+                        crate::progress::glyph_count(&rec),
+                        crate::progress::glyph_count(p)
+                    );
+                }
+                _ => assert!(
+                    m.pristine.is_none(),
+                    "only worn cells carry a recovery source"
+                ),
+            }
+        }
+        assert!(worn_seen > 5, "the field holds worn cells to check");
     }
 
     /// BUG1 regression: huge cam coords must not overflow the colossi/inscription cell loops.

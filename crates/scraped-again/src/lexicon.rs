@@ -113,8 +113,9 @@ fn content_token(idx: u32) -> String {
 
 /// The canonical vocabulary keys, in a fixed order (append-only — the retry cascade means a
 /// reordering could reshuffle every world's names). Block bare names first, then the parameter
-/// words (scan items, spend faculties, match fields/domains).
-const VOCAB_KEYS: [&str; 24] = [
+/// words (scan items, spend faculties, match fields/domains), then (G21, appended) the sensing
+/// instruments.
+const VOCAB_KEYS: [&str; 26] = [
     "scan",
     "collect",
     "beam",
@@ -139,6 +140,8 @@ const VOCAB_KEYS: [&str; 24] = [
     "rites",
     "relics",
     "signals",
+    "close-reading",
+    "deep-sensing",
 ];
 
 /// FNV-ish mix of (seed, key, attempt) → the candidate RNG seed.
@@ -793,6 +796,10 @@ mod tests {
             .chain(Stratum::ALL.map(MatchField::Domain))
         {
             assert!(VOCAB_KEYS.contains(&m.label()));
+        }
+        // G21: the sensing instruments are vocabulary too (lexicon-named research targets).
+        for s in crate::progress::Sense::ALL {
+            assert!(VOCAB_KEYS.contains(&s.label()));
         }
     }
 

@@ -567,7 +567,9 @@ impl App {
             log::info!("collect: nothing in your sights");
             return;
         };
-        self.collect_index(idx);
+        // G21: a manual walk-mode collect is the walker's own hands — the sensing ladder applies.
+        let on_foot = self.mode == Mode::Walk;
+        self.collect_index(idx, on_foot);
     }
 
     /// The hands-off **auto-collect** the routine interpreter drives (on-scan / when / continuous
@@ -591,45 +593,63 @@ impl App {
             }
         }
         if let Some(idx) = best_i {
-            self.collect_index(idx);
+            self.collect_index(idx, false); // the ship's hands-off harvest stays rung 0 (G21)
         }
     }
 
     /// Collect the `idx`-th collectible: remove it, bank it through the serializable event seam,
     /// and drop its chunk from the opportunity surface. Shared by the aim pick + the auto-collect.
-    /// G18: an ⟦erased⟧ inscription routes through `CollectErased` — nothing banks, but the
-    /// erasure event is logged in the codex (the G21 sensing-ladder hook). G20: a worn instance
-    /// of a **known** frame collects *restored* (full text, full yield), and an intact frame
-    /// instance counts a sighting.
-    fn collect_index(&mut self, idx: usize) {
+    /// G21: `on_foot` says the collecting *agent* is the walker (the sensing ladder's rungs 1–2
+    /// apply); every ship route passes `false`.
+    fn collect_index(&mut self, idx: usize, on_foot: bool) {
         let c = self.collectible.remove(idx);
-        let ev = collect_event(&self.progress, self.seed, &c);
-        if self.progress.apply(&ev) {
-            if c.erased {
-                log::info!("collected an erasure — nothing recovered; the gouge is logged");
-            } else if let progress::Event::Collect { text, .. } = &ev {
-                if *text != c.text {
-                    log::info!("FRAME RESTORED — the formula fills the lacunae (full yield)");
-                }
-                log::info!(
-                    "collected \"{}\" → +{} {}",
-                    text,
-                    progress::yield_amount(c.script, progress::glyph_count(text)),
-                    progress::stratum_of(c.script).label(),
-                );
-            }
-            self.forget_scanned_chunk(c.pos); // it's no longer an opportunity (G3)
-            self.discover(c.name); // G9: a name-bearer also discovers its block
-            self.sight_frame(&c); // G20: an intact frame instance teaches its frame
-        }
+        self.collect_collectible(&c, on_foot);
     }
 
-    /// G20: record an **intact** frame sighting (a worn/erased instance can't teach the whole
-    /// skeleton); the third sighting cracks the frame — the codex gains its structural entry and
-    /// worn matches start restoring. Shared by every collect route.
-    fn sight_frame(&mut self, c: &progress::Collectible) {
+    /// The shared collect tail every route funnels through (aim pick, auto-collect, beam, foot
+    /// acts): build the canonical event, apply it, and run the side-effects — opportunity-surface
+    /// bookkeeping, name discovery, frame sighting (G20), and the G21 sensing-discovery toasts.
+    /// G18: an ⟦erased⟧ inscription routes through `CollectErased` — nothing banks, but the
+    /// erasure event is logged in the codex. G20: a worn instance of a **known** frame collects
+    /// *restored* (full text, full yield), and an intact frame instance counts a sighting.
+    /// G21: on foot, close reading recovers worn text fully (recovered exemplars count frame
+    /// sightings — intact-equivalent credit). Returns `true` if the event changed state.
+    fn collect_collectible(&mut self, c: &progress::Collectible, on_foot: bool) -> bool {
+        let senses_before = progress::Sense::ALL.map(|s| self.progress.is_sense_discovered(s));
+        let ev = collect_event(&self.progress, self.seed, c, on_foot);
+        if !self.progress.apply(&ev) {
+            return false;
+        }
+        let mut banked_text = c.text.clone();
+        if c.erased {
+            log::info!("collected an erasure — nothing recovered; the gouge is logged");
+        } else if let progress::Event::Collect { text, .. } = &ev {
+            if *text != c.text {
+                log::info!("RECOVERED — the lacunae fill (full yield)");
+            }
+            log::info!(
+                "collected \"{}\" → +{} {}",
+                text,
+                progress::yield_amount(c.script, progress::glyph_count(text)),
+                progress::stratum_of(c.script).label(),
+            );
+            banked_text = text.clone();
+        }
+        self.forget_scanned_chunk(c.pos); // it's no longer an opportunity (G3)
+        self.discover(c.name); // G9: a name-bearer also discovers its block
+        self.sight_frame(c, &banked_text); // G20/G21: whole exemplars teach their frame
+        self.note_sense_discovery(senses_before); // G21: a frustration event may have taught
+        true
+    }
+
+    /// G20: record a **whole-exemplar** frame sighting; the third sighting cracks the frame —
+    /// the codex gains its structural entry and worn matches start restoring. Shared by every
+    /// collect route. `banked` is the text the event actually banked: a worn instance can't
+    /// teach the skeleton, but a G21 close-reading **recovery** (no lacunae remain) counts
+    /// exactly like an intact sighting (the brief's intact-equivalent frame credit).
+    fn sight_frame(&mut self, c: &progress::Collectible, banked: &str) {
         let Some(frame_id) = c.frame else { return };
-        if c.text.chars().any(|ch| ch == text::MARK_LACUNA) {
+        if banked.chars().any(|ch| ch == text::MARK_LACUNA) {
             return; // only whole exemplars count as sightings
         }
         let before = self.progress.frame_known(frame_id);
@@ -640,6 +660,18 @@ impl App {
             && self.progress.frame_known(frame_id)
         {
             log::info!("FRAME KNOWN — a recurring formula cracked (worn matches now restore)");
+        }
+    }
+
+    /// G21: announce a **sensing discovery** (the frustration event fired inside the collect
+    /// that just applied) — the console now lists the instrument as a research target.
+    fn note_sense_discovery(&mut self, before: [bool; 2]) {
+        for s in progress::Sense::ALL {
+            if !before[s.idx()] && self.progress.is_sense_discovered(s) {
+                log::info!(
+                    "SENSING FACULTY DISCOVERED — the damage teaches; the console offers its research"
+                );
+            }
         }
     }
 
@@ -690,38 +722,22 @@ impl App {
             log::info!("beam: locked on — reeled in and boarded the cruiser");
             return;
         }
+        // G18: an ⟦erased⟧ site logs its erasure event instead of banking; G20: a worn
+        // known-frame match restores; G21: the beam is the walker's survey instrument, so a
+        // walk-mode cast collects at the sensing ladder's rungs (all collect routes agree —
+        // one shared tail, `collect_collectible`).
+        let on_foot = self.mode == Mode::Walk;
+        let hits: Vec<progress::Collectible> = self
+            .collectible
+            .iter()
+            .filter(|c| beam::on_path(Vec3::from(c.pos), b.a, b.b))
+            .cloned()
+            .collect();
+        let ids: Vec<u64> = hits.iter().map(|c| c.find_id).collect();
+        self.collectible.retain(|c| !ids.contains(&c.find_id));
         let mut swept = 0u32;
-        let mut done: Vec<u64> = Vec::new();
-        let mut done_pos: Vec<[f32; 3]> = Vec::new();
-        let mut named: Vec<console::Block> = Vec::new();
-        let mut sighted: Vec<progress::Collectible> = Vec::new();
-        for c in &self.collectible {
-            if beam::on_path(Vec3::from(c.pos), b.a, b.b) {
-                // G18: an ⟦erased⟧ site logs its erasure event instead of banking; G20: a worn
-                // known-frame match restores (all collect routes agree — the beam included).
-                let ev = collect_event(&self.progress, self.seed, c);
-                if self.progress.apply(&ev) {
-                    swept += 1;
-                    done.push(c.find_id);
-                    done_pos.push(c.pos);
-                    if let Some(b) = c.name {
-                        named.push(b); // G9: the beam sweeps up names too
-                    }
-                    if c.frame.is_some() {
-                        sighted.push(c.clone()); // G20: …and frame instances
-                    }
-                }
-            }
-        }
-        self.collectible.retain(|c| !done.contains(&c.find_id));
-        for p in done_pos {
-            self.forget_scanned_chunk(p); // collected → no longer opportunities (G3)
-        }
-        for b in named {
-            self.discover(Some(b));
-        }
-        for c in &sighted {
-            self.sight_frame(c);
+        for c in &hits {
+            swept += u32::from(self.collect_collectible(c, on_foot));
         }
         // G10: the beam sweeps shards along its path too (all collect routes pick up shards).
         let on_beam: Vec<shards::Shard> = self
@@ -1085,6 +1101,15 @@ impl App {
         self.console.discovered = self.progress.discovered_blocks().collect();
         // G18: which readings are confirmed (provisional names render the underdot sub-mark).
         self.console.confirmed = self.progress.confirmed_blocks().collect();
+        // G21: the sensing ladder — discovered instruments list as research targets.
+        self.console.senses_discovered = progress::Sense::ALL
+            .into_iter()
+            .filter(|s| self.progress.is_sense_discovered(*s))
+            .collect();
+        self.console.senses_comprehended = progress::Sense::ALL
+            .into_iter()
+            .filter(|s| self.progress.is_sense_comprehended(*s))
+            .collect();
         // G13: which agent the player is driving (ticker + "trace → routine" target).
         self.console.active_agent = self.active_agent();
     }
@@ -1162,6 +1187,17 @@ impl App {
     fn console_confirm(&mut self) {
         match self.console.selected() {
             console::Sel::Block(b) => self.dispatch_block(b),
+            // G21: a discovered sensing instrument is a research target — Enter allocates it
+            // (allocate-and-fill, like a locked block; its gating domain's shards fill it).
+            console::Sel::Sense(s) => {
+                if self.progress.allocate(progress::ResearchTarget::Sense(s)) {
+                    self.sync_console_unlock();
+                    log::info!(
+                        "researching the {} instrument — its domain's shards now fill it",
+                        s.label()
+                    );
+                }
+            }
             console::Sel::NewRoutine => {
                 // New routines default to the ship agent; Tab in the editor flips to foot (G8b).
                 self.console.create_routine(console::Agent::Ship);
@@ -1746,15 +1782,18 @@ impl App {
             .iter()
             .filter_map(|m| {
                 let id = progress::find_id(m.cell, m.script, &m.text);
+                let erased = m.condition == structures::Condition::Erased;
                 (!self.progress.has(id)).then(|| progress::Collectible {
                     find_id: id,
+                    cell: m.cell,
                     script: m.script,
                     text: m.text.clone(),
                     pos: m.pos.to_array(),
                     name: m.name, // G9: a name-bearer discovers its block on collect
-                    // G18: an erased site logs its erasure instead of yielding.
-                    erased: m.condition == structures::Condition::Erased,
+                    // G18: an erased site logs its erasure instead of yielding (rung < 2).
+                    erased,
                     frame: m.frame, // G20: frame instances teach/restore the crib
+                    pristine: m.pristine.clone(), // G21: close reading's recovery source
                 })
             })
             .collect();
@@ -1953,7 +1992,9 @@ impl App {
             }
         }
         if let Some(idx) = best_i {
-            self.collect_index(idx);
+            // G21: this is the walker's own reach (expedition harvest / away-walker routines /
+            // foot on-scan) — the agent carries the instrument, so the sensing ladder applies.
+            self.collect_index(idx, true);
         }
     }
 
@@ -3828,14 +3869,22 @@ impl App {
 }
 
 /// G20: the canonical **collect event** for a collectible — the one place every collect route
-/// (aim pick, auto-collect, beam) builds its event. An ⟦erased⟧ site logs `CollectErased`
-/// (G18); a **worn instance of a known frame** whose surviving glyphs uniquely match collects
-/// with its lacunae *restored* from the skeleton (Leiden `[abc]`; full yield falls out of the
-/// restored text — Decision 2); everything else is a plain `Collect`.
+/// (aim pick, auto-collect, beam, the walker's foot acts) builds its event. An ⟦erased⟧ site
+/// logs `CollectErased` (G18); a **worn instance of a known frame** whose surviving glyphs
+/// uniquely match collects with its lacunae *restored* from the skeleton (Leiden `[abc]`; full
+/// yield falls out of the restored text — Decision 2); everything else is a plain `Collect`.
+///
+/// G21 — the sensing ladder consults `on_foot` (the collecting *agent* is the walker: manual
+/// walk-mode, the away-walker's routines, the expedition harvest — the agent carries the
+/// instrument; every ship route stays rung 0):
+/// - **rung 1, close reading**: a worn inscription recovers **fully** from its pristine
+///   composition (Leiden-bracketed, full yield; the frame-credit falls out of the recovered
+///   text at the call sites).
 fn collect_event(
     progress: &progress::Progress,
     seed: u32,
     c: &progress::Collectible,
+    on_foot: bool,
 ) -> progress::Event {
     if c.erased {
         return progress::Event::CollectErased {
@@ -3845,7 +3894,16 @@ fn collect_event(
             pos: c.pos,
         };
     }
-    let text = match c.frame {
+    // G21 rung 1: on foot with close reading comprehended, a worn text recovers fully.
+    let recovered = (on_foot && progress.is_sense_comprehended(progress::Sense::CloseReading))
+        .then(|| {
+            c.pristine
+                .as_deref()
+                .and_then(|p| structures::recover_worn(&c.text, p))
+        })
+        .flatten();
+    // G20 fallback: a worn instance of a *known* frame restores from the skeleton.
+    let text = recovered.unwrap_or_else(|| match c.frame {
         Some(id) if progress.frame_known(id) => {
             let known: Vec<structures::FrameSkeleton> = structures::world_frames(seed)
                 .into_iter()
@@ -3854,7 +3912,7 @@ fn collect_event(
             structures::restore_worn(&c.text, c.script, &known).unwrap_or_else(|| c.text.clone())
         }
         _ => c.text.clone(),
-    };
+    });
     progress::Event::Collect {
         find_id: c.find_id,
         script: c.script,

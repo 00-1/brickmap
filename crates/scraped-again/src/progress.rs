@@ -83,30 +83,79 @@ pub const MAX_FACULTY_LEVEL: u8 = 3;
 /// pass tunes it (brief Decision 4).
 pub const CARRY_CAP: u32 = 8;
 
+/// G21: the **sensing ladder**'s researched instruments — recovered faculties of the dead machine
+/// that let the *walker* read what survives only as damage (the real recovery ladder: raking
+/// light → multispectral → penetrating). Binary unlocks, one level each (v1):
+/// - rung 1, **close reading** (Rites-gated): a worn inscription collected *on foot* recovers
+///   fully — full text, full yield, frame credit;
+/// - rung 2, **deep sensing** (Signals-gated + the standing 8-rare gate, its first natural
+///   object): an ⟦erased⟧ inscription collected on foot reveals its hidden content, and
+///   palimpsest under-texts become readable.
+///
+/// Discovered by the **frustration events** (first worn collect / first erased log — the damage
+/// teaches the need; the console then offers the remedy), never by name-bearers. Lexicon-named +
+/// glyph-rendered like all vocabulary (`Sense::label` is the internal key only).
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Sense {
+    CloseReading,
+    DeepSensing,
+}
+
+impl Sense {
+    pub const ALL: [Sense; 2] = [Sense::CloseReading, Sense::DeepSensing];
+    /// Internal vocabulary key (codec/tests; the display name is the seeded lexicon word).
+    pub fn label(self) -> &'static str {
+        match self {
+            Sense::CloseReading => "close-reading",
+            Sense::DeepSensing => "deep-sensing",
+        }
+    }
+    pub fn idx(self) -> usize {
+        match self {
+            Sense::CloseReading => 0,
+            Sense::DeepSensing => 1,
+        }
+    }
+    /// The stratum gating this instrument's research (domain-matched fill, like a block):
+    /// close reading fills the empty **Rites** tier, deep sensing the empty **Signals** tier.
+    pub fn stratum(self) -> Stratum {
+        match self {
+            Sense::CloseReading => Stratum::Rites,
+            Sense::DeepSensing => Stratum::Signals,
+        }
+    }
+}
+
 /// G20: how many **intact sightings** of a recurring frame teach it (codex-known). Placeholder
 /// (brief Decision 1); the feel pass tunes.
 pub const FRAME_KNOWN_SIGHTINGS: u8 = 3;
 
-/// G15: what research can target — a discovered **block** (→ comprehend it, G15a) or a **faculty**
-/// (→ level it, G15b). The unified research pipe (no separate bank-then-spend subsystem).
+/// G15: what research can target — a discovered **block** (→ comprehend it, G15a), a **faculty**
+/// (→ level it, G15b), or (G21) a discovered **sensing instrument** (→ comprehend the ladder
+/// rung). The unified research pipe (no separate bank-then-spend subsystem).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ResearchTarget {
     Block(crate::console::Block),
     Faculty(Faculty),
+    Sense(Sense),
 }
 
 impl ResearchTarget {
     /// A stable single-byte key for the in-progress fill map + `pg=` codec. Block codes are
-    /// 0..=15; faculties live at 0xF0.. (disjoint), so a tagged round-trip is unambiguous.
+    /// 0..=15; faculties live at 0xF0.., senses (G21) at 0xE0.. (all disjoint), so a tagged
+    /// round-trip is unambiguous.
     fn rkey(self) -> u8 {
         match self {
             ResearchTarget::Block(b) => b.code(),
             ResearchTarget::Faculty(f) => 0xF0 + f.idx() as u8,
+            ResearchTarget::Sense(s) => 0xE0 + s.idx() as u8,
         }
     }
     /// Player-facing label: a block by its **glyphs** (G12, unreadable); a faculty by its seeded
     /// vocabulary word rendered glyph (G20 — the same word `spend(…)` shows, in the spend block's
-    /// Records/Latin script, so the research bar never re-leaks the English the palette hides).
+    /// Records/Latin script, so the research bar never re-leaks the English the palette hides);
+    /// a sensing instrument (G21) by its seeded word in **its gating stratum's script** (a
+    /// recovered instrument of that tier).
     pub fn glyphs(self, seed: u32) -> String {
         match self {
             ResearchTarget::Block(b) => b.glyphs(seed),
@@ -117,12 +166,19 @@ impl ResearchTarget {
                     Script::Latin,
                 )
             }
+            ResearchTarget::Sense(s) => {
+                let script = script_for(s.stratum());
+                let word = crate::lexicon::vocab_word(seed, s.label());
+                crate::text::to_overlay(&crate::structures::transliterate(&word, script), script)
+            }
         }
     }
     /// Resolve a `pg=` key byte back to a target (lenient — unknown → `None`).
     fn from_rkey(k: u8) -> Option<ResearchTarget> {
         if (0xF0..0xF0 + 3).contains(&k) {
             Some(ResearchTarget::Faculty(Faculty::ALL[(k - 0xF0) as usize]))
+        } else if (0xE0..0xE0 + 2).contains(&k) {
+            Some(ResearchTarget::Sense(Sense::ALL[(k - 0xE0) as usize]))
         } else {
             crate::console::Block::from_code(k).map(ResearchTarget::Block)
         }
@@ -137,13 +193,16 @@ impl ResearchTarget {
 /// while it is the active target, count (the same credit rule as the fill). Placeholder numbers;
 /// the *mechanism* is the decision.
 pub fn rare_requirement(t: ResearchTarget) -> u32 {
+    let deep = |s: Stratum| match s {
+        Stratum::Relics => 4,
+        Stratum::Signals => 8,
+        _ => 0,
+    };
     match t {
-        ResearchTarget::Block(b) => match b.required() {
-            Some(Stratum::Relics) => 4,
-            Some(Stratum::Signals) => 8,
-            _ => 0,
-        },
+        ResearchTarget::Block(b) => b.required().map(deep).unwrap_or(0),
         ResearchTarget::Faculty(_) => 0,
+        // G21: deep sensing is Signals-gated — the standing 8-rare gate's first natural object.
+        ResearchTarget::Sense(s) => deep(s.stratum()),
     }
 }
 
@@ -280,18 +339,23 @@ pub struct CodexEntry {
 #[derive(Clone, Debug)]
 pub struct Collectible {
     pub find_id: u64,
+    /// G21: the inscription's grid cell — the deterministic key the sensing ladder's composed
+    /// recoveries (hidden/under texts) derive from.
+    pub cell: (i32, i32),
     pub script: Script,
     pub text: String,
     pub pos: [f32; 3],
     /// G9: this inscription **names a block** — collecting it discovers that block in the console.
     pub name: Option<crate::console::Block>,
     /// G18: an ⟦erased⟧ inscription — collecting it yields nothing but **logs the erasure event**
-    /// in the codex (content unrecoverable until G21's sensing ladder).
+    /// in the codex (content unrecoverable below rung 2 of G21's sensing ladder).
     pub erased: bool,
     /// G20: this inscription is an instance of the recurring formulaic **frame** (`frame_id`).
     /// Intact instances teach the frame (sightings → known); worn instances of a *known* frame
     /// can be restored at collect time.
     pub frame: Option<u64>,
+    /// G21: a worn inscription's pre-weathered composition (close reading's recovery source).
+    pub pristine: Option<String>,
 }
 
 /// A stable, deterministic id for an inscription find — a function of its grid cell + script +
@@ -430,6 +494,13 @@ pub struct Progress {
     /// G20: frames the player **knows** (≥ [`FRAME_KNOWN_SIGHTINGS`] sightings): the codex shows
     /// their skeleton, and worn instances that uniquely match one are *restored* (full yield).
     frames_known: std::collections::HashSet<u64>,
+    /// G21: sensing instruments **discovered** by the frustration events (first worn collect →
+    /// close reading; first erased log → deep sensing). Discovery makes them research targets;
+    /// append-only knowledge (nothing un-discovers a need).
+    senses_discovered: std::collections::HashSet<Sense>,
+    /// G21: sensing instruments **comprehended** (research filled + rare-gated) — the ladder
+    /// rungs the walker actually holds. Consulted by the collect paths (on foot only).
+    senses: std::collections::HashSet<Sense>,
 }
 
 impl Progress {
@@ -489,6 +560,9 @@ impl Progress {
                     FACULTY_COSTS[lvl as usize]
                 }
             }
+            // G21: a sensing instrument prices like a block of its gating stratum (the same
+            // deeper-is-dearer doubling): close reading (Rites) 100, deep sensing (Signals) 400.
+            ResearchTarget::Sense(s) => 25u64 << s.stratum().byte(),
         }
     }
 
@@ -512,6 +586,11 @@ impl Progress {
                 b.required().is_some() && self.is_discovered(b) && !self.is_block_comprehended(b)
             }
             ResearchTarget::Faculty(f) => self.faculties[f.idx()] < MAX_FACULTY_LEVEL,
+            // G21: a sensing instrument must be discovered (the frustration taught the need)
+            // and not yet comprehended.
+            ResearchTarget::Sense(s) => {
+                self.is_sense_discovered(s) && !self.is_sense_comprehended(s)
+            }
         };
         if valid {
             self.active_research = Some(t);
@@ -579,6 +658,13 @@ impl Progress {
                 if self.faculties[f.idx()] < MAX_FACULTY_LEVEL {
                     self.faculties[f.idx()] += 1;
                 }
+            }
+            // G21: a comprehended sensing instrument is vocabulary of its tier — the legibility
+            // fold-in applies exactly as for a block (researching the Signals-tier instrument is
+            // the first thing that can turn Galactic legible).
+            ResearchTarget::Sense(s) => {
+                self.senses.insert(s);
+                self.comprehended.insert(s.stratum());
             }
         }
         self.research_filled.remove(&key);
@@ -659,6 +745,11 @@ impl Progress {
                     text: text.clone(),
                     pos: *pos,
                 });
+                // G21: the first WORN collect (lacunae banked, glyphs lost) is the frustration
+                // event that discovers **close reading** — the damage teaches the need.
+                if text.chars().any(|c| c == crate::text::MARK_LACUNA) {
+                    self.senses_discovered.insert(Sense::CloseReading);
+                }
                 true
             }
             // G9: a block name recovered — first sighting discovers (a provisional reading).
@@ -692,6 +783,9 @@ impl Progress {
                     text: text.clone(),
                     pos: *pos,
                 });
+                // G21: the first erased log is the frustration event that discovers **deep
+                // sensing** — the gouge that yields nothing teaches what's still missing.
+                self.senses_discovered.insert(Sense::DeepSensing);
                 true
             }
             // G10/G15: bank a shard (lifetime tally, no dedup) AND — G15 allocate-and-fill — credit
@@ -704,15 +798,18 @@ impl Progress {
                 let credit = match self.active_research {
                     Some(ResearchTarget::Block(b)) => b.required() == Some(*domain),
                     Some(ResearchTarget::Faculty(_)) => true, // any domain funds a faculty
+                    // G21: a sensing instrument draws its gating stratum's domain (like a block).
+                    Some(ResearchTarget::Sense(s)) => s.stratum() == *domain,
                     None => false,
                 };
                 if credit {
                     // G19: a credited **rare** pickup also advances the target's rare gauge
-                    // (blocks only — a faculty has no rare requirement, so nothing to track).
-                    if let (crate::shards::Rarity::Rare, Some(t @ ResearchTarget::Block(_))) =
-                        (*rarity, self.active_research)
+                    // (targets with a rare requirement only — blocks and, G21, deep sensing).
+                    if let (crate::shards::Rarity::Rare, Some(t)) = (*rarity, self.active_research)
                     {
-                        *self.research_rare.entry(t.rkey()).or_default() += 1;
+                        if rare_requirement(t) > 0 {
+                            *self.research_rare.entry(t.rkey()).or_default() += 1;
+                        }
                     }
                     self.credit_research(rarity.yield_amount());
                 }
@@ -826,6 +923,27 @@ impl Progress {
         out
     }
 
+    // ---- G21: the sensing ladder ---------------------------------------------------------------
+
+    /// G21: has this sensing instrument been **discovered** (its frustration event fired)?
+    /// Discovery lists it as a research target — the console offering the remedy.
+    pub fn is_sense_discovered(&self, s: Sense) -> bool {
+        self.senses_discovered.contains(&s)
+    }
+
+    /// G21: is this sensing instrument **comprehended** (the ladder rung held)? Consulted by the
+    /// on-foot collect paths; the ship stays rung 0 whatever is researched.
+    pub fn is_sense_comprehended(&self, s: Sense) -> bool {
+        self.senses.contains(&s)
+    }
+
+    /// G21: the discovered-but-not-yet-comprehended sensing instruments (research targets, UI).
+    pub fn sense_targets(&self) -> impl Iterator<Item = Sense> + '_ {
+        Sense::ALL
+            .into_iter()
+            .filter(|s| self.is_sense_discovered(*s) && !self.is_sense_comprehended(*s))
+    }
+
     // ---- G20: formulaic frames as cribs -------------------------------------------------------
 
     /// G20: is this frame **known** (its skeleton cracked — sightings reached the bar)?
@@ -845,7 +963,7 @@ impl Progress {
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(10u8); // version (…; 8 = + attestation G18; 9 = + rare gates G19; 10 = + frames G20)
+        b.push(11u8); // version (…; 9 = + rare gates G19; 10 = + frames G20; 11 = + senses G21)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -942,6 +1060,14 @@ impl Progress {
         for id in knowns {
             b.extend_from_slice(&id.to_le_bytes());
         }
+        // v11: the G21 sensing ladder — discovered senses, then comprehended (sorted idx bytes;
+        // append-only — old payloads load with both undiscovered).
+        for set in [&self.senses_discovered, &self.senses] {
+            let mut xs: Vec<u8> = set.iter().map(|s| s.idx() as u8).collect();
+            xs.sort_unstable();
+            b.push(xs.len() as u8);
+            b.extend_from_slice(&xs);
+        }
         format!("pg={}", to_hex(&b))
     }
 
@@ -992,7 +1118,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if !(1..=10).contains(&version) {
+    if !(1..=11).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -1078,6 +1204,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             active_research = ResearchTarget::from_rkey(act).filter(|t| match t {
                 ResearchTarget::Block(b) => b.required().is_some(),
                 ResearchTarget::Faculty(_) => true,
+                ResearchTarget::Sense(_) => true,
             });
         }
         let fc = *take(&mut p, 1)?.first()?;
@@ -1142,6 +1269,21 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             frames_known.insert(u64at(&mut p)?);
         }
     }
+    // v11: the G21 sensing ladder (absent pre-v11 → undiscovered; the frustration events
+    // re-teach on the next worn collect / erased log). Unknown idx bytes skipped (lenient).
+    let mut senses_discovered = std::collections::HashSet::new();
+    let mut senses = std::collections::HashSet::new();
+    if version >= 11 {
+        for set in [&mut senses_discovered, &mut senses] {
+            let n = *take(&mut p, 1)?.first()?;
+            for _ in 0..n {
+                let idx = *take(&mut p, 1)?.first()? as usize;
+                if let Some(s) = Sense::ALL.get(idx) {
+                    set.insert(*s);
+                }
+            }
+        }
+    }
     Some(Progress {
         strata,
         codex,
@@ -1161,6 +1303,8 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         cache,
         frame_sightings,
         frames_known,
+        senses_discovered,
+        senses,
     })
 }
 
@@ -1207,6 +1351,8 @@ impl PartialEq for Progress {
             && self.cache == other.cache
             && self.frame_sightings == other.frame_sightings
             && self.frames_known == other.frames_known
+            && self.senses_discovered == other.senses_discovered
+            && self.senses == other.senses
     }
 }
 
@@ -1980,6 +2126,153 @@ mod tests {
         let back = Progress::decode(&p.encode());
         assert_eq!(back, p);
         assert!(crate::structures::is_erased_text(&back.codex[0].text));
+    }
+
+    /// G21: the sensing instruments are ordinary research targets — Rites/Signals-gated,
+    /// domain-matched fill, deep-sensing behind the standing 8-rare gate — and only allocatable
+    /// once **discovered** (the frustration events).
+    #[test]
+    fn sense_targets_gate_cost_rare_and_fill() {
+        use crate::shards::Rarity;
+        // Costs price like blocks of their gating stratum; deep sensing carries the 8-rare gate.
+        let p0 = Progress::default();
+        let cr = ResearchTarget::Sense(Sense::CloseReading);
+        let ds = ResearchTarget::Sense(Sense::DeepSensing);
+        assert_eq!(p0.research_cost(cr), 100, "Rites-priced (25 << 2)");
+        assert_eq!(p0.research_cost(ds), 400, "Signals-priced (25 << 4)");
+        assert_eq!(rare_requirement(cr), 0, "close reading demands no rares");
+        assert_eq!(
+            rare_requirement(ds),
+            8,
+            "deep sensing is the Signals rare gate's first natural object"
+        );
+        // Undiscovered → not allocatable (the need must be felt first).
+        let mut p = Progress::default();
+        assert!(!p.allocate(cr), "undiscovered senses can't be allocated");
+        // First WORN collect (banked lacunae) discovers close reading.
+        let worn = format!("AB{}D", crate::text::MARK_LACUNA);
+        p.apply(&Event::Collect {
+            find_id: 1,
+            script: Script::Latin,
+            text: worn,
+            pos: [0.0; 3],
+        });
+        assert!(p.is_sense_discovered(Sense::CloseReading));
+        assert!(
+            !p.is_sense_discovered(Sense::DeepSensing),
+            "an erased log, not a worn collect, teaches deep sensing"
+        );
+        assert_eq!(p.sense_targets().collect::<Vec<_>>(), [Sense::CloseReading]);
+        // Allocate + fill: own-domain (Rites) shards only.
+        assert!(p.allocate(cr));
+        for _ in 0..50 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Records,
+                rarity: Rarity::Rare,
+            });
+        }
+        assert_eq!(p.research_progress(cr).0, 0, "off-domain doesn't fill");
+        let mut guard = 0;
+        while !p.is_sense_comprehended(Sense::CloseReading) && guard < 10_000 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Rites,
+                rarity: Rarity::Common,
+            });
+            guard += 1;
+        }
+        assert!(p.is_sense_comprehended(Sense::CloseReading));
+        assert_eq!(p.active_research(), None, "completion clears the target");
+        assert!(
+            p.is_comprehended(Stratum::Rites),
+            "the instrument folds in its tier's legibility (like a block)"
+        );
+        assert!(!p.allocate(cr), "a held rung can't re-allocate");
+        // First ERASED log discovers deep sensing; the 8-rare Signals gate then holds it.
+        p.apply(&Event::CollectErased {
+            find_id: 2,
+            script: Script::Runic,
+            text: std::iter::repeat_n(crate::text::MARK_GOUGE, 3).collect(),
+            pos: [0.0; 3],
+        });
+        assert!(p.is_sense_discovered(Sense::DeepSensing));
+        assert!(p.allocate(ds));
+        for _ in 0..800 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Signals,
+                rarity: Rarity::Common,
+            });
+        }
+        assert!(
+            !p.is_sense_comprehended(Sense::DeepSensing),
+            "an overfilled bar without 8 own-domain rares must not complete"
+        );
+        for _ in 0..8 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Signals,
+                rarity: Rarity::Rare,
+            });
+        }
+        assert!(
+            p.is_sense_comprehended(Sense::DeepSensing),
+            "8 Signals rares satisfy the gate"
+        );
+        assert!(p.is_comprehended(Stratum::Signals), "Signals turns legible");
+    }
+
+    /// G21: the sensing ladder rides `pg=` **v11** (discovered + comprehended + an in-progress
+    /// fill under the sense rkey); a pre-v11 payload loads with everything undiscovered
+    /// (append-only migration — the frustration events re-teach).
+    #[test]
+    fn senses_ride_pg_v11_and_old_payloads_load_undiscovered() {
+        use crate::shards::Rarity;
+        let mut p = Progress::default();
+        p.apply(&Event::Collect {
+            find_id: 1,
+            script: Script::Greek,
+            text: format!("Α{}Γ", crate::text::MARK_LACUNA),
+            pos: [0.0; 3],
+        });
+        p.apply(&Event::CollectErased {
+            find_id: 2,
+            script: Script::Runic,
+            text: std::iter::repeat_n(crate::text::MARK_GOUGE, 3).collect(),
+            pos: [0.0; 3],
+        });
+        assert!(p.allocate(ResearchTarget::Sense(Sense::CloseReading)));
+        p.apply(&Event::CollectShard {
+            domain: Stratum::Rites,
+            rarity: Rarity::Common,
+        });
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p, "v11 round-trips the sensing ladder");
+        assert!(back.is_sense_discovered(Sense::DeepSensing));
+        assert_eq!(
+            back.active_research(),
+            Some(ResearchTarget::Sense(Sense::CloseReading)),
+            "an in-progress sense research round-trips (rkey 0xE0)"
+        );
+        assert!(
+            back.research_progress(ResearchTarget::Sense(Sense::CloseReading))
+                .0
+                > 0
+        );
+        // Pre-v11 migration: strip the two appended sense sections + restamp v10 → undiscovered.
+        let v10_hex = {
+            let hex = p.encode();
+            let hex = hex.strip_prefix("pg=").unwrap();
+            let mut bytes = super::from_hex(hex).unwrap();
+            // Tail: [discovered: count + 2 idx][comprehended: count(0)] = 3 + 1 bytes.
+            bytes.truncate(bytes.len() - 4);
+            bytes[0] = 10;
+            super::to_hex(&bytes)
+        };
+        let v10 = Progress::decode(&format!("pg={v10_hex}"));
+        assert!(
+            !v10.is_sense_discovered(Sense::CloseReading)
+                && !v10.is_sense_discovered(Sense::DeepSensing),
+            "pre-v11 → undiscovered"
+        );
+        assert_eq!(v10.collected_count(), p.collected_count(), "codex intact");
     }
 
     #[test]

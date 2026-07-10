@@ -143,7 +143,7 @@ fn scripted_progression_discover_research_author_expedition_roundtrip() {
         .iter()
         .position(|c| c.name == Some(block))
         .expect("the name-bearer streamed in as a collectible at our position");
-    app.collect_index(idx);
+    app.collect_index(idx, false);
     app.sync_console_unlock();
     assert!(
         app.progress.is_discovered(block),
@@ -788,6 +788,7 @@ fn expedition_return_auto_deposits_the_carry() {
 
 /// Teleport the (manually-helmed) ship onto an inscription and collect it through the real
 /// streaming + collect seam (`update_inscriptions` → `collectible` → `collect_index`).
+/// G21: a **ship** collect — rung 0 whatever's been researched (the on-foot variant below).
 fn collect_inscription(app: &mut App, m: &structures::Inscription) {
     app.camera.position = m.pos;
     app.update_inscriptions();
@@ -797,7 +798,7 @@ fn collect_inscription(app: &mut App, m: &structures::Inscription) {
         .iter()
         .position(|c| c.find_id == id)
         .expect("the inscription streamed in as a collectible at our position");
-    app.collect_index(idx);
+    app.collect_index(idx, false);
 }
 
 /// Does the codex overlay currently show an underdot row (a line of only dots — the Leiden
@@ -1099,6 +1100,121 @@ fn frames_crib_three_sightings_teach_and_worn_matches_restore_full() {
     assert!(restored.frame_known(frame_id));
     // And the loop keeps running cleanly with the new state live.
     drive(&mut app, 120);
+}
+
+// ----------------------------------------------------------------------------------------------
+// 7e) G21 — the sensing ladder, rung 1: the first worn collect DISCOVERS close reading (the
+//     frustration funnel), the console offers it as a research target, the canonical seam
+//     researches it (Rites domain fill), and then an ON-FOOT collect of a worn inscription
+//     recovers FULLY (bracketed text, full yield) while the ship's collect of an equal worn
+//     cell stays rung 0 (reduced) — the differential, through the real collect seams.
+// ----------------------------------------------------------------------------------------------
+
+/// The walker collects the nearest site to `pos` through the real foot seam (`foot_collect_act`
+/// → `collect_nearest_to` → `collect_index(_, true)` — the same path the expedition harvest and
+/// the away-walker's routines drive).
+fn foot_collect_at(app: &mut App, pos: Vec3) {
+    app.camera.position = pos; // stream the cell in
+    app.update_inscriptions();
+    app.foot_collect_act(pos, None);
+}
+
+#[test]
+fn sensing_rung1_close_reading_recovers_worn_on_foot_only() {
+    use crate::progress::Sense;
+    let seed = 1337u32;
+    let g = ground_fn(seed);
+    let marks = structures::inscriptions_near(seed, Vec3::ZERO, 2500.0, g);
+    // Two deterministic worn inscriptions: one for the ship (rung 0), one for the walker.
+    let worn: Vec<&structures::Inscription> = marks
+        .iter()
+        .filter(|m| matches!(m.condition, structures::Condition::Worn(_)))
+        .take(2)
+        .collect();
+    assert_eq!(worn.len(), 2, "the origin field holds ≥2 worn inscriptions");
+
+    let mut app = App::headless(seed);
+    app.auto_fly = false; // scripted helm
+
+    // --- The frustration funnel: the FIRST worn collect (a ship collect — reduced yield)
+    //     discovers close reading; the console then lists the remedy as a research target. ---
+    assert!(!app.progress.is_sense_discovered(Sense::CloseReading));
+    let survivors = progress::glyph_count(&worn[0].text);
+    let full0 = progress::glyph_count(worn[0].pristine.as_deref().unwrap());
+    assert!(survivors < full0, "the worn cell really lost glyphs");
+    let before = app.progress.strata.total();
+    collect_inscription(&mut app, worn[0]);
+    assert_eq!(
+        app.progress.strata.total() - before,
+        progress::yield_amount(worn[0].script, survivors),
+        "the ship's worn collect pays survivors only (rung 0)"
+    );
+    assert!(
+        app.progress.is_sense_discovered(Sense::CloseReading),
+        "the first worn collect discovers close reading (the frustration teaches)"
+    );
+    app.sync_console_unlock();
+    let home = app.console.render();
+    let glyphs = progress::ResearchTarget::Sense(Sense::CloseReading).glyphs(seed);
+    assert!(
+        home.contains(&glyphs) && home.contains("(locked: research)"),
+        "the console offers the remedy as a research target"
+    );
+
+    // --- Research it through the canonical seam (the console's allocate + Rites domain fill). ---
+    assert!(app
+        .progress
+        .allocate(progress::ResearchTarget::Sense(Sense::CloseReading)));
+    let mut guard = 0;
+    while !app.progress.is_sense_comprehended(Sense::CloseReading) && guard < 100_000 {
+        app.progress.apply(&Event::CollectShard {
+            domain: Stratum::Rites,
+            rarity: Rarity::Common,
+        });
+        guard += 1;
+    }
+    assert!(app.progress.is_sense_comprehended(Sense::CloseReading));
+
+    // --- The walker, in reach, now recovers the second worn cell FULLY through the real foot
+    //     seam — full text (Leiden-bracketed in the codex, no lacunae), full unreduced yield. ---
+    let full1 = progress::glyph_count(worn[1].pristine.as_deref().unwrap());
+    assert!(progress::glyph_count(&worn[1].text) < full1);
+    let before = app
+        .progress
+        .strata
+        .get(progress::stratum_of(worn[1].script));
+    foot_collect_at(&mut app, worn[1].pos);
+    let id1 = progress::find_id(worn[1].cell, worn[1].script, &worn[1].text);
+    assert!(app.progress.has(id1), "the walker collected the worn cell");
+    assert_eq!(
+        app.progress
+            .strata
+            .get(progress::stratum_of(worn[1].script))
+            - before,
+        progress::yield_amount(worn[1].script, full1),
+        "close reading pays FULL, unreduced yield on foot"
+    );
+    let entry = app
+        .progress
+        .codex
+        .iter()
+        .find(|e| e.find_id == id1)
+        .unwrap();
+    assert!(
+        !entry.text.contains(crate::text::MARK_LACUNA),
+        "no lacunae remain in the recovered entry"
+    );
+    assert!(
+        entry.text.contains('[') && entry.text.contains(']'),
+        "the codex stores the Leiden-bracketed recovery: {:?}",
+        entry.text
+    );
+
+    // --- The sensing state + discovery ride `pg=` v11. ---
+    let restored = progress::Progress::decode(&app.share_string());
+    assert_eq!(restored, app.progress, "pg= v11 round-trips the ladder");
+    assert!(restored.is_sense_comprehended(Sense::CloseReading));
+    drive(&mut app, 120); // and the loop keeps running cleanly
 }
 
 // ----------------------------------------------------------------------------------------------
