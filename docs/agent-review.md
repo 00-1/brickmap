@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `8ef6649` (G21 — sensing ladder complete; Archive tranche payoff landed).
+**Reviewed through:** `8cad34d` (G22 — proto-language/collation complete; the strata-data sink is live).
 
 ---
 
@@ -36,6 +36,53 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-07-10 · G22 — proto-language & the comparative method (`659851a`→`e33af35`→`aaf7c25`→`b23461d`→`8cad34d`)  ✅ PASSED (five commits, EACH four-way green; rendered)
+
+**Independently verified:** fmt/clippy clean · **432 tests, 0 failures** workspace-wide ·
+**all five commits four-way CI green individually** — the per-commit-push instruction from
+the G21 review was followed · golden voxel-hash unchanged · **zero engine-crate diffs**
+(the whole landing is `crates/scraped-again` + `docs/`; goblin-gold untouched) · **console
+rendered here**: the vocabulary visibly shifted to Records-daughter forms (RAURKALIS →
+RORKALIS, ZAUSSOS → SOSSOS, RAUNLAUR → RONLOR — same-but-shifted, exactly the cognate
+texture the design wants), and the new **collation row** shows one word in two scripts
+(⟦RONLOR⟧ ⟦σφξμσ⟧) beside per-side prices · envelope **un-re-pinned and verified by
+reasoning**: cascades change spellings, not placement/gates/yields, and collation is
+player-initiated — the probe numbers are byte-identical to G19's.
+
+**Code checks:** the sink accounting is honest (a candidate-less or under-funded `Collate`
+is a clean no-op that spends nothing; a funded one debits **both** strata and consumes the
+candidate — asserted in tests, balances visibly go down for the first time in the game's
+life); restoration precedence is one-bank best-instrument-wins (no double-pay with
+frames/close-reading); the D11 scenario drives the real console rows and asserts the
+**ship-side** restore — the deliberate inversion of G21's on-foot assert (knowledge
+flies, instruments walk — the axis holds in code).
+
+**Deviations assessed (all five accepted):**
+1. **Attestation = the dual collected** (the brief's "or the block discovered in the
+   partner stratum" clause dropped): honest — partner-stratum forms have no v1 world
+   source besides duals; the brief clause was unimplementable as written. Ambient
+   root-mining (already routed to later polish) is where that clause returns.
+2. **Colossus monument labels carry no duals** (streamed name-bearers only): fine; the
+   ~1/12 rate over the ambient majority still yields several per field.
+3. **Per-stratum conditional-entropy floor 2.3 → 2.0 bits/char** (proto keeps 2.3):
+   legitimate — a syllabary-shaped daughter (Rites' CV re-shaping) *should* be more
+   predictable; real syllabaries are. The honesty suite still binds where it matters
+   (the proto corpus).
+4. **Worn duals still log their candidate**: generous-side call on an unpinned point;
+   flagged for the feel pass, harmless either way.
+5. Gallery snapshot skipped per G18–G21 precedent.
+
+**Minor notes:** commit-subject numbering drifted ("(1/3+)…(4/4)" + a fifth screenshot
+rider) — cosmetic; the `collate: REC 60 · SCH 60` row uses instrumentation-English
+abbreviations (REC/SCH), which sits inside the standing structural-English
+instrumentation scope (the human's carried note) — not a lore leak, but listed for the
+eventual instrumentation-scope review.
+
+**Verdict.** The Archive tranche's endgame puzzle is in: one proto-language, five
+daughters, the strata-data sink live, and the comparative method as a ship-side
+restoration verb. The §E pin is cashed at its lexicon-level half. Next: **G23 —
+prosopography** (draft brief finalizes against this as-built, then dispatch).
 
 ## 2026-07-10 · G21 — the sensing ladder (`8eeef78`→`8d4c1ca`→`5b908f1`→`8ef6649`)  ✅ PASSED (four-way green on tip; rendered)
 
