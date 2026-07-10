@@ -1,7 +1,7 @@
 # G21 — The sensing ladder (close reading, deep sensing, palimpsests)
 
-> **Status: in progress (2/4 landed — sensing targets + close reading; deep sensing +
-> erased reveal).** The Archive tranche's payoff milestone, modeled on the real
+> **Status: in progress (3/4 landed — sensing targets + close reading; deep sensing +
+> erased reveal; palimpsests).** The Archive tranche's payoff milestone, modeled on the real
 > recovery ladder ([`../research-material-text.md`](research-material-text.md) §2 — raking
 > light → UV/multispectral → penetrating): **worn and ⟦erased⟧ text becomes recoverable,
 > on foot, with researched sensing** — which simultaneously (a) cashes the G18 erasure
@@ -113,7 +113,7 @@ four-way CI; boundary intact; roadmap G21.
 
 - [x] `close-reading` (Rites) + `deep-sensing` (Signals + 8-rare) research targets,
       lexicon-named, auto-discovered by frustration events; `pg=` v11 append-only.
-- [ ] On-foot worn recovery (full text/yield/frame credit) vs ship rung-0; erased reveal
+- [x] On-foot worn recovery (full text/yield/frame credit) vs ship rung-0; erased reveal
       on foot resolves the logged gouge with deep-weighted content; palimpsests (~1/60,
       tell, deep-sensing reveals, stacked codex, both-layer yield).
 - [ ] Expedition rationality asserted (D11): close-reading expeditions obtain what

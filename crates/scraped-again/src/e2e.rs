@@ -1336,6 +1336,129 @@ fn sensing_rung2_deep_sensing_reveals_the_logged_gouge_on_foot() {
 }
 
 // ----------------------------------------------------------------------------------------------
+// 7g) G21 — palimpsests: the doubled-baseline tell is findable at rung 0, but the under-text
+//     only yields to deep sensing ON FOOT — collect banks BOTH layers, the codex stacks them —
+//     while any rung-0/ship collect takes the surface alone (the under-layer is spent with it:
+//     one more thing the drifting ship can never obtain).
+// ----------------------------------------------------------------------------------------------
+
+/// Grant deep sensing through the canonical seams: log a real erased site (the discovery
+/// funnel), then allocate + fill Signals with its 8 rares.
+fn grant_deep_sensing(app: &mut App, erased: &structures::Inscription) {
+    use crate::progress::Sense;
+    collect_inscription(app, erased);
+    assert!(app.progress.is_sense_discovered(Sense::DeepSensing));
+    assert!(app
+        .progress
+        .allocate(progress::ResearchTarget::Sense(Sense::DeepSensing)));
+    let mut guard = 0;
+    while !app.progress.is_sense_comprehended(Sense::DeepSensing) && guard < 100_000 {
+        app.progress.apply(&Event::CollectShard {
+            domain: Stratum::Signals,
+            rarity: Rarity::Rare,
+        });
+        guard += 1;
+    }
+    assert!(app.progress.is_sense_comprehended(Sense::DeepSensing));
+}
+
+#[test]
+fn sensing_palimpsests_yield_both_layers_to_deep_sensing_on_foot_only() {
+    let seed = 1337u32;
+    let g = ground_fn(seed);
+    let marks = structures::inscriptions_near(seed, Vec3::ZERO, 3000.0, g);
+    let palimpsests: Vec<&structures::Inscription> =
+        marks.iter().filter(|m| m.under.is_some()).collect();
+    assert!(
+        palimpsests.len() >= 2,
+        "the origin field holds ≥2 palimpsests (~1/60), got {}",
+        palimpsests.len()
+    );
+    let erased = marks
+        .iter()
+        .find(|m| m.condition == structures::Condition::Erased)
+        .expect("an erased site for the deep-sensing grant");
+
+    let mut app = App::headless(seed);
+    app.auto_fly = false;
+
+    // --- Rung 0: the tell is visible (the billboard's text carries it), but a ship collect
+    //     takes the SURFACE only — one codex entry, no under-layer yield. ---
+    let p0 = palimpsests[0];
+    assert!(
+        p0.text.ends_with(crate::text::MARK_BASELINE),
+        "the tell shows at rung 0"
+    );
+    let (_, u_script) = p0.under.clone().unwrap();
+    let before_under = app.progress.strata.get(progress::stratum_of(u_script));
+    collect_inscription(&mut app, p0);
+    let id0 = progress::find_id(p0.cell, p0.script, &p0.text);
+    assert_eq!(
+        app.progress
+            .codex
+            .iter()
+            .filter(|e| e.find_id == id0)
+            .count(),
+        1,
+        "rung 0 logs the surface alone"
+    );
+    // (The under stratum may coincide with the surface stratum only if scripts map together —
+    // they can't here: the surface is never erased and the under is Runic/Galactic; compare
+    // the under stratum's balance against exactly the surface's contribution.)
+    let surface_contrib = if progress::stratum_of(p0.script) == progress::stratum_of(u_script) {
+        progress::yield_amount(p0.script, progress::glyph_count(&p0.text))
+    } else {
+        0
+    };
+    assert_eq!(
+        app.progress.strata.get(progress::stratum_of(u_script)) - before_under,
+        surface_contrib,
+        "the under-text pays nothing at rung 0"
+    );
+
+    // --- Grant deep sensing (canonical seams), then the WALKER collects another palimpsest:
+    //     BOTH layers bank, the codex stacks them (surface, then the └-led under-layer). ---
+    grant_deep_sensing(&mut app, erased);
+    let p1 = palimpsests[1];
+    let (u1_text, u1_script) = p1.under.clone().unwrap();
+    let id1 = progress::find_id(p1.cell, p1.script, &p1.text);
+    let before_under = app.progress.strata.get(progress::stratum_of(u1_script));
+    foot_collect_at(&mut app, p1.pos);
+    assert!(app.progress.has(id1), "the walker collected the palimpsest");
+    let layers: Vec<&progress::CodexEntry> = app
+        .progress
+        .codex
+        .iter()
+        .filter(|e| e.find_id == id1)
+        .collect();
+    assert_eq!(
+        layers.len(),
+        2,
+        "both layers logged, stacked under one find"
+    );
+    assert_eq!(
+        layers[1].text, u1_text,
+        "the under-layer is the composed under-text"
+    );
+    assert_eq!(layers[1].script, u1_script);
+    let under_gain = app.progress.strata.get(progress::stratum_of(u1_script)) - before_under;
+    let expect_under = progress::yield_amount(u1_script, progress::glyph_count(&u1_text));
+    assert!(
+        under_gain >= expect_under,
+        "the under-layer banked its own yield ({under_gain} ≥ {expect_under})"
+    );
+    assert!(
+        app.codex_text().contains('└'),
+        "the codex renders the stacked under-layer"
+    );
+
+    // --- And everything rides the share string. ---
+    let restored = progress::Progress::decode(&app.share_string());
+    assert_eq!(restored, app.progress);
+    drive(&mut app, 120);
+}
+
+// ----------------------------------------------------------------------------------------------
 // 8) Render-robustness sweep — several vantages + after state changes render without panic/NaN.
 //    Needs a (software) Vulkan adapter, so it's `#[ignore]` (local / opt-in, not CI).
 // ----------------------------------------------------------------------------------------------

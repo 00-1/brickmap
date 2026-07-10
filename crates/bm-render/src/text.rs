@@ -142,6 +142,9 @@ pub const MARK_UNDERDOT: char = '\u{E622}';
 pub const MARK_CARTOUCHE_OPEN: char = '\u{E623}';
 /// The matching **enclosure-close** mark (right end of the bracket-frame).
 pub const MARK_CARTOUCHE_CLOSE: char = '\u{E624}';
+/// A **doubled-baseline** sub-mark: two faint parallel base rules under a blank cell (generic
+/// typography — a "two writing lines" cell; callers decide what a doubled baseline means).
+pub const MARK_BASELINE: char = '\u{E625}';
 
 /// Bitmaps for the mark glyphs plus the standard epigraphic punctuation the overlay path should
 /// render rather than dot out: U+27E6/U+27E7 (white square brackets) and U+2014 (em dash).
@@ -169,6 +172,11 @@ fn mark_glyph(c: char) -> Option<[u8; 8]> {
         MARK_CARTOUCHE_CLOSE => [
             "#####   ", "     #  ", "      # ", "      # ", "      # ", "      # ", "     #  ",
             "#####   ",
+        ],
+        // Two faint parallel base rules — a subtle "doubled writing line" cell.
+        MARK_BASELINE => [
+            "        ", "        ", "        ", "        ", " # # # #", "        ", "# # # # ",
+            "        ",
         ],
         '\u{27E6}' => [
             " ####   ", " # #    ", " # #    ", " # #    ", " # #    ", " # #    ", " # #    ",
@@ -656,6 +664,7 @@ mod tests {
             MARK_UNDERDOT,
             MARK_CARTOUCHE_OPEN,
             MARK_CARTOUCHE_CLOSE,
+            MARK_BASELINE,
         ];
         for mark in marks {
             let ov = overlay_glyph(mark).expect("mark renders on the overlay path");

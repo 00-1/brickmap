@@ -636,6 +636,22 @@ impl App {
                 let (_hidden, _script, name) = structures::hidden_text(self.seed, c.cell);
                 self.discover(name);
             }
+            // G21: both layers banked — the palimpsest's surface and its older under-text.
+            progress::Event::CollectPalimpsest {
+                text,
+                under_script,
+                under_text,
+                ..
+            } => {
+                log::info!(
+                    "PALIMPSEST — two layers collected: +{} {} / +{} {}",
+                    progress::yield_amount(c.script, progress::glyph_count(text)),
+                    progress::stratum_of(c.script).label(),
+                    progress::yield_amount(*under_script, progress::glyph_count(under_text)),
+                    progress::stratum_of(*under_script).label(),
+                );
+                banked_text = text.clone();
+            }
             progress::Event::Collect { text, .. } => {
                 if *text != c.text {
                     log::info!("RECOVERED — the lacunae fill (full yield)");
@@ -1627,13 +1643,17 @@ impl App {
         if c.is_empty() {
             out.push_str("(nothing yet — aim at a glowing inscription and press T)");
         } else {
-            for e in c.iter().rev().take(20) {
+            // One entry's line(s): the glyph cluster row (+ a provisional-name underdot row).
+            // `stacked` marks a palimpsest's under-layer (rendered beneath its surface, led by
+            // the same structural `└` the console's detail line uses).
+            let fmt_entry = |out: &mut String, e: &progress::CodexEntry, stacked: bool| {
                 let tag = progress::stratum_of(e.script).label();
+                let lead = if stacked { "└ " } else { "" };
                 // ⟦——⟧ — a deliberate erasure, logged as an *event* (content unrecoverable
                 // below rung 2 of the G21 sensing ladder).
                 if structures::is_erased_text(&e.text) {
-                    out.push_str(&format!("{tag}  \u{27E6}\u{2014}\u{2014}\u{27E7}\n"));
-                    continue;
+                    out.push_str(&format!("{tag}  {lead}\u{27E6}\u{2014}\u{2014}\u{27E7}\n"));
+                    return;
                 }
                 // G21: a **revealed** erasure renders as the *resolved* gouge — the same ⟦ ⟧
                 // event brackets, now holding the recovered glyphs (`⟦——⟧` → `⟦glyphs⟧`).
@@ -1654,11 +1674,13 @@ impl App {
                         dots.push_str("    "); // a lacuna is loss, not doubt — no underdot
                     } else if ch == text::MARK_CARTOUCHE_OPEN
                         || ch == text::MARK_CARTOUCHE_CLOSE
+                        || ch == text::MARK_BASELINE
                         || ch == '['
                         || ch == ']'
                     {
-                        // G20: the name-enclosure and the Leiden restoration brackets render as
-                        // themselves (never remapped into a script); structure — no underdot.
+                        // G20/G21: the name-enclosure, the Leiden restoration brackets, and the
+                        // palimpsest tell render as themselves (never remapped into a script);
+                        // structure — no underdot.
                         line.push(ch);
                         dots.push(' ');
                     } else {
@@ -1667,9 +1689,9 @@ impl App {
                     }
                 }
                 if revealed {
-                    out.push_str(&format!("{tag}  \u{27E6}{line}\u{27E7}\n"));
+                    out.push_str(&format!("{tag}  {lead}\u{27E6}{line}\u{27E7}\n"));
                 } else {
-                    out.push_str(&format!("{tag}  {line}\n"));
+                    out.push_str(&format!("{tag}  {lead}{line}\n"));
                 }
                 // Underdot a provisional name-reading (live attestation — re-renders as the
                 // state improves; a confirmed name loses the dots).
@@ -1678,6 +1700,22 @@ impl App {
                         out.push_str(&format!("     {dots}\n"));
                     }
                 }
+            };
+            // Most-recent first. G21: a palimpsest holds TWO adjacent entries under one
+            // find_id (surface, then under) — render them together, surface over `└`-led
+            // under, as one stacked find.
+            let mut i = c.len();
+            let mut shown = 0;
+            while i > 0 && shown < 20 {
+                i -= 1;
+                if i > 0 && c[i - 1].find_id == c[i].find_id {
+                    fmt_entry(&mut out, &c[i - 1], false); // the surface layer
+                    fmt_entry(&mut out, &c[i], true); // the older under-layer
+                    i -= 1;
+                } else {
+                    fmt_entry(&mut out, &c[i], false);
+                }
+                shown += 1;
             }
         }
         out
@@ -1829,6 +1867,7 @@ impl App {
                     erased,
                     frame: m.frame, // G20: frame instances teach/restore the crib
                     pristine: m.pristine.clone(), // G21: close reading's recovery source
+                    under: m.under.clone(), // G21: a palimpsest's under-text (deep sensing)
                 })
             })
             .collect();
@@ -1852,10 +1891,15 @@ impl App {
                     // G20: a frame cell's translation IS the frame phrase (its world glyphs
                     // already spell it verbatim); other ambient cells translate via `phrase`
                     // keyed on their original glyph count, exactly as before.
-                    let translated = match m.frame {
+                    let mut translated = match m.frame {
                         Some(_) => lexicon::frame(seed, m.cell),
                         None => lexicon::phrase(seed, m.cell, progress::glyph_count(&m.text)),
                     };
+                    // G21: a palimpsest keeps its doubled-baseline tell through translation
+                    // (the physical under-layer doesn't vanish when the surface reads).
+                    if m.under.is_some() {
+                        translated.push(text::MARK_BASELINE);
+                    }
                     (translated, text::Script::Latin, m.pos, m.height, m.color)
                 }
                 None => (m.text, m.script, m.pos, m.height, m.color),
@@ -3960,6 +4004,21 @@ fn collect_event(
         }
         _ => c.text.clone(),
     });
+    // G21: a **palimpsest** under deep sensing (on foot) collects BOTH layers — the surface
+    // (as resolved above — a worn surface still recovers under close reading) and the under-
+    // text. Below rung 2 the under-layer stays unread: a plain surface collect.
+    if let Some((under_text, under_script)) = c.under.clone() {
+        if on_foot && progress.is_sense_comprehended(progress::Sense::DeepSensing) {
+            return progress::Event::CollectPalimpsest {
+                find_id: c.find_id,
+                script: c.script,
+                text,
+                under_script,
+                under_text,
+                pos: c.pos,
+            };
+        }
+    }
     progress::Event::Collect {
         find_id: c.find_id,
         script: c.script,

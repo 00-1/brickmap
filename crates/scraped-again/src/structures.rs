@@ -122,6 +122,11 @@ pub struct Inscription {
     /// `None` for intact (nothing lost) and ⟦erased⟧ (that recovery is rung 2's, from
     /// [`hidden_text`], not from the surface).
     pub pristine: Option<String>,
+    /// G21: a **palimpsest**'s under-text `(text, script)` — an older, second composed text
+    /// beneath the surface writing (~1 in 60 eligible ambient cells; [`under_text`]). Its
+    /// billboard carries the subtle doubled-baseline **tell**; only rung 2's deep sensing
+    /// *reads* it (an on-foot collect then yields both layers).
+    pub under: Option<(String, Script)>,
 }
 
 /// G18: an inscription's seeded material condition. `Worn(mask)` — bit `i` set ⇒ the `i`-th
@@ -457,6 +462,33 @@ pub fn hidden_text(seed: u32, cell: (i32, i32)) -> (String, Script, Option<crate
     (s, script, None)
 }
 
+/// G21: a cell's **palimpsest under-text**, if it carries one — an older, second composed text
+/// beneath the surface writing (~**1 in 60** eligible ambient cells). Deterministic from a
+/// fresh, independent salt (the correlation discipline — presence must not correlate with the
+/// name/condition/frame bits, tested); the script is **deep-strata-weighted** (Runic ~2 : ~1
+/// Galactic — older layers are deeper layers) and the words come from the **ordinary lexicon**
+/// (`lexicon::phrase` under a palimpsest-salted seed; G22 will re-source them). Rungs 0–1 see
+/// only the doubled-baseline tell; rung 2's deep sensing reads it (collect yields both layers).
+pub fn under_text(seed: u32, cell: (i32, i32)) -> Option<(String, Script)> {
+    let h = hash(
+        cell.0 ^ 0x7A11,
+        cell.1 ^ 0x33E9,
+        seed.wrapping_add(0x504C_4D50), // "PLMP"
+    );
+    if !h.is_multiple_of(60) {
+        return None;
+    }
+    let script = if (h >> 8).is_multiple_of(3) {
+        Script::Galactic
+    } else {
+        Script::Runic
+    };
+    // A short older line from the ordinary lexicon, decorrelated from the surface phrase by a
+    // palimpsest-salted seed (same cell key, different world of words).
+    let words = crate::lexicon::phrase(seed ^ 0x504C_4D50, cell, 5 + ((h >> 10) % 3));
+    Some((transliterate(&words, script), script))
+}
+
 /// G21: the **revealed** form an erased site's hidden content is banked/logged as — the hidden
 /// text behind one leading gouge mark, so the codex still reads "here stood an erasure" (the
 /// resolved-gouge state) while the content pays normally (marks never pay — `glyph_count`).
@@ -610,6 +642,7 @@ pub fn colossus_label(seed: u32, p: &Placement) -> Inscription {
         condition: Condition::Intact,
         frame: None,
         pristine: None,
+        under: None,
     }
 }
 
@@ -698,6 +731,22 @@ pub fn inscriptions_near(
                     (text, worn.then_some(full))
                 }
             };
+            // G21: a plain-ambient cell may be a **palimpsest** (~1/60, independent salt) — an
+            // older under-text beneath the surface writing. Its billboard gains the subtle
+            // doubled-baseline tell cell (findable before it's readable — pinned Decision 3);
+            // the tell is appended to the pristine too, so worn recovery keeps its alignment.
+            // Names/frames/erasures carry none (an erasure hides even the under-layer).
+            let under = (name.is_none() && frame.is_none() && condition != Condition::Erased)
+                .then(|| under_text(seed, (cx, cz)))
+                .flatten();
+            let (text, pristine) = if under.is_some() {
+                (
+                    format!("{text}{}", crate::text::MARK_BASELINE),
+                    pristine.map(|p| format!("{p}{}", crate::text::MARK_BASELINE)),
+                )
+            } else {
+                (text, pristine)
+            };
             out.push(Inscription {
                 cell: (cx, cz),
                 // Float just above the surface — a small label tethered to the ground voxel.
@@ -710,6 +759,7 @@ pub fn inscriptions_near(
                 condition,
                 frame,
                 pristine,
+                under,
             });
         }
     }
@@ -1405,6 +1455,112 @@ mod tests {
             }
         }
         assert!(worn_seen > 5, "the field holds worn cells to check");
+    }
+
+    /// G21: palimpsests — ~1/60 of eligible ambient cells carry a deterministic under-text
+    /// (deep-strata script, ordinary lexicon), **independent** of the name/condition bits (the
+    /// correlation discipline); in the streamed field every palimpsest billboard ends in the
+    /// doubled-baseline tell (and its pristine keeps alignment); names/frames/erasures never
+    /// carry one.
+    #[test]
+    fn palimpsest_rate_independence_and_the_doubled_baseline_tell() {
+        let seed = 1337u32;
+        // Rate + independence over raw cells: presence must track ~1/60 overall AND among the
+        // name-gate-passing / erased-condition subsets (fresh salt ⇒ no correlation).
+        let n = 60_000i32;
+        let (mut all, mut hits, mut gate_all, mut gate_hits, mut er_all, mut er_hits) =
+            (0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
+        for i in 0..n {
+            let cell = (i, -i * 3 + 11);
+            let u = under_text(seed, cell);
+            assert_eq!(
+                under_text(seed, cell).is_some(),
+                u.is_some(),
+                "deterministic"
+            );
+            if let Some((text, script)) = &u {
+                assert!(
+                    matches!(script, Script::Runic | Script::Galactic),
+                    "under-texts are deep-strata script"
+                );
+                assert!(crate::progress::glyph_count(text) > 0);
+                assert_eq!(under_text(seed, cell).unwrap().0, *text);
+            }
+            all += 1;
+            hits += u32::from(u.is_some());
+            let h = hash(
+                cell.0 ^ 0x1111,
+                cell.1 ^ 0x2222,
+                seed.wrapping_add(0x7E47_0000),
+            );
+            if (h >> 5).is_multiple_of(6) {
+                gate_all += 1;
+                gate_hits += u32::from(u.is_some());
+            }
+            let ch = hash(
+                cell.0 ^ 0x51AB,
+                cell.1 ^ 0x2E77,
+                seed.wrapping_add(0x00C0_5D17),
+            );
+            if condition_pick(ch, 6) == Condition::Erased {
+                er_all += 1;
+                er_hits += u32::from(u.is_some());
+            }
+        }
+        let rate = hits as f32 / all as f32;
+        assert!(
+            (0.010..=0.024).contains(&rate),
+            "~1/60 of cells carry an under-text, got {rate}"
+        );
+        for (sub_hits, sub_all, what) in [
+            (gate_hits, gate_all, "name-gated"),
+            (er_hits, er_all, "erased-condition"),
+        ] {
+            assert!(sub_all > 500, "need a large {what} sample");
+            let sub = sub_hits as f32 / sub_all as f32;
+            assert!(
+                (sub - rate).abs() < 0.012,
+                "palimpsest bits correlate with the {what} bits ({sub} vs {rate})"
+            );
+        }
+        // The streamed field: palimpsests are ambient-only and carry the tell; nothing else does.
+        let g = |_x: f32, _z: f32| 0.0;
+        let marks = inscriptions_near(seed, Vec3::ZERO, 3000.0, g);
+        let tells = marks.iter().filter(|m| m.under.is_some()).count();
+        assert!(tells >= 3, "the field holds palimpsests, got {tells}");
+        for m in &marks {
+            match &m.under {
+                Some((text, script)) => {
+                    assert!(m.name.is_none() && m.frame.is_none(), "ambient only");
+                    assert_ne!(
+                        m.condition,
+                        Condition::Erased,
+                        "an erasure hides all layers"
+                    );
+                    assert!(
+                        m.text.ends_with(crate::text::MARK_BASELINE),
+                        "the billboard carries the doubled-baseline tell: {:?}",
+                        m.text
+                    );
+                    assert_eq!((text.clone(), *script), under_text(seed, m.cell).unwrap());
+                    // A worn palimpsest still recovers (the tell kept the alignment).
+                    if let Some(p) = &m.pristine {
+                        assert!(p.ends_with(crate::text::MARK_BASELINE));
+                        assert!(recover_worn(&m.text, p).is_some());
+                    }
+                }
+                None => assert!(
+                    !m.text.contains(crate::text::MARK_BASELINE),
+                    "the tell means palimpsest, nothing else: {:?}",
+                    m.text
+                ),
+            }
+        }
+        // The tell is structure: it never pays.
+        assert_eq!(
+            crate::progress::glyph_count(&format!("AB{}", crate::text::MARK_BASELINE)),
+            2
+        );
     }
 
     /// G21 rung 2: `hidden_text` is deterministic, **deep-weighted** (Runic/Galactic data —

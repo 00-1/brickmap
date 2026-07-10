@@ -356,6 +356,8 @@ pub struct Collectible {
     pub frame: Option<u64>,
     /// G21: a worn inscription's pre-weathered composition (close reading's recovery source).
     pub pristine: Option<String>,
+    /// G21: a palimpsest's under-text `(text, script)` — deep sensing reads it on foot.
+    pub under: Option<(String, Script)>,
 }
 
 /// A stable, deterministic id for an inscription find — a function of its grid cell + script +
@@ -395,6 +397,7 @@ pub fn glyph_count(text: &str) -> u32 {
                 && *c != crate::text::MARK_GOUGE
                 && *c != crate::text::MARK_CARTOUCHE_OPEN
                 && *c != crate::text::MARK_CARTOUCHE_CLOSE
+                && *c != crate::text::MARK_BASELINE
                 && *c != '['
                 && *c != ']'
         })
@@ -424,6 +427,18 @@ pub enum Event {
         find_id: u64,
         script: Script,
         text: String,
+        pos: [f32; 3],
+    },
+    /// G21: collect a **palimpsest** with deep sensing, on foot — both layers bank (surface +
+    /// under, each into its own script's stratum) and the codex logs them **stacked**: two
+    /// entries under one `find_id`, surface first (rendered as one layered find). Rungs 0–1
+    /// collect the surface only (a plain [`Event::Collect`]); the under-layer stays unread.
+    CollectPalimpsest {
+        find_id: u64,
+        script: Script,
+        text: String,
+        under_script: Script,
+        under_text: String,
         pos: [f32; 3],
     },
     /// G21 rung 2: **reveal** an ⟦erased⟧ inscription's hidden content (deep sensing, on foot).
@@ -798,6 +813,36 @@ impl Progress {
                 // G21: the first erased log is the frustration event that discovers **deep
                 // sensing** — the gouge that yields nothing teaches what's still missing.
                 self.senses_discovered.insert(Sense::DeepSensing);
+                true
+            }
+            // G21: a palimpsest collect (deep sensing, on foot) banks BOTH layers and logs them
+            // stacked — two codex entries sharing one find_id, surface first. Dedups like any
+            // collect. The surface may be a worn recovery (lacunae banked → close reading's
+            // frustration event still teaches).
+            Event::CollectPalimpsest {
+                find_id,
+                script,
+                text,
+                under_script,
+                under_text,
+                pos,
+            } => {
+                if !self.seen.insert(*find_id) {
+                    return false; // already collected
+                }
+                self.strata.add(*script, glyph_count(text));
+                self.strata.add(*under_script, glyph_count(under_text));
+                for (s, t) in [(script, text), (under_script, under_text)] {
+                    self.codex.push(CodexEntry {
+                        find_id: *find_id,
+                        script: *s,
+                        text: t.clone(),
+                        pos: *pos,
+                    });
+                }
+                if text.chars().any(|c| c == crate::text::MARK_LACUNA) {
+                    self.senses_discovered.insert(Sense::CloseReading);
+                }
                 true
             }
             // G21 rung 2: reveal an erasure's hidden content. A **logged** gouge resolves its
@@ -2335,6 +2380,40 @@ mod tests {
         let back = Progress::decode(&p.encode());
         assert_eq!(back, p);
         assert!(!back.erased_unresolved(9));
+    }
+
+    /// G21: `CollectPalimpsest` banks **both layers** into their own strata and logs them
+    /// stacked (two codex entries, one `find_id`, surface first); dedups like any collect; a
+    /// worn surface still fires close reading's frustration event; rides the share round-trip.
+    #[test]
+    fn collect_palimpsest_banks_both_layers_and_stacks_the_codex() {
+        let mut p = Progress::default();
+        let ev = Event::CollectPalimpsest {
+            find_id: 21,
+            script: Script::Greek,
+            text: format!("ΑΒ{}Δ", crate::text::MARK_LACUNA), // a worn surface (3 survivors)
+            under_script: Script::Runic,
+            under_text: "ᚠᚢᚦᚨ".into(),
+            pos: [1.0, 2.0, 3.0],
+        };
+        assert!(p.apply(&ev));
+        assert_eq!(p.strata.schematics, yield_amount(Script::Greek, 3));
+        assert_eq!(p.strata.relics, yield_amount(Script::Runic, 4));
+        assert_eq!(p.collected_count(), 2, "two layers, two entries");
+        assert_eq!(p.codex[0].find_id, p.codex[1].find_id, "one find, stacked");
+        assert_eq!(p.codex[0].script, Script::Greek, "surface first");
+        assert_eq!(p.codex[1].script, Script::Runic);
+        assert!(
+            p.is_sense_discovered(Sense::CloseReading),
+            "a worn surface still teaches close reading"
+        );
+        // Dedup: the same site never double-banks.
+        assert!(!p.apply(&ev));
+        assert_eq!(p.collected_count(), 2);
+        // Round-trip.
+        let back = Progress::decode(&p.encode());
+        assert_eq!(back, p);
+        assert_eq!(back.codex.len(), 2);
     }
 
     /// G21: the sensing ladder rides `pg=` **v11** (discovered + comprehended + an in-progress
