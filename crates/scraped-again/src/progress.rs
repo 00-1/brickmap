@@ -226,6 +226,18 @@ impl Strata {
     }
 }
 
+/// G18: how far a discovered block's **reading** is trusted — the uncertainty layer. A name
+/// collected once is a *hypothesis* (`Provisional`); it's `Confirmed` by a **second sighting**
+/// (another inscription bearing the same name) or **behaviorally** (the first successful
+/// execution of the block after comprehension — the machine answering IS the confirmation).
+/// Display + one gentle lit-goal nudge only: nothing mechanical gates on `Provisional`
+/// (Decision 1 — the no-softlock invariant; allocation/research stay open).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Attestation {
+    Provisional,
+    Confirmed,
+}
+
 /// One recorded find in the codex.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CodexEntry {
@@ -245,6 +257,9 @@ pub struct Collectible {
     pub pos: [f32; 3],
     /// G9: this inscription **names a block** — collecting it discovers that block in the console.
     pub name: Option<crate::console::Block>,
+    /// G18: an ⟦erased⟧ inscription — collecting it yields nothing but **logs the erasure event**
+    /// in the codex (content unrecoverable until G20's sensing ladder).
+    pub erased: bool,
 }
 
 /// A stable, deterministic id for an inscription find — a function of its grid cell + script +
@@ -271,9 +286,15 @@ pub fn find_id(cell: (i32, i32), script: Script, text: &str) -> u64 {
     h
 }
 
-/// Glyph count (non-space) of an inscription's text — the yield/length input.
+/// Glyph count (non-space) of an inscription's text — the yield/length input. G18: the generic
+/// damage marks (a lacuna where a glyph eroded away, the gouge of a deliberate erasure) carry no
+/// data, so a **worn** inscription yields proportionally less (only its surviving glyphs pay).
 pub fn glyph_count(text: &str) -> u32 {
-    text.chars().filter(|c| !c.is_whitespace()).count() as u32
+    text.chars()
+        .filter(|c| {
+            !c.is_whitespace() && *c != crate::text::MARK_LACUNA && *c != crate::text::MARK_GOUGE
+        })
+        .count() as u32
 }
 
 /// A serializable world-mutating event (mirrors `edit::Edit`). The whole collection story
@@ -289,8 +310,18 @@ pub enum Event {
         pos: [f32; 3],
     },
     /// G9: **discover** a block — its name was collected from a name-bearing inscription, so the
-    /// console lists it (still stratum-locked until decoded).
+    /// console lists it (still stratum-locked until decoded). G18: applying it to an
+    /// already-discovered block is a **second sighting** — it upgrades the reading
+    /// Provisional → Confirmed (the "dupes yield normally" path gained one line).
     Discover { block: crate::console::Block },
+    /// G18: collect an ⟦erased⟧ inscription — **logs the erasure event** in the codex (site,
+    /// stratum, the gouge) but banks nothing (content unrecoverable until G20's sensing ladder).
+    CollectErased {
+        find_id: u64,
+        script: Script,
+        text: String,
+        pos: [f32; 3],
+    },
     /// G10: collect a world **shard** — banks its rarity yield + counts it by domain×rarity.
     CollectShard {
         domain: Stratum,
@@ -317,6 +348,11 @@ pub struct Progress {
     /// implicitly always discovered — see [`Progress::is_discovered`] — so this set only carries
     /// the gated vocabulary, and pre-G9 payloads load as starter-only.
     discovered: std::collections::HashSet<crate::console::Block>,
+    /// G18: discovered blocks whose reading is **confirmed** (second sighting or first use after
+    /// comprehension). A discovered block absent here is *provisional* — see
+    /// [`Progress::attestation`]. Starters are implicitly confirmed (their names were never
+    /// hypotheses), so this only carries the gated vocabulary. Display-only state (Decision 1).
+    confirmed: std::collections::HashSet<crate::console::Block>,
     /// G15: blocks whose **research filled** → comprehended (usable). Replaces G9's
     /// decode-a-stratum-unlocks-all gate with per-block research. Starters are implicitly
     /// comprehended (see [`Progress::is_block_comprehended`]); this set carries the gated blocks
@@ -499,6 +535,42 @@ impl Progress {
         self.discovered.iter().copied()
     }
 
+    // ---- G18: the uncertainty layer (attestation) ---------------------------------------------
+
+    /// G18: how far this block's reading is trusted. `None` = not discovered yet; starters are
+    /// implicitly `Confirmed` (their vocabulary was never a field hypothesis); a gated block is
+    /// `Provisional` from its first name-collect until a second sighting or first use confirms it.
+    pub fn attestation(&self, b: crate::console::Block) -> Option<Attestation> {
+        if b.required().is_none() {
+            return Some(Attestation::Confirmed);
+        }
+        if !self.discovered.contains(&b) {
+            return None;
+        }
+        Some(if self.confirmed.contains(&b) {
+            Attestation::Confirmed
+        } else {
+            Attestation::Provisional
+        })
+    }
+
+    /// G18: **behavioral confirmation** — the first successful *execution* of a comprehended
+    /// block confirms its reading (the world-as-oracle rule: the machine answering IS the
+    /// confirmation). Called from the app's dispatch sites; idempotent. Returns `true` on the
+    /// Provisional → Confirmed edge.
+    pub fn confirm_block_use(&mut self, b: crate::console::Block) -> bool {
+        if b.required().is_none() || !self.discovered.contains(&b) || !self.is_block_comprehended(b)
+        {
+            return false;
+        }
+        self.confirmed.insert(b)
+    }
+
+    /// G18: the confirmed gated blocks (for syncing the console's attestation view).
+    pub fn confirmed_blocks(&self) -> impl Iterator<Item = crate::console::Block> + '_ {
+        self.confirmed.iter().copied()
+    }
+
     /// Apply an event. Returns `true` if it changed state (a new find), `false` on a
     /// duplicate collect (no-op — the de-dup that keeps strata/codex stable).
     pub fn apply(&mut self, ev: &Event) -> bool {
@@ -521,13 +593,38 @@ impl Progress {
                 });
                 true
             }
-            // G9: a block name recovered. Idempotent — re-collecting an already-discovered name
-            // is a normal collect (the Collect event above still banks its data).
+            // G9: a block name recovered — first sighting discovers (a provisional reading).
+            // G18: a *second* sighting of an already-discovered name confirms it (still a normal
+            // collect for yield — the Collect event above banks its data either way). A starter's
+            // name is never a hypothesis, so it stays a full no-op.
             Event::Discover { block } => {
-                if self.is_discovered(*block) {
+                if block.required().is_none() {
                     return false;
                 }
-                self.discovered.insert(*block)
+                if self.discovered.insert(*block) {
+                    true // first sighting → Provisional
+                } else {
+                    self.confirmed.insert(*block) // second sighting → Confirmed (once)
+                }
+            }
+            // G18: an ⟦erased⟧ inscription — log the erasure event (site, stratum, the gouge)
+            // in the codex; nothing banks (its content is unrecoverable until G20).
+            Event::CollectErased {
+                find_id,
+                script,
+                text,
+                pos,
+            } => {
+                if !self.seen.insert(*find_id) {
+                    return false; // already logged
+                }
+                self.codex.push(CodexEntry {
+                    find_id: *find_id,
+                    script: *script,
+                    text: text.clone(),
+                    pos: *pos,
+                });
+                true
             }
             // G10/G15: bank a shard (lifetime tally, no dedup) AND — G15 allocate-and-fill — credit
             // it to the active research target. A **block** draws its own stratum's domain
@@ -645,7 +742,7 @@ impl Progress {
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(7u8); // version (…; 5 = + shards/faculties G10; 6 = + research G15; 7 = + carry/cache G17)
+        b.push(8u8); // version (…; 6 = + research G15; 7 = + carry/cache G17; 8 = + attestation G18)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -713,6 +810,11 @@ impl Progress {
                 }
             }
         }
+        // v8: the G18 attestation — confirmed block codes (sorted for a stable encoding).
+        let mut conf: Vec<u8> = self.confirmed.iter().map(|x| x.code()).collect();
+        conf.sort_unstable();
+        b.push(conf.len() as u8);
+        b.extend_from_slice(&conf);
         format!("pg={}", to_hex(&b))
     }
 
@@ -763,7 +865,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if !(1..=7).contains(&version) {
+    if !(1..=8).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -870,6 +972,23 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             }
         }
     }
+    // v8: the G18 attestation (confirmed block codes; unknown codes skipped — lenient). Pre-v8
+    // migration: a comprehended block loads **Confirmed** (its use already answered), a
+    // merely-discovered one **Provisional** — i.e. confirmed = discovered ∩ comprehended.
+    let mut confirmed = std::collections::HashSet::new();
+    if version >= 8 {
+        let cc = *take(&mut p, 1)?.first()?;
+        for _ in 0..cc {
+            if let Some(blk) = crate::console::Block::from_code(*take(&mut p, 1)?.first()?) {
+                confirmed.insert(blk);
+            }
+        }
+    } else {
+        confirmed = discovered
+            .intersection(&comprehended_blocks)
+            .copied()
+            .collect();
+    }
     Some(Progress {
         strata,
         codex,
@@ -877,6 +996,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         scanned,
         comprehended,
         discovered,
+        confirmed,
         shard_bank,
         shard_counts,
         faculties,
@@ -919,6 +1039,7 @@ impl PartialEq for Progress {
             && self.scanned == other.scanned
             && self.comprehended == other.comprehended
             && self.discovered == other.discovered
+            && self.confirmed == other.confirmed
             && self.shard_bank == other.shard_bank
             && self.shard_counts == other.shard_counts
             && self.faculties == other.faculties
@@ -1093,11 +1214,16 @@ mod tests {
         // Starters are always discovered (the opening is untouched); gated blocks aren't.
         assert!(p.is_discovered(Block::Collect));
         assert!(!p.is_discovered(Block::Seek));
-        // Discovering a gated block applies once; the dupe is a no-op (a normal re-collect).
+        // Discovering a gated block applies once (→ a provisional reading, G18)…
         assert!(p.apply(&Event::Discover { block: Block::Seek }));
         assert!(p.is_discovered(Block::Seek));
+        assert_eq!(p.attestation(Block::Seek), Some(Attestation::Provisional));
+        // …the second sighting applies once more (→ confirms the reading)…
+        assert!(p.apply(&Event::Discover { block: Block::Seek }));
+        assert_eq!(p.attestation(Block::Seek), Some(Attestation::Confirmed));
+        // …and any further sighting is a plain no-op (a normal re-collect).
         assert!(!p.apply(&Event::Discover { block: Block::Seek }));
-        // Discovering a starter is always a no-op (already known).
+        // Discovering a starter is always a no-op (already known, never a hypothesis).
         assert!(!p.apply(&Event::Discover {
             block: Block::Collect
         }));
@@ -1422,6 +1548,157 @@ mod tests {
             1,
             "v6 economy still loads"
         );
+    }
+
+    /// G18: attestation transitions — provisional on first sighting; confirmed by a second
+    /// sighting OR by first use after comprehension (never by comprehension alone); idempotent;
+    /// starters implicitly confirmed; **no mechanical gate** on provisional (Decision 1).
+    #[test]
+    fn attestation_both_confirmation_paths_and_no_gate() {
+        use crate::console::Block;
+        use crate::shards::Rarity;
+        let mut p = Progress::default();
+        // Starters were never hypotheses; undiscovered gated blocks have no reading at all.
+        assert_eq!(p.attestation(Block::Collect), Some(Attestation::Confirmed));
+        assert_eq!(p.attestation(Block::Seek), None);
+        assert!(!p.confirm_block_use(Block::Collect), "starters no-op");
+        assert!(
+            !p.confirm_block_use(Block::Seek),
+            "undiscovered can't attest"
+        );
+        // Path (a): second sighting. First collect → Provisional…
+        p.apply(&Event::Discover { block: Block::Seek });
+        assert_eq!(p.attestation(Block::Seek), Some(Attestation::Provisional));
+        // …and NO gate: a provisional block allocates as a research target (no softlock).
+        assert!(
+            p.allocate(ResearchTarget::Block(Block::Seek)),
+            "provisional blocks research freely (Decision 1)"
+        );
+        p.apply(&Event::Discover { block: Block::Seek });
+        assert_eq!(p.attestation(Block::Seek), Some(Attestation::Confirmed));
+        // Path (b): behavioral. Discover + comprehend another block; comprehension alone does
+        // NOT confirm — the first *use* does (the machine answering is the confirmation).
+        let b = Block::RunFoot;
+        p.apply(&Event::Discover { block: b });
+        assert!(
+            !p.confirm_block_use(b),
+            "uncomprehended use attests nothing"
+        );
+        p.allocate(ResearchTarget::Block(b));
+        let mut guard = 0;
+        while !p.is_block_comprehended(b) && guard < 10_000 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Relics,
+                rarity: Rarity::Rare,
+            });
+            guard += 1;
+        }
+        assert_eq!(
+            p.attestation(b),
+            Some(Attestation::Provisional),
+            "comprehension alone leaves the reading provisional"
+        );
+        assert!(p.confirm_block_use(b), "first use confirms");
+        assert_eq!(p.attestation(b), Some(Attestation::Confirmed));
+        assert!(!p.confirm_block_use(b), "idempotent (edge, not level)");
+    }
+
+    /// G18: attestation round-trips through `pg=` v8; a pre-v8 payload migrates append-only —
+    /// comprehended → Confirmed, merely-discovered → Provisional.
+    #[test]
+    fn attestation_round_trips_v8_and_v7_payloads_migrate() {
+        use crate::console::Block;
+        use crate::shards::Rarity;
+        let mut p = Progress::default();
+        p.apply(&Event::Discover { block: Block::Seek }); // provisional
+        p.apply(&Event::Discover {
+            block: Block::Circle,
+        });
+        p.apply(&Event::Discover {
+            block: Block::Circle,
+        }); // confirmed by sighting
+        p.apply(&Event::Discover {
+            block: Block::RunFoot,
+        });
+        p.allocate(ResearchTarget::Block(Block::RunFoot));
+        let mut guard = 0;
+        while !p.is_block_comprehended(Block::RunFoot) && guard < 10_000 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Relics,
+                rarity: Rarity::Rare,
+            });
+            guard += 1;
+        }
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p, "v8 attestation round-trips");
+        assert_eq!(
+            back.attestation(Block::Seek),
+            Some(Attestation::Provisional)
+        );
+        assert_eq!(
+            back.attestation(Block::Circle),
+            Some(Attestation::Confirmed)
+        );
+        // Rebuild the same payload as v7 (strip the appended confirmed tail, restamp): the
+        // migration confirms the comprehended block, leaves the merely-discovered provisional.
+        let v7_hex = {
+            let hex = p.encode();
+            let hex = hex.strip_prefix("pg=").unwrap();
+            let mut bytes = super::from_hex(hex).unwrap();
+            let conf = p.confirmed.len();
+            bytes.truncate(bytes.len() - 1 - conf); // the v8 tail: count byte + codes
+            bytes[0] = 7;
+            super::to_hex(&bytes)
+        };
+        let v7 = Progress::decode(&format!("pg={v7_hex}"));
+        assert_eq!(
+            v7.attestation(Block::RunFoot),
+            Some(Attestation::Confirmed),
+            "pre-v8 comprehended → Confirmed"
+        );
+        assert_eq!(
+            v7.attestation(Block::Seek),
+            Some(Attestation::Provisional),
+            "pre-v8 merely-discovered → Provisional"
+        );
+    }
+
+    /// G18: the damage marks carry no data — a worn text yields only its surviving glyphs; the
+    /// erased-collect event logs the gouge in the codex without banking anything.
+    #[test]
+    fn worn_yields_less_and_erased_logs_without_yield() {
+        let full = "ΑΒΓΔΕΖ";
+        let worn: String = format!(
+            "ΑΒ{}Δ{}Ζ",
+            crate::text::MARK_LACUNA,
+            crate::text::MARK_LACUNA
+        );
+        assert_eq!(glyph_count(full), 6);
+        assert_eq!(glyph_count(&worn), 4, "lacunae don't count");
+        assert!(
+            yield_amount(Script::Greek, glyph_count(&worn))
+                < yield_amount(Script::Greek, glyph_count(full)),
+            "worn yield drops with the lost glyphs"
+        );
+        // Erased: the event dedups, logs a codex entry, banks nothing.
+        let mut p = Progress::default();
+        let gouge: String = std::iter::repeat_n(crate::text::MARK_GOUGE, 3).collect();
+        assert_eq!(glyph_count(&gouge), 0);
+        let ev = Event::CollectErased {
+            find_id: 99,
+            script: Script::Runic,
+            text: gouge,
+            pos: [1.0, 2.0, 3.0],
+        };
+        assert!(p.apply(&ev));
+        assert_eq!(p.strata.total(), 0, "an erasure banks nothing");
+        assert_eq!(p.collected_count(), 1, "…but the event is logged");
+        assert!(p.has(99), "the site is spent");
+        assert!(!p.apply(&ev), "logging dedups like any collect");
+        // The logged erasure survives the share round-trip.
+        let back = Progress::decode(&p.encode());
+        assert_eq!(back, p);
+        assert!(crate::structures::is_erased_text(&back.codex[0].text));
     }
 
     #[test]

@@ -472,7 +472,10 @@ impl Trigger {
         match self {
             Trigger::Continuous => "every tick".to_string(),
             Trigger::OnScan => "on scan".to_string(),
-            Trigger::When(c) => format!("when {} ≥ {}", c.state.label(), c.min),
+            // G18 (the pinned §I.2 rider): the *state* trigger displays as `while` — it holds
+            // while a condition holds, unlike the `on-…` event triggers. Display only: the
+            // `co=` codec (`w:`/`wS`/`wY`/`wK`) and the rising-edge semantics are untouched.
+            Trigger::When(c) => format!("while {} ≥ {}", c.state.label(), c.min),
             Trigger::OnArrive => "on arrive".to_string(),
         }
     }
@@ -719,6 +722,10 @@ pub struct Console {
     /// world before it's even *listed*. Starters are implicitly discovered (see
     /// [`Console::is_discovered`]), so this only carries the gated vocabulary.
     pub discovered: HashSet<Block>,
+    /// G18: **confirmed** readings (synced from `progress`) — a discovered gated block absent
+    /// here is *provisional* and renders with the underdot sub-mark (Leiden display grammar).
+    /// Starters are implicitly confirmed. Display-only (nothing gates on it — Decision 1).
+    pub confirmed: HashSet<Block>,
     /// G11: the app's clock (set each frame before `tick`) — drives last-fired age + yield rates.
     pub now: f32,
     /// G13: per-agent rolling memory of the player's last manual block actions (session-local,
@@ -785,6 +792,7 @@ impl Default for Console {
             ],
             comprehended: HashSet::new(),
             discovered: HashSet::new(),
+            confirmed: HashSet::new(),
             now: 0.0,
             traces: std::collections::HashMap::new(),
             active_agent: Agent::Ship,
@@ -830,6 +838,12 @@ impl Console {
     /// opening + given routines are untouched.
     pub fn is_unlocked(&self, b: Block) -> bool {
         self.is_discovered(b) && (b.required().is_none() || self.comprehended.contains(&b))
+    }
+
+    /// G18: is this block's reading **confirmed**? Starters always (never hypotheses); a gated
+    /// block once a second sighting or first use attested it. Purely display (Decision 1).
+    pub fn is_confirmed(&self, b: Block) -> bool {
+        b.required().is_none() || self.confirmed.contains(&b)
     }
 
     /// G15: has the player cracked *any* of stratum `s`'s vocabulary — i.e. comprehended a block
@@ -1975,7 +1989,21 @@ impl Console {
         }
         // (G15b: the old "affordable faculty" prompt is gone — faculties are research targets now;
         // a faculty under research shows via the active-research headline above.)
-        best.map(|(_, label)| label)
+        if let Some((_, label)) = best {
+            return Some(label);
+        }
+        // G18: the gentle attestation nudge (lowest priority — texture, not a quest log): a
+        // comprehended-but-unconfirmed reading suggests its behavioral confirmation ("use once" —
+        // minimal-English instrumentation; the name stays its glyph cluster).
+        Block::ALL
+            .iter()
+            .copied()
+            .find(|b| {
+                b.required().is_some()
+                    && p.is_block_comprehended(*b)
+                    && p.attestation(*b) == Some(crate::progress::Attestation::Provisional)
+            })
+            .map(|b| format!("{}: use once", b.glyphs()))
     }
 
     // ---- render -----------------------------------------------------------------------------
@@ -2066,13 +2094,21 @@ impl Console {
             } else {
                 String::new()
             };
+            // G18: a provisional reading (discovered, unconfirmed) carries the underdot sub-mark
+            // directly after its glyph cluster — the Leiden certainty gradient on the HUD path
+            // (a mark annotating glyphs, never a word). Confirmed names render clean.
+            let mark = if !self.is_confirmed(b) {
+                String::from(crate::text::MARK_UNDERDOT)
+            } else {
+                String::new()
+            };
             // Dim a found-but-locked name (lowercase-dotted) so it reads as known-of, not usable.
             // G12: the block shows by its glyph-name; the `(locked: decode SCH)` tag stays
             // minimal-English instrumentation (a stratum gauge, not the block's vocabulary).
             if !self.is_unlocked(b) && b.required().is_some() {
-                s.push_str(&format!("{cur} · {}{}\n", b.glyph_label(), tag));
+                s.push_str(&format!("{cur} · {}{mark}{}\n", b.glyph_label(), tag));
             } else {
-                s.push_str(&format!("{cur} {}{}\n", b.glyph_label(), tag));
+                s.push_str(&format!("{cur} {}{mark}{}\n", b.glyph_label(), tag));
             }
             row += 1;
         }
@@ -2791,6 +2827,83 @@ mod tests {
         assert!(
             !goal.contains("seek"),
             "no English block name in the goal: {goal}"
+        );
+    }
+
+    /// G18: the gentle attestation nudge — a comprehended-but-unconfirmed reading lights the
+    /// goal ("use once", named by its glyphs), at the **lowest** priority: active research and
+    /// near-done thresholds outrank it, and a confirmed reading clears it.
+    #[test]
+    fn lit_goal_nudges_a_comprehended_unconfirmed_reading() {
+        use crate::progress::{Event, Progress, ResearchTarget, Stratum};
+        use crate::shards::Rarity;
+        let c = Console::default();
+        let mut p = Progress::default();
+        p.apply(&Event::Discover { block: Block::Seek });
+        p.allocate(ResearchTarget::Block(Block::Seek));
+        let mut guard = 0;
+        while !p.is_block_comprehended(Block::Seek) && guard < 10_000 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Schematics,
+                rarity: Rarity::Rare,
+            });
+            guard += 1;
+        }
+        // Comprehended, unconfirmed, nothing else pending → the nudge.
+        let goal = c.lit_goal(&p).expect("the attestation nudge lights");
+        assert!(
+            goal.contains(&Block::Seek.glyphs()) && goal.contains("use once"),
+            "nudges the unconfirmed reading by its glyphs: {goal}"
+        );
+        assert!(!goal.contains("seek"), "no English name: {goal}");
+        // First use confirms → the nudge clears (nothing else qualifies).
+        assert!(p.confirm_block_use(Block::Seek));
+        assert_eq!(c.lit_goal(&p), None, "a confirmed reading clears the nudge");
+    }
+
+    /// G18 rider (§I.2): the state trigger's **display** label is `while …` now (it names a held
+    /// condition, unlike the `on-…` event triggers); the `co=` codec is untouched.
+    #[test]
+    fn state_trigger_displays_as_while_and_codec_is_untouched() {
+        let t = Trigger::When(Cond {
+            state: State::Carry,
+            min: 100,
+        });
+        assert_eq!(t.label(), "while carry ≥ 100");
+        assert!(!t.label().contains("when"));
+        // Event triggers keep their on-… labels.
+        assert_eq!(Trigger::OnScan.label(), "on scan");
+        assert_eq!(Trigger::OnArrive.label(), "on arrive");
+        // Display-only: the codec still writes/reads the historic `w…` codes.
+        assert_eq!(Console::trigger_code(t), "wY:100");
+        assert_eq!(Console::parse_trigger("wY:100"), t);
+    }
+
+    /// G18: a provisional (discovered, unconfirmed) block renders the underdot sub-mark after its
+    /// glyph cluster on the home palette; confirming it (synced from progress) removes the mark.
+    /// The mark is HUD-renderable (never a fallback dot) and annotates glyphs, not words.
+    #[test]
+    fn provisional_blocks_render_the_underdot_mark() {
+        let mark = crate::text::MARK_UNDERDOT;
+        assert!(
+            crate::text::overlay_glyph(mark).is_some(),
+            "the underdot mark renders on the HUD glyph path"
+        );
+        let mut c = Console::default();
+        c.discovered.insert(Block::Seek); // provisional: discovered, not confirmed
+        assert!(!c.is_confirmed(Block::Seek));
+        let marked = format!("{}{}", Block::Seek.glyph_label(), mark);
+        assert!(
+            c.render_home().contains(&marked),
+            "a provisional reading is underdotted in the palette"
+        );
+        // Confirmation (as synced from progress) clears the mark; starters never carry it.
+        c.confirmed.insert(Block::Seek);
+        assert!(c.is_confirmed(Block::Seek));
+        assert!(!c.render_home().contains(mark), "confirmed renders clean");
+        assert!(
+            c.is_confirmed(Block::Collect),
+            "starters implicitly confirmed"
         );
     }
 

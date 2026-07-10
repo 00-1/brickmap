@@ -61,7 +61,7 @@ players climb it (the management game), hands-on players live near the bottom. S
 - **Upgrades** — passive boosts (sharper scan, bigger buffer, longer beam) bought with a
   spendable resource. They're not outside the substrate: **acquiring one is just the
   `spend-shard(target)` action** — so upgrades, too, can be triggered by hand or automated
-  (`when shards ≥ N → spend-shard(sensing)`). Normal upgrade *menus* are simply the
+  (`while shards ≥ N → spend-shard(sensing)`). Normal upgrade *menus* are simply the
   collection of spend-targets, shown as blocks.
 
 > **◑ Realised in G6:** `decode` spends a stratum's data to comprehend it, which gates the
@@ -102,6 +102,12 @@ The interest is **learning the machine's idiom**, not solving for a right answer
   you **experiment** (click it, watch what happens, combine it) to learn what it does. *This*
   is the "figure out how it works": learn-by-operating, not reading a man-page. Opacity is
   bounded because the vocabulary grows one block at a time from a tiny starter set.
+- **A found name is a hypothesis, not a fact (G18).** A block's reading starts *provisional*
+  (underdotted in the codex/console — the Leiden certainty gradient) and is **confirmed** by
+  seeing the same name a second time anywhere, or by the block's first successful execution
+  after comprehension — *the machine answering is the confirmation* (world-as-oracle: no UI
+  judgment, no red X). Nothing mechanical gates on provisional — it's texture, plus one
+  gentle lit-goal nudge ("use once").
 - It stays a **sandbox, not a puzzle**: no syntax to get wrong, no single solution, results
   immediately visible, no fail-state. You compose what *you* want; mastery is fluency.
 
@@ -216,8 +222,9 @@ picker/steppers; `decode`/`hail`/`on-arrive` + more match-fields land in G6/G7.)
 - **Actions:** `scanMany` (ship — scan several item types at once, not one) · `land` /
   `ascend` (ship) · `disembark` (ship↔foot)
 - **Nav:** `survey(region)` (sweep a picked region) · `route(sites)` (run a circuit) · `hold`
-- **Trigger:** `when(state)` — economy/world thresholds via pickers (`shards ≥ N`,
-  `buffer ≥ %`, in-range)
+- **Trigger:** `while(state)` — economy/world thresholds via pickers (`shards ≥ N`,
+  `buffer ≥ %`, in-range). *(G18 rider: displayed as `while` — it names a held condition,
+  unlike the `on-…` event triggers; historically written `when(state)`, codec unchanged.)*
 - **Control:** `budget(resource, %)` · `cap` · `priority`
 
 ### Tier 3 — "meta & the expedition" (deep, rare-stratum-gated)
@@ -245,7 +252,7 @@ and the deepest automation leans on the manual expeditions that yield rare strat
 - **Start (given):** `scan(shards) → on-scan → collect`, alongside `drift`.
 - **Tier 1:** swap to `scan(Runic) → on-scan → match(uncollected) → collect`; nav `seek(uncollected)`.
 - **Tier 2:** `repeat: on-scan → match(uncollected & buffer < 90%) → collect` + standing
-  `when shards ≥ 50 → spend(sensing)` + `budget: 60% Records → faculties`; nav
+  `while shards ≥ 50 → spend(sensing)` + `budget: 60% Records → faculties`; nav
   `route(pinned sites)`.
 - **Tier 3 (automated expedition):** ship `goto(nearest uncollected) → land → run(foot:
   "sweep") → on-complete → ascend → repeat`; foot "sweep" `repeat: fire-beam(nearest

@@ -107,8 +107,118 @@ pub struct Inscription {
     pub height: f32,
     pub color: [f32; 3],
     /// G9: this inscription spells a **block's name** — collecting it discovers the block.
-    /// `None` = ambient glyph-noise (the melancholy majority).
+    /// `None` = ambient glyph-noise (the melancholy majority). An ⟦erased⟧ inscription never
+    /// carries a name (its content — name or noise — is unrecoverable, G18).
     pub name: Option<crate::console::Block>,
+    /// G18: the inscription's seeded material **condition** (already applied to `text`).
+    pub condition: Condition,
+}
+
+/// G18: an inscription's seeded material condition. `Worn(mask)` — bit `i` set ⇒ the `i`-th
+/// non-space glyph position is lost to a lacuna (rendered as the engine's generic lacuna mark;
+/// data yield drops with the surviving glyphs). `Erased` — deliberately struck out: the billboard
+/// shows a gouge cluster, collecting yields nothing but logs the event (the G20 sensing-ladder
+/// hook). Deterministic per cell from a **fresh-salt hash, independent of the name-gate bits**
+/// (the G10 correlation lesson — tested).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Condition {
+    Intact,
+    Worn(u32),
+    Erased,
+}
+
+/// G18: pick a condition from an (independent) hash for a text of `glyphs` non-space positions.
+/// Mix: ~70% intact / ~27% worn / ~3% erased (Decision 2 placeholders; the feel pass tunes).
+/// A worn mask always loses ≥1 glyph and keeps ≥1 survivor (a 1-glyph text can't be part-worn,
+/// so it stays intact rather than degenerate to fully-lost).
+fn condition_pick(ch: u32, glyphs: usize) -> Condition {
+    match ch % 100 {
+        0..=69 => Condition::Intact,
+        70..=96 => {
+            let n = glyphs.min(32) as u32;
+            if n < 2 {
+                return Condition::Intact;
+            }
+            // ~1/3 of positions lost, via a per-position xorshift stream off the hash.
+            let mut s = (ch >> 7) | 1;
+            let mut mask = 0u32;
+            for i in 0..n {
+                s ^= s << 13;
+                s ^= s >> 17;
+                s ^= s << 5;
+                if s.is_multiple_of(3) {
+                    mask |= 1 << i;
+                }
+            }
+            // Clamp to a strict, non-empty subset: ≥1 lacuna, ≥1 survivor.
+            if mask == 0 {
+                mask |= 1 << ((ch >> 9) % n);
+            }
+            let full = if n == 32 { u32::MAX } else { (1u32 << n) - 1 };
+            if mask == full {
+                mask &= !(1 << ((ch >> 13) % n));
+            }
+            Condition::Worn(mask)
+        }
+        _ => Condition::Erased,
+    }
+}
+
+/// G18: the number of gouge cells an ⟦erased⟧ billboard renders — a constant-width strike so even
+/// the original *length* is hidden (the erasure hides everything until G20's sensing ladder).
+const GOUGE_CELLS: usize = 3;
+
+/// G18: apply a [`Condition`] to composed text. Worn replaces the masked non-space glyph
+/// positions with the engine's generic lacuna mark (spaces survive — word shape stays legible);
+/// erased replaces the whole text with a constant gouge cluster.
+pub fn weather_text(text: &str, cond: Condition) -> String {
+    match cond {
+        Condition::Intact => text.to_string(),
+        Condition::Worn(mask) => {
+            let mut gi = 0usize;
+            text.chars()
+                .map(|c| {
+                    if c.is_whitespace() {
+                        c
+                    } else {
+                        let i = gi;
+                        gi += 1;
+                        if i < 32 && mask & (1 << i) != 0 {
+                            crate::text::MARK_LACUNA
+                        } else {
+                            c
+                        }
+                    }
+                })
+                .collect()
+        }
+        Condition::Erased => std::iter::repeat_n(crate::text::MARK_GOUGE, GOUGE_CELLS).collect(),
+    }
+}
+
+/// G18: is this stored text an ⟦erased⟧ record (all gouge cells)? Used by the codex to render
+/// the erasure event as `⟦——⟧` and by tests.
+pub fn is_erased_text(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| c == crate::text::MARK_GOUGE)
+}
+
+/// G18: which block (if any) a stored inscription text **names** — the inverse of
+/// [`transliterate`] over the vocabulary, tolerant of lacuna marks (a worn name still reads as
+/// its name from the surviving glyph positions). Drives the codex's live attestation rendering.
+pub fn name_of_text(text: &str, script: Script) -> Option<crate::console::Block> {
+    if is_erased_text(text) {
+        return None;
+    }
+    crate::console::Block::ALL.iter().copied().find(|b| {
+        block_script(*b) == script && {
+            let full = transliterate(b.name(), script);
+            full.chars().count() == text.chars().count()
+                && full
+                    .chars()
+                    .zip(text.chars())
+                    .all(|(f, t)| t == crate::text::MARK_LACUNA || t == f)
+        }
+    })
 }
 
 /// Per-script character pool to assemble abstract "words" from (Latin/Galactic/Runic all draw
@@ -234,6 +344,9 @@ pub fn colossus_label(p: &Placement) -> Inscription {
         height: 1.8,
         color,
         name: Some(block),
+        // G18: monuments stay intact — the deep names are cut monumentally, and the
+        // every-name-findable coverage guarantee (no discovery softlock) keeps holding.
+        condition: Condition::Intact,
     }
 }
 
@@ -279,6 +392,18 @@ pub fn inscriptions_near(
                 }
                 None => (text, script),
             };
+            // G18: seeded condition off a **fresh-salt hash** — independent of the name-gate bits
+            // of `h` (the G10 correlation lesson; the distribution test guards it). Worn keeps its
+            // name (recoverable from partial glyphs, Decision 3); erased loses everything.
+            let ch = hash(cx ^ 0x51AB, cz ^ 0x2E77, seed.wrapping_add(0x00C0_5D17));
+            let glyphs = text.chars().filter(|c| !c.is_whitespace()).count();
+            let condition = condition_pick(ch, glyphs);
+            let text = weather_text(&text, condition);
+            let name = if condition == Condition::Erased {
+                None
+            } else {
+                name
+            };
             out.push(Inscription {
                 cell: (cx, cz),
                 // Float just above the surface — a small label tethered to the ground voxel.
@@ -288,6 +413,7 @@ pub fn inscriptions_near(
                 height,
                 color,
                 name,
+                condition,
             });
         }
     }
@@ -398,11 +524,24 @@ mod tests {
                     block_script(b),
                     "name renders in its stratum script"
                 );
-                assert_eq!(
-                    m.text,
-                    transliterate(b.name(), m.script),
-                    "stable name text"
-                );
+                // G18: an intact bearer spells the exact transliteration; a worn one keeps it
+                // recoverable from the surviving glyph positions (lacunae are wildcards).
+                match m.condition {
+                    Condition::Intact => assert_eq!(
+                        m.text,
+                        transliterate(b.name(), m.script),
+                        "stable name text"
+                    ),
+                    // (Compared by *name*: parameterised families share one name, so the
+                    // inverse read resolves to the family's first member.)
+                    Condition::Worn(_) => assert_eq!(
+                        name_of_text(&m.text, m.script).map(|x| x.name()),
+                        Some(b.name()),
+                        "a worn name still reads as its block: {:?}",
+                        m.text
+                    ),
+                    Condition::Erased => panic!("an erased inscription can't carry a name"),
+                }
             }
         }
     }
@@ -518,6 +657,140 @@ mod tests {
             assert!(!m.text.is_empty());
             // Floated above the supplied ground height.
             assert!(m.pos.y > 12.0);
+        }
+    }
+
+    /// G18: the condition mix is deterministic, lands near the pinned ~70/27/3 ratios, and its
+    /// bits are **independent of the name-gate bits** (the G9/G10 correlation bug-class, as a
+    /// test): among gate-passing cells the condition distribution must match the overall one.
+    #[test]
+    fn condition_distribution_and_independence_from_the_name_gate() {
+        let n = 40_000i32;
+        let (mut all, mut named) = ([0u32; 3], [0u32; 3]);
+        let slot = |c: Condition| match c {
+            Condition::Intact => 0usize,
+            Condition::Worn(_) => 1,
+            Condition::Erased => 2,
+        };
+        for i in 0..n {
+            let (cx, cz) = (i, -i * 7 + 3);
+            let seed = 0xABCDu32;
+            // The same two hashes the live path derives (name gate off `h`, condition off `ch`).
+            let h = hash(cx ^ 0x1111, cz ^ 0x2222, seed.wrapping_add(0x7E47_0000));
+            let ch = hash(cx ^ 0x51AB, cz ^ 0x2E77, seed.wrapping_add(0x00C0_5D17));
+            let c = condition_pick(ch, 6);
+            assert_eq!(c, condition_pick(ch, 6), "deterministic");
+            all[slot(c)] += 1;
+            if (h >> 5).is_multiple_of(4) {
+                named[slot(c)] += 1;
+            }
+        }
+        let named_total: u32 = named.iter().sum();
+        assert!(named_total > 5_000, "need a large gated sample");
+        for (i, expect) in [(0usize, 0.70f32), (1, 0.27), (2, 0.03)] {
+            let overall = all[i] as f32 / n as f32;
+            let gated = named[i] as f32 / named_total as f32;
+            assert!(
+                (overall - expect).abs() < 0.02,
+                "condition {i}: overall {overall:.3} vs pinned {expect:.2}"
+            );
+            assert!(
+                (gated - overall).abs() < expect * 0.15 + 0.01,
+                "condition {i}: name-gated {gated:.3} diverges from overall {overall:.3} — \
+                 the bits are correlated (the G10 bug-class)"
+            );
+        }
+    }
+
+    /// G18: worn weathering keeps length/spaces and is a strict, non-empty lacuna subset;
+    /// erasure hides everything behind a constant gouge cluster.
+    #[test]
+    fn weathering_masks_glyphs_and_erasure_hides_all() {
+        // Worn: every mask this generator produces loses ≥1 glyph and keeps ≥1 survivor.
+        for ch in (70..97).chain([170u32, 1234, 99_170]) {
+            let text = "ΑΒΓ ΔΕΖ";
+            if let Condition::Worn(mask) = condition_pick(ch * 100 + 85, 6) {
+                let worn = weather_text(text, Condition::Worn(mask));
+                assert_eq!(worn.chars().count(), text.chars().count(), "length kept");
+                assert_eq!(
+                    worn.chars().position(|c| c == ' '),
+                    text.chars().position(|c| c == ' '),
+                    "spaces survive"
+                );
+                let lost = worn
+                    .chars()
+                    .filter(|c| *c == crate::text::MARK_LACUNA)
+                    .count();
+                assert!(lost >= 1, "a worn text lost at least one glyph");
+                assert!(lost < 6, "a worn text keeps at least one survivor");
+            }
+        }
+        // A 1-glyph text can't be part-worn — it stays intact rather than fully lost.
+        assert_eq!(condition_pick(85, 1), Condition::Intact);
+        // Erased: constant-width gouge cells, recognised by the codex helper.
+        let erased = weather_text("ΑΒΓΔ", Condition::Erased);
+        assert!(erased.chars().all(|c| c == crate::text::MARK_GOUGE));
+        assert!(is_erased_text(&erased));
+        assert!(!is_erased_text("ΑΒΓ"));
+        assert!(!is_erased_text(""));
+        // Intact is the identity.
+        assert_eq!(weather_text("AB C", Condition::Intact), "AB C");
+    }
+
+    /// G18: `name_of_text` inverts `transliterate` for every block, tolerates lacunae (a worn
+    /// name still reads), and declines erased/ambient text.
+    #[test]
+    fn name_of_text_reads_intact_and_worn_names() {
+        use crate::console::Block;
+        for b in Block::ALL {
+            let script = block_script(b);
+            let full = transliterate(b.name(), script);
+            let read = name_of_text(&full, script).expect("intact name reads");
+            assert_eq!(read.name(), b.name(), "reads as its (family) name");
+            // Wear the first glyph away: still reads (recoverable from partial glyphs, v1).
+            let worn = weather_text(&full, Condition::Worn(1));
+            assert_eq!(
+                name_of_text(&worn, script).map(|x| x.name()),
+                Some(b.name())
+            );
+        }
+        // Erased text and ambient noise are not names.
+        assert_eq!(
+            name_of_text(&weather_text("ABC", Condition::Erased), Script::Latin),
+            None
+        );
+        assert_eq!(name_of_text("QQQQQQQQQ", Script::Latin), None);
+    }
+
+    /// G18: an ⟦erased⟧ cell strips its name (content unrecoverable — no discovery from a
+    /// gouge), while worn name-bearers keep theirs; erased billboards render the gouge cluster.
+    #[test]
+    fn erased_inscriptions_carry_no_name_and_render_the_gouge() {
+        let g = |_x: f32, _z: f32| 0.0;
+        let marks = inscriptions_near(1337, Vec3::ZERO, 2500.0, g);
+        let erased: Vec<_> = marks
+            .iter()
+            .filter(|m| m.condition == Condition::Erased)
+            .collect();
+        assert!(
+            !erased.is_empty(),
+            "~3% of inscriptions in a 2500-unit radius should be erased"
+        );
+        for m in &erased {
+            assert!(m.name.is_none(), "an erasure discovers nothing");
+            assert!(is_erased_text(&m.text), "the billboard shows the gouge");
+        }
+        // Worn inscriptions exist and render lacuna marks in-world.
+        let worn: Vec<_> = marks
+            .iter()
+            .filter(|m| matches!(m.condition, Condition::Worn(_)))
+            .collect();
+        assert!(!worn.is_empty(), "~27% should be worn");
+        for m in &worn {
+            assert!(
+                m.text.chars().any(|c| c == crate::text::MARK_LACUNA),
+                "a worn billboard renders its lacunae"
+            );
         }
     }
 

@@ -593,21 +593,36 @@ impl App {
 
     /// Collect the `idx`-th collectible: remove it, bank it through the serializable event seam,
     /// and drop its chunk from the opportunity surface. Shared by the aim pick + the auto-collect.
+    /// G18: an ⟦erased⟧ inscription routes through `CollectErased` — nothing banks, but the
+    /// erasure event is logged in the codex (the G20 sensing-ladder hook).
     fn collect_index(&mut self, idx: usize) {
         let c = self.collectible.remove(idx);
-        let ev = progress::Event::Collect {
-            find_id: c.find_id,
-            script: c.script,
-            text: c.text.clone(),
-            pos: c.pos,
+        let ev = if c.erased {
+            progress::Event::CollectErased {
+                find_id: c.find_id,
+                script: c.script,
+                text: c.text.clone(),
+                pos: c.pos,
+            }
+        } else {
+            progress::Event::Collect {
+                find_id: c.find_id,
+                script: c.script,
+                text: c.text.clone(),
+                pos: c.pos,
+            }
         };
         if self.progress.apply(&ev) {
-            log::info!(
-                "collected \"{}\" → +{} {}",
-                c.text,
-                progress::yield_amount(c.script, progress::glyph_count(&c.text)),
-                progress::stratum_of(c.script).label(),
-            );
+            if c.erased {
+                log::info!("collected an erasure — nothing recovered; the gouge is logged");
+            } else {
+                log::info!(
+                    "collected \"{}\" → +{} {}",
+                    c.text,
+                    progress::yield_amount(c.script, progress::glyph_count(&c.text)),
+                    progress::stratum_of(c.script).label(),
+                );
+            }
             self.forget_scanned_chunk(c.pos); // it's no longer an opportunity (G3)
             self.discover(c.name); // G9: a name-bearer also discovers its block
         }
@@ -615,12 +630,29 @@ impl App {
 
     /// G9: a collected inscription **named a block** — apply the `Discover` event (idempotent;
     /// a re-collected known name is just a normal yield) and announce a *new* discovery on the
-    /// HUD. Shared by every collect route (T / beam / auto-collect).
+    /// HUD. G18: a **second sighting** of an already-discovered name upgrades its reading
+    /// Provisional → Confirmed (logged; the codex/console marks re-render from live state).
+    /// Shared by every collect route (T / beam / auto-collect).
     fn discover(&mut self, name: Option<console::Block>) {
         let Some(block) = name else { return };
+        let before = self.progress.attestation(block);
         if self.progress.apply(&progress::Event::Discover { block }) {
-            self.last_discovery = Some((block, self.time));
-            log::info!("NAME RECOVERED — {}", block.name());
+            match before {
+                None => {
+                    self.last_discovery = Some((block, self.time));
+                    log::info!("NAME RECOVERED — {}", block.name());
+                }
+                _ => log::info!("READING CONFIRMED — {} (second sighting)", block.name()),
+            }
+        }
+    }
+
+    /// G18: **behavioral confirmation** — a block that just *executed* (manual click, routine
+    /// act, nav intent) attests its own reading once comprehended: the machine answering is the
+    /// confirmation (no UI judgment). Idempotent + cheap; called from the dispatch sites.
+    fn confirm_use(&mut self, b: console::Block) {
+        if self.progress.confirm_block_use(b) {
+            log::info!("READING CONFIRMED — {} (first use)", b.name());
         }
     }
 
@@ -649,11 +681,22 @@ impl App {
         let mut named: Vec<console::Block> = Vec::new();
         for c in &self.collectible {
             if beam::on_path(Vec3::from(c.pos), b.a, b.b) {
-                let ev = progress::Event::Collect {
-                    find_id: c.find_id,
-                    script: c.script,
-                    text: c.text.clone(),
-                    pos: c.pos,
+                // G18: an ⟦erased⟧ site logs its erasure event instead of banking (all collect
+                // routes agree — the beam included).
+                let ev = if c.erased {
+                    progress::Event::CollectErased {
+                        find_id: c.find_id,
+                        script: c.script,
+                        text: c.text.clone(),
+                        pos: c.pos,
+                    }
+                } else {
+                    progress::Event::Collect {
+                        find_id: c.find_id,
+                        script: c.script,
+                        text: c.text.clone(),
+                        pos: c.pos,
+                    }
                 };
                 if self.progress.apply(&ev) {
                     swept += 1;
@@ -787,6 +830,9 @@ impl App {
             };
             for act in self.console.on_scan_acts(agent) {
                 self.console.note_scan_fire(act.routine); // G11: the hit fired this routine
+                if act.block.wired() {
+                    self.confirm_use(act.block); // G18: an executing on-scan act attests
+                }
                 match act.block {
                     console::Block::Collect if agent == console::Agent::Foot => {
                         // G17: a foot on-scan collect carries shards (banks on the ship's drain).
@@ -1029,6 +1075,8 @@ impl App {
         self.console.comprehended = self.progress.comprehended_blocks().collect();
         // G9: the console's view of which names have been found in the world.
         self.console.discovered = self.progress.discovered_blocks().collect();
+        // G18: which readings are confirmed (provisional names render the underdot sub-mark).
+        self.console.confirmed = self.progress.confirmed_blocks().collect();
         // G13: which agent the player is driving (ticker + "trace → routine" target).
         self.console.active_agent = self.active_agent();
     }
@@ -1149,13 +1197,31 @@ impl App {
             return;
         }
         self.record_manual(b); // G13: a manual console click is part of the trace
-        match b {
-            console::Block::Scan(_) => self.scan_pulse(),
-            console::Block::Collect => self.collect_aimed(),
-            console::Block::FireBeam => self.cast_beam(),
-            console::Block::Drift => self.auto_fly = true, // (re)engage the wander
-            console::Block::Hail => self.hail_ship(),      // G8a: recall the autonomous ship
-            console::Block::RunFoot => self.start_expedition(), // G8c: deploy the walker
+        let executed = match b {
+            console::Block::Scan(_) => {
+                self.scan_pulse();
+                true
+            }
+            console::Block::Collect => {
+                self.collect_aimed();
+                true
+            }
+            console::Block::FireBeam => {
+                self.cast_beam();
+                true
+            }
+            console::Block::Drift => {
+                self.auto_fly = true; // (re)engage the wander
+                true
+            }
+            console::Block::Hail => {
+                self.hail_ship(); // G8a: recall the autonomous ship
+                true
+            }
+            console::Block::RunFoot => {
+                self.start_expedition(); // G8c: deploy the walker
+                true
+            }
             // G15b: a faculty is a **research target** now — clicking `spend(f)` allocates research
             // to it (its level fills from any-domain shard intake), retiring bank-then-spend.
             console::Block::Spend(f) => {
@@ -1165,9 +1231,18 @@ impl App {
                     "researching faculty {} — shard intake now levels it",
                     f.label()
                 );
+                true
             }
             // G15: `decode` is removed (comprehension is now research); a stray Decode is a no-op.
-            other => log::info!("block {}: no longer a direct action", other.label()),
+            other => {
+                log::info!("block {}: no longer a direct action", other.label());
+                false
+            }
+        };
+        // G18: only an act the machine actually *answered* confirms a reading (world-as-oracle:
+        // a no-op click attests nothing).
+        if executed {
+            self.confirm_use(b);
         }
     }
 
@@ -1384,6 +1459,7 @@ impl App {
         for act in self.console.on_scan_acts(agent) {
             if let console::Block::Collect = act.block {
                 self.console.note_scan_fire(act.routine); // G11
+                self.confirm_use(act.block); // G18 (collect is a starter today — future-proof)
                 let before = self.progress.shard_total_count();
                 let before_bank = self.progress.shard_bank();
                 self.collect_shards_in_reach(act.filter);
@@ -1460,6 +1536,11 @@ impl App {
     }
 
     /// The codex list overlay (text only, most-recent first) — the G1 archive screen.
+    /// G18: entries render in the **Leiden display grammar**, live from current state (no stored
+    /// snapshots): an ⟦erased⟧ event as `⟦——⟧`; each lost (worn) glyph as a `[..]` lacuna; a
+    /// **provisional** name-reading underdotted (a dot-row beneath its glyph cluster — the
+    /// monospace HUD grid aligns it); a confirmed reading clean. All marks are structural UI —
+    /// they annotate glyphs, never words.
     fn codex_text(&self) -> String {
         let c = &self.progress.codex;
         let mut out = format!("CODEX — {} finds   [J close]\n", c.len());
@@ -1467,14 +1548,34 @@ impl App {
             out.push_str("(nothing yet — aim at a glowing inscription and press T)");
         } else {
             for e in c.iter().rev().take(20) {
-                // G12: render each find as its glyph cluster in its own script (overlay
-                // codepoints) — the same glyphs the world billboard draws, so a Galactic/Runic
-                // find reads as its alien staves here too, never the Latin stand-in letters.
-                out.push_str(&format!(
-                    "{}  {}\n",
-                    progress::stratum_of(e.script).label(),
-                    text::to_overlay(&e.text, e.script)
-                ));
+                let tag = progress::stratum_of(e.script).label();
+                // ⟦——⟧ — a deliberate erasure, logged as an *event* (content unrecoverable, G20).
+                if structures::is_erased_text(&e.text) {
+                    out.push_str(&format!("{tag}  \u{27E6}\u{2014}\u{2014}\u{27E7}\n"));
+                    continue;
+                }
+                // G12: render the find as its glyph cluster in its own script (overlay
+                // codepoints — the same glyphs the world billboard draws); G18: a lost glyph
+                // position renders as a `[..]` lacuna, and the underdot row tracks each cell.
+                let mut line = String::new();
+                let mut dots = String::new();
+                for ch in e.text.chars() {
+                    if ch == text::MARK_LACUNA {
+                        line.push_str("[..]");
+                        dots.push_str("    "); // a lacuna is loss, not doubt — no underdot
+                    } else {
+                        line.push_str(&text::to_overlay(&ch.to_string(), e.script));
+                        dots.push(if ch.is_whitespace() { ' ' } else { '.' });
+                    }
+                }
+                out.push_str(&format!("{tag}  {line}\n"));
+                // Underdot a provisional name-reading (live attestation — re-renders as the
+                // state improves; a confirmed name loses the dots).
+                if let Some(b) = structures::name_of_text(&e.text, e.script) {
+                    if self.progress.attestation(b) == Some(progress::Attestation::Provisional) {
+                        out.push_str(&format!("     {dots}\n"));
+                    }
+                }
             }
         }
         out
@@ -1613,6 +1714,8 @@ impl App {
                     text: m.text.clone(),
                     pos: m.pos.to_array(),
                     name: m.name, // G9: a name-bearer discovers its block on collect
+                    // G18: an erased site logs its erasure instead of yielding.
+                    erased: m.condition == structures::Condition::Erased,
                 })
             })
             .collect();
@@ -1623,17 +1726,24 @@ impl App {
         // an English word). Only ambient (non-name) text translates to its seeded lexicon phrase.
         // The find id still hashes the original glyphs (collecting stays stable) — only *display*
         // changes.
+        // G18: only an **intact** ambient inscription translates once its script is legible —
+        // worn content's lost glyph positions and an erasure's struck content stay unrecovered
+        // until G20's sensing ladder (the marks render as marks, whatever you've comprehended).
         let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
             .into_iter()
             .map(|m| match m.name {
                 Some(_) => (m.text, m.script, m.pos, m.height, m.color),
-                None if self.progress.is_legible(m.script) => (
-                    lexicon::phrase(seed, m.cell, progress::glyph_count(&m.text)),
-                    text::Script::Latin,
-                    m.pos,
-                    m.height,
-                    m.color,
-                ),
+                None if m.condition == structures::Condition::Intact
+                    && self.progress.is_legible(m.script) =>
+                {
+                    (
+                        lexicon::phrase(seed, m.cell, progress::glyph_count(&m.text)),
+                        text::Script::Latin,
+                        m.pos,
+                        m.height,
+                        m.color,
+                    )
+                }
                 None => (m.text, m.script, m.pos, m.height, m.color),
             })
             .collect();
@@ -2746,7 +2856,15 @@ impl App {
             self.nav_intent = tick.nav;
             self.scan_wanted = tick.scan;
             self.scan_shards_wanted = tick.scan_shards;
+            // G18: a nav block the autopilot is steering by is *executing* — behavioral
+            // confirmation (idempotent; only a comprehended provisional reading flips).
+            if let Some(b) = tick.nav {
+                self.confirm_use(b);
+            }
             for act in tick.acts {
+                if act.block.wired() {
+                    self.confirm_use(act.block); // G18: the act executes below — it attests
+                }
                 match act.block {
                     console::Block::FireBeam => self.cast_beam(),
                     console::Block::Collect => {
@@ -2780,7 +2898,13 @@ impl App {
                     walker_arrived,
                 );
                 foot_nav = foot.nav;
+                if let Some(b) = foot.nav {
+                    self.confirm_use(b); // G18: the walker's live nav attests too
+                }
                 for act in foot.acts {
+                    if act.block.wired() {
+                        self.confirm_use(act.block); // G18
+                    }
                     match act.block {
                         console::Block::Collect => {
                             // G17: on foot, `collect` carries shards (banks on the ship's cache

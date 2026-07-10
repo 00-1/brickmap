@@ -967,6 +967,25 @@ instead of orbiting one site forever, and the expedition **auto-deposits** the w
 the site cache on Return→Idle. Three D11 e2e scenarios pin each fix through the real frame loop
 (each verified to fail pre-fix); golden voxel-hash + headless render unchanged.
 
+### ✨ G18 — The uncertainty layer ✅ &nbsp;→ [`milestones/G18-uncertainty-layer.md`](milestones/G18-uncertainty-layer.md)
+The Archive tranche's first *feature* milestone on the G16 substrate: **readings stop being
+instant**. (1) **Provisional → confirmed attestation** per discovered block name — a hypothesis on
+first collect, confirmed by a *second sighting* or *behaviorally* (the first execution after
+comprehension; the machine answering IS the confirmation). No mechanical gate on provisional (the
+no-softlock invariant); one gentle lit-goal nudge ("use once"); `pg=` **v8** append-only (pre-v8:
+comprehended → confirmed). (2) **Seeded inscription condition** — ~70% intact / 27% **worn** (a
+seeded glyph-position mask renders lacuna marks in-world; yield pays only surviving glyphs; worn
+name-bearers still discover) / ~3% **⟦erased⟧** (a constant gouge cluster, no name, collecting
+logs the erasure *event* in the codex without yield — the G20 sensing-ladder hook). Condition bits
+ride a fresh-salt hash **independent of the name-gate bits**, with the G10-lesson
+distribution+independence test. (3) The **Leiden display grammar** in the codex/console, live from
+state: provisional names underdotted (a dot-row / a sub-mark cell on the HUD glyph path), `[..]`
+per lost glyph, `⟦——⟧` for erasures, confirmed clean — all structural marks, no words. Rider: the
+state trigger displays as **`while(…)`** now (codec untouched). Engine touch: three
+content-agnostic mark glyphs + generic epigraphic punctuation in the shared 8×8 font (documented,
+boundary-safe). D11 extended with a full both-paths/worn/erased scenario; golden voxel-hash
+unchanged; monuments stay intact (recorded deviation — the coverage guarantee).
+
 ## Dev tooling & process (D-series)
 
 Cross-cutting tooling that supports the work — done *as needed*, not in the linear

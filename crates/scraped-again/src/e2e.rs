@@ -780,6 +780,200 @@ fn expedition_return_auto_deposits_the_carry() {
 }
 
 // ----------------------------------------------------------------------------------------------
+// 7c) G18 — the uncertainty layer end to end: provisional → confirmed via BOTH paths (a second
+//     sighting; the first use after comprehension), the worn-yield reduction, an ⟦erased⟧ collect
+//     logging without yield, the codex's live Leiden re-render, and the `pg=` v8 round-trip —
+//     all through the real collect/dispatch/frame seams (no direct kicks of the fixed machinery).
+// ----------------------------------------------------------------------------------------------
+
+/// Teleport the (manually-helmed) ship onto an inscription and collect it through the real
+/// streaming + collect seam (`update_inscriptions` → `collectible` → `collect_index`).
+fn collect_inscription(app: &mut App, m: &structures::Inscription) {
+    app.camera.position = m.pos;
+    app.update_inscriptions();
+    let id = progress::find_id(m.cell, m.script, &m.text);
+    let idx = app
+        .collectible
+        .iter()
+        .position(|c| c.find_id == id)
+        .expect("the inscription streamed in as a collectible at our position");
+    app.collect_index(idx);
+}
+
+/// Does the codex overlay currently show an underdot row (a line of only dots — the Leiden
+/// provisional mark beneath a glyph cluster)?
+fn codex_has_underdots(app: &App) -> bool {
+    app.codex_text()
+        .lines()
+        .any(|l| !l.trim().is_empty() && l.trim().chars().all(|c| c == '.'))
+}
+
+#[test]
+fn uncertainty_attestation_condition_and_erasure() {
+    use crate::progress::Attestation;
+    let seed = 1337u32;
+    let mut app = App::headless(seed);
+    app.auto_fly = false; // scripted helm — hold each teleport position
+
+    // The deterministic inscription field near the origin (the same one streaming sees).
+    let g = ground_fn(seed);
+    let marks = structures::inscriptions_near(seed, Vec3::ZERO, 2500.0, g);
+
+    // --- Path (a): a SECOND SIGHTING confirms. Pick a gated block (≠ seek, kept for path b)
+    //     with two distinct name-bearing inscriptions. ---
+    let bearers_of = |name: &str| -> Vec<&structures::Inscription> {
+        marks
+            .iter()
+            .filter(|m| {
+                m.name
+                    .is_some_and(|b| b.name() == name && b.required().is_some())
+            })
+            .collect()
+    };
+    let a_block = console::Block::ALL
+        .iter()
+        .copied()
+        .find(|b| b.required().is_some() && b.name() != "seek" && bearers_of(b.name()).len() >= 2)
+        .expect("a gated block (≠ seek) has ≥2 bearer inscriptions within 2500 units");
+    let ab = bearers_of(a_block.name());
+    assert!(!app.progress.is_discovered(a_block));
+    collect_inscription(&mut app, ab[0]);
+    assert_eq!(
+        app.progress.attestation(a_block),
+        Some(Attestation::Provisional),
+        "the first sighting is a hypothesis"
+    );
+    assert!(
+        codex_has_underdots(&app),
+        "the codex underdots the provisional reading"
+    );
+    collect_inscription(&mut app, ab[1]);
+    assert_eq!(
+        app.progress.attestation(a_block),
+        Some(Attestation::Confirmed),
+        "a second sighting (different inscription, same name) confirms"
+    );
+    assert!(
+        !codex_has_underdots(&app),
+        "the codex re-renders the confirmed reading clean (live state, no snapshots)"
+    );
+
+    // --- Path (b): BEHAVIORAL confirmation. Discover `seek`, research it while provisional
+    //     (Decision 1 — no gate), and let its first real execution attest it. ---
+    let b_block = console::Block::Seek;
+    let bb = bearers_of(b_block.name());
+    assert!(!bb.is_empty(), "a seek bearer exists within 2500 units");
+    collect_inscription(&mut app, bb[0]);
+    assert_eq!(
+        app.progress.attestation(b_block),
+        Some(Attestation::Provisional)
+    );
+    // No mechanical gate: the provisional block allocates + researches through the normal seam.
+    // (Inlined rather than via `comprehend`, whose extra `Discover` would count as a second
+    // sighting and confirm through path (a) — here the *use* must do it.)
+    assert!(
+        app.progress.allocate(ResearchTarget::Block(b_block)),
+        "a provisional reading researches freely (Decision 1 — no softlock)"
+    );
+    let domain = b_block.required().unwrap();
+    let mut guard = 0;
+    while !app.progress.is_block_comprehended(b_block) && guard < 100_000 {
+        app.progress.apply(&Event::CollectShard {
+            domain,
+            rarity: Rarity::Rare,
+        });
+        guard += 1;
+    }
+    assert!(app.progress.is_block_comprehended(b_block));
+    app.sync_console_unlock();
+    assert_eq!(
+        app.progress.attestation(b_block),
+        Some(Attestation::Provisional),
+        "comprehension alone does NOT confirm — the machine hasn't answered yet"
+    );
+    // The gentle lit-goal nudge: comprehended-but-unconfirmed suggests one use.
+    let goal = app
+        .console
+        .lit_goal(&app.progress)
+        .expect("the attestation nudge lights the goal");
+    assert!(
+        goal.contains(&b_block.glyphs()) && goal.contains("use once"),
+        "nudge names the reading by its glyphs: {goal}"
+    );
+    // First execution — the given nav routine steers by `seek`; the real frame loop answers.
+    app.console.routines[0].body = vec![console::Step::Do(b_block)];
+    app.run_frame(DT);
+    assert_eq!(
+        app.progress.attestation(b_block),
+        Some(Attestation::Confirmed),
+        "the first execution after comprehension confirms (world-as-oracle)"
+    );
+
+    // --- Worn: a lacuna-bearing name inscription still discovers, and yields only its
+    //     surviving glyphs (reduced proportionally vs the intact name). ---
+    let worn = marks
+        .iter()
+        .find(|m| matches!(m.condition, structures::Condition::Worn(_)) && m.name.is_some())
+        .expect("a worn name-bearer within 2500 units");
+    let surviving = progress::glyph_count(&worn.text);
+    let full = progress::glyph_count(&structures::transliterate(
+        worn.name.unwrap().name(),
+        worn.script,
+    ));
+    assert!(surviving < full, "the worn text lost glyph positions");
+    let before = app.progress.strata.total();
+    let discovered_before = app.progress.is_discovered(worn.name.unwrap());
+    collect_inscription(&mut app, worn);
+    assert_eq!(
+        app.progress.strata.total() - before,
+        progress::yield_amount(worn.script, surviving),
+        "worn yield pays only the surviving glyphs"
+    );
+    assert!(
+        app.progress.is_discovered(worn.name.unwrap()) || discovered_before,
+        "a worn name-bearer still discovers (Decision 3)"
+    );
+    assert!(
+        app.codex_text().contains("[..]"),
+        "the codex renders a [..] lacuna per lost glyph"
+    );
+
+    // --- Erased: collecting the gouge yields NOTHING but logs the erasure event (the G20
+    //     sensing-ladder hook), rendered ⟦——⟧ in the codex. ---
+    let erased = marks
+        .iter()
+        .find(|m| m.condition == structures::Condition::Erased)
+        .expect("an erased inscription within 2500 units");
+    assert!(erased.name.is_none(), "an erasure discovers nothing");
+    let (before_strata, before_bank) = (app.progress.strata.total(), app.progress.shard_bank());
+    let before_codex = app.progress.collected_count();
+    collect_inscription(&mut app, erased);
+    assert_eq!(
+        app.progress.strata.total(),
+        before_strata,
+        "an erased collect banks no data"
+    );
+    assert_eq!(app.progress.shard_bank(), before_bank);
+    assert_eq!(
+        app.progress.collected_count(),
+        before_codex + 1,
+        "…but the erasure event is logged in the codex"
+    );
+    assert!(
+        app.codex_text()
+            .contains("\u{27E6}\u{2014}\u{2014}\u{27E7}"),
+        "the codex renders the erasure as ⟦——⟧"
+    );
+
+    // --- The attestation + erasure log survive the `pg=` v8 share round-trip. ---
+    let restored = progress::Progress::decode(&app.share_string());
+    assert_eq!(restored, app.progress, "pg= v8 round-trips the new state");
+    assert_eq!(restored.attestation(a_block), Some(Attestation::Confirmed));
+    // And the loop keeps running cleanly with the new state live.
+    drive(&mut app, 120);
+}
+
+// ----------------------------------------------------------------------------------------------
 // 8) Render-robustness sweep — several vantages + after state changes render without panic/NaN.
 //    Needs a (software) Vulkan adapter, so it's `#[ignore]` (local / opt-in, not CI).
 // ----------------------------------------------------------------------------------------------

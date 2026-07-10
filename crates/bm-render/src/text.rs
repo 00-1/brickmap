@@ -124,10 +124,70 @@ fn runic_stave(idx: usize) -> [u8; 8] {
     g
 }
 
+/// Content-agnostic **mark glyphs** — a tiny PUA range of generic editorial/damage marks that
+/// render identically in *every* script (world billboards and the flat HUD overlay alike):
+/// a **lacuna** (a pitted patch where a glyph is lost), a **gouge** (a heavy strike band over a
+/// blank cell), and an **underdot** (a low dot-row sub-mark). Engine-generic on purpose: these
+/// are typographic damage/annotation cells, carrying no game concept — callers decide what they
+/// mean. Sited next to the runic PUA block (distinct range, so codepoint auto-detection holds).
+pub const MARK_PUA_BASE: u32 = 0xE620;
+/// A lost glyph position (damage): a sparse pitted cell.
+pub const MARK_LACUNA: char = '\u{E620}';
+/// A deliberate strike/gouge over a blank cell.
+pub const MARK_GOUGE: char = '\u{E621}';
+/// A low dot-row sub-mark (annotates the preceding/overlying glyph cluster).
+pub const MARK_UNDERDOT: char = '\u{E622}';
+
+/// Bitmaps for the mark glyphs plus the standard epigraphic punctuation the overlay path should
+/// render rather than dot out: U+27E6/U+27E7 (white square brackets) and U+2014 (em dash).
+/// Generic punctuation/damage cells only — no game vocabulary.
+fn mark_glyph(c: char) -> Option<[u8; 8]> {
+    let rows: [&str; 8] = match c {
+        MARK_LACUNA => [
+            "        ", "  #   # ", "     #  ", " #      ", "    #   ", "  #   # ", "     #  ",
+            "        ",
+        ],
+        MARK_GOUGE => [
+            "        ", "        ", " ## ####", "########", "########", "#### ## ", "        ",
+            "        ",
+        ],
+        MARK_UNDERDOT => [
+            "        ", "        ", "        ", "        ", "        ", " ##  ## ", " ##  ## ",
+            "        ",
+        ],
+        '\u{27E6}' => [
+            " ####   ", " # #    ", " # #    ", " # #    ", " # #    ", " # #    ", " # #    ",
+            " ####   ",
+        ],
+        '\u{27E7}' => [
+            "   #### ", "    # # ", "    # # ", "    # # ", "    # # ", "    # # ", "    # # ",
+            "   #### ",
+        ],
+        '\u{2014}' => [
+            "        ", "        ", "        ", "########", "########", "        ", "        ",
+            "        ",
+        ],
+        _ => return None,
+    };
+    let mut g = [0u8; 8];
+    for (r, line) in rows.iter().enumerate() {
+        for (col, b) in line.as_bytes().iter().enumerate().take(GLYPH) {
+            if *b != b' ' {
+                g[r] |= 1 << col;
+            }
+        }
+    }
+    Some(g)
+}
+
 /// Look a character up in a given `script`. `Auto` walks the whole fallback chain; the explicit
 /// scripts hit one set (so e.g. Standard Galactic isn't shadowed by Basic Latin). `None` if the
-/// chosen set has no glyph for `c`.
+/// chosen set has no glyph for `c`. The generic [mark glyphs](MARK_PUA_BASE) render in every
+/// script (damage/annotation cells are script-independent).
 fn glyph(script: Script, c: char) -> Option<[u8; 8]> {
+    if let Some(m) = mark_glyph(c) {
+        return Some(m);
+    }
     match script {
         Script::Auto => font8x8::BASIC_FONTS
             .get(c)
@@ -161,6 +221,9 @@ fn glyph(script: Script, c: char) -> Option<[u8; 8]> {
 /// [`RUNIC_PUA_BASE`] range). Returns `None` for ASCII and anything unknown, so the HUD keeps
 /// rendering ASCII through its own legacy font (byte-identical) and unknowns as a dot.
 pub fn overlay_glyph(c: char) -> Option<[u8; 8]> {
+    if let Some(m) = mark_glyph(c) {
+        return Some(m); // the generic mark/punctuation cells render on the HUD path too
+    }
     let code = c as u32;
     if (RUNIC_PUA_BASE..RUNIC_PUA_BASE + RUNIC_STAVES as u32).contains(&code) {
         return Some(runic_stave((code - RUNIC_PUA_BASE) as usize));
@@ -558,5 +621,31 @@ mod tests {
         // ASCII is handled by the HUD's own legacy font (proven equal to Basic elsewhere); the
         // overlay path declines it so the HUD keeps its byte-identical ASCII rendering.
         assert_eq!(overlay_glyph('A'), None);
+    }
+
+    /// The content-agnostic mark glyphs render in **every** script on the world path, identically
+    /// on the overlay (HUD) path, and are distinct from each other (a lacuna never reads as a
+    /// gouge). The epigraphic punctuation (⟦ ⟧ —) renders on the overlay path too.
+    #[test]
+    fn mark_glyphs_render_in_all_scripts_and_on_the_overlay() {
+        for mark in [MARK_LACUNA, MARK_GOUGE, MARK_UNDERDOT] {
+            let ov = overlay_glyph(mark).expect("mark renders on the overlay path");
+            for script in Script::ALL {
+                assert_eq!(
+                    glyph(script, mark),
+                    Some(ov),
+                    "mark {mark:?} must render identically in {script:?}"
+                );
+            }
+            assert!(ov.iter().any(|r| *r != 0), "mark {mark:?} lights pixels");
+        }
+        assert_ne!(overlay_glyph(MARK_LACUNA), overlay_glyph(MARK_GOUGE));
+        assert_ne!(overlay_glyph(MARK_GOUGE), overlay_glyph(MARK_UNDERDOT));
+        for p in ['\u{27E6}', '\u{27E7}', '\u{2014}'] {
+            assert!(
+                overlay_glyph(p).is_some_and(|g| g.iter().any(|r| *r != 0)),
+                "punctuation {p:?} renders on the overlay path"
+            );
+        }
     }
 }
