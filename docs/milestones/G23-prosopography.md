@@ -1,16 +1,17 @@
 # G23 — Prosopography: hands, persons & the factoid survey log
 
-> **Status: DRAFT — dispatch after the G22 review** (it rides lexicon v3 for person-name
-> cognates and reuses the dual-spelling stacked render for repairs; a finalize pass against
-> G22's as-built happens before launch). The Archive tranche's elegiac layer, from
+> **Status: ready to build** (finalized 2026-07-10 against G22's as-built: lexicon v3's
+> `derive()` and the dual/stacked render exist; glyph layout confirmed engine-side, so the
+> ductus mechanism is pinned below). The Archive tranche's elegiac layer, from
 > [`../research-material-text.md`](research-material-text.md) §3/§4:
 > **hands** (every inscription attributable to a writer, detectable *materially*),
 > **persons** (assembled by the player from scattered attestations — Trismegistos' law:
 > most people in history are attested exactly once; linking even two records is the
 > payoff), and **repairs** (kintsugi — re-cut glyphs in a *different hand*: one stone, two
 > dates, two acts of care, zero readable lore). This is the milestone where grief arrives
-> through structure alone. Game-side; **no engine change expected** — flag any forced one
-> as a deviation.
+> through structure alone. Game-side, with **one permitted engine touch** (pinned below):
+> a content-agnostic per-glyph baseline-offset capability in `bm-render`'s text path —
+> generic typography, the same permitted class as the G18/G20 mark glyphs.
 
 ## Goal · Demonstrable outcome · What it de-risks
 
@@ -42,7 +43,11 @@
    world-wide). **Material rendering:** a per-hand ductus applied at glyph-layout time —
    small deterministic per-glyph vertical offsets / baseline wobble (±1 px class), so a
    shaky hand *looks* shaky in any script. No hand-id is ever shown as a UI judgment;
-   the player recognizes ductus the way they recognize cartouches.
+   the player recognizes ductus the way they recognize cartouches. **Mechanism (pinned;
+   layout is engine-side):** `bm-render`'s rasterize path gains an optional caller-supplied
+   per-glyph baseline offset (a `&[i8]` or equivalent — content-agnostic, knows nothing of
+   hands); the *game* computes offsets from `(hand, glyph_index)`. Engine tests: offsets
+   bounded, deterministic, default-empty path byte-identical to today (golden-neutral).
 2. **Person names + the epitaph/graffito register.** A new lexicon class
    (`person_name` — proto-derived daughters like all v3 vocabulary; collision/blocklist
    guarantees extend to it; never colliding with block/vocab words). A small family of
@@ -81,10 +86,9 @@ names (person names are lexicon nonsense like everything).
 ## Design sketch
 
 - `structures`: `hand_of(seed, cell) -> HandId` (pool + geographic clustering via
-  site-anchored salt); glyph-layout applies `ductus(hand, glyph_index)` offsets at
-  billboard-composition time (the game composes glyph grids — verify; if layout turns out
-  to live engine-side, stop and record the deviation rather than adding a hand concept to
-  `bm-render`); `repair_of(seed, cell)` (~1/40 of worn, independent salt) replaces the
+  site-anchored salt); the game computes `ductus(hand, glyph_index) -> i8` per glyph and
+  hands the offset slice to the engine's rasterize path (see the pinned mechanism —
+  `bm-render` stays hand-ignorant); `repair_of(seed, cell)` (~1/40 of worn, independent salt) replaces the
   worn-lost run with re-cut glyphs under the second hand (cognate-form variant via
   `lexicon::derive`).
 - `lexicon`: `person_name(seed, idx)` — same candidate/rejection machinery, disjoint key
@@ -140,7 +144,6 @@ as-built.
 - **Push per commit** (per-commit CI; the G21 lesson).
 - Splittable: (1) hands + ductus, (2) person names + registers + factoid log + panel,
   (3) repairs + D11 + docs. Land each green.
-- The glyph-layout ownership question (game vs engine) is the one place this brief might
-  hit the boundary — investigate *first*, and if layout is engine-side, propose the
-  minimal content-agnostic hook (e.g. a per-glyph offset the *caller* computes) as a
-  recorded deviation before building.
+- The engine touch is pre-approved but minimal: per-glyph baseline offsets on the text
+  rasterize path, caller-computed, default-empty = byte-identical output (assert it).
+  Nothing about hands, persons, or the game enters `bm-*`.
