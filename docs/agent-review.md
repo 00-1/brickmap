@@ -37,6 +37,20 @@ discipline failure (the builder *ran* the gate and believed it) — an environme
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
 
+## 2026-07-10 · Boundary skim — goblin-gold's engine additions  ✅ CLEAN
+
+Shared-surface duty on the ~750 lines the goblin-gold run added to engine crates:
+`bm-platform/save.rs` (a generic `Store` trait + `FileStore`/`WebStore` — key-value
+persistence, no game concepts), `bm-render/text2d.rs` (font-atlas bake + layout — generic
+2D text), `bm-render/ui2d.rs` + `ui2d/keypad.rs` (TextRun/RectRun draw-lists + a generic
+keypad widget). API surfaces skimmed + a concept-grep (goblin/hero/arena/loot/etc.): **zero
+game concepts crossed the boundary.** The M9 split held under a second game's whole
+development run — the strongest validation of the engine-not-a-game identity to date. These
+capabilities (2D text/UI, save stores) are incidentally now available to Scraped Again too
+(the settings-panel and no-DOM-UI backlog items get cheaper).
+
+---
+
 ## 2026-07-10 · G18 — the uncertainty layer (`b8c3408`)  ✅ PASSED (four-way green; rendered + eyeballed)
 
 **Independently verified:** fmt/clippy clean · **395 tests, 0 failures** workspace-wide ·
