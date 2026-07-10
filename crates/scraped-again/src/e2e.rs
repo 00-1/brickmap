@@ -1587,6 +1587,256 @@ fn expedition_rationality_close_reading_earns_what_the_ship_cannot() {
 }
 
 // ----------------------------------------------------------------------------------------------
+// 7i) G22 — the comparative method end to end: dual spellings collected through the real seam
+//     log cognate candidates (both strata credited, codex stacked) → collating three of one
+//     stratum pair through the REAL console rows spends banked data from both sides (the sink:
+//     balances go DOWN for the first time) → the correspondence is known (family-tree panel,
+//     glyph-structure only) → a SHIP-collected worn name-bearer whose partner form is attested
+//     restores comparatively (Leiden brackets, full yield) — the deliberate INVERSION of G21's
+//     on-foot assert (instruments walk, knowledge flies) — with no double-pay on foot either.
+// ----------------------------------------------------------------------------------------------
+
+/// Bank stratum data through the canonical `Event::Collect` seam until `script`'s stratum holds
+/// at least `min` (bounded, deterministic economy input — the standing D11 pattern; the live
+/// loop's driving of this seam is asserted by `real_loop_plays_and_progresses`).
+fn fund_stratum(app: &mut App, script: text::Script, min: u64) {
+    let mut i = 0u64;
+    while app.progress.strata.get(progress::stratum_of(script)) < min {
+        app.progress.apply(&Event::Collect {
+            find_id: 0xC0FF_EE00_0000_0000 | (script as u64) << 32 | i,
+            script,
+            text: "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEF".into(), // 32 glyphs — one fat line
+            pos: [0.0; 3],
+        });
+        i += 1;
+    }
+}
+
+#[test]
+fn comparative_method_collation_unlocks_ship_restoration() {
+    let seed = 1337u32;
+    let g = ground_fn(seed);
+    let marks = structures::inscriptions_near(seed, Vec3::ZERO, 2500.0, g);
+
+    // Deterministically pick the stratum pair with the most dual spellings of DISTINCT blocks
+    // in the origin field (this seed's field holds several pairs; the test derives its own).
+    let mut by_pair: std::collections::HashMap<(u8, u8), Vec<&structures::Inscription>> =
+        std::collections::HashMap::new();
+    for m in &marks {
+        if let (Some(b), Some((_t, s))) = (m.name, m.dual.as_ref()) {
+            let own = progress::stratum_of(m.script).byte();
+            let partner = progress::stratum_of(*s).byte();
+            let key = (own.min(partner), own.max(partner));
+            let list = by_pair.entry(key).or_default();
+            if !list.iter().any(|d| d.name.unwrap().code() == b.code()) {
+                list.push(m); // one dual per distinct block (a pair confirms per WORD)
+            }
+        }
+    }
+    // Among pairs with ≥3 distinct-block duals, pick the one that also has a worn, dual-less
+    // name-bearer of one of its first three blocks (the comparative-restoration target).
+    let mut chosen: Option<(
+        (u8, u8),
+        Vec<&structures::Inscription>,
+        &structures::Inscription,
+    )> = None;
+    let mut keys: Vec<(u8, u8)> = by_pair.keys().copied().collect();
+    keys.sort_unstable();
+    for key in keys {
+        let duals = &by_pair[&key];
+        if duals.len() < 3 {
+            continue;
+        }
+        let blocks: Vec<u8> = duals[..3].iter().map(|d| d.name.unwrap().code()).collect();
+        let worn = marks.iter().find(|m| {
+            m.dual.is_none()
+                && matches!(m.condition, structures::Condition::Worn(_))
+                && m.name.is_some_and(|b| blocks.contains(&b.code()))
+        });
+        if let Some(w) = worn {
+            chosen = Some((key, duals[..3].to_vec(), w));
+            break;
+        }
+    }
+    let (_pair_key, duals, worn) =
+        chosen.expect("the origin field holds a 3-dual stratum pair + a worn bearer of one");
+    let pair = {
+        let own = progress::stratum_of(duals[0].script);
+        let partner = progress::stratum_of(duals[0].dual.as_ref().unwrap().1);
+        (own, partner)
+    };
+
+    let mut app = App::headless(seed);
+    app.auto_fly = false; // scripted helm
+
+    // --- Collect the first dual through the real streaming/collect seam: BOTH lines bank
+    //     (each into its own stratum), the codex stacks them, the candidate is logged. ---
+    let d0 = duals[0];
+    let (before_a, before_b) = (
+        app.progress.strata.get(pair.0),
+        app.progress.strata.get(pair.1),
+    );
+    collect_inscription(&mut app, d0);
+    assert!(
+        app.progress.strata.get(pair.0) > before_a && app.progress.strata.get(pair.1) > before_b,
+        "a dual spelling credits both strata"
+    );
+    let id0 = progress::find_id(d0.cell, d0.script, &d0.text);
+    assert_eq!(
+        app.progress
+            .codex
+            .iter()
+            .filter(|e| e.find_id == id0)
+            .count(),
+        2,
+        "one find, two stacked codex lines"
+    );
+    assert_eq!(
+        app.progress.cognate_candidates().count(),
+        1,
+        "the candidate is logged"
+    );
+    // The console offers it as a collation row (structural: cost gauges, Enter collates).
+    app.sync_console_unlock();
+    assert_eq!(app.console.cognates.len(), 1);
+    let home = app.console.render();
+    let cost_row = {
+        // The stored pair is canonical (lo byte, hi byte) — the row prints that order.
+        let (lo, hi) = if pair.0.byte() < pair.1.byte() {
+            (pair.0, pair.1)
+        } else {
+            (pair.1, pair.0)
+        };
+        let c = progress::collation_cost((pair.0, pair.1));
+        format!("collate: {} {c} · {} {c}", lo.label(), hi.label())
+    };
+    assert!(
+        home.contains(&cost_row),
+        "the collation row shows the pair's per-side price ({cost_row}):\n{home}"
+    );
+
+    // --- Collect the other two duals (distinct words, same stratum pair). ---
+    collect_inscription(&mut app, duals[1]);
+    collect_inscription(&mut app, duals[2]);
+    assert_eq!(app.progress.cognate_candidates().count(), 3);
+
+    // --- Collation is GATED on banked data: an unaffordable collate is an honest no-op. ---
+    let cost = progress::collation_cost((pair.0, pair.1));
+    if app.progress.strata.get(pair.0) < cost || app.progress.strata.get(pair.1) < cost {
+        let (b, p) = app.console.cognates[0];
+        assert!(!app.progress.apply(&Event::Collate { block: b, pair: p }));
+        assert_eq!(
+            app.progress.cognate_candidates().count(),
+            3,
+            "still pending"
+        );
+    }
+
+    // --- Fund both sides through the canonical seam, then collate ×3 through the REAL console
+    //     rows (cursor onto the row + Enter): the balances visibly go DOWN — the sink. ---
+    fund_stratum(&mut app, progress::script_for(pair.0), 3 * cost + 40);
+    fund_stratum(&mut app, progress::script_for(pair.1), 3 * cost + 40);
+    for round in 0..3u32 {
+        app.sync_console_unlock();
+        let idx = 0; // candidates consume front-to-back
+        let base = app.console.routines.len()
+            + 2
+            + app.console.visible_palette().len()
+            + app.console.visible_senses().len();
+        app.console.cursor = base + idx;
+        assert_eq!(app.console.selected(), console::Sel::Collate(idx));
+        let (before_a, before_b) = (
+            app.progress.strata.get(pair.0),
+            app.progress.strata.get(pair.1),
+        );
+        assert!(
+            !app.progress.correspondence_known(pair.0, pair.1),
+            "not known before pair {round} confirms"
+        );
+        app.console_confirm();
+        assert_eq!(
+            app.progress.strata.get(pair.0),
+            before_a - cost,
+            "collation spends {cost} from the {} side",
+            pair.0.label()
+        );
+        assert_eq!(
+            app.progress.strata.get(pair.1),
+            before_b - cost,
+            "…and {cost} from the {} side",
+            pair.1.label()
+        );
+    }
+    assert!(
+        app.progress.correspondence_known(pair.0, pair.1),
+        "three confirmed pairs teach the correspondence"
+    );
+    assert_eq!(app.progress.cognate_candidates().count(), 0);
+
+    // --- The family tree is a codex panel: glyph structure only (proto slot + daughters +
+    //     the known edge), no translations, no prose. ---
+    let codex = app.codex_text();
+    assert!(
+        codex.contains("TREE — 3 collated"),
+        "the tree panel grows:\n{codex}"
+    );
+    let (lo, hi) = if pair.0.byte() < pair.1.byte() {
+        (pair.0, pair.1)
+    } else {
+        (pair.1, pair.0)
+    };
+    assert!(
+        codex.contains(&format!("{}\u{2194}{} 3/3\u{2713}", lo.label(), hi.label())),
+        "the edge is marked known:\n{codex}"
+    );
+    for (b, _) in app.progress.collated() {
+        assert!(
+            !codex.contains(b.name()),
+            "no English key leaks into the tree: {}",
+            b.name()
+        );
+    }
+
+    // --- The payoff, INVERTED from G21: the SHIP (rung 0, no instrument researched) collects
+    //     the worn name-bearer of a collated word — and it restores comparatively: full
+    //     unreduced yield, Leiden-bracketed lacuna-free codex text. Knowledge flies. ---
+    let wb = worn.name.unwrap();
+    assert!(app.progress.comparative_restorable(wb));
+    assert!(
+        !app.progress
+            .is_sense_comprehended(progress::Sense::CloseReading),
+        "no sensing instrument is held — this is the comparative method alone"
+    );
+    let full = progress::glyph_count(worn.pristine.as_deref().unwrap());
+    assert!(progress::glyph_count(&worn.text) < full, "really worn");
+    let before = app.progress.strata.get(progress::stratum_of(worn.script));
+    collect_inscription(&mut app, worn); // a SHIP collect (on_foot = false)
+    assert_eq!(
+        app.progress.strata.get(progress::stratum_of(worn.script)) - before,
+        progress::yield_amount(worn.script, full),
+        "comparative restoration pays FULL yield from the ship — and only once (no double-pay)"
+    );
+    let wid = progress::find_id(worn.cell, worn.script, &worn.text);
+    let entry = app
+        .progress
+        .codex
+        .iter()
+        .find(|e| e.find_id == wid)
+        .unwrap();
+    assert!(
+        !entry.text.contains(crate::text::MARK_LACUNA) && entry.text.contains('['),
+        "the codex holds the Leiden-bracketed restoration: {:?}",
+        entry.text
+    );
+
+    // --- Everything rides pg= v12 and the loop keeps running. ---
+    let restored = progress::Progress::decode(&app.share_string());
+    assert_eq!(restored, app.progress);
+    assert!(restored.correspondence_known(pair.0, pair.1));
+    drive(&mut app, 120);
+}
+
+// ----------------------------------------------------------------------------------------------
 // 8) Render-robustness sweep — several vantages + after state changes render without panic/NaN.
 //    Needs a (software) Vulkan adapter, so it's `#[ignore]` (local / opt-in, not CI).
 // ----------------------------------------------------------------------------------------------

@@ -976,6 +976,31 @@ bounded envelope regression in CI (seed 1337: first discovery ≤ 8 sim-min, fir
 ≤ 35, income in [6, 30] yield/min) with the full multi-seed probe behind `PACING_FULL=1`.
 Golden voxel-hash + headless render unchanged.
 
+### ✨ G22 — Proto-language & the comparative method (lexicon v3 + collation) ✅ &nbsp;→ [`milestones/G22-proto-language.md`](milestones/G22-proto-language.md)
+The Archive tranche's endgame puzzle, in four green commits: **the five strata become
+daughter forms of one proto-language** (the Tolkien method, research §5/§6). **(1) Lexicon
+v3:** generation moves to the **proto** level; each stratum's surface derives via an
+ordered deterministic **sound-change cascade** (`lexicon::derive`) — Records mild,
+Schematics vowel-dropped (abjad-like syncope), Rites palatalized + CV re-shaped
+(echo vowels), Relics final-vowel-dropped (lapidary), **Signals = identity: the machine
+layer speaks the mother tongue** (SGA's easy crack opens the hard comparative puzzle).
+Every surface consumer re-sources (each script writes its own daughter); every guarantee
+(≥4 glyphs, blocklist/keys, per-script distinctness) now checked on **every daughter**;
+new cognate-detectability statistic + the honesty suite re-run per-stratum. **(2) Dual
+spellings** (Landa's accidental bilingual): ~1/12 of name-bearers (fresh salt) carry the
+name twice — own form + one sister stratum's cognate, both cartouched, stacked billboard
+lines; collecting banks both and logs a **cognate candidate** (`pg=` v12 append-only).
+**(3) Collation — the strata-data sink** the pacing analysis demanded: the console's
+collation rows spend `30 << deeper` banked data from **both** sides of a candidate
+(player-initiated only — no-softlock by construction; data, not shards — no competition
+with research); three confirmed pairs on an edge → **correspondence known**; the codex
+grows the **family-tree panel** (proto slot in Signals script + daughter forms, glyphs
+only, no prose). Payoff verb: **comparative restoration** — a worn name-bearer with an
+attested partner form under a known edge recovers Leiden-bracketed at full yield **from
+the ship** (knowledge flies, instruments walk — the deliberate inversion of G21's
+on-foot assert, pinned in the D11 scenario). Envelope green un-re-pinned (collation is
+player-initiated; the probe measured the exact G19 numbers); golden voxel-hash unchanged.
+
 ### ✨ G21 — The sensing ladder (close reading, deep sensing, palimpsests) ✅ &nbsp;→ [`milestones/G21-sensing-ladder.md`](milestones/G21-sensing-ladder.md)
 The Archive tranche's payoff milestone, in four green commits: **worn and ⟦erased⟧ text
 becomes recoverable, on foot, with researched sensing**. **(1) Sensing research targets +
@@ -994,7 +1019,7 @@ else Relics/Signals-script data); on foot with deep sensing, `Event::RevealErase
 the **logged** codex gouge *in place* (`⟦——⟧` → `⟦glyphs⟧`) and the logged-erasures list
 becomes a **destination list** (unresolved gouges re-stream as collectibles). **(3)
 Palimpsests:** ~1/60 eligible ambient cells carry an older under-text (independent salt,
-deep-strata script, ordinary lexicon — G22 re-sources); a subtle **doubled-baseline tell**
+deep-strata script, ordinary lexicon — G22 re-sourced them to surface forms); a subtle **doubled-baseline tell**
 (one new content-agnostic engine mark, U+E625) shows at rungs 0–1; deep sensing on foot
 collects **both layers**, codex-stacked under one find. **(4) Riders + the rationality
 assert:** the four given routines display **lexicon names** (player routines keep

@@ -40,6 +40,7 @@
   value → routed to **G21 sensing ladder** (worn/⟦erased⟧ recovery on foot) + G20.
 - **Strata data has no sink** (research fills only from shards; strata = display +
   `when()` fuel) → candidate sink in **G22 proto-language** (cognate work consumes data).
+  **Landed (G22, 2026-07-10):** collation — see the addendum below.
 - **Rarity gates nothing** — the human's explicit "rarer blocks demand rarer shards" was
   half-implemented (larger totals only) → rare-count requirements in **G19**.
 - **Vocabulary gap:** tiers Records/Rites/Signals gate zero blocks → filled naturally by
@@ -92,3 +93,19 @@ the authored `run(foot)` expedition banks recovered-full. The **envelope needed 
 recovery raises on-foot yield only, and the CI probe's autopilot is pure ship (rung 0) —
 measured income band unchanged. When a walker-inclusive probe run exists, measure
 worn-rich-site expedition yield vs drift here.
+
+## The strata-data sink (G22, 2026-07-10)
+
+The "strata data has no sink" finding is answered by **collation**: confirming a cognate
+candidate spends `30 << deeper.byte()` banked data from **each** stratum of the pair
+(REC↔SCH 60+60 … ↔SIG 480+480). Sizing: at the measured ~3.2/min single-domain passive
+rate a shallow collation is ~19 min of one domain's trickle per side — in practice a few
+minutes, since Records/Schematics data dominates ambient collects and dual/restored
+collects pay full; a Signals-deep collation (~480/side) is endgame-priced, matching the
+tranche arc. Collation spends **data**, research spends **shards** — disjoint currencies,
+so the sink cannot starve research by construction. It is **player-initiated only** (the
+console's collation rows are the one door; routines/autopilot never fire it), so the CI
+envelope needed **no re-pin**: the seed-1337 probe measured the same 0.3 min discovery /
+8.8 min comprehension / 23.4 y/min income as the G19 pin. When a collation-inclusive
+manual-play probe exists, measure real time-to-first-correspondence here (3 duals of one
+pair + 3 collations; the D11 scenario proves the chain, not the pacing).
