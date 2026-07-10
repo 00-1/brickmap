@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `b8c3408` (G18 — uncertainty layer).
+**Reviewed through:** `7292758` (G19b — economy truing; G19 complete).
 
 ---
 
@@ -36,6 +36,35 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-07-10 · G19b — economy truing (`7292758`)  ✅ PASSED — G19 complete (four-way green; envelope now CI-enforced)
+
+**Independently verified:** fmt/clippy clean · **402 tests, 0 failures** workspace-wide ·
+**CI ✅ · Android ✅ · Desktop ✅ · Deploy ✅** · golden voxel-hash unchanged.
+
+**The measured arc is real:** re-measured post-truing across 6 seeds — first comprehension
+6.2–11.9 min on 5/6 seeds (the roulette fixed), income unchanged, **full ladder 5.31–6.32 h
+(mean ≈5.9 h)** — the pacing doc's 5–6 h prediction confirmed by measurement, with the rare
+gate visibly binding on `runfoot` in every run. The **envelope is now a 9-second CI test**
+(seed 1337: discovery ≤8 min, comprehension ≤35, income [6,30] y/min) with the full 6-seed
+probe env-gated — pacing regressions now fail the build. Coverage held at the 1/6
+name-bearer rate (no fallback needed; the monument test strengthened to pin all four gated
+names within 1200 u).
+
+**Rare gates land the human's full decision:** Relics needs ≥4 rare own-domain pickups,
+Signals ≥8, tracked per target, honest display (`fill 172/200 · r 1/4`), `pg=` v9
+append-only. **One feel observation (routed to the human's play pass, not changed):** the
+one Relics-first seed sat at `r 0/4` past 60 min — the gate holding *by design*, and the
+player can freely switch targets (mid-fill preserved) with the lit-goal nudging — but if
+Relics-first onboarding feels harsh in play, tune the 4/8 requirement, not the cost.
+Added to human-verification Checklist 3 wording implicitly under research pacing.
+
+**Verdict.** G19 (a+b) complete: the dead nav features live, the economy is measured
+rather than guessed, the human's rarity decision is fully implemented, and the pacing
+envelope is permanently enforced. Next: **G20 — cartouches + formulaic frames + the
+lexicon-naming fix** (the G18 review follow-up).
+
+---
 
 ## 2026-07-10 · Boundary skim — goblin-gold's engine additions  ✅ CLEAN
 
