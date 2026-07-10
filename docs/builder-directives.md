@@ -54,6 +54,33 @@ the original builder returning: do NOT build these three — check `agent-review
 what's landed and take the next undispatched item from the Archive queue (G20+) after
 they're done.
 
+## CURRENT DIRECTIVE — 2026-07-10: G22 proto-language (dispatched to a babysitter build agent)
+
+**State:** G18 (uncertainty) → G19a/b (nav fixes + economy truing) → G20 (true names /
+cartouches / frames) → **G21 (sensing ladder)** are all landed, four-way green, and
+reviewed (see [`agent-review.md`](agent-review.md), reviewed through `8ef6649`). The
+expedition is now economically rational (walker-only data classes, D11-asserted); the
+Rites/Signals research tiers are filled; no readable English remains in the vocabulary
+layer.
+
+**Dispatched now: G22 — proto-language & the comparative method** per
+[`milestones/G22-proto-language.md`](milestones/G22-proto-language.md) (lexicon v3: one
+proto, five sound-change cascades, Signals = the preserved proto; dual spellings → cognate
+candidates; **collation** as the strata-data sink; comparative restoration, ship-available).
+A babysitter build agent is executing it — if you are a returning builder, do NOT build
+G22; take the next undispatched item below after checking `agent-review.md`.
+
+**Queue after G22:** **G23** prosopography (hands + the factoid survey log) → **E16b**
+audio identity (lament bass, phone virtual bass, per-stratum earcons — behind toggles) →
+project-state + human-verification refresh (the Archive arc) → a second full-tranche
+QA/pacing pass. Briefs land one at a time; don't pre-build.
+
+**Process notes in force:** push per commit (a batched push gives CI only the tip);
+toolchain pinned, local `cargo fmt --check` authoritative; CI is the authority; keep main
+green; never touch `crates/goblin-gold` (another team's game on the shared trunk).
+
+---
+
 ## CURRENT DIRECTIVE — 2026-06-16 (updated): G18, then **G19 economy truing (has an URGENT bug part)**
 
 **G18 (uncertainty layer) stands as dispatched** — finish it per its brief. **Then chain
