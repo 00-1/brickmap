@@ -127,6 +127,12 @@ pub struct Inscription {
     /// billboard carries the subtle doubled-baseline **tell**; only rung 2's deep sensing
     /// *reads* it (an on-foot collect then yields both layers).
     pub under: Option<(String, Script)>,
+    /// G22: this name-bearer carries a **dual spelling** (Landa's accidental bilingual): the
+    /// same name's cognate form in one sister stratum's script, cartouched, rendered as a
+    /// second stacked line ([`dual_spelling`], ~1 in 12 of name-bearers, independent salt).
+    /// Collecting it banks both lines and logs a **cognate candidate**. Ambient cells and
+    /// ⟦erased⟧ cells never carry one.
+    pub dual: Option<(String, Script)>,
 }
 
 /// G18: an inscription's seeded material condition. `Worn(mask)` — bit `i` set ⇒ the `i`-th
@@ -531,6 +537,48 @@ pub fn name_text(seed: u32, b: crate::console::Block) -> String {
     transliterate(&display_name(seed, b), block_script(b))
 }
 
+/// G22: block `b`'s name as **another stratum's cognate form** — that stratum's daughter word,
+/// written in that stratum's script (each script writes its own daughter). The single source for
+/// dual-spelling partner lines, the console's candidate rows, and the family-tree codex panel.
+pub fn cognate_text(
+    seed: u32,
+    b: crate::console::Block,
+    stratum: crate::progress::Stratum,
+) -> String {
+    transliterate(
+        &crate::lexicon::vocab_word(seed, b.name(), stratum),
+        crate::progress::script_for(stratum),
+    )
+}
+
+/// G22: does this cell's name-bearer carry a **dual spelling** (Landa's accidental bilingual —
+/// the name written twice: its own stratum's form + the cognate form in one sister stratum's
+/// script)? ~**1 in 12** of name-bearers, from a fresh, independent salt (the standing
+/// correlation discipline); the partner stratum is picked deterministically from the cell among
+/// the four sisters. Returns the partner's **cartouched** glyph line `(text, script)`.
+pub fn dual_spelling(
+    seed: u32,
+    cell: (i32, i32),
+    b: crate::console::Block,
+) -> Option<(String, Script)> {
+    use crate::progress::Stratum;
+    let h = hash(
+        cell.0 ^ 0x4D5A,
+        cell.1 ^ 0x1E8B,
+        seed.wrapping_add(0x4455_414C), // "DUAL"
+    );
+    if !h.is_multiple_of(12) {
+        return None;
+    }
+    let own = b.required().unwrap_or(Stratum::Records);
+    let sisters: Vec<Stratum> = Stratum::ALL.into_iter().filter(|s| *s != own).collect();
+    let partner = sisters[((h >> 8) as usize) % sisters.len()];
+    Some((
+        cartouche(&cognate_text(seed, b, partner)),
+        crate::progress::script_for(partner),
+    ))
+}
+
 /// Per-script character pool to assemble abstract "words" from (Latin/Galactic/Runic all draw
 /// from Latin letters — Galactic/Runic remap them to their own glyphs).
 fn pool(script: Script) -> &'static str {
@@ -659,6 +707,9 @@ pub fn colossus_label(seed: u32, p: &Placement) -> Inscription {
         frame: None,
         pristine: None,
         under: None,
+        // G22: monuments stay single-line (the coverage/intactness guarantees hold untouched);
+        // dual spellings live on the streamed name-bearers.
+        dual: None,
     }
 }
 
@@ -768,6 +819,10 @@ pub fn inscriptions_near(
             } else {
                 (text, pristine)
             };
+            // G22: a surviving name-bearer may carry a **dual spelling** — the cognate form in
+            // a sister stratum's script, stacked as a second cartouched line (fresh salt; an
+            // erasure dropped its name above, so a gouge never carries one).
+            let dual = name.and_then(|b| dual_spelling(seed, (cx, cz), b));
             out.push(Inscription {
                 cell: (cx, cz),
                 // Float just above the surface — a small label tethered to the ground voxel.
@@ -781,6 +836,7 @@ pub fn inscriptions_near(
                 frame,
                 pristine,
                 under,
+                dual,
             });
         }
     }
@@ -1689,6 +1745,107 @@ mod tests {
             name.map(|b| b.name()),
             "a revealed name reads via name_of_text"
         );
+    }
+
+    /// G22: dual spellings — deterministic, ~1/12 rate off a fresh salt **independent** of the
+    /// name-gate and condition bits (the standing correlation discipline); in the streamed field
+    /// they ride name-bearers only, as a second cartouched line in the partner stratum's script
+    /// (never the bearer's own), spelling the partner's cognate form; the partner line never
+    /// false-reads as some other block's name.
+    #[test]
+    fn dual_spellings_rate_independence_and_partner_line() {
+        use crate::console::Block;
+        let seed = 1337u32;
+        // Rate + independence over raw cells (the salt gates ~1/12 regardless of the block).
+        let n = 60_000i32;
+        let (mut hits, mut gate_all, mut gate_hits, mut er_all, mut er_hits) = (0u32, 0, 0, 0, 0);
+        for i in 0..n {
+            let cell = (i, -i * 5 + 7);
+            let d = dual_spelling(seed, cell, Block::Collect);
+            assert_eq!(
+                dual_spelling(seed, cell, Block::Collect).is_some(),
+                d.is_some(),
+                "deterministic"
+            );
+            hits += u32::from(d.is_some());
+            let h = hash(
+                cell.0 ^ 0x1111,
+                cell.1 ^ 0x2222,
+                seed.wrapping_add(0x7E47_0000),
+            );
+            if (h >> 5).is_multiple_of(6) {
+                gate_all += 1;
+                gate_hits += u32::from(d.is_some());
+            }
+            let ch = hash(
+                cell.0 ^ 0x51AB,
+                cell.1 ^ 0x2E77,
+                seed.wrapping_add(0x00C0_5D17),
+            );
+            if condition_pick(ch, 6) == Condition::Erased {
+                er_all += 1;
+                er_hits += u32::from(d.is_some());
+            }
+        }
+        let rate = hits as f32 / n as f32;
+        assert!(
+            (0.06..=0.11).contains(&rate),
+            "~1/12 of cells carry the dual salt, got {rate}"
+        );
+        for (sub_hits, sub_all, what) in [
+            (gate_hits, gate_all, "name-gated"),
+            (er_hits, er_all, "erased-condition"),
+        ] {
+            assert!(sub_all > 500, "need a large {what} sample");
+            let sub = sub_hits as f32 / sub_all as f32;
+            assert!(
+                (sub - rate).abs() < 0.03,
+                "dual bits correlate with the {what} bits ({sub} vs {rate})"
+            );
+        }
+        // The partner stratum is never the block's own, and the line is the partner's cognate.
+        let (line, script) = (0..200i32)
+            .find_map(|i| dual_spelling(seed, (i, i), Block::Seek))
+            .expect("a dual in 200 cells");
+        assert_ne!(script, block_script(Block::Seek), "a SISTER stratum writes");
+        let partner = crate::progress::stratum_of(script);
+        assert_eq!(line, cartouche(&cognate_text(seed, Block::Seek, partner)));
+        // The streamed field: duals ride surviving name-bearers only; the second line is
+        // cartouched, in a different script, and reads as NO block (the per-stratum
+        // distinctness guarantee — it can't false-discover).
+        let g = |_x: f32, _z: f32| 0.0;
+        let marks = inscriptions_near(seed, Vec3::ZERO, 2500.0, g);
+        let duals: Vec<_> = marks.iter().filter(|m| m.dual.is_some()).collect();
+        assert!(
+            duals.len() >= 2,
+            "the origin field holds dual spellings, got {}",
+            duals.len()
+        );
+        for m in &marks {
+            if let Some((t, s)) = &m.dual {
+                let b = m.name.expect("duals ride name-bearers");
+                assert_ne!(m.condition, Condition::Erased, "a gouge carries nothing");
+                assert!(
+                    t.starts_with(crate::text::MARK_CARTOUCHE_OPEN)
+                        && t.ends_with(crate::text::MARK_CARTOUCHE_CLOSE),
+                    "the partner line is cartouched: {t:?}"
+                );
+                assert_ne!(*s, m.script, "two scripts, one name");
+                assert_eq!(
+                    *t,
+                    cartouche(&cognate_text(seed, b, crate::progress::stratum_of(*s)))
+                );
+                assert_eq!(
+                    name_of_text(seed, t, *s),
+                    None,
+                    "a partner line never false-reads as another name: {t:?}"
+                );
+            }
+        }
+        // Ambient cells never carry one (duals are the name-bearers' gift).
+        for m in marks.iter().filter(|m| m.name.is_none()) {
+            assert!(m.dual.is_none());
+        }
     }
 
     /// BUG1 regression: huge cam coords must not overflow the colossi/inscription cell loops.

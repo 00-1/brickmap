@@ -652,6 +652,23 @@ impl App {
                 );
                 banked_text = text.clone();
             }
+            // G22: both lines of a dual spelling banked; the cognate candidate is logged (the
+            // console's collation rows pick it up from live state).
+            progress::Event::CollectDual {
+                text,
+                partner_script,
+                partner_text,
+                ..
+            } => {
+                log::info!(
+                    "DUAL SPELLING — one name, two strata: +{} {} / +{} {} (cognate candidate logged)",
+                    progress::yield_amount(c.script, progress::glyph_count(text)),
+                    progress::stratum_of(c.script).label(),
+                    progress::yield_amount(*partner_script, progress::glyph_count(partner_text)),
+                    progress::stratum_of(*partner_script).label(),
+                );
+                banked_text = text.clone();
+            }
             progress::Event::Collect { text, .. } => {
                 if *text != c.text {
                     log::info!("RECOVERED — the lacunae fill (full yield)");
@@ -1868,6 +1885,7 @@ impl App {
                     frame: m.frame, // G20: frame instances teach/restore the crib
                     pristine: m.pristine.clone(), // G21: close reading's recovery source
                     under: m.under.clone(), // G21: a palimpsest's under-text (deep sensing)
+                    dual: m.dual.clone(), // G22: a dual spelling logs a cognate candidate
                 })
             })
             .collect();
@@ -1881,6 +1899,18 @@ impl App {
         // G18: only an **intact** ambient inscription translates once its script is legible —
         // worn content's lost glyph positions and an erasure's struck content stay unrecovered
         // until G20's sensing ladder (the marks render as marks, whatever you've comprehended).
+        // G22: a dual-spelling name-bearer renders its partner line as a second, stacked
+        // billboard just below the primary (an ordinary extra label on the existing text path —
+        // one cartouched name, two scripts, visibly the same-but-shifted word).
+        let dual_labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
+            .iter()
+            .filter_map(|m| {
+                m.dual.as_ref().map(|(t, s)| {
+                    let below = m.pos - Vec3::new(0.0, m.height * 0.75, 0.0);
+                    (t.clone(), *s, below, m.height * 0.8, m.color)
+                })
+            })
+            .collect();
         let labels: Vec<(String, text::Script, Vec3, f32, [f32; 3])> = inscriptions
             .into_iter()
             .map(|m| match m.name {
@@ -1912,6 +1942,7 @@ impl App {
                 }
                 None => (m.text, m.script, m.pos, m.height, m.color),
             })
+            .chain(dual_labels)
             .collect();
         if let Some(state) = self.state.as_mut() {
             state.set_text_labels(&labels);
@@ -4026,6 +4057,20 @@ fn collect_event(
                 pos: c.pos,
             };
         }
+    }
+    // G22: a **dual spelling** collects both cartouched lines (own stratum's form as resolved
+    // above + the sister stratum's cognate) and logs the cognate candidate — at any rung, any
+    // agent (the second line is plainly carved; no instrument needed to read stone).
+    if let (Some((partner_text, partner_script)), Some(block)) = (c.dual.clone(), c.name) {
+        return progress::Event::CollectDual {
+            find_id: c.find_id,
+            script: c.script,
+            text,
+            partner_script,
+            partner_text,
+            pos: c.pos,
+            block,
+        };
     }
     progress::Event::Collect {
         find_id: c.find_id,

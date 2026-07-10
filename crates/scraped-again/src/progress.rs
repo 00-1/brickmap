@@ -361,6 +361,9 @@ pub struct Collectible {
     pub pristine: Option<String>,
     /// G21: a palimpsest's under-text `(text, script)` — deep sensing reads it on foot.
     pub under: Option<(String, Script)>,
+    /// G22: a name-bearer's **dual spelling** — the same name's cognate form in a sister
+    /// stratum's script (cartouched). Collecting banks both lines and logs a cognate candidate.
+    pub dual: Option<(String, Script)>,
 }
 
 /// A stable, deterministic id for an inscription find — a function of its grid cell + script +
@@ -466,6 +469,19 @@ pub enum Event {
     /// G20: an **intact sighting** of a recurring formulaic frame (a collect on a frame-matching
     /// inscription). At [`FRAME_KNOWN_SIGHTINGS`] the frame becomes *known*.
     SightFrame { frame_id: u64 },
+    /// G22: collect a **dual-spelling** name-bearer (Landa's accidental bilingual) — both lines
+    /// bank (each into its own script's stratum), the codex logs them **stacked** (two entries,
+    /// one `find_id`, own-stratum line first), and a **cognate candidate** is logged for
+    /// `(block, stratum pair)` — the comparative method's raw material. Dedups like any collect.
+    CollectDual {
+        find_id: u64,
+        script: Script,
+        text: String,
+        partner_script: Script,
+        partner_text: String,
+        pos: [f32; 3],
+        block: crate::console::Block,
+    },
 }
 
 /// All run progress: the banked strata + the codex of finds (with a de-dup set) + the set of
@@ -531,6 +547,20 @@ pub struct Progress {
     /// G21: sensing instruments **comprehended** (research filled + rare-gated) — the ladder
     /// rungs the walker actually holds. Consulted by the collect paths (on foot only).
     senses: std::collections::HashSet<Sense>,
+    /// G22: **cognate candidates** — dual spellings collected but not yet collated, as
+    /// `(block code, canonical stratum-pair bytes)` in discovery order. The comparative
+    /// method's in-tray: each can be *collated* (the strata-data sink) into `collated`.
+    cognate_candidates: Vec<(u8, (u8, u8))>,
+    /// G22: **collated** (confirmed) cognate pairs, in confirmation order — the family-tree
+    /// codex panel's entries. Three confirmed pairs on one stratum pair ⇒ the correspondence
+    /// is *known* (comparative restoration unlocks for that edge).
+    collated: Vec<(u8, (u8, u8))>,
+}
+
+/// G22: the canonical byte encoding of an unordered stratum pair (lo, hi) — one key per edge.
+fn pair_bytes(a: Stratum, b: Stratum) -> (u8, u8) {
+    let (x, y) = (a.byte(), b.byte());
+    (x.min(y), x.max(y))
 }
 
 impl Progress {
@@ -909,6 +939,44 @@ impl Progress {
             // → fill → level up, via `CollectShard`). This event is a no-op kept only so any
             // serialized old event log still applies cleanly.
             Event::Spend { .. } => false,
+            // G22: a dual-spelling collect — both lines bank (own stratum + the sister's), the
+            // codex stacks them under one find (own line first, like the palimpsest layers), and
+            // a cognate candidate is logged (once — a re-collected pair stays one candidate).
+            Event::CollectDual {
+                find_id,
+                script,
+                text,
+                partner_script,
+                partner_text,
+                pos,
+                block,
+            } => {
+                if !self.seen.insert(*find_id) {
+                    return false; // already collected
+                }
+                self.strata.add(*script, glyph_count(text));
+                self.strata.add(*partner_script, glyph_count(partner_text));
+                for (s, t) in [(script, text), (partner_script, partner_text)] {
+                    self.codex.push(CodexEntry {
+                        find_id: *find_id,
+                        script: *s,
+                        text: t.clone(),
+                        pos: *pos,
+                    });
+                }
+                // A worn own-line still teaches close reading (the standing frustration event).
+                if text.chars().any(|c| c == crate::text::MARK_LACUNA) {
+                    self.senses_discovered.insert(Sense::CloseReading);
+                }
+                let key = (
+                    block.code(),
+                    pair_bytes(stratum_of(*script), stratum_of(*partner_script)),
+                );
+                if !self.cognate_candidates.contains(&key) && !self.collated.contains(&key) {
+                    self.cognate_candidates.push(key);
+                }
+                true
+            }
             // G20: count an intact frame sighting; the third teaches the frame (append-only
             // knowledge — nothing un-knows a frame).
             Event::SightFrame { frame_id } => {
@@ -1060,11 +1128,25 @@ impl Progress {
         self.frame_sightings.get(&frame_id).copied().unwrap_or(0)
     }
 
+    // ---- G22: cognate candidates (the comparative method's in-tray) --------------------------
+
+    /// G22: the logged **cognate candidates** (dual spellings collected, not yet collated), in
+    /// discovery order, decoded to typed `(block, stratum pair)`. Unknown block codes are
+    /// skipped (lenient — the standing codec discipline).
+    pub fn cognate_candidates(
+        &self,
+    ) -> impl Iterator<Item = (crate::console::Block, (Stratum, Stratum))> + '_ {
+        self.cognate_candidates.iter().filter_map(|(code, pair)| {
+            crate::console::Block::from_code(*code)
+                .map(|b| (b, (Stratum::from_byte(pair.0), Stratum::from_byte(pair.1))))
+        })
+    }
+
     /// Encode as a `pg=<hex>` share segment (binary blob → hex; unicode- and URL-safe). The
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(11u8); // version (…; 9 = + rare gates G19; 10 = + frames G20; 11 = + senses G21)
+        b.push(12u8); // version (…; 10 = + frames G20; 11 = + senses G21; 12 = + cognates G22)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -1169,6 +1251,17 @@ impl Progress {
             b.push(xs.len() as u8);
             b.extend_from_slice(&xs);
         }
+        // v12: the G22 comparative method — cognate candidates, then collated pairs, each as
+        // (block code, pair lo, pair hi) in their stored (discovery / confirmation) order.
+        // Append-only — old payloads load with neither.
+        for list in [&self.cognate_candidates, &self.collated] {
+            b.push(list.len() as u8);
+            for (code, (lo, hi)) in list {
+                b.push(*code);
+                b.push(*lo);
+                b.push(*hi);
+            }
+        }
         format!("pg={}", to_hex(&b))
     }
 
@@ -1219,7 +1312,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if !(1..=11).contains(&version) {
+    if !(1..=12).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -1385,6 +1478,21 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             }
         }
     }
+    // v12: the G22 comparative method (absent pre-v12 → no candidates, nothing collated — the
+    // dual spellings in the world re-teach). Stored order preserved.
+    let mut cognate_candidates: Vec<(u8, (u8, u8))> = Vec::new();
+    let mut collated: Vec<(u8, (u8, u8))> = Vec::new();
+    if version >= 12 {
+        for list in [&mut cognate_candidates, &mut collated] {
+            let n = *take(&mut p, 1)?.first()?;
+            for _ in 0..n {
+                let code = *take(&mut p, 1)?.first()?;
+                let lo = *take(&mut p, 1)?.first()?;
+                let hi = *take(&mut p, 1)?.first()?;
+                list.push((code, (lo, hi)));
+            }
+        }
+    }
     Some(Progress {
         strata,
         codex,
@@ -1406,6 +1514,8 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         frames_known,
         senses_discovered,
         senses,
+        cognate_candidates,
+        collated,
     })
 }
 
@@ -1454,6 +1564,8 @@ impl PartialEq for Progress {
             && self.frames_known == other.frames_known
             && self.senses_discovered == other.senses_discovered
             && self.senses == other.senses
+            && self.cognate_candidates == other.cognate_candidates
+            && self.collated == other.collated
     }
 }
 
@@ -2473,6 +2585,88 @@ mod tests {
             "pre-v11 → undiscovered"
         );
         assert_eq!(v10.collected_count(), p.collected_count(), "codex intact");
+    }
+
+    /// G22: `CollectDual` banks **both** lines into their own strata, stacks the codex (two
+    /// entries, one `find_id`, own line first), logs the cognate candidate exactly once (a
+    /// second dual of the same block+pair adds no duplicate), teaches close reading from a worn
+    /// own-line, and everything rides `pg=` **v12**; a pre-v12 payload loads with no candidates.
+    #[test]
+    fn collect_dual_banks_both_logs_one_candidate_and_rides_pg_v12() {
+        use crate::console::Block;
+        let mut p = Progress::default();
+        let ev = Event::CollectDual {
+            find_id: 31,
+            script: Script::Latin, // Records — collect's home stratum
+            text: format!("ΑΒ{}Δ", crate::text::MARK_LACUNA), // worn own line (3 survivors)
+            partner_script: Script::Greek, // the Schematics cognate
+            partner_text: "ΑΒΓΔΕ".into(),
+            pos: [1.0, 2.0, 3.0],
+            block: Block::Collect,
+        };
+        assert!(p.apply(&ev));
+        assert_eq!(p.strata.records, yield_amount(Script::Latin, 3));
+        assert_eq!(p.strata.schematics, yield_amount(Script::Greek, 5));
+        assert_eq!(p.collected_count(), 2, "two lines, two entries");
+        assert_eq!(p.codex[0].find_id, p.codex[1].find_id, "one find, stacked");
+        assert_eq!(p.codex[0].script, Script::Latin, "own line first");
+        assert!(
+            p.is_sense_discovered(Sense::CloseReading),
+            "a worn own-line still teaches close reading"
+        );
+        let cands: Vec<_> = p.cognate_candidates().collect();
+        assert_eq!(
+            cands,
+            [(Block::Collect, (Stratum::Records, Stratum::Schematics))],
+            "the candidate is the (block, pair)"
+        );
+        // Dedup: the same site never double-banks.
+        assert!(!p.apply(&ev));
+        assert_eq!(p.collected_count(), 2);
+        // A second dual of the same block+pair (another cell) banks but adds no duplicate
+        // candidate; the pair is canonical (order-independent).
+        assert!(p.apply(&Event::CollectDual {
+            find_id: 32,
+            script: Script::Greek, // the same pair, seen from the other side
+            text: "ΑΒΓ".into(),
+            partner_script: Script::Latin,
+            partner_text: "ABCD".into(),
+            pos: [0.0; 3],
+            block: Block::Collect,
+        }));
+        assert_eq!(p.cognate_candidates().count(), 1, "one candidate per pair");
+        // A different pair is its own candidate.
+        assert!(p.apply(&Event::CollectDual {
+            find_id: 33,
+            script: Script::Latin,
+            text: "AB".into(),
+            partner_script: Script::Runic,
+            partner_text: "ᚠᚢᚦ".into(),
+            pos: [0.0; 3],
+            block: Block::Scan(crate::console::ScanItem::Shards),
+        }));
+        assert_eq!(p.cognate_candidates().count(), 2);
+        // v12 round-trip (candidate order preserved).
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p, "v12 round-trips the cognate candidates");
+        assert_eq!(
+            back.cognate_candidates().collect::<Vec<_>>(),
+            p.cognate_candidates().collect::<Vec<_>>()
+        );
+        // Pre-v12 migration: strip the two appended cognate sections + restamp v11 →
+        // no candidates (the world's dual spellings re-teach).
+        let v11_hex = {
+            let hex = p.encode();
+            let hex = hex.strip_prefix("pg=").unwrap();
+            let mut bytes = super::from_hex(hex).unwrap();
+            // Tail: [candidates: count + 2×3][collated: count(0)] = 7 + 1 bytes.
+            bytes.truncate(bytes.len() - 8);
+            bytes[0] = 11;
+            super::to_hex(&bytes)
+        };
+        let v11 = Progress::decode(&format!("pg={v11_hex}"));
+        assert_eq!(v11.cognate_candidates().count(), 0, "pre-v12 → none");
+        assert_eq!(v11.collected_count(), p.collected_count(), "codex intact");
     }
 
     #[test]
