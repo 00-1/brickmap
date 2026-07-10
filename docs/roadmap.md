@@ -976,6 +976,36 @@ bounded envelope regression in CI (seed 1337: first discovery ≤ 8 sim-min, fir
 ≤ 35, income in [6, 30] yield/min) with the full multi-seed probe behind `PACING_FULL=1`.
 Golden voxel-hash + headless render unchanged.
 
+### ✨ G21 — The sensing ladder (close reading, deep sensing, palimpsests) ✅ &nbsp;→ [`milestones/G21-sensing-ladder.md`](milestones/G21-sensing-ladder.md)
+The Archive tranche's payoff milestone, in four green commits: **worn and ⟦erased⟧ text
+becomes recoverable, on foot, with researched sensing**. **(1) Sensing research targets +
+close reading:** two new targets ride the G15 pipe (`ResearchTarget::Sense`) —
+`close-reading` (Rites, cost 100) and `deep-sensing` (Signals, cost 400 + the standing
+**8-rare** gate, its first natural object) — lexicon-named, glyph-rendered, comprehension
+folds in the tier's legibility, and **auto-discovered by the frustration events** (first
+worn collect / first erased log; the console then offers the remedy as a research row);
+`pg=` **v11** append-only. On foot (the *agent* is the walker: manual walk-mode, the
+walk-mode beam, foot on-scan, the away-walker, the expedition harvest — one shared collect
+tail), a worn inscription **recovers fully** from its pristine composition
+(Leiden-bracketed, full unreduced yield, frame credit as-if-intact); every ship route stays
+rung 0 even with the faculty held. **(2) The erased reveal:** an erasure's hidden content
+always existed — `hidden_text(cell)` (fresh salt, deep-weighted: ~1/4 deep name-bearers,
+else Relics/Signals-script data); on foot with deep sensing, `Event::RevealErased` resolves
+the **logged** codex gouge *in place* (`⟦——⟧` → `⟦glyphs⟧`) and the logged-erasures list
+becomes a **destination list** (unresolved gouges re-stream as collectibles). **(3)
+Palimpsests:** ~1/60 eligible ambient cells carry an older under-text (independent salt,
+deep-strata script, ordinary lexicon — G22 re-sources); a subtle **doubled-baseline tell**
+(one new content-agnostic engine mark, U+E625) shows at rungs 0–1; deep sensing on foot
+collects **both layers**, codex-stacked under one find. **(4) Riders + the rationality
+assert:** the four given routines display **lexicon names** (player routines keep
+`trace-N`); a ~220-word common-English blocklist joined the name generator's rejection
+filter ("sorrel"-class accidents dead, determinism/collision re-verified); and D11 gained
+the **expedition-rationality** scenario — on the same worn site, the authored `run(foot)`
+expedition banks the recovered-full yield + lacuna-free text the drifting ship *provably
+cannot obtain* (the pacing analysis's "expeditions are income-negative" finding answered
+with a differential, not activity). Envelope green un-re-pinned (recovery raises on-foot
+yield only); golden voxel-hash unchanged.
+
 ### ✨ G20 — Cartouches, formulaic frames & true names ✅ &nbsp;→ [`milestones/G20-cartouches-frames.md`](milestones/G20-cartouches-frames.md)
 The Archive tranche's naming-and-recognition milestone, in three green commits. **(1) True
 names:** every block's *display* name is a **seeded lexicon word** (`lexicon::vocabulary` —

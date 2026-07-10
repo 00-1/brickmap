@@ -114,8 +114,9 @@ fn content_token(idx: u32) -> String {
 /// The canonical vocabulary keys, in a fixed order (append-only — the retry cascade means a
 /// reordering could reshuffle every world's names). Block bare names first, then the parameter
 /// words (scan items, spend faculties, match fields/domains), then (G21, appended) the sensing
-/// instruments.
-const VOCAB_KEYS: [&str; 26] = [
+/// instruments and the two given-routine names that aren't already block keys (`survey`,
+/// `prospect` — the given routines were authored by the dead machine, so they bear its words).
+const VOCAB_KEYS: [&str; 28] = [
     "scan",
     "collect",
     "beam",
@@ -142,6 +143,39 @@ const VOCAB_KEYS: [&str; 26] = [
     "signals",
     "close-reading",
     "deep-sensing",
+    "survey",
+    "prospect",
+];
+
+/// G21 rider (G20 review): a small **common-English blocklist** for the name generator's
+/// rejection filter. The phonotactics can assemble real words by accident ("sorrel"-class —
+/// worse than lore leaks, because they read as *meaning*); a candidate matching any of these is
+/// rejected and the deterministic retry cascade rolls the next one. Scoped to words the
+/// grammar can actually produce (its letters: no c/f/j/q/w/x/y; h only via sh/th/kh; ≥4 chars —
+/// shorter candidates are already rejected). Growable; determinism/collision tests re-verify.
+const ENGLISH_BLOCKLIST: &[&str] = &[
+    "alarm", "amen", "animal", "arena", "aroma", "atlas", "auto", "banal", "banana", "banner",
+    "barn", "baron", "barrel", "base", "basin", "beam", "bean", "bear", "bins", "bison", "boar",
+    "bone", "bonus", "born", "burn", "dale", "dame", "damn", "dare", "darn", "dean", "demon",
+    "denim", "dial", "dime", "dine", "dinner", "dome", "domino", "done", "dose", "dozen", "dune",
+    "earn", "ears", "eats", "gain", "gala", "game", "gaze", "gene", "gone", "guru", "helm", "hero",
+    "idea", "iron", "keen", "kennel", "kernel", "lane", "lava", "lean", "lemon", "liar", "lime",
+    "line", "lion", "loan", "lore", "lunar", "maiden", "mail", "main", "male", "mama", "mane",
+    "manner", "manor", "manual", "mare", "mason", "meal", "mean", "medal", "melon", "memo", "menu",
+    "mesa", "metal", "mile", "mine", "minus", "modal", "modem", "molar", "mole", "moral", "motel",
+    "mural", "muse", "name", "nasal", "naval", "near", "nine", "nodal", "node", "nose", "note",
+    "nuns", "olive", "omen", "opal", "opera", "organ", "oval", "ozone", "pagan", "pale", "pane",
+    "panel", "papa", "pause", "pedal", "penal", "person", "petal", "pile", "pine", "polar", "pole",
+    "pore", "pose", "raid", "rail", "rain", "raisin", "random", "rare", "rate", "raven", "razor",
+    "rear", "renal", "resin", "ride", "rise", "rite", "roam", "roar", "robe", "robin", "rode",
+    "role", "roman", "rose", "rude", "ruin", "rule", "runner", "rural", "ruse", "saga", "sail",
+    "sailor", "sale", "salon", "salsa", "same", "sane", "satin", "sauna", "sedan", "seminar",
+    "sermon", "shale", "sham", "shame", "share", "shave", "shine", "shore", "side", "silo",
+    "siren", "site", "soda", "sofa", "solar", "sole", "sonar", "sore", "sorrel", "tale", "talon",
+    "tavern", "tennis", "them", "then", "thesis", "this", "thus", "tidal", "tide", "tile", "time",
+    "tomato", "tonal", "tone", "total", "tuna", "tune", "tunnel", "urban", "utensil", "vale",
+    "vane", "vase", "vegan", "venal", "veto", "vine", "viral", "virus", "visa", "vital", "zeal",
+    "zone",
 ];
 
 /// FNV-ish mix of (seed, key, attempt) → the candidate RNG seed.
@@ -189,6 +223,7 @@ pub fn vocabulary(seed: u32) -> Vec<(&'static str, String)> {
                 let mut r = Rng::new(vocab_hash(seed, key, attempt) ^ 0x6772_6f77); // "grow"
                 while w.chars().count() < 4
                     || VOCAB_KEYS.contains(&w.as_str())
+                    || ENGLISH_BLOCKLIST.contains(&w.as_str())
                     || vocab_collides(&w, &out)
                 {
                     w.push_str(&syllable(&mut r));
@@ -201,6 +236,9 @@ pub fn vocabulary(seed: u32) -> Vec<(&'static str, String)> {
             }
             if VOCAB_KEYS.contains(&w.as_str()) || FUNCTION_WORDS.contains(&w.as_str()) {
                 continue; // never English (the internal keys) nor a grammar particle
+            }
+            if ENGLISH_BLOCKLIST.contains(&w.as_str()) {
+                continue; // G21 rider: never an accidental real word ("sorrel"-class)
             }
             if !vocab_collides(&w, &out) {
                 break w;
@@ -773,6 +811,31 @@ mod tests {
         }
         // Per-world names (Decision 3): different worlds, different tongues.
         assert_ne!(vocabulary(1), vocabulary(2));
+    }
+
+    /// G21 rider: the generator never emits a blocklisted common English word — across many
+    /// seeds, every assigned name clears the list (and the determinism/collision guarantees are
+    /// re-verified by the standing test above under the extended rejection filter).
+    #[test]
+    fn vocabulary_rejects_the_english_blocklist() {
+        assert!(
+            ENGLISH_BLOCKLIST.contains(&"sorrel"),
+            "the G20-review accident is on the list"
+        );
+        for w in ENGLISH_BLOCKLIST {
+            assert!(
+                w.chars().count() >= 4 && w.bytes().all(|b| b.is_ascii_lowercase()),
+                "blocklist entries match the generator's candidate space: {w:?}"
+            );
+        }
+        for seed in 0u32..200 {
+            for (key, w) in vocabulary(seed) {
+                assert!(
+                    !ENGLISH_BLOCKLIST.contains(&w.as_str()),
+                    "seed {seed}: {key:?} drew a real English word: {w:?}"
+                );
+            }
+        }
     }
 
     #[test]

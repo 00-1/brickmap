@@ -746,6 +746,10 @@ pub fn capture_view(
         };
         console.discovered.insert(crate::console::Block::Seek); // Schematics → Greek
         console.discovered.insert(crate::console::Block::RunFoot); // Relics → Runic
+                                                                   // G21: a discovered sensing instrument (the offered remedy) — Rites/Hiragana glyphs.
+        console
+            .senses_discovered
+            .insert(crate::progress::Sense::CloseReading);
         console.open = true;
         console.render()
     } else {

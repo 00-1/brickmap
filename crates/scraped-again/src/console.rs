@@ -969,16 +969,32 @@ impl Console {
         false
     }
 
+    /// G21 rider (G20 review): a routine's **player-facing name**. The four GIVENS were authored
+    /// by the dead machine, so they display as its seeded lexicon words (overlay-glyph rendered,
+    /// Records/Latin — machine operations — like the faculty research labels); player-created
+    /// routines keep their instrumentation defaults (`trace-1`, `routine-2`, `-copy`) verbatim.
+    /// `Routine::name` stays the internal identity (codec/tests), like `Block::name`.
+    pub fn routine_display_name(&self, r: &Routine) -> String {
+        const GIVENS: [&str; 4] = ["drift", "survey", "prospect", "collect"];
+        if GIVENS.contains(&r.name.as_str()) {
+            let word = crate::lexicon::vocab_word(self.seed, &r.name);
+            let script = crate::text::Script::Latin;
+            crate::text::to_overlay(&crate::structures::transliterate(&word, script), script)
+        } else {
+            r.name.clone()
+        }
+    }
+
     /// G14: render a step for the player — like [`Step::glyph_label`], but a `run(id)` resolves to
-    /// the callee's **name** (`run(sweep)`; a dangling id → `run(?)`). Routine names are author
-    /// labels (kept English per the G12 review), so only the block vocabulary is glyph-rendered.
+    /// the callee's **name** (`run(sweep)`; author labels stay English per the G12 review, but a
+    /// GIVEN callee shows its lexicon word — G21 rider), so only vocabulary is glyph-rendered.
     fn step_render(&self, s: &Step) -> String {
         match s {
             Step::Run(id) => {
                 let name = self
                     .index_of_id(*id)
-                    .map(|j| self.routines[j].name.as_str())
-                    .unwrap_or("?");
+                    .map(|j| self.routine_display_name(&self.routines[j]))
+                    .unwrap_or_else(|| "?".into());
                 format!("run({name})")
             }
             // G14b: a group renders its header + its inner steps (each resolved — a `run` inside a
@@ -2027,7 +2043,10 @@ impl Console {
                 };
                 let pct = cur / c.min as f32;
                 if pct < 1.0 {
-                    consider(pct, format!("{} {:.0}%", r.name, pct * 100.0));
+                    consider(
+                        pct,
+                        format!("{} {:.0}%", self.routine_display_name(r), pct * 100.0),
+                    );
                 }
             }
         }
@@ -2077,7 +2096,7 @@ impl Console {
             s.push_str(&format!(
                 "{cur} [{on}] {:<4} {:<9} {:<11}: {}   {}\n",
                 r.agent.label(),
-                r.name,
+                self.routine_display_name(r), // G21 rider: givens show their lexicon names
                 r.trigger.label(),
                 pipe,
                 r.stats.suffix(self.now), // G11: ×fires · yields · rate · state
@@ -2190,7 +2209,11 @@ impl Console {
         // optional `match`.
         let (mut s, params, help) = match self.view {
             View::EditGroup(_, gs) => {
-                let header = format!("EDIT GROUP  in {}  (step {})   [O back]\n", r.name, gs + 1);
+                let header = format!(
+                    "EDIT GROUP  in {}  (step {})   [O back]\n",
+                    self.routine_display_name(r),
+                    gs + 1
+                );
                 let params = match r.body.get(gs) {
                     Some(Step::Group { times, filter, .. }) => {
                         let f = filter
@@ -2205,7 +2228,7 @@ impl Console {
             _ => {
                 let header = format!(
                     "EDIT ROUTINE  {}  [{}]  agent:{} [Tab]   [O back]\n",
-                    r.name,
+                    self.routine_display_name(r),
                     if r.enabled { "on" } else { "off" },
                     r.agent.label(),
                 );
@@ -2244,6 +2267,65 @@ impl Console {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// G21 rider (G20 review): the four GIVEN routines display their **lexicon names** (authored
+    /// by the dead machine — the same words the vocabulary layer uses, per world seed); every
+    /// player-created routine keeps its instrumentation default (`trace-N`, `routine-N`,
+    /// `-copy`) verbatim, and no given's English name leaks into the home render.
+    #[test]
+    fn given_routines_display_lexicon_names_player_routines_keep_defaults() {
+        let mut c = Console {
+            seed: 1337,
+            ..Default::default()
+        };
+        for r in &c.routines {
+            let d = c.routine_display_name(r);
+            assert_ne!(d, r.name, "a given never displays its English key");
+            let word = crate::lexicon::vocab_word(c.seed, &r.name);
+            let script = crate::text::Script::Latin;
+            assert_eq!(
+                d,
+                crate::text::to_overlay(&crate::structures::transliterate(&word, script), script),
+                "a given displays its seeded lexicon word (machine operations — Records/Latin)"
+            );
+        }
+        let home = c.render();
+        for english in ["drift", "survey", "prospect", "collect"] {
+            assert!(
+                !home.contains(english),
+                "the home render leaks the English given name {english:?}:\n{home}"
+            );
+        }
+        // Player-created routines keep instrumentation defaults verbatim.
+        let i = c.create_routine(Agent::Ship);
+        assert!(c.routines[i].name.starts_with("routine-"));
+        assert_eq!(c.routine_display_name(&c.routines[i]), c.routines[i].name);
+        c.record_manual(Agent::Foot, Block::Collect);
+        let j = c.trace_to_routine(Agent::Foot).unwrap();
+        assert!(c.routines[j].name.starts_with("trace-"));
+        assert_eq!(c.routine_display_name(&c.routines[j]), c.routines[j].name);
+        // A `run(given)` step resolves to the callee's lexicon name too.
+        let drift_id = c.routines[0].id;
+        let rendered = c.step_render(&Step::Run(drift_id));
+        assert!(
+            !rendered.contains("drift"),
+            "run(callee) shows the lexicon name"
+        );
+        // Per-world: another seed names the givens differently (each world its own tongue).
+        let c2 = Console {
+            seed: 7,
+            ..Default::default()
+        };
+        let a: Vec<String> = c.routines[..4]
+            .iter()
+            .map(|r| c.routine_display_name(r))
+            .collect();
+        let b: Vec<String> = c2.routines[..4]
+            .iter()
+            .map(|r| c2.routine_display_name(r))
+            .collect();
+        assert_ne!(a, b);
+    }
 
     /// G12 (re-proven under G20's true names): a block's console glyph-name is the overlay form
     /// of the **exact** cluster a world name-inscription spells for it (same

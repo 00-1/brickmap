@@ -1459,6 +1459,129 @@ fn sensing_palimpsests_yield_both_layers_to_deep_sensing_on_foot_only() {
 }
 
 // ----------------------------------------------------------------------------------------------
+// 7h) G21 — the expedition-rationality assert (the pacing analysis's "expeditions are
+//     income-negative" finding, answered): an AUTHORED close-reading expedition — the real
+//     run(foot) Deploy→Harvest→Return machine, walker carrying the instrument — obtains from a
+//     worn site what the ship provably CANNOT at any rate: the recovered-full worn yield and
+//     the lacuna-free recovered text. Asserts the DIFFERENTIAL on the same site, not activity.
+//     (The erased-reveal and palimpsest-under differentials are asserted in 7f/7g — three
+//     on-foot-only data classes in total.)
+// ----------------------------------------------------------------------------------------------
+
+#[test]
+fn expedition_rationality_close_reading_earns_what_the_ship_cannot() {
+    use crate::progress::Sense;
+    let seed = 1337u32;
+    let g = ground_fn(seed);
+    let marks = structures::inscriptions_near(seed, Vec3::ZERO, 2500.0, g);
+    let worn: Vec<&structures::Inscription> = marks
+        .iter()
+        .filter(|m| matches!(m.condition, structures::Condition::Worn(_)))
+        .take(2)
+        .collect();
+    let (teacher, site) = (worn[0], worn[1]); // one to teach the need, one to compare on
+    let stratum = progress::stratum_of(site.script);
+    let survivors = progress::glyph_count(&site.text);
+    let full = progress::glyph_count(site.pristine.as_deref().unwrap());
+    assert!(survivors < full);
+
+    // --- (a) The ship's ceiling on this site: rung 0, survivors only, lacunae in the codex —
+    //     and no research can raise it (the instrument rides the walker, not the hull). ---
+    let mut ship = App::headless(seed);
+    ship.auto_fly = false;
+    // Give the SHIP run every advantage: comprehend close reading first (via the teacher site's
+    // frustration event + the canonical research seam) — it must still collect at rung 0.
+    let comprehend_close_reading = |app: &mut App| {
+        assert!(app.progress.is_sense_discovered(Sense::CloseReading));
+        assert!(app
+            .progress
+            .allocate(progress::ResearchTarget::Sense(Sense::CloseReading)));
+        let mut guard = 0;
+        while !app.progress.is_sense_comprehended(Sense::CloseReading) && guard < 100_000 {
+            app.progress.apply(&Event::CollectShard {
+                domain: Stratum::Rites,
+                rarity: Rarity::Common,
+            });
+            guard += 1;
+        }
+        assert!(app.progress.is_sense_comprehended(Sense::CloseReading));
+    };
+    collect_inscription(&mut ship, teacher); // the frustration event (discovers the faculty)
+    comprehend_close_reading(&mut ship);
+    let before = ship.progress.strata.get(stratum);
+    collect_inscription(&mut ship, site);
+    let ship_gain = ship.progress.strata.get(stratum) - before;
+    assert_eq!(
+        ship_gain,
+        progress::yield_amount(site.script, survivors),
+        "the ship pays survivors only, even holding the faculty (on-foot only — Decision 2)"
+    );
+    let sid = progress::find_id(site.cell, site.script, &site.text);
+    let ship_entry = ship
+        .progress
+        .codex
+        .iter()
+        .find(|e| e.find_id == sid)
+        .unwrap();
+    assert!(
+        ship_entry.text.contains(crate::text::MARK_LACUNA),
+        "the ship's data-class keeps its lacunae — recovered-full text is unobtainable"
+    );
+
+    // --- (b) The authored close-reading expedition, on the same site, same faculty: the REAL
+    //     run(foot) cycle (deploy → walk → harvest on foot → return), no scripted collects. ---
+    let mut exp = App::headless(seed);
+    exp.auto_fly = false;
+    collect_inscription(&mut exp, teacher);
+    comprehend_close_reading(&mut exp);
+    // Keep the ship's own on-scan collect quiet so the harvest is observably the walker's.
+    for r in exp.console.routines.iter_mut() {
+        if matches!(r.trigger, console::Trigger::OnScan) {
+            r.enabled = false;
+        }
+    }
+    // Park the piloted ship over the worn site at cruise height and author the deploy.
+    let gy = worldgen::height(site.pos.x.floor() as i32, site.pos.z.floor() as i32, seed) as f32;
+    exp.camera.position = Vec3::new(site.pos.x + 6.0, gy + CRUISE_HEIGHT, site.pos.z);
+    exp.update_inscriptions();
+    let before = exp.progress.strata.get(stratum);
+    exp.start_expedition();
+    assert!(exp.expedition.active(), "run(foot) deployed the walker");
+    let mut completed = false;
+    for _ in 0..6000 {
+        exp.run_frame(DT);
+        assert_finite(&exp, "close-reading expedition");
+        if !exp.expedition.active() {
+            completed = true;
+            break;
+        }
+    }
+    assert!(completed, "the expedition cycle completed");
+    let exp_gain = exp.progress.strata.get(stratum) - before;
+    assert_eq!(
+        exp_gain,
+        progress::yield_amount(site.script, full),
+        "the walker's harvest recovered FULL yield on the same site"
+    );
+    assert!(
+        exp_gain > ship_gain,
+        "the expedition out-earns the ship on the site itself ({exp_gain} > {ship_gain}) — \
+         and its recovered text is a data-class the ship cannot produce at all"
+    );
+    let exp_entry = exp
+        .progress
+        .codex
+        .iter()
+        .find(|e| e.find_id == sid)
+        .unwrap();
+    assert!(
+        !exp_entry.text.contains(crate::text::MARK_LACUNA) && exp_entry.text.contains('['),
+        "the walker's codex entry is the recovered-full (bracketed) text: {:?}",
+        exp_entry.text
+    );
+}
+
+// ----------------------------------------------------------------------------------------------
 // 8) Render-robustness sweep — several vantages + after state changes render without panic/NaN.
 //    Needs a (software) Vulkan adapter, so it's `#[ignore]` (local / opt-in, not CI).
 // ----------------------------------------------------------------------------------------------

@@ -1,14 +1,16 @@
 # G21 — The sensing ladder (close reading, deep sensing, palimpsests)
 
-> **Status: in progress (3/4 landed — sensing targets + close reading; deep sensing +
-> erased reveal; palimpsests).** The Archive tranche's payoff milestone, modeled on the real
-> recovery ladder ([`../research-material-text.md`](research-material-text.md) §2 — raking
+> **Status: done ✅ (2026-07-10, four commits — sensing targets + close reading; deep
+> sensing + erased reveal; palimpsests; riders + the rationality assert).** The Archive
+> tranche's payoff milestone, modeled on the real
+> recovery ladder ([`research-material-text.md`](../research-material-text.md) §2 — raking
 > light → UV/multispectral → penetrating): **worn and ⟦erased⟧ text becomes recoverable,
 > on foot, with researched sensing** — which simultaneously (a) cashes the G18 erasure
 > hooks, (b) gives the walker/expedition its **economic reason to exist** (the pacing
 > analysis: expeditions are currently income-negative), and (c) **fills the empty Rites and
 > Signals research tiers** with the sensing faculties themselves. Plus two riders from the
 > G20 review. Game-side; no engine change expected (all rendering rides existing paths).
+> *As-built notes + deviations at the end.*
 
 ## Goal · Demonstrable outcome · What it de-risks
 
@@ -116,8 +118,83 @@ four-way CI; boundary intact; roadmap G21.
 - [x] On-foot worn recovery (full text/yield/frame credit) vs ship rung-0; erased reveal
       on foot resolves the logged gouge with deep-weighted content; palimpsests (~1/60,
       tell, deep-sensing reveals, stacked codex, both-layer yield).
-- [ ] Expedition rationality asserted (D11): close-reading expeditions obtain what
+- [x] Expedition rationality asserted (D11): close-reading expeditions obtain what
       drifting cannot.
-- [ ] Riders: given routines lexicon-named; English blocklist in the generator.
-- [ ] Envelope green (re-pinned + noted if shifted); golden voxel-hash unchanged; four-way
+- [x] Riders: given routines lexicon-named; English blocklist in the generator.
+- [x] Envelope green (re-pinned + noted if shifted); golden voxel-hash unchanged; four-way
       CI green; boundary intact; roadmap G21 + brief as-built.
+
+## As-built (2026-07-10)
+
+Landed in four green commits: **(1)** sensing research targets + close reading, **(2)**
+deep sensing + the erased reveal, **(3)** palimpsests, **(4)** riders + the D11
+expedition-rationality assert + docs.
+
+- **Sensing targets.** A `ResearchTarget::Sense` arm (rkeys `0xE0..`, disjoint from block
+  codes and faculties): `close-reading` (Rites, cost 100 = `25 << 2`, no rare requirement)
+  and `deep-sensing` (Signals, cost 400 = `25 << 4` + the standing **8-rare** own-domain
+  gate — the gate's first natural object). Domain-matched fill like a block; comprehension
+  **folds in the tier's legibility** like a block (researching deep-sensing is the first
+  thing that can turn Galactic legible — noted; it's the deliberate "fills the empty tier"
+  payoff). Lexicon-named (`VOCAB_KEYS` + `close-reading`/`deep-sensing`, appended), glyph-
+  rendered in the gating stratum's script. Auto-discovered by the frustration events inside
+  `Progress::apply` (first lacuna-bearing `Collect` / first `CollectErased`), so every
+  collect route funnels the discovery deterministically; the console lists discovered
+  instruments as research rows (`Sel::Sense`). `pg=` **v11** append-only.
+- **On-foot = the agent, not the mode.** Every collect route funnels through one shared
+  tail (`collect_collectible`) taking `on_foot`: manual walk-mode collect, the walk-mode
+  survey-beam, foot on-scan, the away-walker's routines, and the expedition harvest pass
+  it; every ship route (auto-collect, aim-collect while piloting, ship on-scan) stays
+  rung 0 *even with the faculties researched* (Decision 2 held: the walker carries the
+  instrument).
+- **Close reading.** `Inscription`/`Collectible` carry the worn cell's `pristine`
+  composition; `structures::recover_worn` merges it Leiden-bracketed (`[abc]` — the G20
+  restore marks; structure, no yield) → full text, full unreduced yield, and frame credit
+  as-if-intact (`sight_frame` judges the **banked** text, so a recovered exemplar teaches).
+- **Deep sensing.** `structures::hidden_text(seed, cell)`: deterministic, fresh-salt
+  (condition-independence tested), deep-weighted — ~1/4 name-bearers off a RunFoot-×3
+  table (+ the Schematics nav words; there is still no Signals-gated *block*, so "deep
+  names" = the deepest existing vocabulary), else Runic~2:1~Galactic data. The new
+  `Event::RevealErased` resolves a **logged** gouge's codex entry *in place*
+  (`⟦——⟧` → `⟦glyphs⟧`; stored as `revealed_text` = one leading gouge mark + content) and
+  banks the yield; `update_inscriptions` re-lists logged-but-unresolved erasures once deep
+  sensing is held — the logged-erasures list is literally the destination list. A revealed
+  name discovers its block.
+- **Palimpsests.** `structures::under_text(seed, cell)`: ~1/60 of *eligible* ambient cells
+  (never names, frames, or erasures — an erasure hides even the under-layer; frames were
+  excluded to keep sighting/restore semantics clean — deviation, see below), independent
+  salt, deep-strata script, **ordinary lexicon** words (`phrase` under a palimpsest-salted
+  seed; G22 re-sources). The tell is one new content-agnostic engine mark (`MARK_BASELINE`,
+  U+E625 — two faint parallel base rules; renders in every script + on the HUD overlay,
+  excluded from yield like all marks). `Event::CollectPalimpsest` banks both layers and
+  logs them **stacked** (two codex entries, one `find_id`; rendered surface over a
+  `└`-led under line).
+- **Rationality (D11).** `expedition_rationality_close_reading_earns_what_the_ship_cannot`:
+  on the same worn site, the ship — *even holding the faculty* — banks survivors only and
+  keeps lacunae in its codex, while the authored `run(foot)` expedition (the real
+  Deploy→Harvest→Return machine) banks the recovered-full yield and the lacuna-free
+  bracketed text: the differential per collect, plus two more on-foot-only data classes
+  (erased reveals, palimpsest under-texts) asserted in their own scenarios.
+- **Riders.** The four givens display seeded lexicon names (`Console::routine_display_name`
+  — `survey`/`prospect` joined `VOCAB_KEYS`; `drift`/`collect` reuse their block words;
+  player routines keep `trace-N`/`routine-N` verbatim, `run(given)` resolves to the lexicon
+  name). A ~220-word common-English blocklist joined the name generator's rejection filter
+  (both the retry and the grow escape-hatch paths); determinism/collision/never-english
+  re-verified, plus a 200-seed no-blocklist-word sweep.
+
+**Deviations from the brief.**
+1. Palimpsests exclude **frame cells** (brief said "ambient"): a frame's verbatim-recurrence
+   and sighting/restore semantics don't compose cleanly with a second layer; the ~1/60 rate
+   applies over the remaining ambient majority (still several per origin field).
+2. A palimpsest collected at rungs 0–1 spends the site (surface only, under-layer lost) —
+   the tell warns *before* collection; revisit-after-research applies to erased sites only.
+   If "come back for the under-text" turns out to be wanted, the erased-revisit machinery
+   generalises (noted for the feel pass).
+3. Comprehending a sensing instrument folds in its tier's **legibility** (like a block).
+   The brief didn't pin this; it follows the G15 rule "researching tier vocabulary cracks
+   the tier" and gives Signals its first crackable object.
+4. The envelope needed **no re-pin**: recovery only raises *on-foot* yield, and the pacing
+   probe's autopilot is pure ship (rung 0) — measured band unchanged (see
+   [`../pacing-analysis.md`](../pacing-analysis.md) addendum).
+5. Gallery snapshot skipped, following G18–G20 precedent (the archive's last entry is the
+   E-series; revisit when a visual milestone warrants it).

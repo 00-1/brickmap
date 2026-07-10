@@ -76,3 +76,19 @@ Relics+ pacing lever. Tune the requirement (4/8), not the cost, to move it.
 Envelope regression now in CI (`pacing_envelope_seed_1337`, ~9 s debug): first discovery
 ≤ 8 sim-min, first comprehension ≤ 35 sim-min, income within [6, 30] yield/min. Full probe:
 `PACING_FULL=1 cargo test --release -p scraped-again pacing -- --nocapture`.
+
+## Expedition rationality (G21, 2026-07-10)
+
+The headline structural finding — "the expedition is never economically rational" — is
+answered **qualitatively, not by raising rates**: G21's sensing ladder makes the walker the
+only agent that can obtain three data classes at all (recovered-full worn yield — e.g. a
+6-glyph Rites line that lost two glyphs pays 10 to the ship, 14 recovered on foot; erased
+reveals —
+deep-weighted Relics/Signals content behind every logged gouge, 0 to the ship forever;
+palimpsest under-texts — a second deep-strata line per ~60th ambient cell). The D11 assert
+(`expedition_rationality_close_reading_earns_what_the_ship_cannot`) pins the differential
+*on the same site, with the same researched faculty*: the ship still banks survivors-only,
+the authored `run(foot)` expedition banks recovered-full. The **envelope needed no re-pin**:
+recovery raises on-foot yield only, and the CI probe's autopilot is pure ship (rung 0) —
+measured income band unchanged. When a walker-inclusive probe run exists, measure
+worn-rich-site expedition yield vs drift here.
