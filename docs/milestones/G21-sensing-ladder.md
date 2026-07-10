@@ -1,7 +1,7 @@
 # G21 — The sensing ladder (close reading, deep sensing, palimpsests)
 
-> **Status: in progress (1/4 landed — sensing targets + close reading).** The Archive
-> tranche's payoff milestone, modeled on the real
+> **Status: in progress (2/4 landed — sensing targets + close reading; deep sensing +
+> erased reveal).** The Archive tranche's payoff milestone, modeled on the real
 > recovery ladder ([`../research-material-text.md`](research-material-text.md) §2 — raking
 > light → UV/multispectral → penetrating): **worn and ⟦erased⟧ text becomes recoverable,
 > on foot, with researched sensing** — which simultaneously (a) cashes the G18 erasure

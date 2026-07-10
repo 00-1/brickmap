@@ -426,6 +426,18 @@ pub enum Event {
         text: String,
         pos: [f32; 3],
     },
+    /// G21 rung 2: **reveal** an ⟦erased⟧ inscription's hidden content (deep sensing, on foot).
+    /// `text` is the [`crate::structures::revealed_text`] form (one leading gouge mark + the
+    /// recovered glyphs). If the erasure was already **logged** (G18), its codex entry
+    /// *resolves in place* — `⟦——⟧` → the recovered glyphs (the logged-erasures list becomes a
+    /// destination list); an unlogged site logs revealed directly. Banks the content's yield
+    /// either way (marks pay nothing).
+    RevealErased {
+        find_id: u64,
+        script: Script,
+        text: String,
+        pos: [f32; 3],
+    },
     /// G10: collect a world **shard** — banks its rarity yield + counts it by domain×rarity.
     CollectShard {
         domain: Stratum,
@@ -788,6 +800,36 @@ impl Progress {
                 self.senses_discovered.insert(Sense::DeepSensing);
                 true
             }
+            // G21 rung 2: reveal an erasure's hidden content. A **logged** gouge resolves its
+            // codex entry in place (`⟦——⟧` → recovered glyphs — the G18 tease paying off); an
+            // unlogged site logs revealed directly. Banks the content either way; a second
+            // reveal is a no-op (the entry is no longer erased).
+            Event::RevealErased {
+                find_id,
+                script,
+                text,
+                pos,
+            } => {
+                if self.seen.contains(find_id) {
+                    let Some(e) = self.codex.iter_mut().find(|e| {
+                        e.find_id == *find_id && crate::structures::is_erased_text(&e.text)
+                    }) else {
+                        return false; // never logged as a gouge here, or already revealed
+                    };
+                    e.script = *script;
+                    e.text = text.clone(); // the entry keeps its logged site (`pos`)
+                } else {
+                    self.seen.insert(*find_id);
+                    self.codex.push(CodexEntry {
+                        find_id: *find_id,
+                        script: *script,
+                        text: text.clone(),
+                        pos: *pos,
+                    });
+                }
+                self.strata.add(*script, glyph_count(text));
+                true
+            }
             // G10/G15: bank a shard (lifetime tally, no dedup) AND — G15 allocate-and-fill — credit
             // it to the active research target. A **block** draws its own stratum's domain
             // (Decision 2, own-domain only); a **faculty** (G15b) is general machine instrumentation
@@ -942,6 +984,17 @@ impl Progress {
         Sense::ALL
             .into_iter()
             .filter(|s| self.is_sense_discovered(*s) && !self.is_sense_comprehended(*s))
+    }
+
+    /// G21: is this a **logged-but-unresolved** erasure — collected as a gouge (the G18 log)
+    /// whose hidden content deep sensing hasn't yet revealed? The codex's logged-erasures list
+    /// is exactly the set of these sites (the destination list rung 2 pays off).
+    pub fn erased_unresolved(&self, find_id: u64) -> bool {
+        self.seen.contains(&find_id)
+            && self
+                .codex
+                .iter()
+                .any(|e| e.find_id == find_id && crate::structures::is_erased_text(&e.text))
     }
 
     // ---- G20: formulaic frames as cribs -------------------------------------------------------
@@ -2217,6 +2270,71 @@ mod tests {
             "8 Signals rares satisfy the gate"
         );
         assert!(p.is_comprehended(Stratum::Signals), "Signals turns legible");
+    }
+
+    /// G21 rung 2: `RevealErased` **resolves a logged gouge in place** (same codex slot, banked
+    /// yield, the logged site kept), logs an unlogged site directly, dedups a second reveal,
+    /// and never touches a normally-collected entry; `erased_unresolved` tracks exactly the
+    /// destination list.
+    #[test]
+    fn reveal_erased_resolves_the_logged_gouge_and_banks() {
+        let gouge: String = std::iter::repeat_n(crate::text::MARK_GOUGE, 3).collect();
+        let revealed = crate::structures::revealed_text("ᚠᚢᚦ");
+        let mut p = Progress::default();
+        // Log the erasure (G18) — unresolved, nothing banked.
+        p.apply(&Event::CollectErased {
+            find_id: 9,
+            script: Script::Runic,
+            text: gouge.clone(),
+            pos: [4.0, 5.0, 6.0],
+        });
+        assert!(p.erased_unresolved(9));
+        assert_eq!(p.strata.total(), 0);
+        // Reveal it: the SAME entry resolves in place (no new entry), the content banks.
+        assert!(p.apply(&Event::RevealErased {
+            find_id: 9,
+            script: Script::Runic,
+            text: revealed.clone(),
+            pos: [0.0; 3],
+        }));
+        assert_eq!(p.collected_count(), 1, "resolved in place, not re-logged");
+        assert!(!p.erased_unresolved(9), "no longer a destination");
+        assert_eq!(p.codex[0].text, revealed);
+        assert_eq!(p.codex[0].pos, [4.0, 5.0, 6.0], "the logged site is kept");
+        assert_eq!(
+            p.strata.relics,
+            yield_amount(Script::Runic, 3),
+            "the hidden content pays (the reveal marker doesn't)"
+        );
+        // A second reveal is a no-op.
+        assert!(!p.apply(&Event::RevealErased {
+            find_id: 9,
+            script: Script::Runic,
+            text: revealed.clone(),
+            pos: [0.0; 3],
+        }));
+        assert_eq!(p.strata.relics, yield_amount(Script::Runic, 3));
+        // An UNLOGGED site reveals directly (log + bank in one step).
+        assert!(p.apply(&Event::RevealErased {
+            find_id: 10,
+            script: Script::Galactic,
+            text: crate::structures::revealed_text("AB"),
+            pos: [1.0; 3],
+        }));
+        assert_eq!(p.collected_count(), 2);
+        assert!(p.has(10) && !p.erased_unresolved(10));
+        // A normally-collected entry never "reveals".
+        p.apply(&ev(11, Script::Latin, "ABC"));
+        assert!(!p.apply(&Event::RevealErased {
+            find_id: 11,
+            script: Script::Latin,
+            text: crate::structures::revealed_text("XYZ"),
+            pos: [0.0; 3],
+        }));
+        // The resolved codex rides the share round-trip.
+        let back = Progress::decode(&p.encode());
+        assert_eq!(back, p);
+        assert!(!back.erased_unresolved(9));
     }
 
     /// G21: the sensing ladder rides `pg=` **v11** (discovered + comprehended + an in-progress

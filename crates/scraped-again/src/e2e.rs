@@ -1218,6 +1218,124 @@ fn sensing_rung1_close_reading_recovers_worn_on_foot_only() {
 }
 
 // ----------------------------------------------------------------------------------------------
+// 7f) G21 — the sensing ladder, rung 2: an erased log DISCOVERS deep sensing; researching it
+//     demands Signals fill + the 8-rare gate; the logged gouge then becomes a DESTINATION —
+//     returning on foot reveals its hidden content (deep-weighted Relics/Signals data or a deep
+//     name), the codex's ⟦——⟧ resolves to recovered glyphs, and the ship's rung-0 revisit
+//     obtains nothing — all through the real streaming/collect seams.
+// ----------------------------------------------------------------------------------------------
+
+#[test]
+fn sensing_rung2_deep_sensing_reveals_the_logged_gouge_on_foot() {
+    use crate::progress::Sense;
+    let seed = 1337u32;
+    let g = ground_fn(seed);
+    let marks = structures::inscriptions_near(seed, Vec3::ZERO, 2500.0, g);
+    let erased = marks
+        .iter()
+        .find(|m| m.condition == structures::Condition::Erased)
+        .expect("an erased inscription within 2500 units");
+    let id = progress::find_id(erased.cell, erased.script, &erased.text);
+
+    let mut app = App::headless(seed);
+    app.auto_fly = false; // scripted helm
+
+    // --- The frustration funnel: the ship logs the gouge (no yield) → deep sensing discovered.
+    assert!(!app.progress.is_sense_discovered(Sense::DeepSensing));
+    collect_inscription(&mut app, erased);
+    assert_eq!(
+        app.progress.strata.total(),
+        0,
+        "a rung-0 erased collect banks nothing"
+    );
+    assert!(
+        app.progress.erased_unresolved(id),
+        "the gouge is logged, unresolved"
+    );
+    assert!(
+        app.progress.is_sense_discovered(Sense::DeepSensing),
+        "the first erased log discovers deep sensing"
+    );
+    assert!(app
+        .codex_text()
+        .contains("\u{27E6}\u{2014}\u{2014}\u{27E7}"));
+
+    // --- The ship CANNOT return to it: once logged, a rung-0 run never re-lists the site. ---
+    app.update_inscriptions();
+    assert!(
+        !app.collectible.iter().any(|c| c.find_id == id),
+        "without deep sensing the logged gouge is spent, not a destination"
+    );
+
+    // --- Research deep sensing through the canonical seam: Signals fill + the 8-rare gate. ---
+    assert!(app
+        .progress
+        .allocate(progress::ResearchTarget::Sense(Sense::DeepSensing)));
+    for _ in 0..800 {
+        app.progress.apply(&Event::CollectShard {
+            domain: Stratum::Signals,
+            rarity: Rarity::Common,
+        });
+    }
+    assert!(
+        !app.progress.is_sense_comprehended(Sense::DeepSensing),
+        "the overfilled bar without 8 Signals rares must hold (the rare gate)"
+    );
+    for _ in 0..8 {
+        app.progress.apply(&Event::CollectShard {
+            domain: Stratum::Signals,
+            rarity: Rarity::Rare,
+        });
+    }
+    assert!(app.progress.is_sense_comprehended(Sense::DeepSensing));
+
+    // --- The logged-erasures list is now a destination list: the site re-streams as
+    //     collectible, and the WALKER's revisit reveals the hidden content. (Fly away first —
+    //     the collectible cache rebuilds on cell-set change, as it does on any real journey.) ---
+    app.camera.position = erased.pos + Vec3::new(2000.0, 0.0, 0.0);
+    app.update_inscriptions();
+    let (hidden, hscript, hname) = structures::hidden_text(seed, erased.cell);
+    let before = app.progress.strata.get(progress::stratum_of(hscript));
+    foot_collect_at(&mut app, erased.pos);
+    assert!(
+        !app.progress.erased_unresolved(id),
+        "the on-foot revisit resolved the gouge"
+    );
+    assert_eq!(
+        app.progress.strata.get(progress::stratum_of(hscript)) - before,
+        progress::yield_amount(hscript, progress::glyph_count(&hidden)),
+        "the reveal banks the hidden content (deep-weighted data)"
+    );
+    let entry = app.progress.codex.iter().find(|e| e.find_id == id).unwrap();
+    assert!(
+        structures::is_revealed_text(&entry.text),
+        "the codex entry resolved in place: {:?}",
+        entry.text
+    );
+    assert_eq!(structures::strip_reveal(&entry.text), hidden);
+    // The codex renders the RESOLVED gouge: ⟦glyphs⟧, and this entry's ⟦——⟧ is gone.
+    let codex = app.codex_text();
+    assert!(
+        !codex.contains("\u{27E6}\u{2014}\u{2014}\u{27E7}"),
+        "the only logged erasure has resolved"
+    );
+    assert!(
+        codex.contains('\u{27E6}'),
+        "the event brackets remain, holding glyphs"
+    );
+    // If the gouge hid a NAME, revealing it discovered the block (the censored vocabulary).
+    if let Some(b) = hname {
+        assert!(app.progress.is_discovered(b), "a revealed name discovers");
+    }
+
+    // --- Everything rides pg= v11 and the loop keeps running. ---
+    let restored = progress::Progress::decode(&app.share_string());
+    assert_eq!(restored, app.progress);
+    assert!(!restored.erased_unresolved(id));
+    drive(&mut app, 120);
+}
+
+// ----------------------------------------------------------------------------------------------
 // 8) Render-robustness sweep — several vantages + after state changes render without panic/NaN.
 //    Needs a (software) Vulkan adapter, so it's `#[ignore]` (local / opt-in, not CI).
 // ----------------------------------------------------------------------------------------------

@@ -621,19 +621,34 @@ impl App {
             return false;
         }
         let mut banked_text = c.text.clone();
-        if c.erased {
-            log::info!("collected an erasure — nothing recovered; the gouge is logged");
-        } else if let progress::Event::Collect { text, .. } = &ev {
-            if *text != c.text {
-                log::info!("RECOVERED — the lacunae fill (full yield)");
+        match &ev {
+            progress::Event::CollectErased { .. } => {
+                log::info!("collected an erasure — nothing recovered; the gouge is logged");
             }
-            log::info!(
-                "collected \"{}\" → +{} {}",
-                text,
-                progress::yield_amount(c.script, progress::glyph_count(text)),
-                progress::stratum_of(c.script).label(),
-            );
-            banked_text = text.clone();
+            // G21 rung 2: the gouge speaks — bank the hidden content and, if the erasure had
+            // struck out a deep NAME, discover its block (the censored vocabulary recovered).
+            progress::Event::RevealErased { script, text, .. } => {
+                log::info!(
+                    "ERASURE REVEALED — the gouge speaks: +{} {}",
+                    progress::yield_amount(*script, progress::glyph_count(text)),
+                    progress::stratum_of(*script).label(),
+                );
+                let (_hidden, _script, name) = structures::hidden_text(self.seed, c.cell);
+                self.discover(name);
+            }
+            progress::Event::Collect { text, .. } => {
+                if *text != c.text {
+                    log::info!("RECOVERED — the lacunae fill (full yield)");
+                }
+                log::info!(
+                    "collected \"{}\" → +{} {}",
+                    text,
+                    progress::yield_amount(c.script, progress::glyph_count(text)),
+                    progress::stratum_of(c.script).label(),
+                );
+                banked_text = text.clone();
+            }
+            _ => {}
         }
         self.forget_scanned_chunk(c.pos); // it's no longer an opportunity (G3)
         self.discover(c.name); // G9: a name-bearer also discovers its block
@@ -1614,17 +1629,26 @@ impl App {
         } else {
             for e in c.iter().rev().take(20) {
                 let tag = progress::stratum_of(e.script).label();
-                // ⟦——⟧ — a deliberate erasure, logged as an *event* (content unrecoverable, G20).
+                // ⟦——⟧ — a deliberate erasure, logged as an *event* (content unrecoverable
+                // below rung 2 of the G21 sensing ladder).
                 if structures::is_erased_text(&e.text) {
                     out.push_str(&format!("{tag}  \u{27E6}\u{2014}\u{2014}\u{27E7}\n"));
                     continue;
                 }
+                // G21: a **revealed** erasure renders as the *resolved* gouge — the same ⟦ ⟧
+                // event brackets, now holding the recovered glyphs (`⟦——⟧` → `⟦glyphs⟧`).
+                let revealed = structures::is_revealed_text(&e.text);
+                let body: &str = if revealed {
+                    structures::strip_reveal(&e.text)
+                } else {
+                    &e.text
+                };
                 // G12: render the find as its glyph cluster in its own script (overlay
                 // codepoints — the same glyphs the world billboard draws); G18: a lost glyph
                 // position renders as a `[..]` lacuna, and the underdot row tracks each cell.
                 let mut line = String::new();
                 let mut dots = String::new();
-                for ch in e.text.chars() {
+                for ch in body.chars() {
                     if ch == text::MARK_LACUNA {
                         line.push_str("[..]");
                         dots.push_str("    "); // a lacuna is loss, not doubt — no underdot
@@ -1642,7 +1666,11 @@ impl App {
                         dots.push(if ch.is_whitespace() { ' ' } else { '.' });
                     }
                 }
-                out.push_str(&format!("{tag}  {line}\n"));
+                if revealed {
+                    out.push_str(&format!("{tag}  \u{27E6}{line}\u{27E7}\n"));
+                } else {
+                    out.push_str(&format!("{tag}  {line}\n"));
+                }
                 // Underdot a provisional name-reading (live attestation — re-renders as the
                 // state improves; a confirmed name loses the dots).
                 if let Some(b) = structures::name_of_text(self.seed, &e.text, e.script) {
@@ -1777,13 +1805,20 @@ impl App {
             .chain(colossi.iter().map(|p| structures::colossus_label(seed, p)))
             .collect();
         // G1: the still-collectible inscriptions in range (already-collected ones filtered
-        // out), used as the collect pick's targets.
+        // out), used as the collect pick's targets. G21: a **logged-but-unresolved** erasure
+        // becomes collectible *again* once deep sensing is comprehended — the codex's
+        // logged-erasures list turns into a destination list (revisit the gouge on foot to
+        // reveal it; a rung-0 route hitting it just no-ops on the dedup).
+        let deep_sensing = self
+            .progress
+            .is_sense_comprehended(progress::Sense::DeepSensing);
         self.collectible = inscriptions
             .iter()
             .filter_map(|m| {
                 let id = progress::find_id(m.cell, m.script, &m.text);
                 let erased = m.condition == structures::Condition::Erased;
-                (!self.progress.has(id)).then(|| progress::Collectible {
+                let revisit = erased && deep_sensing && self.progress.erased_unresolved(id);
+                (!self.progress.has(id) || revisit).then(|| progress::Collectible {
                     find_id: id,
                     cell: m.cell,
                     script: m.script,
@@ -3879,7 +3914,9 @@ impl App {
 /// instrument; every ship route stays rung 0):
 /// - **rung 1, close reading**: a worn inscription recovers **fully** from its pristine
 ///   composition (Leiden-bracketed, full yield; the frame-credit falls out of the recovered
-///   text at the call sites).
+///   text at the call sites);
+/// - **rung 2, deep sensing**: an ⟦erased⟧ inscription **reveals** its hidden content
+///   (`structures::hidden_text` — deep-weighted; the logged codex gouge resolves in place).
 fn collect_event(
     progress: &progress::Progress,
     seed: u32,
@@ -3887,6 +3924,16 @@ fn collect_event(
     on_foot: bool,
 ) -> progress::Event {
     if c.erased {
+        // G21 rung 2: on foot with deep sensing comprehended, the gouge finally speaks.
+        if on_foot && progress.is_sense_comprehended(progress::Sense::DeepSensing) {
+            let (hidden, script, _name) = structures::hidden_text(seed, c.cell);
+            return progress::Event::RevealErased {
+                find_id: c.find_id,
+                script,
+                text: structures::revealed_text(&hidden),
+                pos: c.pos,
+            };
+        }
         return progress::Event::CollectErased {
             find_id: c.find_id,
             script: c.script,

@@ -220,6 +220,7 @@ pub fn name_of_text(seed: u32, text: &str, script: Script) -> Option<crate::cons
     if is_erased_text(text) {
         return None;
     }
+    let text = strip_reveal(text); // G21: a revealed erasure's marker is structure
     let text = strip_cartouche(text); // G20: the enclosure is structure, not content
                                       // G21: the Leiden restoration brackets are structure too — a recovered name (close
                                       // reading / a frame restore) still reads as its name.
@@ -398,6 +399,81 @@ pub fn recover_worn(weathered: &str, pristine: &str) -> Option<String> {
         out.push(']');
     }
     Some(out)
+}
+
+/// G21 rung 2: the **hidden content** of an ⟦erased⟧ inscription — composed deterministically
+/// from the cell (it always existed; the gouge merely hid it), weighted **deep**: erasure was
+/// deliberate, so what was struck out *mattered*. ~1/4 of gouges hide a **name-bearer** drawn
+/// from a deep-weighted table over the gated vocabulary (RunFoot ×3 — the Relics-tier deep
+/// operation — plus the Schematics nav words), cartouched like every name inscription
+/// (collecting it discovers the block); the rest hide **Relics/Signals data** (Runic ~2 : ~1
+/// Galactic script — the deep strata's currencies). Fresh-salt hash, independent of the
+/// surface-condition and name-gate bits (the standing correlation discipline).
+pub fn hidden_text(seed: u32, cell: (i32, i32)) -> (String, Script, Option<crate::console::Block>) {
+    use crate::console::Block;
+    let h = hash(
+        cell.0 ^ 0x4831,
+        cell.1 ^ 0x77DD,
+        seed.wrapping_add(0x4849_4444), // "HIDD"
+    );
+    if (h >> 4).is_multiple_of(4) {
+        // A deep name-bearer: the erasure struck out a name (the censored vocabulary).
+        const TABLE: [Block; 6] = [
+            Block::RunFoot,
+            Block::RunFoot,
+            Block::RunFoot,
+            Block::Seek,
+            Block::Circle,
+            Block::Goto,
+        ];
+        let b = TABLE[(h >> 7) as usize % TABLE.len()];
+        return (cartouche(&name_text(seed, b)), block_script(b), Some(b));
+    }
+    // Deep-strata data: a few words of Runic/Galactic glyphs (Relics/Signals yield).
+    let script = if (h >> 6).is_multiple_of(3) {
+        Script::Galactic
+    } else {
+        Script::Runic
+    };
+    let chars: Vec<char> = pool(script).chars().collect();
+    let mut state = h | 1;
+    let mut rng = || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        state
+    };
+    let words = 1 + ((h >> 2) & 1);
+    let mut s = String::new();
+    for wi in 0..words {
+        if wi > 0 {
+            s.push(' ');
+        }
+        let len = 3 + (rng() % 4) as usize; // 3..=6 glyphs
+        for _ in 0..len {
+            s.push(chars[rng() as usize % chars.len()]);
+        }
+    }
+    (s, script, None)
+}
+
+/// G21: the **revealed** form an erased site's hidden content is banked/logged as — the hidden
+/// text behind one leading gouge mark, so the codex still reads "here stood an erasure" (the
+/// resolved-gouge state) while the content pays normally (marks never pay — `glyph_count`).
+pub fn revealed_text(hidden: &str) -> String {
+    format!("{}{hidden}", crate::text::MARK_GOUGE)
+}
+
+/// G21: is this stored text a **revealed erasure** (the resolved-gouge codex state)? Distinct
+/// from [`is_erased_text`] (all gouge, unresolved) — a reveal keeps exactly one leading gouge
+/// mark in front of recovered glyphs.
+pub fn is_revealed_text(text: &str) -> bool {
+    text.starts_with(crate::text::MARK_GOUGE) && text.chars().any(|c| c != crate::text::MARK_GOUGE)
+}
+
+/// G21: the recovered content of a [`revealed_text`] (the text unchanged if it isn't one).
+pub fn strip_reveal(text: &str) -> &str {
+    text.strip_prefix(crate::text::MARK_GOUGE).unwrap_or(text)
 }
 
 /// G20: the exact glyph text a name-bearing inscription spells for block `b`: its true name
@@ -1329,6 +1405,101 @@ mod tests {
             }
         }
         assert!(worn_seen > 5, "the field holds worn cells to check");
+    }
+
+    /// G21 rung 2: `hidden_text` is deterministic, **deep-weighted** (Runic/Galactic data —
+    /// Relics/Signals yield — and a real share of deep name-bearers), independent of the
+    /// surface-condition bits (the correlation discipline), and the reveal helpers round-trip.
+    #[test]
+    fn hidden_text_deterministic_deep_weighted_and_reveal_helpers() {
+        use crate::console::Block;
+        let seed = 1337u32;
+        let (mut names, mut data, mut runfoot) = (0u32, 0u32, 0u32);
+        let (mut named_by_cond, mut all_by_cond) = (0u32, 0u32);
+        for i in 0..4000i32 {
+            let cell = (i, -i * 7 + 3);
+            let (text, script, name) = hidden_text(seed, cell);
+            assert_eq!(hidden_text(seed, cell).0, text, "deterministic");
+            assert!(!text.is_empty());
+            match name {
+                Some(b) => {
+                    names += 1;
+                    if b == Block::RunFoot {
+                        runfoot += 1;
+                    }
+                    assert!(b.required().is_some(), "hidden names are gated vocabulary");
+                    assert_eq!(text, cartouche(&name_text(seed, b)), "a real name-bearer");
+                    assert_eq!(script, block_script(b));
+                }
+                None => {
+                    data += 1;
+                    assert!(
+                        matches!(script, Script::Runic | Script::Galactic),
+                        "hidden data is deep-strata script (Relics/Signals)"
+                    );
+                    assert!(crate::progress::glyph_count(&text) >= 3);
+                }
+            }
+            // Independence probe: hidden-name presence among cells the CONDITION hash erases
+            // must track the overall rate (fresh salt — no correlation with the surface bits).
+            let ch = hash(
+                cell.0 ^ 0x51AB,
+                cell.1 ^ 0x2E77,
+                seed.wrapping_add(0x00C0_5D17),
+            );
+            if condition_pick(ch, 6) == Condition::Erased {
+                all_by_cond += 1;
+                if name.is_some() {
+                    named_by_cond += 1;
+                }
+            }
+        }
+        let name_rate = names as f32 / 4000.0;
+        assert!(
+            (0.15..=0.35).contains(&name_rate),
+            "~1/4 of gouges hide a name, got {name_rate}"
+        );
+        assert!(
+            data > 0 && runfoot > names / 3,
+            "RunFoot dominates (deep ×3)"
+        );
+        if all_by_cond >= 50 {
+            let gated = named_by_cond as f32 / all_by_cond as f32;
+            assert!(
+                (gated - name_rate).abs() < 0.15,
+                "hidden bits must be independent of the condition bits ({gated} vs {name_rate})"
+            );
+        }
+        // The reveal helpers: one leading gouge marker; content pays, marker doesn't.
+        let rev = revealed_text("ᚠᚢᚦ");
+        assert!(is_revealed_text(&rev));
+        assert!(!is_revealed_text("ᚠᚢᚦ"), "plain text is not a reveal");
+        let gouge: String = std::iter::repeat_n(crate::text::MARK_GOUGE, 3).collect();
+        assert!(
+            !is_revealed_text(&gouge),
+            "an unresolved gouge is erased, not revealed"
+        );
+        assert!(is_erased_text(&gouge) && !is_erased_text(&rev));
+        assert_eq!(strip_reveal(&rev), "ᚠᚢᚦ");
+        assert_eq!(
+            crate::progress::glyph_count(&rev),
+            3,
+            "the reveal marker is structure (no yield)"
+        );
+        // A revealed hidden NAME still reads as its block (marker + cartouche are structure).
+        let (text, script, name) = (0..200i32)
+            .map(|i| {
+                let c = (i, i * 3 + 1);
+                let (t, s, n) = hidden_text(seed, c);
+                (revealed_text(&t), s, n)
+            })
+            .find(|(_, _, n)| n.is_some())
+            .expect("some hidden name in 200 cells");
+        assert_eq!(
+            name_of_text(seed, &text, script).map(|b| b.name()),
+            name.map(|b| b.name()),
+            "a revealed name reads via name_of_text"
+        );
     }
 
     /// BUG1 regression: huge cam coords must not overflow the colossi/inscription cell loops.
