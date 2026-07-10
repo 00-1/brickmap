@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `7292758` (G19b — economy truing; G19 complete).
+**Reviewed through:** `240724c` (G20 — cartouches/frames/true names complete).
 
 ---
 
@@ -36,6 +36,37 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-07-10 · G20 — true names, cartouches, frames (`26ed39e`→`52475b1`→`240724c`)  ✅ PASSED (3 commits, each four-way green; rendered)
+
+**Independently verified:** fmt/clippy clean · **410 tests, 0 failures** workspace-wide ·
+all three commits **four-way CI green** · golden voxel-hash unchanged · **console rendered
+here**: cartouched nonsense clusters everywhere (⟨ZAUSSOS⟩(POSTAUM), ⟨RAUNLAUR⟩,
+⟨SAINDOLGASIS⟩(NAIRGOMUM)…), Greek + Runic locked entries with underdots — **the English
+block-name leak is gone.** The envelope pacing test held un-re-pinned.
+
+**Quality notes:** the collision guarantee is post-transliteration-into-every-script (the
+right invariant, stronger than the brief's); faculty research labels went lexicon too
+(caught a re-leak path the brief missed); a **latent `to_overlay` bug fixed en route**
+(Runic/Galactic remapped *any* char — would have mangled marks); frames spelled **verbatim
+in world glyphs** (a justified adaptation — the Grotefend foothold requires the pattern to
+exist player-side, and the brief's translated-layer version couldn't deliver "surviving
+glyphs match"); restoration pins tightened beyond the brief (slot lacunae never restore;
+≥1 surviving fixed-position glyph required; ambiguity restores nothing — tested).
+
+**Two flags accepted as G21 riders:**
+1. **The given routines' English labels** (`drift/survey/prospect/collect`) are now the
+   last vocabulary leak — and worse, a Rosetta stone (the routine named "collect" sits
+   beside ⟨RAUNLAUR⟩ which *is* collect). The givens were authored by the dead machine, so
+   they should bear lexicon names; player-created routines keep instrumentation-style
+   defaults (`trace-1`).
+2. **Accidental real-English candidates** (seed 1337: `rare`→"sorrel") — add a common-word
+   English blocklist to the generator's rejection filter.
+
+**Verdict.** The Archive tranche's naming layer is complete and the no-lore constraint now
+holds absolutely at the vocabulary level. G21 (sensing ladder) next, with the two riders.
+
+---
 
 ## 2026-07-10 · G19b — economy truing (`7292758`)  ✅ PASSED — G19 complete (four-way green; envelope now CI-enforced)
 
