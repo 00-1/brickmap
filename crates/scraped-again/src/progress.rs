@@ -27,7 +27,7 @@ impl Stratum {
         Stratum::Relics,
         Stratum::Signals,
     ];
-    fn byte(self) -> u8 {
+    pub(crate) fn byte(self) -> u8 {
         match self {
             Stratum::Records => 0,
             Stratum::Schematics => 1,
@@ -36,7 +36,7 @@ impl Stratum {
             Stratum::Signals => 4,
         }
     }
-    fn from_byte(b: u8) -> Stratum {
+    pub(crate) fn from_byte(b: u8) -> Stratum {
         Stratum::ALL[(b as usize).min(4)]
     }
 }
@@ -160,7 +160,9 @@ impl ResearchTarget {
         match self {
             ResearchTarget::Block(b) => b.glyphs(seed),
             ResearchTarget::Faculty(f) => {
-                let word = crate::lexicon::vocab_word(seed, f.label());
+                // G22: the Records **surface** form (the faculty words are machine operations —
+                // Records/Latin register).
+                let word = crate::lexicon::vocab_word(seed, f.label(), Stratum::Records);
                 crate::text::to_overlay(
                     &crate::structures::transliterate(&word, Script::Latin),
                     Script::Latin,
@@ -168,7 +170,8 @@ impl ResearchTarget {
             }
             ResearchTarget::Sense(s) => {
                 let script = script_for(s.stratum());
-                let word = crate::lexicon::vocab_word(seed, s.label());
+                // G22: the gating stratum's surface form (its script writes its own daughter).
+                let word = crate::lexicon::vocab_word(seed, s.label(), s.stratum());
                 crate::text::to_overlay(&crate::structures::transliterate(&word, script), script)
             }
         }

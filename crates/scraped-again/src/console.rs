@@ -94,11 +94,13 @@ impl MatchField {
     /// G20: the word itself is the seeded lexicon vocabulary word (never English).
     pub fn glyphs(self, seed: u32) -> String {
         use crate::progress::script_for;
-        let (key, script) = match self {
-            MatchField::Rare => ("rare", script_for(self.required())),
-            MatchField::Domain(d) => (self.label(), script_for(d)),
+        // G22: each script writes its own stratum's surface form (the daughter, not the proto).
+        let (key, stratum) = match self {
+            MatchField::Rare => ("rare", self.required()),
+            MatchField::Domain(d) => (self.label(), d),
         };
-        let word = crate::lexicon::vocab_word(seed, key);
+        let script = script_for(stratum);
+        let word = crate::lexicon::vocab_word(seed, key, stratum);
         crate::text::to_overlay(&crate::structures::transliterate(&word, script), script)
     }
 }
@@ -269,7 +271,9 @@ impl Block {
         match arg {
             Some(a) => {
                 let script = crate::structures::block_script(self);
-                let word = crate::lexicon::vocab_word(seed, a);
+                // G22: the argument word in the block's own stratum's surface form.
+                let stratum = self.required().unwrap_or(Stratum::Records);
+                let word = crate::lexicon::vocab_word(seed, a, stratum);
                 let arg = crate::text::to_overlay(
                     &crate::structures::transliterate(&word, script),
                     script,
@@ -977,7 +981,8 @@ impl Console {
     pub fn routine_display_name(&self, r: &Routine) -> String {
         const GIVENS: [&str; 4] = ["drift", "survey", "prospect", "collect"];
         if GIVENS.contains(&r.name.as_str()) {
-            let word = crate::lexicon::vocab_word(self.seed, &r.name);
+            // G22: the Records surface form (the dead machine's operational register).
+            let word = crate::lexicon::vocab_word(self.seed, &r.name, Stratum::Records);
             let script = crate::text::Script::Latin;
             crate::text::to_overlay(&crate::structures::transliterate(&word, script), script)
         } else {
@@ -2281,7 +2286,7 @@ mod tests {
         for r in &c.routines {
             let d = c.routine_display_name(r);
             assert_ne!(d, r.name, "a given never displays its English key");
-            let word = crate::lexicon::vocab_word(c.seed, &r.name);
+            let word = crate::lexicon::vocab_word(c.seed, &r.name, Stratum::Records);
             let script = crate::text::Script::Latin;
             assert_eq!(
                 d,

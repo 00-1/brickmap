@@ -1890,10 +1890,18 @@ impl App {
                 {
                     // G20: a frame cell's translation IS the frame phrase (its world glyphs
                     // already spell it verbatim); other ambient cells translate via `phrase`
-                    // keyed on their original glyph count, exactly as before.
+                    // keyed on their original glyph count, exactly as before. G22: both derive
+                    // through the cell's script's stratum — translation romanizes the *surface*
+                    // form the glyphs actually spell, not the proto.
+                    let stratum = progress::stratum_of(m.script);
                     let mut translated = match m.frame {
-                        Some(_) => lexicon::frame(seed, m.cell),
-                        None => lexicon::phrase(seed, m.cell, progress::glyph_count(&m.text)),
+                        Some(_) => lexicon::surface_frame(seed, m.cell, stratum),
+                        None => lexicon::surface_phrase(
+                            seed,
+                            m.cell,
+                            progress::glyph_count(&m.text),
+                            stratum,
+                        ),
                     };
                     // G21: a palimpsest keeps its doubled-baseline tell through translation
                     // (the physical under-layer doesn't vanish when the surface reads).

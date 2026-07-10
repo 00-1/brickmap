@@ -44,9 +44,19 @@ fn main() {
     println!("sample_record={}", lexicon::record(seed, (5, 5)));
     println!("sample_frame_a={}", lexicon::frame(seed, (1, 0)));
     println!("sample_frame_b={}", lexicon::frame(seed, (9, 9)));
-    // G20: this world's true names (block display names + parameter words) — eyeballable, and a
-    // quick way to confirm no candidate accidentally spells English.
-    for (key, word) in lexicon::vocabulary(seed) {
-        println!("vocab_{key}={word}");
+    // G20/G22: this world's true names (block display names + parameter words), now as the five
+    // per-stratum daughter forms (REC/SCH/RIT/REL/SIG; SIG = the proto) — eyeballable cognate
+    // sets, and a quick way to confirm no daughter accidentally spells English.
+    for (key, forms) in lexicon::vocabulary(seed) {
+        println!("vocab_{key}={}", forms.join(" / "));
+    }
+    // G22: the per-stratum surface corpora's fingerprints (the honesty suite re-runs on each).
+    for stratum in scraped_again::progress::Stratum::ALL {
+        let surf: Vec<String> = corpus.iter().map(|t| lexicon::derive(t, stratum)).collect();
+        println!(
+            "surface_{}_entropy_bits={:.3}",
+            stratum.label(),
+            stats::char_conditional_entropy(&surf)
+        );
     }
 }

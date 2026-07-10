@@ -1065,7 +1065,12 @@ fn frames_crib_three_sightings_teach_and_worn_matches_restore_full() {
 
     // --- A worn unique match now collects RESTORED: Leiden brackets + FULL yield. ---
     let full = progress::glyph_count(&structures::transliterate(
-        &crate::lexicon::frame(seed, restorable.cell),
+        // G22: the world spells the cell's stratum's surface form of the frame.
+        &crate::lexicon::surface_frame(
+            seed,
+            restorable.cell,
+            progress::stratum_of(restorable.script),
+        ),
         restorable.script,
     ));
     assert!(

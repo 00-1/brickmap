@@ -287,6 +287,16 @@ pub fn world_frames(seed: u32) -> Vec<FrameSkeleton> {
     }]
 }
 
+/// G22: a skeleton word's **glyph form** in `script` — the proto word derived through the
+/// script's stratum, then transliterated (the same two steps the world emitter takes, so
+/// matching and emission can never drift apart).
+fn skeleton_glyphs(fixed: &str, script: Script) -> String {
+    transliterate(
+        &crate::lexicon::derive(fixed, crate::progress::stratum_of(script)),
+        script,
+    )
+}
+
 /// Do the surviving glyphs of `words` (a worn text split on spaces) fit frame `f` in `script`?
 /// Fixed words must match length + every surviving glyph; the slot word is free content.
 fn frame_matches(words: &[&str], f: &FrameSkeleton, script: Script) -> bool {
@@ -294,7 +304,7 @@ fn frame_matches(words: &[&str], f: &FrameSkeleton, script: Script) -> bool {
         && words.iter().zip(&f.words).all(|(w, fw)| match fw {
             None => !w.is_empty(),
             Some(fixed) => {
-                let expect = transliterate(fixed, script);
+                let expect = skeleton_glyphs(fixed, script);
                 w.chars().count() == expect.chars().count()
                     && w.chars()
                         .zip(expect.chars())
@@ -342,7 +352,7 @@ pub fn restore_worn(text: &str, script: Script, known: &[FrameSkeleton]) -> Opti
                 out.push((*w).to_string());
             }
             Some(fixed) => {
-                let expect = transliterate(fixed, script);
+                let expect = skeleton_glyphs(fixed, script);
                 let mut restored = String::new();
                 let mut open = false;
                 for (c, e) in w.chars().zip(expect.chars()) {
@@ -467,8 +477,9 @@ pub fn hidden_text(seed: u32, cell: (i32, i32)) -> (String, Script, Option<crate
 /// fresh, independent salt (the correlation discipline — presence must not correlate with the
 /// name/condition/frame bits, tested); the script is **deep-strata-weighted** (Runic ~2 : ~1
 /// Galactic — older layers are deeper layers) and the words come from the **ordinary lexicon**
-/// (`lexicon::phrase` under a palimpsest-salted seed; G22 will re-source them). Rungs 0–1 see
-/// only the doubled-baseline tell; rung 2's deep sensing reads it (collect yields both layers).
+/// (`lexicon::surface_phrase` under a palimpsest-salted seed — G22: derived through the
+/// under-script's stratum, like all surface text). Rungs 0–1 see only the doubled-baseline
+/// tell; rung 2's deep sensing reads it (collect yields both layers).
 pub fn under_text(seed: u32, cell: (i32, i32)) -> Option<(String, Script)> {
     let h = hash(
         cell.0 ^ 0x7A11,
@@ -485,7 +496,12 @@ pub fn under_text(seed: u32, cell: (i32, i32)) -> Option<(String, Script)> {
     };
     // A short older line from the ordinary lexicon, decorrelated from the surface phrase by a
     // palimpsest-salted seed (same cell key, different world of words).
-    let words = crate::lexicon::phrase(seed ^ 0x504C_4D50, cell, 5 + ((h >> 10) % 3));
+    let words = crate::lexicon::surface_phrase(
+        seed ^ 0x504C_4D50,
+        cell,
+        5 + ((h >> 10) % 3),
+        crate::progress::stratum_of(script),
+    );
     Some((transliterate(&words, script), script))
 }
 
@@ -700,7 +716,12 @@ pub fn inscriptions_near(
             })
             .then(|| crate::lexicon::frame_id(seed));
             let text = if frame.is_some() {
-                transliterate(&crate::lexicon::frame(seed, (cx, cz)), script)
+                // G22: the frame spells the cell's stratum's **surface** form (derived proto).
+                let stratum = crate::progress::stratum_of(script);
+                transliterate(
+                    &crate::lexicon::surface_frame(seed, (cx, cz), stratum),
+                    script,
+                )
             } else {
                 text
             };
@@ -1253,7 +1274,15 @@ mod tests {
             match m.condition {
                 Condition::Intact => assert_eq!(
                     m.text,
-                    transliterate(&crate::lexicon::frame(seed, m.cell), m.script),
+                    transliterate(
+                        // G22: the world spells the cell's stratum's SURFACE form of the frame.
+                        &crate::lexicon::surface_frame(
+                            seed,
+                            m.cell,
+                            crate::progress::stratum_of(m.script)
+                        ),
+                        m.script
+                    ),
                     "an intact instance spells the frame verbatim in its script"
                 ),
                 Condition::Worn(_) => assert!(
@@ -1283,7 +1312,11 @@ mod tests {
         let seed = 1337;
         let script = Script::Greek;
         let known = world_frames(seed);
-        let full = transliterate(&crate::lexicon::frame(seed, (2, 5)), script);
+        // G22: the world text is the cell's stratum's surface form (Greek = Schematics).
+        let full = transliterate(
+            &crate::lexicon::surface_frame(seed, (2, 5), crate::progress::stratum_of(script)),
+            script,
+        );
         let words: Vec<&str> = full.split(' ').collect();
         let skeleton = &known[0].words;
         assert_eq!(words.len(), skeleton.len());

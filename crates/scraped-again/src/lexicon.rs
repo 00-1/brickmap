@@ -1,10 +1,18 @@
-//! G16 — **Lexicon v2 (statistical honesty).** The seeded generator that turns a *comprehended*
-//! script's glyphs into **structured nonsense words** (never English, never lore — the Archive
-//! tranche's binding constraint: comprehension is *structural*). The corpus is language-shaped by
-//! construction so pattern-hunting players are rewarded: it passes a statistical-honesty checklist
-//! (Zipf, Heaps, natural conditional entropy, Zipf abbreviation, a function-word layer, consistent
-//! morphology, bursty content-words, no autocopy/layout artifacts) — **each property a unit test**
-//! (with a broken-generator meta-test that *fails* them, so the tests bite).
+//! G16 — **Lexicon v2 (statistical honesty)** · G22 — **Lexicon v3 (proto + daughters).** The
+//! seeded generator that turns a *comprehended* script's glyphs into **structured nonsense
+//! words** (never English, never lore — the Archive tranche's binding constraint: comprehension
+//! is *structural*). The corpus is language-shaped by construction so pattern-hunting players are
+//! rewarded: it passes a statistical-honesty checklist (Zipf, Heaps, natural conditional entropy,
+//! Zipf abbreviation, a function-word layer, consistent morphology, bursty content-words, no
+//! autocopy/layout artifacts) — **each property a unit test** (with a broken-generator meta-test
+//! that *fails* them, so the tests bite).
+//!
+//! G22: generation happens at the **proto level** (the Tolkien method, research §5/§6): one
+//! seeded proto-lexicon, and each stratum's *surface* forms derive via an **ordered deterministic
+//! sound-change cascade** ([`derive`]) — Records mild, Schematics vowel-dropped (abjad-like),
+//! Rites palatalized + CV re-shaped (syllabary-friendly), Relics final-vowel-dropped (lapidary),
+//! **Signals = identity (the proto preserved — the machine layer speaks the mother tongue)**.
+//! Cognate sets are free: same key, five detectably-related forms.
 //!
 //! Everything is deterministic in `seed` (+ the per-cell hash), so a world reads back identically
 //! and share-links reproduce (E12). Legibility only changes what's *displayed*; a find's id still
@@ -74,6 +82,184 @@ fn root(idx: u32) -> String {
         _ => 3,
     };
     (0..syllables).map(|_| syllable(&mut r)).collect()
+}
+
+// ---- G22: the sound-change cascades (proto → five daughters) --------------------------------
+//
+// Pure, ordered, deterministic rule lists over the romanized phoneme string (research §6). The
+// string is first segmented into phonemes (the digraphs sh/th/kh and the diphthongs ai/au are
+// single segments), each cascade rewrites the segment list rule by rule, and the result joins
+// back to a romanized word. No new letters are ever introduced (the English-blocklist letter
+// scope survives), and Signals is the identity — the proto preserved in the machine layer.
+
+/// Segment a romanized word into phonemes: greedy 2-char match for the digraph consonants and
+/// diphthongs, else single chars. Non-alphabetic chars (numerals, marks) pass through untouched
+/// as their own segments.
+fn segment(word: &str) -> Vec<String> {
+    const DIGRAPHS: [&str; 5] = ["sh", "th", "kh", "ai", "au"];
+    let chars: Vec<char> = word.chars().collect();
+    let mut out = Vec::with_capacity(chars.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if i + 1 < chars.len() {
+            let pair: String = chars[i..i + 2].iter().collect();
+            if DIGRAPHS.contains(&pair.as_str()) {
+                out.push(pair);
+                i += 2;
+                continue;
+            }
+        }
+        out.push(chars[i].to_string());
+        i += 1;
+    }
+    out
+}
+
+/// Is this segment a vowel (single vowel or diphthong)?
+fn is_vowel(seg: &str) -> bool {
+    matches!(seg, "a" | "e" | "i" | "o" | "u" | "ai" | "au")
+}
+
+/// Is this segment a **front** vowel (the palatalization environment)?
+fn is_front(seg: &str) -> bool {
+    matches!(seg, "e" | "i" | "ai")
+}
+
+/// **Records** — mild shifts (the on-ramp stays plainest): the "aspirates" simplify, `z`
+/// devoices, the diphthongs monophthongize. Ordered; each rule unit-tested.
+fn cascade_records(segs: &mut [String]) {
+    for s in segs.iter_mut() {
+        match s.as_str() {
+            "th" => *s = "t".into(), // rule 1: *th → t
+            "kh" => *s = "k".into(), // rule 2: *kh → k
+            "z" => *s = "s".into(),  // rule 3: *z → s
+            "ai" => *s = "e".into(), // rule 4: *ai → e
+            "au" => *s = "o".into(), // rule 5: *au → o
+            _ => {}
+        }
+    }
+}
+
+/// **Schematics** — vowel-dropped shorthand (abjad-like; the engineers' register): the
+/// diphthongs reduce to their closing element, then every vowel **after the first** drops
+/// (syncope — the word keeps one anchoring vowel and its consonant skeleton).
+fn cascade_schematics(segs: &mut Vec<String>) {
+    for s in segs.iter_mut() {
+        match s.as_str() {
+            "ai" => *s = "i".into(), // rule 1: *ai → i
+            "au" => *s = "u".into(), // rule 2: *au → u
+            _ => {}
+        }
+    }
+    // rule 3: syncope — drop every vowel after the word's first vowel.
+    let mut seen_vowel = false;
+    segs.retain(|s| {
+        if is_vowel(s) {
+            if seen_vowel {
+                return false;
+            }
+            seen_vowel = true;
+        }
+        true
+    });
+}
+
+/// **Rites** — palatalization + CV re-shaping (syllabary-friendly): velars soften before front
+/// vowels, then every consonant not followed by a vowel gains an **echo vowel** (open CV
+/// syllables throughout — the shape a syllabary wants).
+fn cascade_rites(segs: &mut Vec<String>) {
+    // rules 1–3: *k → s, *kh → sh, *g → z before front vowels.
+    for i in 0..segs.len() {
+        let fronted = segs.get(i + 1).map(|n| is_front(n)).unwrap_or(false);
+        if fronted {
+            match segs[i].as_str() {
+                "k" => segs[i] = "s".into(),
+                "kh" => segs[i] = "sh".into(),
+                "g" => segs[i] = "z".into(),
+                _ => {}
+            }
+        }
+    }
+    // rule 4: CV re-shape — a consonant with no following vowel echoes the nearest preceding
+    // vowel's first element ('a' if none precedes).
+    let mut out: Vec<String> = Vec::with_capacity(segs.len() * 2);
+    let mut last_vowel = "a".to_string();
+    let mut i = 0;
+    while i < segs.len() {
+        let s = segs[i].clone();
+        if is_vowel(&s) {
+            last_vowel = s.chars().next().unwrap().to_string();
+            out.push(s);
+        } else {
+            let followed_by_vowel = segs.get(i + 1).map(|n| is_vowel(n)).unwrap_or(false);
+            out.push(s);
+            if !followed_by_vowel {
+                out.push(last_vowel.clone());
+            }
+        }
+        i += 1;
+    }
+    *segs = out;
+}
+
+/// **Relics** — terse lapidary: a word-final diphthong shortens to its first element, the final
+/// vowel then drops (when the word keeps at least one other vowel), and a final `m` merges to
+/// `n` (the lapidary nasal).
+fn cascade_relics(segs: &mut Vec<String>) {
+    // rule 1: word-final diphthong → its first element.
+    if let Some(last) = segs.last_mut() {
+        match last.as_str() {
+            "ai" => *last = "a".into(),
+            "au" => *last = "a".into(),
+            _ => {}
+        }
+    }
+    // rule 2: the word-final vowel drops if another vowel survives.
+    if segs.last().map(|s| is_vowel(s)).unwrap_or(false)
+        && segs[..segs.len() - 1].iter().any(|s| is_vowel(s))
+    {
+        segs.pop();
+    }
+    // rule 3: final *m → n.
+    if let Some(last) = segs.last_mut() {
+        if last == "m" {
+            *last = "n".into();
+        }
+    }
+}
+
+/// G22: derive a **stratum's surface form** of a proto word — the ordered sound-change cascade
+/// (pure; Signals is the identity: the proto preserved). Non-alphabetic input (numerals, marks)
+/// passes through untouched.
+pub fn derive(word: &str, stratum: crate::progress::Stratum) -> String {
+    use crate::progress::Stratum;
+    if !word.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return word.to_string(); // numerals / marks are not language — no cascade
+    }
+    let mut segs = segment(word);
+    match stratum {
+        Stratum::Records => cascade_records(&mut segs),
+        Stratum::Schematics => cascade_schematics(&mut segs),
+        Stratum::Rites => cascade_rites(&mut segs),
+        Stratum::Relics => cascade_relics(&mut segs),
+        Stratum::Signals => {} // identity — the proto IS the Signals surface
+    }
+    segs.concat()
+}
+
+/// G22: derive a whole multi-word **text** through a stratum's cascade (word by word; `#`-led
+/// numeral tokens pass through — quantities are not language).
+pub fn derive_text(text: &str, stratum: crate::progress::Stratum) -> String {
+    text.split(' ')
+        .map(|w| {
+            if w.starts_with('#') {
+                w.to_string()
+            } else {
+                derive(w, stratum)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 // ---- function words + morphology -----------------------------------------------------------
@@ -207,61 +393,108 @@ fn vocab_candidate(seed: u32, key: &str, attempt: u32) -> String {
     w
 }
 
-/// The full seeded vocabulary: `(key, true name)` for every canonical key. Distinctness is
-/// guaranteed **after transliteration into every script** (two names that collide only once
-/// mapped into a smaller glyph pool would still read as one name — the G9 lesson), and no name
-/// may spell an internal English key or a function word.
-pub fn vocabulary(seed: u32) -> Vec<(&'static str, String)> {
-    let mut out: Vec<(&'static str, String)> = Vec::with_capacity(VOCAB_KEYS.len());
+/// G22: a proto candidate's **five daughter forms** (index = `Stratum::byte()`; Signals = the
+/// proto itself).
+fn daughter_forms(proto: &str) -> [String; 5] {
+    crate::progress::Stratum::ALL.map(|s| derive(proto, s))
+}
+
+/// G22: do this candidate's daughters clear every **surface-form guarantee**? Each daughter must
+/// be ≥4 glyphs, spell no internal key / function word / blocklisted English word, and collide
+/// with no previously-assigned word's **same-stratum** daughter after transliteration into any
+/// script (the G9 lesson, now checked per daughter). Returns the per-stratum × per-script
+/// transliterations on success (cached by the caller for later collision checks).
+#[allow(clippy::type_complexity)]
+fn daughters_clear(forms: &[String; 5], prev: &[[Vec<String>; 5]]) -> Option<[Vec<String>; 5]> {
+    use crate::structures::transliterate;
+    for f in forms {
+        if f.chars().count() < 4
+            || VOCAB_KEYS.contains(&f.as_str())
+            || FUNCTION_WORDS.contains(&f.as_str())
+            || ENGLISH_BLOCKLIST.contains(&f.as_str())
+        {
+            return None;
+        }
+    }
+    let translits: [Vec<String>; 5] = std::array::from_fn(|st| {
+        crate::text::Script::ALL
+            .iter()
+            .map(|sc| transliterate(&forms[st], *sc))
+            .collect()
+    });
+    for p in prev {
+        for st in 0..5 {
+            for (a, b) in translits[st].iter().zip(&p[st]) {
+                if a == b {
+                    return None; // two words merge in some script at this stratum — reject
+                }
+            }
+        }
+    }
+    Some(translits)
+}
+
+/// The full seeded vocabulary, **per-stratum surfaces** (G22): `(key, [daughter; 5])` for every
+/// canonical key, daughters indexed by `Stratum::byte()` (Signals = the proto). The collision
+/// loop rejects a proto candidate if **any** daughter violates any guarantee — ≥4 glyphs, never
+/// an internal key / function word / blocklisted English word, and distinct from every other
+/// word's same-stratum daughter after transliteration into every script (the G9 lesson). The
+/// deterministic retry/grow escape hatch survives unchanged.
+pub fn vocabulary(seed: u32) -> Vec<(&'static str, [String; 5])> {
+    thread_local! {
+        #[allow(clippy::type_complexity)]
+        static CACHE: std::cell::RefCell<Option<(u32, Vec<(&'static str, [String; 5])>)>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    CACHE.with(|c| {
+        let mut c = c.borrow_mut();
+        if let Some((s, v)) = c.as_ref() {
+            if *s == seed {
+                return v.clone();
+            }
+        }
+        let v = vocabulary_uncached(seed);
+        *c = Some((seed, v.clone()));
+        v
+    })
+}
+
+fn vocabulary_uncached(seed: u32) -> Vec<(&'static str, [String; 5])> {
+    let mut out: Vec<(&'static str, [String; 5])> = Vec::with_capacity(VOCAB_KEYS.len());
+    let mut prev: Vec<[Vec<String>; 5]> = Vec::with_capacity(VOCAB_KEYS.len());
     for key in VOCAB_KEYS {
         let mut attempt = 0u32;
-        let word = loop {
+        let (forms, translits) = loop {
             let mut w = vocab_candidate(seed, key, attempt);
-            // Deterministic escape hatch: after many rejections, *grow* the candidate until it
-            // clears (guaranteed to terminate — length eventually exceeds every prior name).
+            // Deterministic escape hatch: after many rejections, *grow* the candidate until
+            // every daughter clears (terminates — growth outruns every prior name).
             if attempt > 64 {
                 let mut r = Rng::new(vocab_hash(seed, key, attempt) ^ 0x6772_6f77); // "grow"
-                while w.chars().count() < 4
-                    || VOCAB_KEYS.contains(&w.as_str())
-                    || ENGLISH_BLOCKLIST.contains(&w.as_str())
-                    || vocab_collides(&w, &out)
-                {
+                break loop {
+                    let forms = daughter_forms(&w);
+                    if let Some(t) = daughters_clear(&forms, &prev) {
+                        break (forms, t);
+                    }
                     w.push_str(&syllable(&mut r));
+                };
+            } else {
+                attempt += 1;
+                let forms = daughter_forms(&w);
+                if let Some(t) = daughters_clear(&forms, &prev) {
+                    break (forms, t);
                 }
-                break w;
-            }
-            attempt += 1;
-            if w.chars().count() < 4 {
-                continue; // a name should read as a word, not a particle
-            }
-            if VOCAB_KEYS.contains(&w.as_str()) || FUNCTION_WORDS.contains(&w.as_str()) {
-                continue; // never English (the internal keys) nor a grammar particle
-            }
-            if ENGLISH_BLOCKLIST.contains(&w.as_str()) {
-                continue; // G21 rider: never an accidental real word ("sorrel"-class)
-            }
-            if !vocab_collides(&w, &out) {
-                break w;
             }
         };
-        out.push((key, word));
+        out.push((key, forms));
+        prev.push(translits);
     }
     out
 }
 
-/// Does `w` collide with an already-assigned name in **any** script's transliteration?
-fn vocab_collides(w: &str, out: &[(&'static str, String)]) -> bool {
-    use crate::structures::transliterate;
-    out.iter().any(|(_, prev)| {
-        crate::text::Script::ALL
-            .iter()
-            .any(|s| transliterate(w, *s) == transliterate(prev, *s))
-    })
-}
-
-/// The seeded true name for a vocabulary `key` (a block bare name or a parameter word). Unknown
-/// keys are a programmer error (debug-asserted); release falls back to a bare candidate.
-pub fn vocab_word(seed: u32, key: &str) -> String {
+/// G22: the seeded **surface** true name for a vocabulary `key` in `stratum` — the daughter form
+/// the stratum's script writes. Unknown keys are a programmer error (debug-asserted); release
+/// falls back to a bare derived candidate.
+pub fn vocab_word(seed: u32, key: &str, stratum: crate::progress::Stratum) -> String {
     debug_assert!(
         VOCAB_KEYS.contains(&key),
         "vocab_word: {key:?} is not a canonical vocabulary key"
@@ -269,13 +502,15 @@ pub fn vocab_word(seed: u32, key: &str) -> String {
     vocabulary(seed)
         .into_iter()
         .find(|(k, _)| *k == key)
-        .map(|(_, w)| w)
-        .unwrap_or_else(|| vocab_candidate(seed, key, 0))
+        .map(|(_, forms)| forms[stratum.byte() as usize].clone())
+        .unwrap_or_else(|| derive(&vocab_candidate(seed, key, 0), stratum))
 }
 
-/// The seeded true name a block **displays** (never its internal English `name()`).
+/// The seeded true name a block **displays** (never its internal English `name()`) — G22: its
+/// **own stratum's** daughter form (starters write Records).
 pub fn block_name(seed: u32, b: crate::console::Block) -> String {
-    vocab_word(seed, b.name())
+    let stratum = b.required().unwrap_or(crate::progress::Stratum::Records);
+    vocab_word(seed, b.name(), stratum)
 }
 
 // ---- the token stream ----------------------------------------------------------------------
@@ -457,6 +692,23 @@ pub fn phrase(seed: u32, cell: (i32, i32), glyphs: u32) -> String {
     }
 }
 
+/// G22: a cell's phrase as a stratum's **surface** text — the proto composition derived through
+/// the stratum's cascade (the single seam every ambient-text consumer re-sources through: world
+/// frame glyphs, translated display, palimpsest under-texts).
+pub fn surface_phrase(
+    seed: u32,
+    cell: (i32, i32),
+    glyphs: u32,
+    stratum: crate::progress::Stratum,
+) -> String {
+    derive_text(&phrase(seed, cell, glyphs), stratum)
+}
+
+/// G22: a cell's frame instance as a stratum's **surface** text (see [`surface_phrase`]).
+pub fn surface_frame(seed: u32, cell: (i32, i32), stratum: crate::progress::Stratum) -> String {
+    derive_text(&frame(seed, cell), stratum)
+}
+
 // ---- statistics (the honesty checklist) ----------------------------------------------------
 
 /// Natural-language statistical metrics over a token corpus — used by the tests + the `lexstats`
@@ -553,23 +805,26 @@ pub mod stats {
         (fl / fw.max(1.0), rl / rw.max(1.0))
     }
 
+    /// Levenshtein distance (chars) — the shared metric for the autocopy tell and (G22) the
+    /// cognate-detectability statistic.
+    pub fn lev(a: &str, b: &str) -> f32 {
+        let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+        let mut prev: Vec<usize> = (0..=b.len()).collect();
+        let mut cur = vec![0usize; b.len() + 1];
+        for (i, ca) in a.iter().enumerate() {
+            cur[0] = i + 1;
+            for (j, cb) in b.iter().enumerate() {
+                let cost = usize::from(ca != cb);
+                cur[j + 1] = (prev[j + 1] + 1).min(cur[j] + 1).min(prev[j] + cost);
+            }
+            std::mem::swap(&mut prev, &mut cur);
+        }
+        prev[b.len()] as f32
+    }
+
     /// Mean Levenshtein distance between **adjacent** tokens vs **distant** ones (gap `gap`). The
     /// autocopy tell (Timm–Schinner) is adjacent ≪ distant; honest language has them ≈ equal.
     pub fn adjacent_vs_distant_similarity(tokens: &[String], gap: usize) -> (f32, f32) {
-        let lev = |a: &str, b: &str| -> f32 {
-            let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
-            let mut prev: Vec<usize> = (0..=b.len()).collect();
-            let mut cur = vec![0usize; b.len() + 1];
-            for (i, ca) in a.iter().enumerate() {
-                cur[0] = i + 1;
-                for (j, cb) in b.iter().enumerate() {
-                    let cost = usize::from(ca != cb);
-                    cur[j + 1] = (prev[j + 1] + 1).min(cur[j] + 1).min(prev[j] + cost);
-                }
-                std::mem::swap(&mut prev, &mut cur);
-            }
-            prev[b.len()] as f32
-        };
         let mut adj = (0.0f32, 0u32);
         let mut dist = (0.0f32, 0u32);
         for i in 0..tokens.len() {
@@ -772,7 +1027,7 @@ mod tests {
         );
     }
 
-    // ---- G20: the vocabulary (true names) -----------------------------------------------------
+    // ---- G20/G22: the vocabulary (true names, now five daughters per key) --------------------
 
     #[test]
     fn vocabulary_deterministic_distinct_and_never_english() {
@@ -780,31 +1035,45 @@ mod tests {
             let v = vocabulary(seed);
             assert_eq!(v, vocabulary(seed), "deterministic per seed");
             assert_eq!(v.len(), VOCAB_KEYS.len());
-            for (key, w) in &v {
-                assert!(w.chars().count() >= 4, "a true name is a word: {w:?}");
-                assert!(
-                    w.bytes().all(|b| b.is_ascii_lowercase()),
-                    "romanized: {w:?}"
-                );
-                assert_ne!(w, key, "a true name never spells its English key");
-                assert!(
-                    !VOCAB_KEYS.contains(&w.as_str()),
-                    "…nor any other internal key: {w:?}"
-                );
-                assert!(!FUNCTION_WORDS.contains(&w.as_str()));
+            for (key, forms) in &v {
+                // G22: every guarantee now holds on **every daughter form**.
+                for w in forms {
+                    assert!(w.chars().count() >= 4, "a true name is a word: {w:?}");
+                    assert!(
+                        w.bytes().all(|b| b.is_ascii_lowercase()),
+                        "romanized: {w:?}"
+                    );
+                    assert_ne!(w, key, "a true name never spells its English key");
+                    assert!(
+                        !VOCAB_KEYS.contains(&w.as_str()),
+                        "…nor any other internal key: {w:?}"
+                    );
+                    assert!(!FUNCTION_WORDS.contains(&w.as_str()));
+                }
+                // The daughters really are the cascade of the proto (Signals = identity).
+                for s in crate::progress::Stratum::ALL {
+                    assert_eq!(
+                        forms[s.byte() as usize],
+                        derive(&forms[4], s),
+                        "daughter = derive(proto): {key}"
+                    );
+                }
             }
-            // Distinct after transliteration into every script (the G20 collision test — two
-            // names that merge in a smaller glyph pool would read as one name).
+            // Distinct after transliteration into every script, **per stratum** (the G9/G20
+            // collision lesson, now on each daughter tier — two same-stratum names that merge
+            // in a smaller glyph pool would read as one name).
             for i in 0..v.len() {
                 for j in (i + 1)..v.len() {
-                    for s in crate::text::Script::ALL {
-                        assert_ne!(
-                            crate::structures::transliterate(&v[i].1, s),
-                            crate::structures::transliterate(&v[j].1, s),
-                            "seed {seed}: {:?} vs {:?} collide in {s:?}",
-                            v[i],
-                            v[j]
-                        );
+                    for st in 0..5 {
+                        for s in crate::text::Script::ALL {
+                            assert_ne!(
+                                crate::structures::transliterate(&v[i].1[st], s),
+                                crate::structures::transliterate(&v[j].1[st], s),
+                                "seed {seed}: {:?} vs {:?} collide in stratum {st} / {s:?}",
+                                v[i].0,
+                                v[j].0
+                            );
+                        }
                     }
                 }
             }
@@ -814,8 +1083,8 @@ mod tests {
     }
 
     /// G21 rider: the generator never emits a blocklisted common English word — across many
-    /// seeds, every assigned name clears the list (and the determinism/collision guarantees are
-    /// re-verified by the standing test above under the extended rejection filter).
+    /// seeds, **every daughter form** of every assigned name clears the list (G22: the check
+    /// moved to the surface forms; the cascades introduce no letters outside the list's scope).
     #[test]
     fn vocabulary_rejects_the_english_blocklist() {
         assert!(
@@ -829,12 +1098,128 @@ mod tests {
             );
         }
         for seed in 0u32..200 {
-            for (key, w) in vocabulary(seed) {
-                assert!(
-                    !ENGLISH_BLOCKLIST.contains(&w.as_str()),
-                    "seed {seed}: {key:?} drew a real English word: {w:?}"
-                );
+            for (key, forms) in vocabulary(seed) {
+                for w in &forms {
+                    assert!(
+                        !ENGLISH_BLOCKLIST.contains(&w.as_str()),
+                        "seed {seed}: {key:?} drew a real English word: {w:?}"
+                    );
+                }
             }
+        }
+    }
+
+    // ---- G22: the sound-change cascades -------------------------------------------------------
+
+    /// Rule-by-rule units: each stratum's ordered cascade does exactly what research §6 pinned —
+    /// Records mild, Schematics abjad-like syncope, Rites palatalization + CV re-shape, Relics
+    /// final-vowel drop, Signals identity.
+    #[test]
+    fn cascades_rule_by_rule() {
+        use crate::progress::Stratum::*;
+        // Records: th→t, kh→k, z→s, ai→e, au→o (mild — the on-ramp stays plainest).
+        assert_eq!(derive("thaikhauza", Records), "tekosa");
+        assert_eq!(derive("tarn", Records), "tarn", "untouched stays untouched");
+        // Schematics: ai→i, au→u, then syncope (every vowel after the first drops).
+        assert_eq!(derive("tarnisu", Schematics), "tarns");
+        assert_eq!(derive("kaino", Schematics), "kin", "ai→i, then o drops");
+        assert_eq!(derive("auko", Schematics), "uk");
+        // Rites: k→s / kh→sh / g→z before front vowels; then CV re-shape (echo vowels).
+        assert_eq!(derive("kise", Rites), "sise", "*k → s before i");
+        assert_eq!(derive("kano", Rites), "kano", "no shift before back vowels");
+        assert_eq!(derive("khegi", Rites), "shezi", "*kh → sh, *g → z fronted");
+        assert_eq!(derive("tarn", Rites), "tarana", "codas echo the last vowel");
+        assert_eq!(derive("sim", Rites), "simi");
+        // Relics: final diphthong shortens, final vowel drops (≥1 other vowel), final m→n.
+        assert_eq!(derive("tarnisu", Relics), "tarnis");
+        assert_eq!(
+            derive("kanau", Relics),
+            "kan",
+            "au → a, then the final vowel drops"
+        );
+        assert_eq!(derive("selum", Relics), "selun", "final *m → n");
+        assert_eq!(derive("ta", Relics), "ta", "the only vowel never drops");
+        // Signals: identity — the proto preserved (the machine speaks the mother tongue).
+        for w in ["tarnisu", "khaizel", "shomau"] {
+            assert_eq!(derive(w, Signals), w);
+        }
+        // Multi-word derivation skips numeral tokens (quantities are not language).
+        assert_eq!(derive_text("kise #3 tarn", Rites), "sise #3 tarana");
+        // Deterministic + pure.
+        assert_eq!(derive("velaikha", Records), derive("velaikha", Records));
+    }
+
+    /// G22: cognate **detectability** — the statistical half of the comparative method: mean
+    /// edit distance *within* a cognate set (the five daughters of one key) is far below the
+    /// distance *between* unrelated words of the same stratum.
+    #[test]
+    fn cognates_are_statistically_detectable() {
+        for seed in [1u32, 1337] {
+            let v = vocabulary(seed);
+            let (mut within, mut wn) = (0.0f32, 0u32);
+            for (_, forms) in &v {
+                for i in 0..5 {
+                    for j in (i + 1)..5 {
+                        within += stats::lev(&forms[i], &forms[j]);
+                        wn += 1;
+                    }
+                }
+            }
+            let (mut between, mut bn) = (0.0f32, 0u32);
+            for i in 0..v.len() {
+                for j in (i + 1)..v.len() {
+                    for st in 0..5 {
+                        between += stats::lev(&v[i].1[st], &v[j].1[st]);
+                        bn += 1;
+                    }
+                }
+            }
+            let (within, between) = (within / wn as f32, between / bn as f32);
+            assert!(
+                within < 0.6 * between,
+                "seed {seed}: cognate sets must sit ≪ apart than unrelated words \
+                 (within {within:.2} vs between {between:.2})"
+            );
+        }
+    }
+
+    /// G22: the honesty suite holds on **every stratum's surface corpus** (the daughters are
+    /// language-shaped too, not mangled ciphertext): Zipf slope, Heaps β, conditional entropy,
+    /// a function-word layer (the *derived* particles), Zipf abbreviation, no autocopy.
+    #[test]
+    fn honesty_suite_holds_per_stratum_surface_corpus() {
+        for stratum in crate::progress::Stratum::ALL {
+            let surf: Vec<String> = sample().iter().map(|t| derive(t, stratum)).collect();
+            let tag = stratum.label();
+            let s = stats::zipf_slope(&surf);
+            assert!(
+                (-1.4..=-0.6).contains(&s),
+                "{tag}: Zipf slope {s} out of band"
+            );
+            let b = stats::heaps_beta(&surf);
+            assert!((0.4..=0.85).contains(&b), "{tag}: Heaps β {b} out of band");
+            let h = stats::char_conditional_entropy(&surf);
+            assert!(
+                (2.0..=4.2).contains(&h),
+                "{tag}: char cond. entropy {h} out of band"
+            );
+            let fw: Vec<String> = FUNCTION_WORDS.iter().map(|w| derive(w, stratum)).collect();
+            let fw_refs: Vec<&str> = fw.iter().map(|s| s.as_str()).collect();
+            let share = stats::function_word_share(&surf, &fw_refs);
+            assert!(
+                (0.30..=0.60).contains(&share),
+                "{tag}: function-word share {share} off"
+            );
+            let (freq_len, rare_len) = stats::abbreviation(&surf);
+            assert!(
+                freq_len < rare_len,
+                "{tag}: frequent tokens ({freq_len}) should be shorter than rare ({rare_len})"
+            );
+            let (adj, dist) = stats::adjacent_vs_distant_similarity(&surf[..3000], 7);
+            assert!(
+                (adj - dist).abs() / dist.max(1.0) < 0.15,
+                "{tag}: autocopy signature ({adj} vs {dist})"
+            );
         }
     }
 
