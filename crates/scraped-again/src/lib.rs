@@ -598,37 +598,48 @@ impl App {
     /// Collect the `idx`-th collectible: remove it, bank it through the serializable event seam,
     /// and drop its chunk from the opportunity surface. Shared by the aim pick + the auto-collect.
     /// G18: an ⟦erased⟧ inscription routes through `CollectErased` — nothing banks, but the
-    /// erasure event is logged in the codex (the G20 sensing-ladder hook).
+    /// erasure event is logged in the codex (the G21 sensing-ladder hook). G20: a worn instance
+    /// of a **known** frame collects *restored* (full text, full yield), and an intact frame
+    /// instance counts a sighting.
     fn collect_index(&mut self, idx: usize) {
         let c = self.collectible.remove(idx);
-        let ev = if c.erased {
-            progress::Event::CollectErased {
-                find_id: c.find_id,
-                script: c.script,
-                text: c.text.clone(),
-                pos: c.pos,
-            }
-        } else {
-            progress::Event::Collect {
-                find_id: c.find_id,
-                script: c.script,
-                text: c.text.clone(),
-                pos: c.pos,
-            }
-        };
+        let ev = collect_event(&self.progress, self.seed, &c);
         if self.progress.apply(&ev) {
             if c.erased {
                 log::info!("collected an erasure — nothing recovered; the gouge is logged");
-            } else {
+            } else if let progress::Event::Collect { text, .. } = &ev {
+                if *text != c.text {
+                    log::info!("FRAME RESTORED — the formula fills the lacunae (full yield)");
+                }
                 log::info!(
                     "collected \"{}\" → +{} {}",
-                    c.text,
-                    progress::yield_amount(c.script, progress::glyph_count(&c.text)),
+                    text,
+                    progress::yield_amount(c.script, progress::glyph_count(text)),
                     progress::stratum_of(c.script).label(),
                 );
             }
             self.forget_scanned_chunk(c.pos); // it's no longer an opportunity (G3)
             self.discover(c.name); // G9: a name-bearer also discovers its block
+            self.sight_frame(&c); // G20: an intact frame instance teaches its frame
+        }
+    }
+
+    /// G20: record an **intact** frame sighting (a worn/erased instance can't teach the whole
+    /// skeleton); the third sighting cracks the frame — the codex gains its structural entry and
+    /// worn matches start restoring. Shared by every collect route.
+    fn sight_frame(&mut self, c: &progress::Collectible) {
+        let Some(frame_id) = c.frame else { return };
+        if c.text.chars().any(|ch| ch == text::MARK_LACUNA) {
+            return; // only whole exemplars count as sightings
+        }
+        let before = self.progress.frame_known(frame_id);
+        if self
+            .progress
+            .apply(&progress::Event::SightFrame { frame_id })
+            && !before
+            && self.progress.frame_known(frame_id)
+        {
+            log::info!("FRAME KNOWN — a recurring formula cracked (worn matches now restore)");
         }
     }
 
@@ -683,31 +694,21 @@ impl App {
         let mut done: Vec<u64> = Vec::new();
         let mut done_pos: Vec<[f32; 3]> = Vec::new();
         let mut named: Vec<console::Block> = Vec::new();
+        let mut sighted: Vec<progress::Collectible> = Vec::new();
         for c in &self.collectible {
             if beam::on_path(Vec3::from(c.pos), b.a, b.b) {
-                // G18: an ⟦erased⟧ site logs its erasure event instead of banking (all collect
-                // routes agree — the beam included).
-                let ev = if c.erased {
-                    progress::Event::CollectErased {
-                        find_id: c.find_id,
-                        script: c.script,
-                        text: c.text.clone(),
-                        pos: c.pos,
-                    }
-                } else {
-                    progress::Event::Collect {
-                        find_id: c.find_id,
-                        script: c.script,
-                        text: c.text.clone(),
-                        pos: c.pos,
-                    }
-                };
+                // G18: an ⟦erased⟧ site logs its erasure event instead of banking; G20: a worn
+                // known-frame match restores (all collect routes agree — the beam included).
+                let ev = collect_event(&self.progress, self.seed, c);
                 if self.progress.apply(&ev) {
                     swept += 1;
                     done.push(c.find_id);
                     done_pos.push(c.pos);
                     if let Some(b) = c.name {
                         named.push(b); // G9: the beam sweeps up names too
+                    }
+                    if c.frame.is_some() {
+                        sighted.push(c.clone()); // G20: …and frame instances
                     }
                 }
             }
@@ -718,6 +719,9 @@ impl App {
         }
         for b in named {
             self.discover(Some(b));
+        }
+        for c in &sighted {
+            self.sight_frame(c);
         }
         // G10: the beam sweeps shards along its path too (all collect routes pick up shards).
         let on_beam: Vec<shards::Shard> = self
@@ -1548,6 +1552,27 @@ impl App {
     fn codex_text(&self) -> String {
         let c = &self.progress.codex;
         let mut out = format!("CODEX — {} finds   [J close]\n", c.len());
+        // G20: known frames — structural crib entries (the machine's transcription of the
+        // skeleton, slot marked `__`; no translation, no English). Worn matches now restore.
+        let known: Vec<structures::FrameSkeleton> = structures::world_frames(self.seed)
+            .into_iter()
+            .filter(|f| self.progress.frame_known(f.id))
+            .collect();
+        if !known.is_empty() {
+            out.push_str(&format!("FRAMES — {} known\n", known.len()));
+            for f in &known {
+                let skel: Vec<&str> = f
+                    .words
+                    .iter()
+                    .map(|w| w.as_deref().unwrap_or("__"))
+                    .collect();
+                out.push_str(&format!(
+                    "     {}   ({} seen)\n",
+                    skel.join(" "),
+                    self.progress.frame_sightings(f.id)
+                ));
+            }
+        }
         if c.is_empty() {
             out.push_str("(nothing yet — aim at a glowing inscription and press T)");
         } else {
@@ -1567,9 +1592,13 @@ impl App {
                     if ch == text::MARK_LACUNA {
                         line.push_str("[..]");
                         dots.push_str("    "); // a lacuna is loss, not doubt — no underdot
-                    } else if ch == text::MARK_CARTOUCHE_OPEN || ch == text::MARK_CARTOUCHE_CLOSE {
-                        // G20: the name-enclosure renders as itself (the same marks the world
-                        // billboard draws); it's structure, so the underdot row skips it.
+                    } else if ch == text::MARK_CARTOUCHE_OPEN
+                        || ch == text::MARK_CARTOUCHE_CLOSE
+                        || ch == '['
+                        || ch == ']'
+                    {
+                        // G20: the name-enclosure and the Leiden restoration brackets render as
+                        // themselves (never remapped into a script); structure — no underdot.
                         line.push(ch);
                         dots.push(' ');
                     } else {
@@ -1725,6 +1754,7 @@ impl App {
                     name: m.name, // G9: a name-bearer discovers its block on collect
                     // G18: an erased site logs its erasure instead of yielding.
                     erased: m.condition == structures::Condition::Erased,
+                    frame: m.frame, // G20: frame instances teach/restore the crib
                 })
             })
             .collect();
@@ -1745,13 +1775,14 @@ impl App {
                 None if m.condition == structures::Condition::Intact
                     && self.progress.is_legible(m.script) =>
                 {
-                    (
-                        lexicon::phrase(seed, m.cell, progress::glyph_count(&m.text)),
-                        text::Script::Latin,
-                        m.pos,
-                        m.height,
-                        m.color,
-                    )
+                    // G20: a frame cell's translation IS the frame phrase (its world glyphs
+                    // already spell it verbatim); other ambient cells translate via `phrase`
+                    // keyed on their original glyph count, exactly as before.
+                    let translated = match m.frame {
+                        Some(_) => lexicon::frame(seed, m.cell),
+                        None => lexicon::phrase(seed, m.cell, progress::glyph_count(&m.text)),
+                    };
+                    (translated, text::Script::Latin, m.pos, m.height, m.color)
                 }
                 None => (m.text, m.script, m.pos, m.height, m.color),
             })
@@ -3793,6 +3824,42 @@ impl App {
         let pos = Vec3::from(view.pos);
         let camera = Camera::new(pos, view.yaw, view.pitch);
         assemble_app(view, pos, camera, None, progress::Progress::default())
+    }
+}
+
+/// G20: the canonical **collect event** for a collectible — the one place every collect route
+/// (aim pick, auto-collect, beam) builds its event. An ⟦erased⟧ site logs `CollectErased`
+/// (G18); a **worn instance of a known frame** whose surviving glyphs uniquely match collects
+/// with its lacunae *restored* from the skeleton (Leiden `[abc]`; full yield falls out of the
+/// restored text — Decision 2); everything else is a plain `Collect`.
+fn collect_event(
+    progress: &progress::Progress,
+    seed: u32,
+    c: &progress::Collectible,
+) -> progress::Event {
+    if c.erased {
+        return progress::Event::CollectErased {
+            find_id: c.find_id,
+            script: c.script,
+            text: c.text.clone(),
+            pos: c.pos,
+        };
+    }
+    let text = match c.frame {
+        Some(id) if progress.frame_known(id) => {
+            let known: Vec<structures::FrameSkeleton> = structures::world_frames(seed)
+                .into_iter()
+                .filter(|f| progress.frame_known(f.id))
+                .collect();
+            structures::restore_worn(&c.text, c.script, &known).unwrap_or_else(|| c.text.clone())
+        }
+        _ => c.text.clone(),
+    };
+    progress::Event::Collect {
+        find_id: c.find_id,
+        script: c.script,
+        text,
+        pos: c.pos,
     }
 }
 

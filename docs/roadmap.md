@@ -976,6 +976,28 @@ bounded envelope regression in CI (seed 1337: first discovery ≤ 8 sim-min, fir
 ≤ 35, income in [6, 30] yield/min) with the full multi-seed probe behind `PACING_FULL=1`.
 Golden voxel-hash + headless render unchanged.
 
+### ✨ G20 — Cartouches, formulaic frames & true names ✅ &nbsp;→ [`milestones/G20-cartouches-frames.md`](milestones/G20-cartouches-frames.md)
+The Archive tranche's naming-and-recognition milestone, in three green commits. **(1) True
+names:** every block's *display* name is a **seeded lexicon word** (`lexicon::vocabulary` —
+deterministic per world seed, collision-free across the vocabulary *after transliteration into
+every script*, never an internal English key), rendered through the existing per-stratum
+transliteration; parameters (`(shards)`, `(sensing)`, match domains) and faculty research labels
+go lexicon too — **no readable English remains anywhere in the vocabulary layer** (the G18-review
+Records/Latin leak — `COLLECT`, `SCAN(SHARDS)` in the console — is gone; internal
+`name()`/codes/codecs unchanged; the G12 world↔console pixel-identity invariant re-proven under
+the new source). **(2) Cartouches:** a content-agnostic enclosure mark pair joins the G18 PUA
+range (U+E623/E624, arms meeting across cells) and wraps the name cluster on **every**
+name-bearing world inscription and console/codex/toast name render — worn keeps it, ambient
+never has it, ⟦erased⟧ stays a bare gouge; `to_overlay` gained a mark-scoped passthrough (marks
+never remap to staves). **(3) Formulaic frames as cribs:** frame-shaped ambient cells now spell
+G16's recurring one-varying-slot frame **verbatim in raw glyphs** (per-cell script, spaces
+survive); three *intact* collects teach the frame (`pg=` **v10** append-only), the codex gains
+its structural skeleton entry (slot marked), and thereafter a **worn** instance whose surviving
+glyphs *uniquely* match a known frame collects **restored** — Leiden `[abc]` brackets (distinct
+from `[..]` lacunae) and **full, unreduced yield**; slot lacunae/ambiguous/unpinned matches never
+restore; erased is out (G21). D11 scenario end-to-end; envelope test green un-re-pinned (frames
+raise worn *data* yield only — the shard-income band is untouched); golden voxel-hash unchanged.
+
 ### ✨ G18 — The uncertainty layer ✅ &nbsp;→ [`milestones/G18-uncertainty-layer.md`](milestones/G18-uncertainty-layer.md)
 The Archive tranche's first *feature* milestone on the G16 substrate: **readings stop being
 instant**. (1) **Provisional → confirmed attestation** per discovered block name — a hypothesis on

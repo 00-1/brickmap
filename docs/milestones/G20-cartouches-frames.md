@@ -1,6 +1,6 @@
 # G20 — Cartouches, formulaic frames & true names
 
-> **Status: in build (2/3 landed — true names, cartouches).** The Archive tranche continues on G18's substrate. Three
+> **Status: built ✅ (2026-07-10, three green commits — names → cartouches → frames).** See the as-built note at the end. The Archive tranche continues on G18's substrate. Three
 > pieces that belong together because they all touch *naming and recognition*:
 > **(1) true names** — the fix for the G18-review finding that Records/Latin-script block
 > names leak readable English; **(2) cartouches** — the visual name-enclosure that was the
@@ -105,8 +105,40 @@ intact (marks content-agnostic); roadmap G20.
       invariant re-proven).
 - [x] Cartouche marks enclose name renders in world + console + codex (same marks);
       ambient never cartouched; worn keeps it; erased doesn't.
-- [ ] Frames: 3 sightings → known (codex skeleton + slot); worn matches restore
+- [x] Frames: 3 sightings → known (codex skeleton + slot); worn matches restore
       (`[restored]` render distinct from `[..]`; full yield); ambiguous doesn't; erased out.
-- [ ] `pg=` v10 append-only; D11 scenario; envelope test green (re-pinned if shifted, noted).
-- [ ] Golden voxel-hash unchanged; four-way CI green; boundary intact; roadmap G20 + brief
+- [x] `pg=` v10 append-only; D11 scenario; envelope test green (re-pinned if shifted, noted).
+- [x] Golden voxel-hash unchanged; four-way CI green; boundary intact; roadmap G20 + brief
       as-built.
+
+## As-built (2026-07-10)
+
+Landed as three green commits on `main` (names → cartouches → frames), each with the full
+gate. Deviations + pins beyond the brief, recorded honestly:
+
+1. **Frames are visible in raw glyphs.** The brief's sketch kept the frame in the lexicon
+   (translated) layer, but a worn instance's "surviving glyphs" only exist player-side if
+   the frame is in the *world text* — so frame-shaped ambient cells now **spell the frame
+   verbatim, transliterated into their cell's script** (`transliterate` keeps spaces so the
+   word-shape survives). This is *more* faithful to the research (§1's Grotefend foothold is
+   spotted in raw glyphs, pre-comprehension); the translated display of a frame cell is the
+   same frame phrase. Content change to ambient frame cells (find-ids move with it) — same
+   worldgen-version policy as the name inscriptions; the golden voxel-hash is untouched.
+2. **Restoration is skeleton-only (extra pin).** A worn match restores only when **every**
+   lacuna falls in a fixed (skeleton) position — the varying slot is not formulaic, so a
+   slot lacuna keeps the whole text lacunae (no data minted from nothing; Decision 2's
+   full-yield payoff still holds because a restored text *is* complete). Also pinned: the
+   match must be anchored by ≥1 surviving fixed-position glyph (word-shape alone doesn't
+   restore), and only **intact** instances count as sightings.
+3. **Restored render rides ASCII `[` `]`** (the literal Leiden restoration brackets) stored
+   in the codex text — visually distinct from `[..]` lacunae, excluded from glyph/yield
+   counts like every structural mark. The codex frame entry renders the skeleton in the
+   machine's romanized transcription with the slot marked `__` (structural, no English).
+4. **One engine touch beyond the two mark bitmaps:** `to_overlay` now passes *all* generic
+   mark glyphs through unmapped (Runic/Galactic previously remapped any char — a latent
+   bug that would have turned enclosure marks into staves). Mark-scoped; tested.
+5. **Faculty research labels went lexicon too** (`ResearchTarget::glyphs`) — the research
+   bar would otherwise re-leak the English word (`sensing`) that `spend(…)` hides.
+6. Kept per the G12 review (out of scope here, noted for a future review): routine
+   **author labels** (the given `drift`/`survey`/`prospect`/`collect` row names) and
+   trigger/state instrumentation (`when(shards ≥ N)`) remain minimal-English.

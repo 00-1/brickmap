@@ -316,9 +316,10 @@ The cruiser's auto-scan (§6) and what it reveals on the map.
 - **Legibility: Records → Schematics → Rites → Relics → Signals** — five unlocks bought
   with **that script's collected data** (which autopilot gathers too, so legibility is
   reachable hands-off); an unlocked script renders ambient text **translated** instead of
-  glowing nonsense. **Exception (G12):** a **block name** stays its glyph cluster even once its
+  glowing nonsense. **Exception (G12/G20):** a **block name** stays its glyph cluster even once its
   script is legible — block names are unreadable by design (you recognise the symbol, you
-  never read the word). Manual **"Rosetta" finds** *accelerate* a script's legibility — they
+  never read the word; G20 made this airtight — the name under the glyphs is a seeded
+  lexicon word, cartouche-enclosed, so there is no English to reveal). Manual **"Rosetta" finds** *accelerate* a script's legibility — they
   don't gate it.
 - **Fluency I–III** (per script) — *progressive* legibility: first fragments resolve,
   then full phrases. Watching the world become readable **is** the progression curve.

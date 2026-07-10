@@ -971,6 +971,137 @@ fn uncertainty_attestation_condition_and_erasure() {
 }
 
 // ----------------------------------------------------------------------------------------------
+// 7d) G20 — formulaic frames as cribs, end to end through the real collect seam: a worn frame
+//     instance pays only its survivors while the frame is unknown; three INTACT sightings teach
+//     it (codex gains the structural skeleton entry); a worn instance whose survivors uniquely
+//     match then collects RESTORED — Leiden-bracketed `[abc]` in the codex, FULL yield — and the
+//     crib state rides `pg=` v10.
+// ----------------------------------------------------------------------------------------------
+
+#[test]
+fn frames_crib_three_sightings_teach_and_worn_matches_restore_full() {
+    use structures::Condition;
+    // Find a world whose origin field holds the full scenario: ≥3 intact frame instances and
+    // ≥2 worn ones of which ≥1 is restorable (lacunae only in skeleton positions).
+    let mut found: Option<(u32, Vec<structures::Inscription>)> = None;
+    'seeds: for seed in [1337u32, 7, 42, 2024, 99999, 555] {
+        let g = ground_fn(seed);
+        let marks = structures::inscriptions_near(seed, Vec3::ZERO, 3000.0, g);
+        let known = structures::world_frames(seed);
+        let intact = marks
+            .iter()
+            .filter(|m| m.frame.is_some() && m.condition == Condition::Intact)
+            .count();
+        let worn: Vec<&structures::Inscription> = marks
+            .iter()
+            .filter(|m| m.frame.is_some() && matches!(m.condition, Condition::Worn(_)))
+            .collect();
+        let restorable = worn
+            .iter()
+            .filter(|m| structures::restore_worn(&m.text, m.script, &known).is_some())
+            .count();
+        if intact >= 3 && worn.len() >= 2 && restorable >= 1 {
+            found = Some((seed, marks));
+            break 'seeds;
+        }
+    }
+    let (seed, marks) = found.expect("some seed holds 3 intact + 2 worn (1 restorable) frames");
+    let known = structures::world_frames(seed);
+    let frame_id = known[0].id;
+    let intact: Vec<&structures::Inscription> = marks
+        .iter()
+        .filter(|m| m.frame.is_some() && m.condition == Condition::Intact)
+        .collect();
+    let restorable = marks
+        .iter()
+        .find(|m| {
+            m.frame.is_some()
+                && matches!(m.condition, Condition::Worn(_))
+                && structures::restore_worn(&m.text, m.script, &known).is_some()
+        })
+        .unwrap();
+    let worn_pre = marks
+        .iter()
+        .find(|m| {
+            m.frame.is_some()
+                && matches!(m.condition, Condition::Worn(_))
+                && m.cell != restorable.cell
+        })
+        .unwrap();
+
+    let mut app = App::headless(seed);
+    app.auto_fly = false; // scripted helm
+
+    // --- Unknown frame: a worn instance pays only its SURVIVING glyphs and logs lacunae. ---
+    let before = app.progress.strata.total();
+    collect_inscription(&mut app, worn_pre);
+    assert_eq!(
+        app.progress.strata.total() - before,
+        progress::yield_amount(worn_pre.script, progress::glyph_count(&worn_pre.text)),
+        "pre-known worn pays survivors only"
+    );
+    assert!(
+        app.codex_text().contains("[..]"),
+        "pre-known worn renders plain lacunae"
+    );
+    assert!(!app.codex_text().contains("FRAMES"), "nothing known yet");
+
+    // --- Three INTACT sightings teach the frame (the worn collect above counted nothing). ---
+    for (i, m) in intact.iter().take(3).enumerate() {
+        assert!(!app.progress.frame_known(frame_id), "not known before 3");
+        assert_eq!(app.progress.frame_sightings(frame_id), i as u8);
+        collect_inscription(&mut app, m);
+    }
+    assert!(
+        app.progress.frame_known(frame_id),
+        "three intact sightings crack the frame"
+    );
+    let codex = app.codex_text();
+    assert!(
+        codex.contains("FRAMES — 1 known") && codex.contains("__"),
+        "the codex records the skeleton with the slot marked: {codex}"
+    );
+
+    // --- A worn unique match now collects RESTORED: Leiden brackets + FULL yield. ---
+    let full = progress::glyph_count(&structures::transliterate(
+        &crate::lexicon::frame(seed, restorable.cell),
+        restorable.script,
+    ));
+    assert!(
+        progress::glyph_count(&restorable.text) < full,
+        "the restorable instance really lost glyphs"
+    );
+    let before = app.progress.strata.total();
+    collect_inscription(&mut app, restorable);
+    assert_eq!(
+        app.progress.strata.total() - before,
+        progress::yield_amount(restorable.script, full),
+        "a restored collect pays FULL, unreduced (Decision 2)"
+    );
+    let entry = app.progress.codex.last().unwrap();
+    assert!(
+        entry.text.contains('[') && entry.text.contains(']'),
+        "the codex stores the Leiden-bracketed restoration: {:?}",
+        entry.text
+    );
+    assert!(
+        !entry.text.contains(crate::text::MARK_LACUNA),
+        "no lacunae remain in a restored entry"
+    );
+    assert!(
+        app.codex_text().contains('['),
+        "the codex renders the restoration brackets (distinct from [..] lacunae)"
+    );
+
+    // --- The crib rides `pg=` v10. ---
+    let restored = progress::Progress::decode(&app.share_string());
+    assert_eq!(restored, app.progress, "pg= v10 round-trips the frame crib");
+    assert!(restored.frame_known(frame_id));
+    // And the loop keeps running cleanly with the new state live.
+    drive(&mut app, 120);
+}
+
+// ----------------------------------------------------------------------------------------------
 // 8) Render-robustness sweep — several vantages + after state changes render without panic/NaN.
 //    Needs a (software) Vulkan adapter, so it's `#[ignore]` (local / opt-in, not CI).
 // ----------------------------------------------------------------------------------------------

@@ -326,12 +326,55 @@ pub fn record(seed: u32, cell: (i32, i32)) -> String {
 pub fn frame(seed: u32, cell: (i32, i32)) -> String {
     let h = hash(seed, cell);
     let mut r = Rng::new(h as u64 ^ 0x4652_414D); // "FRAM" — drives the varying slot
+    let varying = zipf_content(&mut r);
+    frame_skeleton(seed)
+        .iter()
+        .map(|w| w.clone().unwrap_or_else(|| varying.clone()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// G20: the frame's **skeleton** — its seed-fixed words in order, with `None` at the one varying
+/// slot. This is the frame's *identity* (what recurs verbatim across sites) and the restoration
+/// pattern (a known skeleton fills skeleton-position lacunae on worn instances).
+pub fn frame_skeleton(seed: u32) -> Vec<Option<String>> {
     let mut fr = Rng::new(seed as u64 ^ 0x4652_414D); // seed-fixed → the recurring particles
     let a = FUNCTION_WORDS[fr.below(FUNCTION_WORDS.len())];
     let b = FUNCTION_WORDS[fr.below(FUNCTION_WORDS.len())];
     let c = FUNCTION_WORDS[fr.below(FUNCTION_WORDS.len())];
-    let varying = zipf_content(&mut r);
-    format!("{a} {b} {varying} {c}")
+    vec![
+        Some(a.to_string()),
+        Some(b.to_string()),
+        None,
+        Some(c.to_string()),
+    ]
+}
+
+/// G20: the frame's stable **identity** — an FNV hash of its skeleton words + slot position.
+/// Persisted in `pg=` (frame sightings / known frames), so it must stay a pure function of the
+/// skeleton.
+pub fn frame_id(seed: u32) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut mix = |b: u8| {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    for w in frame_skeleton(seed) {
+        match w {
+            Some(word) => word.bytes().for_each(&mut mix),
+            None => mix(0xFF), // the slot marker
+        }
+        mix(0x1F); // word separator
+    }
+    h
+}
+
+/// G20: does the cell's phrase route to the **frame** shape? Mirrors [`phrase`]'s routing (a
+/// long string whose cell hash picks the frame arm), so world composition and translated display
+/// agree on which cells are frame instances. `glyphs` is the cell's *original* (unweathered)
+/// glyph count.
+pub fn is_frame_cell(seed: u32, cell: (i32, i32), glyphs: u32) -> bool {
+    glyphs > 7 && (hash(seed, cell) >> 5) % 3 == 1
 }
 
 fn hash(seed: u32, cell: (i32, i32)) -> u32 {
@@ -750,6 +793,51 @@ mod tests {
             .chain(Stratum::ALL.map(MatchField::Domain))
         {
             assert!(VOCAB_KEYS.contains(&m.label()));
+        }
+    }
+
+    // ---- G20: frame identity ------------------------------------------------------------------
+
+    #[test]
+    fn frame_skeleton_matches_the_emitter_and_ids_are_stable() {
+        for seed in [1u32, 7, 1337] {
+            let sk = frame_skeleton(seed);
+            assert_eq!(sk.len(), 4);
+            assert_eq!(sk.iter().filter(|w| w.is_none()).count(), 1, "one slot");
+            // Every emitted frame instance is the skeleton with the slot filled.
+            for cell in [(1, 0), (9, 9), (-4, 17)] {
+                let words: Vec<String> = frame(seed, cell).split(' ').map(String::from).collect();
+                assert_eq!(words.len(), sk.len());
+                for (w, fw) in words.iter().zip(&sk) {
+                    if let Some(fixed) = fw {
+                        assert_eq!(w, fixed, "seed {seed} {cell:?}: fixed word differs");
+                    } else {
+                        assert!(!w.is_empty(), "the slot holds content");
+                    }
+                }
+            }
+            // Identity: a pure, stable function of the skeleton.
+            assert_eq!(frame_id(seed), frame_id(seed));
+        }
+        // Different seeds usually mean different skeletons/ids (spot-check a pair that differs).
+        assert_ne!(frame_id(1), frame_id(1337));
+        // Routing mirror: only long cells can be frames, and the cell hash picks the arm.
+        assert!(!is_frame_cell(1337, (3, 3), 5), "short cells never frame");
+        let hits = (0..200)
+            .filter(|i| is_frame_cell(1337, (*i, -*i), 9))
+            .count();
+        assert!(
+            (30..=110).contains(&hits),
+            "~1/3 of long cells route to the frame, got {hits}/200"
+        );
+        // …and the routing agrees with `phrase` (the world/display contract).
+        for i in 0..40 {
+            let cell = (i, i * 3 - 7);
+            if is_frame_cell(1337, cell, 9) {
+                assert_eq!(phrase(1337, cell, 9), frame(1337, cell));
+            } else {
+                assert_ne!(phrase(1337, cell, 9), frame(1337, cell));
+            }
         }
     }
 

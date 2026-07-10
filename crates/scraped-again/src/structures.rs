@@ -112,6 +112,11 @@ pub struct Inscription {
     pub name: Option<crate::console::Block>,
     /// G18: the inscription's seeded material **condition** (already applied to `text`).
     pub condition: Condition,
+    /// G20: this ambient inscription is an instance of the world's recurring **formulaic
+    /// frame** — `Some(frame_id)`. Its text spells the frame verbatim (in this cell's script),
+    /// so distribution-watchers can spot the recurrence in raw glyphs. `None` for names,
+    /// plain ambient noise, and ⟦erased⟧ cells (erased recovery is G21).
+    pub frame: Option<u64>,
 }
 
 /// G18: an inscription's seeded material condition. `Worn(mask)` — bit `i` set ⇒ the `i`-th
@@ -249,6 +254,108 @@ pub fn strip_cartouche(text: &str) -> &str {
         .unwrap_or(text)
 }
 
+// ---- G20: formulaic frames as cribs ---------------------------------------------------------
+
+/// A frame's identity + skeleton, for matching worn instances (`None` = the varying slot).
+/// The generic matcher takes a *list* of these (only ever the frames the player KNOWS), so the
+/// unique-match rule below is real machinery, not a vacuous check.
+pub struct FrameSkeleton {
+    pub id: u64,
+    pub words: Vec<Option<String>>,
+}
+
+/// The world's recurring frames (one today — G16's single emitter; the machinery is list-shaped
+/// for when the corpus grows more).
+pub fn world_frames(seed: u32) -> Vec<FrameSkeleton> {
+    vec![FrameSkeleton {
+        id: crate::lexicon::frame_id(seed),
+        words: crate::lexicon::frame_skeleton(seed),
+    }]
+}
+
+/// Do the surviving glyphs of `words` (a worn text split on spaces) fit frame `f` in `script`?
+/// Fixed words must match length + every surviving glyph; the slot word is free content.
+fn frame_matches(words: &[&str], f: &FrameSkeleton, script: Script) -> bool {
+    words.len() == f.words.len()
+        && words.iter().zip(&f.words).all(|(w, fw)| match fw {
+            None => !w.is_empty(),
+            Some(fixed) => {
+                let expect = transliterate(fixed, script);
+                w.chars().count() == expect.chars().count()
+                    && w.chars()
+                        .zip(expect.chars())
+                        .all(|(c, e)| c == crate::text::MARK_LACUNA || c == e)
+            }
+        })
+}
+
+/// G20: try to **restore** a worn inscription's lost glyphs against the player's *known* frames
+/// (Leiden `[abc]` — restoration, visually distinct from `[..]` lacunae). Returns the restored
+/// text iff:
+/// - the surviving glyphs match **exactly one** known frame (ambiguous → no false restorations,
+///   Decision 4), with ≥1 surviving glyph in a *fixed* position actually pinning it (word-shape
+///   alone doesn't restore), and
+/// - **every** lacuna falls in a fixed (skeleton) position — the varying slot is not formulaic,
+///   so a slot lacuna is unrecoverable and the whole text stays lacunae.
+///
+/// Restored runs are wrapped in ASCII `[` `]` (the Leiden restoration brackets — structural
+/// punctuation, excluded from the data glyph count like every mark).
+pub fn restore_worn(text: &str, script: Script, known: &[FrameSkeleton]) -> Option<String> {
+    if !text.chars().any(|c| c == crate::text::MARK_LACUNA) {
+        return None; // nothing lost, nothing to restore
+    }
+    let words: Vec<&str> = text.split(' ').collect();
+    let mut fits = known.iter().filter(|f| frame_matches(&words, f, script));
+    let f = fits.next()?;
+    if fits.next().is_some() {
+        return None; // ambiguous across known frames — no false restorations
+    }
+    // The match must be *pinned* by at least one surviving fixed-position glyph.
+    let pinned = words
+        .iter()
+        .zip(&f.words)
+        .any(|(w, fw)| fw.is_some() && w.chars().any(|c| c != crate::text::MARK_LACUNA));
+    if !pinned {
+        return None;
+    }
+    let mut out: Vec<String> = Vec::with_capacity(words.len());
+    for (w, fw) in words.iter().zip(&f.words) {
+        match fw {
+            None => {
+                if w.chars().any(|c| c == crate::text::MARK_LACUNA) {
+                    return None; // the varying slot can't be restored from a formula
+                }
+                out.push((*w).to_string());
+            }
+            Some(fixed) => {
+                let expect = transliterate(fixed, script);
+                let mut restored = String::new();
+                let mut open = false;
+                for (c, e) in w.chars().zip(expect.chars()) {
+                    if c == crate::text::MARK_LACUNA {
+                        if !open {
+                            restored.push('[');
+                            open = true;
+                        }
+                        restored.push(e);
+                    } else {
+                        if open {
+                            restored.push(']');
+                            open = false;
+                        }
+                        restored.push(c);
+                    }
+                }
+                if open {
+                    restored.push(']');
+                }
+                out.push(restored);
+            }
+        }
+    }
+    Some(out.join(" "))
+}
+
 /// G20: the exact glyph text a name-bearing inscription spells for block `b`: its true name
 /// transliterated into its stratum script. The console renders the overlay form of this same
 /// string — the world↔console recognition loop's single source.
@@ -266,16 +373,20 @@ fn pool(script: Script) -> &'static str {
     }
 }
 
-/// G9: render a block's bare name into `script` as a **stable transliteration** — the same
-/// glyphs every time for the same block, so a name reads as *a name* (recognisably recurring),
+/// G9: render romanized lexicon text into `script` as a **stable transliteration** — the same
+/// glyphs every time for the same word, so a name reads as *a name* (recognisably recurring),
 /// not fresh noise. Letter-wise: `a..z` maps positionally into the script's glyph pool (for the
 /// Latin-glyph scripts — Latin/Galactic/Runic — that's the uppercase letters themselves; the
 /// renderer draws them in the script's own glyph forms). Distinct across the vocabulary (tested).
+/// G20: spaces survive (a multi-word *frame* keeps its word shape); everything else drops.
 pub fn transliterate(name: &str, script: Script) -> String {
     let glyphs: Vec<char> = pool(script).chars().collect();
     name.chars()
-        .filter(|c| c.is_ascii_alphabetic())
+        .filter(|c| c.is_ascii_alphabetic() || *c == ' ')
         .map(|c| {
+            if c == ' ' {
+                return ' ';
+            }
             let idx = (c.to_ascii_lowercase() as u8 - b'a') as usize;
             glyphs[idx % glyphs.len()]
         })
@@ -377,6 +488,7 @@ pub fn colossus_label(seed: u32, p: &Placement) -> Inscription {
         // G18: monuments stay intact — the deep names are cut monumentally, and the
         // every-name-findable coverage guarantee (no discovery softlock) keeps holding.
         condition: Condition::Intact,
+        frame: None,
     }
 }
 
@@ -423,6 +535,21 @@ pub fn inscriptions_near(
                 Some(b) => (name_text(seed, b), block_script(b)),
                 None => (text, script),
             };
+            // G20: an ambient long cell that routes to the corpus' recurring **frame** shape
+            // spells the frame *verbatim* in this cell's script — the recurrence is visible in
+            // raw glyphs (the Grotefend foothold), not only after comprehension. The routing
+            // keys off the *original* composed glyph count, the same input the translated
+            // display feeds `lexicon::phrase`, so both layers agree on which cells are frames.
+            let frame = (name.is_none() && {
+                let g = text.chars().filter(|c| !c.is_whitespace()).count() as u32;
+                crate::lexicon::is_frame_cell(seed, (cx, cz), g)
+            })
+            .then(|| crate::lexicon::frame_id(seed));
+            let text = if frame.is_some() {
+                transliterate(&crate::lexicon::frame(seed, (cx, cz)), script)
+            } else {
+                text
+            };
             // G18: seeded condition off a **fresh-salt hash** — independent of the name-gate bits
             // of `h` (the G10 correlation lesson; the distribution test guards it). Worn keeps its
             // name (recoverable from partial glyphs, Decision 3); erased loses everything.
@@ -430,10 +557,11 @@ pub fn inscriptions_near(
             let glyphs = text.chars().filter(|c| !c.is_whitespace()).count();
             let condition = condition_pick(ch, glyphs);
             let text = weather_text(&text, condition);
-            let name = if condition == Condition::Erased {
-                None
+            // An erasure hides everything — its name AND its frame membership (G21's ladder).
+            let (name, frame) = if condition == Condition::Erased {
+                (None, None)
             } else {
-                name
+                (name, frame)
             };
             // G20: a name-bearer's text is **cartouched** (after weathering, so the enclosure
             // survives wear — the frame outlives its glyphs). Ambient text never; an erasure
@@ -453,6 +581,7 @@ pub fn inscriptions_near(
                 color,
                 name,
                 condition,
+                frame,
             });
         }
     }
@@ -917,6 +1046,159 @@ mod tests {
             l.text.starts_with(crate::text::MARK_CARTOUCHE_OPEN)
                 && l.text.ends_with(crate::text::MARK_CARTOUCHE_CLOSE)
         );
+    }
+
+    /// G20: frame instances in the streamed field — ambient-only, spell the frame verbatim in
+    /// their script, mutually exclusive with names, and erased cells lose frame membership.
+    #[test]
+    fn frame_cells_spell_the_frame_verbatim() {
+        let g = |_x: f32, _z: f32| 0.0;
+        let seed = 1337;
+        let marks = inscriptions_near(seed, Vec3::ZERO, 2500.0, g);
+        let frames: Vec<_> = marks.iter().filter(|m| m.frame.is_some()).collect();
+        assert!(
+            frames.len() >= 3,
+            "a 2500-unit radius should hold several frame instances, got {}",
+            frames.len()
+        );
+        let id = crate::lexicon::frame_id(seed);
+        for m in &frames {
+            assert_eq!(m.frame, Some(id), "one recurring frame per world (today)");
+            assert!(
+                m.name.is_none(),
+                "a frame instance is ambient, never a name"
+            );
+            assert!(
+                !m.text.contains(crate::text::MARK_CARTOUCHE_OPEN),
+                "frames are not cartouched (the enclosure means NAME)"
+            );
+            match m.condition {
+                Condition::Intact => assert_eq!(
+                    m.text,
+                    transliterate(&crate::lexicon::frame(seed, m.cell), m.script),
+                    "an intact instance spells the frame verbatim in its script"
+                ),
+                Condition::Worn(_) => assert!(
+                    m.text.chars().any(|c| c == crate::text::MARK_LACUNA),
+                    "a worn instance shows its lacunae"
+                ),
+                Condition::Erased => panic!("an erased cell must have dropped its frame"),
+            }
+            assert!(
+                m.text.split(' ').count() >= 3,
+                "the frame keeps its word shape (spaces survive transliteration): {:?}",
+                m.text
+            );
+        }
+        // Erased cells never carry a frame id (checked across the whole field).
+        for m in &marks {
+            if m.condition == Condition::Erased {
+                assert!(m.frame.is_none());
+            }
+        }
+    }
+
+    /// G20: Leiden restoration against known frames — skeleton lacunae restore bracketed and
+    /// pay full; slot lacunae, ambiguity, unpinned matches, and mismatches never restore.
+    #[test]
+    fn restore_worn_restores_skeleton_lacunae_only_and_uniquely() {
+        let seed = 1337;
+        let script = Script::Greek;
+        let known = world_frames(seed);
+        let full = transliterate(&crate::lexicon::frame(seed, (2, 5)), script);
+        let words: Vec<&str> = full.split(' ').collect();
+        let skeleton = &known[0].words;
+        assert_eq!(words.len(), skeleton.len());
+        let lac = crate::text::MARK_LACUNA;
+        // Helper: wear exactly the given (word, char) positions.
+        let wear = |positions: &[(usize, usize)]| -> String {
+            let mut out: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+            for &(wi, ci) in positions {
+                out[wi] = out[wi]
+                    .chars()
+                    .enumerate()
+                    .map(|(i, c)| if i == ci { lac } else { c })
+                    .collect();
+            }
+            out.join(" ")
+        };
+        // (a) a lacuna in a FIXED word restores, bracketed, to the exact full text.
+        let fixed_wi = skeleton.iter().position(|w| w.is_some()).unwrap();
+        let worn = wear(&[(fixed_wi, 0)]);
+        let restored = restore_worn(&worn, script, &known).expect("skeleton lacuna restores");
+        assert!(restored.contains('['), "Leiden-bracketed restoration");
+        assert!(!restored.contains(lac), "no lacunae remain");
+        let unbracketed: String = restored
+            .chars()
+            .filter(|c| *c != '[' && *c != ']')
+            .collect();
+        assert_eq!(unbracketed, full, "restores the exact lost glyphs");
+        assert_eq!(
+            crate::progress::glyph_count(&restored),
+            crate::progress::glyph_count(&full),
+            "restored pays full (brackets are structure)"
+        );
+        // (b) a lacuna in the SLOT never restores (the formula doesn't fix the variable).
+        let slot_wi = skeleton.iter().position(|w| w.is_none()).unwrap();
+        assert_eq!(restore_worn(&wear(&[(slot_wi, 0)]), script, &known), None);
+        // (c) nothing lost / not matching / no known frames → no restoration.
+        assert_eq!(restore_worn(&full, script, &known), None);
+        assert_eq!(restore_worn("ΑΒ ΓΔ", script, &known), None);
+        assert_eq!(restore_worn(&worn, script, &[]), None);
+        // (d) an AMBIGUOUS match (two known frames both fitting the survivors) never restores.
+        //     Wear every fixed-word glyph away: shape alone can't pin a frame either (unpinned).
+        let all_fixed: Vec<(usize, usize)> = skeleton
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| w.is_some())
+            .flat_map(|(wi, _)| (0..words[wi].chars().count()).map(move |ci| (wi, ci)))
+            .collect();
+        let shape_only = wear(&all_fixed);
+        assert_eq!(
+            restore_worn(&shape_only, script, &known),
+            None,
+            "word-shape alone must not restore (unpinned)"
+        );
+        // Two same-shape frames, one surviving fixed glyph consistent with both → ambiguous.
+        let sk = |a: &str, b: &str, c: &str| {
+            vec![
+                Some(a.to_string()),
+                Some(b.to_string()),
+                None,
+                Some(c.to_string()),
+            ]
+        };
+        let two = vec![
+            FrameSkeleton {
+                id: 1,
+                words: sk("ki", "no", "ta"),
+            },
+            FrameSkeleton {
+                id: 2,
+                words: sk("ki", "su", "ta"),
+            },
+        ];
+        let full2 = transliterate("ki no zapor ta", script);
+        let w2: Vec<String> = full2.split(' ').map(String::from).collect();
+        // Lose ALL of word 1 ("no"/"su" — the discriminating word): both frames fit.
+        let ambiguous = {
+            let mut out = w2.clone();
+            out[1] = out[1].chars().map(|_| lac).collect();
+            out.join(" ")
+        };
+        assert_eq!(
+            restore_worn(&ambiguous, script, &two),
+            None,
+            "ambiguous across known frames must not restore"
+        );
+        // …but with only ONE of the two known, the same wear restores against it.
+        let one = vec![FrameSkeleton {
+            id: 1,
+            words: sk("ki", "no", "ta"),
+        }];
+        let r = restore_worn(&ambiguous, script, &one).expect("unique match restores");
+        let un: String = r.chars().filter(|c| *c != '[' && *c != ']').collect();
+        assert_eq!(un, full2);
     }
 
     /// BUG1 regression: huge cam coords must not overflow the colossi/inscription cell loops.

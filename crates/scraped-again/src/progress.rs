@@ -83,6 +83,10 @@ pub const MAX_FACULTY_LEVEL: u8 = 3;
 /// pass tunes it (brief Decision 4).
 pub const CARRY_CAP: u32 = 8;
 
+/// G20: how many **intact sightings** of a recurring frame teach it (codex-known). Placeholder
+/// (brief Decision 1); the feel pass tunes.
+pub const FRAME_KNOWN_SIGHTINGS: u8 = 3;
+
 /// G15: what research can target — a discovered **block** (→ comprehend it, G15a) or a **faculty**
 /// (→ level it, G15b). The unified research pipe (no separate bank-then-spend subsystem).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -282,8 +286,12 @@ pub struct Collectible {
     /// G9: this inscription **names a block** — collecting it discovers that block in the console.
     pub name: Option<crate::console::Block>,
     /// G18: an ⟦erased⟧ inscription — collecting it yields nothing but **logs the erasure event**
-    /// in the codex (content unrecoverable until G20's sensing ladder).
+    /// in the codex (content unrecoverable until G21's sensing ladder).
     pub erased: bool,
+    /// G20: this inscription is an instance of the recurring formulaic **frame** (`frame_id`).
+    /// Intact instances teach the frame (sightings → known); worn instances of a *known* frame
+    /// can be restored at collect time.
+    pub frame: Option<u64>,
 }
 
 /// A stable, deterministic id for an inscription find — a function of its grid cell + script +
@@ -313,7 +321,8 @@ pub fn find_id(cell: (i32, i32), script: Script, text: &str) -> u64 {
 /// Glyph count (non-space) of an inscription's text — the yield/length input. G18: the generic
 /// damage marks (a lacuna where a glyph eroded away, the gouge of a deliberate erasure) carry no
 /// data, so a **worn** inscription yields proportionally less (only its surviving glyphs pay).
-/// G20: the cartouche enclosure marks are structure, not content — they never pay either.
+/// G20: the cartouche enclosure marks and the Leiden restoration brackets `[` `]` are
+/// structure, not content — they never pay either (a *restored* glyph inside them does).
 pub fn glyph_count(text: &str) -> u32 {
     text.chars()
         .filter(|c| {
@@ -322,6 +331,8 @@ pub fn glyph_count(text: &str) -> u32 {
                 && *c != crate::text::MARK_GOUGE
                 && *c != crate::text::MARK_CARTOUCHE_OPEN
                 && *c != crate::text::MARK_CARTOUCHE_CLOSE
+                && *c != '['
+                && *c != ']'
         })
         .count() as u32
 }
@@ -358,6 +369,9 @@ pub enum Event {
     },
     /// G10: **spend** the shard bank on a faculty level (gated on affordability + the level cap).
     Spend { faculty: Faculty },
+    /// G20: an **intact sighting** of a recurring formulaic frame (a collect on a frame-matching
+    /// inscription). At [`FRAME_KNOWN_SIGHTINGS`] the frame becomes *known*.
+    SightFrame { frame_id: u64 },
 }
 
 /// All run progress: the banked strata + the codex of finds (with a de-dup set) + the set of
@@ -411,6 +425,11 @@ pub struct Progress {
     /// domain×rarity counts (same shape as `shard_counts`). One cache v1 (Decision 3).
     carry: [[u32; 3]; 5],
     cache: [[u32; 3]; 5],
+    /// G20: intact sightings per recurring frame (by `frame_id`) — the crib counter.
+    frame_sightings: std::collections::HashMap<u64, u8>,
+    /// G20: frames the player **knows** (≥ [`FRAME_KNOWN_SIGHTINGS`] sightings): the codex shows
+    /// their skeleton, and worn instances that uniquely match one are *restored* (full yield).
+    frames_known: std::collections::HashSet<u64>,
 }
 
 impl Progress {
@@ -703,6 +722,19 @@ impl Progress {
             // → fill → level up, via `CollectShard`). This event is a no-op kept only so any
             // serialized old event log still applies cleanly.
             Event::Spend { .. } => false,
+            // G20: count an intact frame sighting; the third teaches the frame (append-only
+            // knowledge — nothing un-knows a frame).
+            Event::SightFrame { frame_id } => {
+                if self.frames_known.contains(frame_id) {
+                    return false; // already cracked — recurrence is just recurrence now
+                }
+                let n = self.frame_sightings.entry(*frame_id).or_default();
+                *n = n.saturating_add(1);
+                if *n >= FRAME_KNOWN_SIGHTINGS {
+                    self.frames_known.insert(*frame_id);
+                }
+                true
+            }
         }
     }
 
@@ -794,11 +826,26 @@ impl Progress {
         out
     }
 
+    // ---- G20: formulaic frames as cribs -------------------------------------------------------
+
+    /// G20: is this frame **known** (its skeleton cracked — sightings reached the bar)?
+    pub fn frame_known(&self, frame_id: u64) -> bool {
+        self.frames_known.contains(&frame_id)
+    }
+
+    /// G20: intact sightings recorded for a frame (display; clamps at the known bar).
+    pub fn frame_sightings(&self, frame_id: u64) -> u8 {
+        if self.frames_known.contains(&frame_id) {
+            return FRAME_KNOWN_SIGHTINGS;
+        }
+        self.frame_sightings.get(&frame_id).copied().unwrap_or(0)
+    }
+
     /// Encode as a `pg=<hex>` share segment (binary blob → hex; unicode- and URL-safe). The
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(9u8); // version (…; 7 = + carry/cache G17; 8 = + attestation G18; 9 = + rare gates G19)
+        b.push(10u8); // version (…; 8 = + attestation G18; 9 = + rare gates G19; 10 = + frames G20)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -879,6 +926,22 @@ impl Progress {
             b.push(code);
             b.extend_from_slice(&n.to_le_bytes());
         }
+        // v10: the G20 frame cribs — per-frame sighting counts, then the known set (sorted for
+        // a stable encoding; append-only — old payloads load with no frames known).
+        let mut sightings: Vec<(u64, u8)> =
+            self.frame_sightings.iter().map(|(&k, &v)| (k, v)).collect();
+        sightings.sort_unstable_by_key(|x| x.0);
+        b.push(sightings.len() as u8);
+        for (id, n) in sightings {
+            b.extend_from_slice(&id.to_le_bytes());
+            b.push(n);
+        }
+        let mut knowns: Vec<u64> = self.frames_known.iter().copied().collect();
+        knowns.sort_unstable();
+        b.push(knowns.len() as u8);
+        for id in knowns {
+            b.extend_from_slice(&id.to_le_bytes());
+        }
         format!("pg={}", to_hex(&b))
     }
 
@@ -929,7 +992,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if !(1..=9).contains(&version) {
+    if !(1..=10).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -1064,6 +1127,21 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             research_rare.insert(code, n);
         }
     }
+    // v10: the G20 frame cribs (absent pre-v10 → nothing known; the corpus re-teaches).
+    let mut frame_sightings = std::collections::HashMap::new();
+    let mut frames_known = std::collections::HashSet::new();
+    if version >= 10 {
+        let sc = *take(&mut p, 1)?.first()?;
+        for _ in 0..sc {
+            let id = u64at(&mut p)?;
+            let n = *take(&mut p, 1)?.first()?;
+            frame_sightings.insert(id, n);
+        }
+        let kc = *take(&mut p, 1)?.first()?;
+        for _ in 0..kc {
+            frames_known.insert(u64at(&mut p)?);
+        }
+    }
     Some(Progress {
         strata,
         codex,
@@ -1081,6 +1159,8 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         research_rare,
         carry,
         cache,
+        frame_sightings,
+        frames_known,
     })
 }
 
@@ -1125,6 +1205,8 @@ impl PartialEq for Progress {
             && self.research_rare == other.research_rare
             && self.carry == other.carry
             && self.cache == other.cache
+            && self.frame_sightings == other.frame_sightings
+            && self.frames_known == other.frames_known
     }
 }
 
@@ -1228,6 +1310,44 @@ mod tests {
         assert!(p.has(10));
         assert_eq!(p.known_count(), 1); // union of scanned + seen
         assert_eq!(p.collected_count(), 1);
+    }
+
+    /// G20: three intact sightings teach a frame; the state rides `pg=` v10; and a pre-v10
+    /// payload (the same blob with the frame section stripped, re-versioned v9) loads with no
+    /// frames known — append-only migration.
+    #[test]
+    fn frame_sightings_teach_at_three_and_ride_pg_v10() {
+        let mut p = Progress::default();
+        let id = 0xF00D_F00Du64;
+        assert!(!p.frame_known(id));
+        assert!(p.apply(&Event::SightFrame { frame_id: id }));
+        assert!(p.apply(&Event::SightFrame { frame_id: id }));
+        assert_eq!(p.frame_sightings(id), 2);
+        assert!(!p.frame_known(id), "two sightings are not enough");
+        assert!(p.apply(&Event::SightFrame { frame_id: id }));
+        assert!(p.frame_known(id), "the third sighting cracks the frame");
+        assert_eq!(p.frame_sightings(id), FRAME_KNOWN_SIGHTINGS);
+        // Post-known sightings are no-ops (recurrence is just recurrence now).
+        assert!(!p.apply(&Event::SightFrame { frame_id: id }));
+        // A different frame tracks independently.
+        assert!(p.apply(&Event::SightFrame { frame_id: 7 }));
+        assert!(!p.frame_known(7));
+        // v10 round-trip.
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p);
+        assert!(back.frame_known(id));
+        assert_eq!(back.frame_sightings(7), 1);
+        // Pre-v10 migration: strip the appended frame section (two trailing zero-count bytes on
+        // a fresh blob) + stamp v9 → decodes, nothing known.
+        let fresh = Progress::default().encode();
+        let hex = fresh.strip_prefix("pg=").unwrap();
+        let mut blob = super::from_hex(hex).unwrap();
+        assert_eq!(&blob[blob.len() - 2..], &[0, 0], "empty frame section");
+        blob.truncate(blob.len() - 2);
+        blob[0] = 9;
+        let v9 = Progress::decode(&format!("pg={}", super::to_hex(&blob)));
+        assert!(!v9.frame_known(id));
+        assert_eq!(v9, Progress::default());
     }
 
     #[test]

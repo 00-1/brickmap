@@ -19,7 +19,10 @@ and automation are all **blocks** — and the blocks themselves *are* the interf
   block is its own button. (So there are no buttons hiding blocks; the block is the button.)
 - A block is **wireable** — feed it a trigger/condition and it runs itself.
 - A block is shown by its **glyph-name** (G12), not an English word: the stable
-  glyph-cluster of its name in its stratum's script — the *same* glyphs you find carved in
+  glyph-cluster of its **true name** (G20 — a seeded per-world lexicon word; there is no
+  English underneath the glyphs either) in its stratum's script, enclosed in a **cartouche**
+  (G20 — the same enclosure marks every name-bearing world inscription carries, so you learn
+  to *spot* names before you can read anything) — the *same* glyphs you find carved in
   the world. It's recognisable *as a symbol* but **unreadable as a word**; you learn what a
   block *does* by clicking it and watching (L0), not by reading a label. Structural
   instrumentation around it (numbers, gauges, state like `waiting`/`blocked`, the `▶`
@@ -91,7 +94,8 @@ especially a control/meta one, expands what you can *compose*.) So:
 - **Lore is implied, never read.** Comprehension is *operational* — understanding how the
   machine works, not reading its diary. The grief is the *vibe* of operating a dead
   people's console alone; tone carries a general feeling, not text dumps. **Block names stay
-  unreadable too (G12):** even a comprehended script keeps a name-bearer's glyph cluster —
+  unreadable too (G12/G20):** even a comprehended script keeps a name-bearer's glyph cluster,
+  and the name beneath the glyphs is itself seeded nonsense (a per-world *true name*) —
   you come to recognise the *symbol* through use, never read an English word.
 
 ## 5. Discovery, not programming puzzles
