@@ -957,15 +957,24 @@ player-authored, failed handoffs visible as honest state (not errors). Built in 
   flow), the world-visible cache marker (a budgeted emissive cluster that clears when emptied), and
   the D11 harness extended with the full fill → deposit → ship-drain → credit handshake.
 
-### ✨ G19a — nav/expedition wiring fixes ✅ &nbsp;→ [`milestones/G19-economy-truing.md`](milestones/G19-economy-truing.md)
-The urgent Part A of **G19 — economy truing** (Part B, the measured constant truing + rarity
-gates, is still open): the first quantitative playtest ([`pacing-analysis.md`](pacing-analysis.md))
-proved three shipped features dead, all wiring — `arrived_at` now measures **horizontal** distance
-(radius 20 > the seek orbit) so `on-arrive` fires in flight (was 0 automated expeditions/hour),
-the scan pulse **re-hits known-but-uncollected sites** so `seek` + `on-scan → collect` progresses
-instead of orbiting one site forever, and the expedition **auto-deposits** the walker's carry into
-the site cache on Return→Idle. Three D11 e2e scenarios pin each fix through the real frame loop
-(each verified to fail pre-fix); golden voxel-hash + headless render unchanged.
+### ✨ G19 — economy truing ✅ &nbsp;→ [`milestones/G19-economy-truing.md`](milestones/G19-economy-truing.md)
+The consequences of the first quantitative playtest ([`pacing-analysis.md`](pacing-analysis.md)),
+in two parts. **Part A (urgent wiring, G19a):** three shipped features were dead — `arrived_at`
+now measures **horizontal** distance (radius 20 > the seek orbit) so `on-arrive` fires in flight
+(was 0 automated expeditions/hour), the scan pulse **re-hits known-but-uncollected sites** so
+`seek` + `on-scan → collect` progresses instead of orbiting one site forever, and the expedition
+**auto-deposits** the walker's carry on Return→Idle; three D11 e2e scenarios pin each fix through
+the real frame loop (each verified to fail pre-fix). **Part B (measured truing, G19b):**
+`FACULTY_COSTS` `[25,75,200]` → `[150,450,900]` and block research `30+20·depth` → `25 << depth`
+(25/50/100/200/400), sized from the measured yield rates; the **rare gate** — the unimplemented
+half of the human's "rarer blocks demand rarer shards" decision — Relics research additionally
+demands **4 rare-tier own-domain pickups**, Signals 8 (per-target gauge, `pg=` **v9** append-only,
+shown on the research bar as `172/200 · r 1/4`); discovery variance flattened (colossus label
+table de-biased from RunFoot-×3, ambient name-bearer rate 1/4 → 1/6, coverage/uniformity tests
+re-pinned); the orphaned `DECODE_COST` deleted; and the pacing probe made **permanent** — a
+bounded envelope regression in CI (seed 1337: first discovery ≤ 8 sim-min, first comprehension
+≤ 35, income in [6, 30] yield/min) with the full multi-seed probe behind `PACING_FULL=1`.
+Golden voxel-hash + headless render unchanged.
 
 ### ✨ G18 — The uncertainty layer ✅ &nbsp;→ [`milestones/G18-uncertainty-layer.md`](milestones/G18-uncertainty-layer.md)
 The Archive tranche's first *feature* milestone on the G16 substrate: **readings stop being

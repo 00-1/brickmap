@@ -315,21 +315,15 @@ fn compose(h: u32) -> (String, Script, f32, [f32; 3]) {
 /// A monument inscription for a colossus (E17×E18): a glowing label at the giant's base, so the
 /// fallen giants read as ancient *labelled* monuments. **G9: always name-bearing** — the giants
 /// are *named after* the deep operations, so the rare vocabulary lives at the rare landmarks.
-/// *(Brief said Relics/Signals-tier; the vocabulary currently has only one such block (`runfoot`),
-/// so labels draw from the full gated set biased deep — runfoot half the time — for variety.
-/// Recorded deviation; revisit when G10 grows the deep vocabulary.)*
+/// *(G19: the table is **flat** over the gated vocabulary — the old RunFoot-×3 weighting made
+/// the pacing probe's worst seeds Relics-first onboarding roulette (25–26 min to a first
+/// comprehension) and stretched the per-block discovery tail to 63 min. Revisit the deep bias
+/// when the Archive milestones grow real Relics/Signals-tier vocabulary.)*
 pub fn colossus_label(p: &Placement) -> Inscription {
     use crate::console::Block;
     let h = p.seed ^ 0x00C0_1055;
     let (_text, _script, _h, color) = compose(h);
-    const DEEP: [Block; 6] = [
-        Block::RunFoot, // ×3: the deep Relics-tier name dominates the monuments
-        Block::RunFoot,
-        Block::RunFoot,
-        Block::Seek,
-        Block::Circle,
-        Block::Goto,
-    ];
+    const DEEP: [Block; 4] = [Block::Seek, Block::Circle, Block::Goto, Block::RunFoot];
     let block = DEEP[(h >> 9) as usize % DEEP.len()];
     let script = block_script(block);
     Inscription {
@@ -381,10 +375,12 @@ pub fn inscriptions_near(
                 continue;
             }
             let (text, script, height, color) = compose(h);
-            // G9: ~1 in 4 cells spell a **block's name** (stratum-script, stable transliteration)
+            // G9: ~1 in 6 cells spell a **block's name** (stratum-script, stable transliteration)
             // instead of ambient noise — the world's text becomes load-bearing. The ambient
-            // majority is unchanged (same compose), keeping the melancholy noise.
-            let name = (h >> 5).is_multiple_of(4).then(|| name_pick(h));
+            // majority is unchanged (same compose), keeping the melancholy noise. (G19: 1/4 → 1/6
+            // — measured first discovery was 0.9 min against a 2–6 min envelope; names should be
+            // finds, not wallpaper. The coverage test still guarantees every name findable.)
+            let name = (h >> 5).is_multiple_of(6).then(|| name_pick(h));
             let (text, script) = match name {
                 Some(b) => {
                     let s = block_script(b);
@@ -505,16 +501,17 @@ mod tests {
 
     #[test]
     fn name_bearers_are_a_minority_and_match_their_block() {
-        // ~1 in 4 inscriptions name-bearing; a name-bearer's text is its block's transliteration
-        // in the block's stratum script; ambient majority unchanged in spirit (no name).
+        // ~1 in 6 inscriptions name-bearing (G19: down from 1/4 — first-discovery envelope); a
+        // name-bearer's text is its block's transliteration in the block's stratum script;
+        // ambient majority unchanged in spirit (no name).
         let g = |_x: f32, _z: f32| 0.0;
         let marks = inscriptions_near(1337, Vec3::ZERO, 1500.0, g);
         assert!(!marks.is_empty());
         let named = marks.iter().filter(|m| m.name.is_some()).count();
         let frac = named as f32 / marks.len() as f32;
         assert!(
-            (0.10..=0.45).contains(&frac),
-            "name fraction should be ~1/4, got {frac} ({named}/{})",
+            (0.08..=0.30).contains(&frac),
+            "name fraction should be ~1/6, got {frac} ({named}/{})",
             marks.len()
         );
         for m in &marks {
@@ -588,7 +585,7 @@ mod tests {
         for i in 0..n {
             // Drive with the same gate the live path applies: only gate-passing hashes pick.
             let h = hash(i as i32, -(i as i32) * 7 + 3, 0xABCD);
-            if (h >> 5).is_multiple_of(4) {
+            if (h >> 5).is_multiple_of(6) {
                 *counts.entry(name_pick(h).code()).or_default() += 1;
             }
         }
@@ -621,7 +618,7 @@ mod tests {
         let g = |_x: f32, _z: f32| 12.0;
         let placements = colossi_near(7, Vec3::ZERO, 1200.0, g);
         assert!(!placements.is_empty());
-        let mut saw_runfoot = false;
+        let mut seen: std::collections::HashSet<u8> = std::collections::HashSet::new();
         for p in &placements {
             let l = colossus_label(p);
             let b = l.name.expect("every monument label is name-bearing (G9)");
@@ -630,14 +627,19 @@ mod tests {
                 "monuments name the gated vocabulary"
             );
             assert_eq!(l.text, transliterate(b.name(), l.script));
-            saw_runfoot |= b == Block::RunFoot;
+            seen.insert(b.code());
             // Deterministic per colossus.
             assert_eq!(colossus_label(p).name, l.name);
         }
-        assert!(
-            saw_runfoot,
-            "the deep Relics-tier name should dominate the monuments"
-        );
+        // G19: the label table is FLAT over the gated vocabulary (the RunFoot-×3 bias made
+        // Relics-first onboarding roulette) — every gated name should turn up on monuments.
+        for b in [Block::Seek, Block::Circle, Block::Goto, Block::RunFoot] {
+            assert!(
+                seen.contains(&b.code()),
+                "the flat monument table should surface '{}' within 1200 units",
+                b.name()
+            );
+        }
     }
 
     #[test]
@@ -681,7 +683,7 @@ mod tests {
             let c = condition_pick(ch, 6);
             assert_eq!(c, condition_pick(ch, 6), "deterministic");
             all[slot(c)] += 1;
-            if (h >> 5).is_multiple_of(4) {
+            if (h >> 5).is_multiple_of(6) {
                 named[slot(c)] += 1;
             }
         }

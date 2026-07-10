@@ -1,6 +1,6 @@
 # G19 — Economy truing (measured pacing + rarity gates + nav-wiring fixes)
 
-> **Status: Part A landed (G19a) — Part B open.** The consequences of
+> **Status: complete ✅ (Part A landed as G19a, Part B as G19b).** The consequences of
 > the first quantitative playtest ([`../pacing-analysis.md`](../pacing-analysis.md) — the real
 > loop, 6 seeds, 60 sim-min each, driven through the D11 seam). Two parts: **(A) wiring
 > bugs** that make shipped nav/expedition automation dead (fix first, own commit), and
@@ -77,6 +77,40 @@
    6-seed version env-gated (`PACING_FULL=1`). Recompute the asserted bounds *after* the
    truing lands (they move by design).
 
+### As built (Part B, G19b)
+
+- **Constants** as prescribed: `FACULTY_COSTS` `[25, 75, 200]` → `[150, 450, 900]`; block
+  research cost `30 + 20·depth` → `25 << depth` (25/50/100/200/400 — note SCH is *unchanged*
+  at 50, so the onboarding fill the probe validated stays); `DECODE_COST` deleted.
+- **Rare gates:** a per-target rare-pickup gauge (`research_rare`, keyed like the fill map)
+  counts **rare-tier, own-domain** shards credited while the target is active; completion
+  requires `filled ≥ cost` **and** gauge ≥ requirement (Relics 4, Signals 8, else 0;
+  faculties 0 — general instrumentation). Overfill past a rare-blocked bar accumulates
+  honestly. `pg=` **v9** append-only; pre-v9 payloads load a zero gauge, so an in-progress
+  Relics research owes its full 4 rares post-migration (accepted, documented in the codec).
+  Display: the lit-goal research bar now reads `⟨glyphs⟩: research 172/200 · r 1/4`
+  (fill clamped to cost; the rare gauge only when the tier demands one) — structural UI.
+- **Discovery variance** as prescribed (flat `DEEP` table; ambient rate 1/6 — **no 1/5
+  fallback needed**: the every-name-findable coverage test holds at 1/6 across its seeds,
+  and the monument coverage test now pins all four gated names within 1200 u of the origin).
+  Distribution/uniformity/independence tests re-pinned to the 1/6 gate.
+- **Envelope CI test** (`pacing.rs`, ported from `docs/probes/pacing_probe.rs`): bounded to
+  seed 1337, ≤35 sim-min with early-out; asserts first gated discovery **≤ 8 sim-min**
+  (measured 0.3), first comprehension **≤ 35 sim-min** (measured 8.8, block `circle`),
+  income **[6, 30] yield/min** over sim-min 2–10 (measured 23.4). Costs ~9 s of debug CI.
+  Bounds recomputed post-truing as the brief required — the brief's provisional ≤6/≤30
+  numbers were re-derived at dispatch to ≤8/≤35 (headroom over the constants' prediction).
+  The full 6-seed probe (runs 1–5) rides along env-gated: `PACING_FULL=1 cargo test
+  --release -p scraped-again pacing -- --nocapture`.
+- **Re-measured pacing** (post-truing, release probe, 6 seeds): first gated discovery
+  0.1–1.8 min (still under the 2–6 envelope — recorded deviation, see the addendum); first
+  comprehension **6.2–11.9 min on 5/6 seeds** (the roulette shape fixed; the one Relics-first
+  seed runs long *by design* — the rare gate holding at `r 0/4`); income unchanged
+  (12.7–18.0 y/min, 1.41×); **full ladder 5.3–6.3 h measured (mean ≈ 5.9)** — the predicted
+  5–6 h arc confirmed. Details in the
+  [pacing-analysis addendum](../pacing-analysis.md#post-truing-addendum-g19b-2026-07-10).
+- Golden voxel-hash + headless render unchanged; goblin-gold and engine crates untouched.
+
 ## Explicitly NOT in G19 (routed onward — recorded so they aren't lost)
 
 - **Vocabulary gap** (no Records/Rites/Signals-gated blocks): filled by the Archive
@@ -91,10 +125,10 @@
 - [x] A-fixes landed (own commit): horizontal `arrived_at` (+radius 20), seek/collect
       un-deadlocked, auto-deposit on Return→Idle; **D11 expedition-from-flight scenario
       passes through the real `on-arrive`**; golden voxel-hash unchanged.
-- [ ] B-truing landed: new constants; rare-count gates (per-target tracking, `pg=`
+- [x] B-truing landed: new constants; rare-count gates (per-target tracking, `pg=`
       append-only, structural-UI display); DEEP table + 1/6 rate (coverage/uniformity
       tests re-pinned); `DECODE_COST` gone.
-- [ ] Envelope CI test (bounded, seed 1337) green with post-truing bounds; full run
+- [x] Envelope CI test (bounded, seed 1337) green with post-truing bounds; full run
       env-gated. Probe credited from `docs/probes/pacing_probe.rs`.
-- [ ] CI green (fmt / clippy -D / tests / wasm); boundary intact; roadmap G19; the
+- [x] CI green (fmt / clippy -D / tests / wasm); boundary intact; roadmap G19; the
       pacing-analysis doc copied to main alongside.

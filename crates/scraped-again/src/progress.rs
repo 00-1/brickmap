@@ -41,9 +41,6 @@ impl Stratum {
     }
 }
 
-/// Cost (in a stratum's own data) to `decode` / comprehend it (G6). Small + tunable.
-pub const DECODE_COST: u64 = 12;
-
 /// G10: the first **spend faculties** — passive, modest multipliers bought with shards.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Faculty {
@@ -73,10 +70,12 @@ impl Faculty {
     }
 }
 
-/// Shard cost of each faculty level (G10 pinned ladder — placeholder numbers, tuned at the
-/// human pass). Level caps at [`MAX_FACULTY_LEVEL`]. G15b: this is now a *research* cost, not a
-/// bank-then-buy price (filled by allocated shard intake, like a block).
-pub const FACULTY_COSTS: [u64; 3] = [25, 75, 200];
+/// Shard cost of each faculty level. Level caps at [`MAX_FACULTY_LEVEL`]. G15b: this is a
+/// *research* cost, not a bank-then-buy price (filled by allocated shard intake, like a block).
+/// G19: trued against the measured any-domain yield (≈16/min under autopilot,
+/// `docs/pacing-analysis.md`) — L1 ≈ 9.4 min, the full 9-level ladder ≈ 1.6 h cumulative
+/// (the old `[25, 75, 200]` maxed everything in ~35 min, 10–30× too fast).
+pub const FACULTY_COSTS: [u64; 3] = [150, 450, 900];
 pub const MAX_FACULTY_LEVEL: u8 = 3;
 
 /// G17: the walker's **carry cap** — the total shards it can hold in transit before `deposit`
@@ -116,6 +115,24 @@ impl ResearchTarget {
         } else {
             crate::console::Block::from_code(k).map(ResearchTarget::Block)
         }
+    }
+}
+
+/// G19: how many **rare-tier shard pickups** a research target demands before it can complete
+/// (over and above its `filled ≥ cost` bar) — the second, previously unimplemented half of the
+/// human's 2026-06-11 decision "rarer blocks demand rarer shards". The deep strata demand rare
+/// evidence — Relics 4, Signals 8 — while everything shallower (and every faculty: general
+/// machine instrumentation) needs none. Only rare pickups of the target's **own domain**, made
+/// while it is the active target, count (the same credit rule as the fill). Placeholder numbers;
+/// the *mechanism* is the decision.
+pub fn rare_requirement(t: ResearchTarget) -> u32 {
+    match t {
+        ResearchTarget::Block(b) => match b.required() {
+            Some(Stratum::Relics) => 4,
+            Some(Stratum::Signals) => 8,
+            _ => 0,
+        },
+        ResearchTarget::Faculty(_) => 0,
     }
 }
 
@@ -364,6 +381,11 @@ pub struct Progress {
     /// G15: per-target accumulated **domain-matched** shard yield (`filled`); on `filled ≥ cost`
     /// the block comprehends. Keyed by the block's `code()` so it survives `co=`/`pg=` round-trips.
     research_filled: std::collections::HashMap<u8, u64>,
+    /// G19: per-target count of **rare-tier** shard pickups credited while it was the active
+    /// target (own-domain only, like the fill). A deep target completes only once this reaches
+    /// [`rare_requirement`] — see that fn for the decision it implements. Same key as
+    /// `research_filled`; cleared with it on completion.
+    research_rare: std::collections::HashMap<u8, u32>,
     /// G10: the spendable shard bank (Σ rarity yields of every shard collected, minus spends).
     shard_bank: u64,
     /// G10: lifetime shard pickup counts, domain × rarity (display + future domain-matched costs).
@@ -416,15 +438,17 @@ impl Progress {
 
     // ---- G15: comprehension-as-research -----------------------------------------------------
 
-    /// G15: research cost for a target. **Block** (G15a): a base scaled by the gating stratum's
-    /// depth (deeper = dearer — Decision 3; placeholders). **Faculty** (G15b): the next level's
-    /// cost from [`FACULTY_COSTS`] (capped — a maxed faculty is effectively infinite). Starters
-    /// cost 0 (pre-comprehended).
+    /// G15: research cost for a target. **Block** (G15a): a base **doubling** with the gating
+    /// stratum's depth — 25/50/100/200/400 (deeper = dearer, Decision 3; G19 trued the old
+    /// `30 + 20·depth` line against the measured ~3.2 domain-yield/min: SCH ≈ 15 min of intake,
+    /// REL ≈ 1 h, SIG ≈ 2 h — a real arc instead of a flat ramp). **Faculty** (G15b): the next
+    /// level's cost from [`FACULTY_COSTS`] (capped — a maxed faculty is effectively infinite).
+    /// Starters cost 0 (pre-comprehended).
     pub fn research_cost(&self, t: ResearchTarget) -> u64 {
         match t {
             ResearchTarget::Block(b) => match b.required() {
                 None => 0,
-                Some(s) => 30 + 20 * s.byte() as u64,
+                Some(s) => 25u64 << s.byte(),
             },
             ResearchTarget::Faculty(f) => {
                 let lvl = self.faculties[f.idx()];
@@ -477,6 +501,16 @@ impl Progress {
         )
     }
 
+    /// G19: `(rare pickups credited, rare pickups required)` — the research bar's second gauge
+    /// (rendered alongside the fill, e.g. `172/200 · r 1/4`). `(_, 0)` for targets that demand
+    /// no rare evidence (shallow strata, faculties).
+    pub fn research_rare_progress(&self, t: ResearchTarget) -> (u32, u32) {
+        (
+            self.research_rare.get(&t.rkey()).copied().unwrap_or(0),
+            rare_requirement(t),
+        )
+    }
+
     /// G15: the discovered-but-not-yet-comprehended blocks — the block research targets (for the UI).
     pub fn research_targets(&self) -> impl Iterator<Item = crate::console::Block> + '_ {
         self.discovered
@@ -485,10 +519,11 @@ impl Progress {
             .filter(|b| !self.is_block_comprehended(*b))
     }
 
-    /// G15: credit shard `amount` to the active target; on `filled ≥ cost`, a **block** comprehends
-    /// (usable) + its stratum turns legible (the fold-in), a **faculty** levels up. Clears the
-    /// active target (a faculty re-arms for its next level until capped). Returns the completed
-    /// target. (Called from `CollectShard`: a block draws its own domain; a faculty draws any.)
+    /// G15: credit shard `amount` to the active target; on `filled ≥ cost` **and** (G19) the
+    /// target's rare-pickup gauge reaching [`rare_requirement`], a **block** comprehends (usable)
+    /// and its stratum turns legible (the fold-in), a **faculty** levels up. Clears the active
+    /// target (a faculty re-arms for its next level until capped). Returns the completed target.
+    /// (Called from `CollectShard`: a block draws its own domain; a faculty draws any.)
     fn credit_research(&mut self, amount: u64) -> Option<ResearchTarget> {
         let t = self.active_research?;
         let key = t.rkey();
@@ -498,7 +533,8 @@ impl Progress {
             *e += amount;
             *e
         };
-        if filled < cost {
+        let rares = self.research_rare.get(&key).copied().unwrap_or(0);
+        if filled < cost || rares < rare_requirement(t) {
             return None;
         }
         match t {
@@ -515,6 +551,7 @@ impl Progress {
             }
         }
         self.research_filled.remove(&key);
+        self.research_rare.remove(&key);
         // A faculty re-arms for its next level (keep feeding for levels) until capped; a block clears.
         self.active_research = match t {
             ResearchTarget::Faculty(f) if self.faculties[f.idx()] < MAX_FACULTY_LEVEL => Some(t),
@@ -639,6 +676,13 @@ impl Progress {
                     None => false,
                 };
                 if credit {
+                    // G19: a credited **rare** pickup also advances the target's rare gauge
+                    // (blocks only — a faculty has no rare requirement, so nothing to track).
+                    if let (crate::shards::Rarity::Rare, Some(t @ ResearchTarget::Block(_))) =
+                        (*rarity, self.active_research)
+                    {
+                        *self.research_rare.entry(t.rkey()).or_default() += 1;
+                    }
                     self.credit_research(rarity.yield_amount());
                 }
                 true
@@ -742,7 +786,7 @@ impl Progress {
     /// blob carries the strata + every codex entry, so a reload restores both fully.
     pub fn encode(&self) -> String {
         let mut b = Vec::new();
-        b.push(8u8); // version (…; 6 = + research G15; 7 = + carry/cache G17; 8 = + attestation G18)
+        b.push(9u8); // version (…; 7 = + carry/cache G17; 8 = + attestation G18; 9 = + rare gates G19)
         for s in [
             self.strata.records,
             self.strata.schematics,
@@ -815,6 +859,14 @@ impl Progress {
         conf.sort_unstable();
         b.push(conf.len() as u8);
         b.extend_from_slice(&conf);
+        // v9: the G19 rare-gate gauges — per-target rare-pickup counts (sorted for stability).
+        let mut rares: Vec<(u8, u32)> = self.research_rare.iter().map(|(&k, &v)| (k, v)).collect();
+        rares.sort_unstable_by_key(|x| x.0);
+        b.push(rares.len() as u8);
+        for (code, n) in rares {
+            b.push(code);
+            b.extend_from_slice(&n.to_le_bytes());
+        }
         format!("pg={}", to_hex(&b))
     }
 
@@ -865,7 +917,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
     let u64at =
         |p: &mut usize| -> Option<u64> { Some(u64::from_le_bytes(take(p, 8)?.try_into().ok()?)) };
     let version = *take(&mut p, 1)?.first()?;
-    if !(1..=8).contains(&version) {
+    if !(1..=9).contains(&version) {
         return None; // unknown version
     }
     let strata = Strata {
@@ -989,6 +1041,17 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
             .copied()
             .collect();
     }
+    // v9: the G19 rare-gate gauges (absent pre-v9 → 0 — an in-progress deep research migrates
+    // owing its **full** rare requirement, up to 4 rares for Relics; accepted + documented).
+    let mut research_rare = std::collections::HashMap::new();
+    if version >= 9 {
+        let rc = *take(&mut p, 1)?.first()?;
+        for _ in 0..rc {
+            let code = *take(&mut p, 1)?.first()?;
+            let n = u32::from_le_bytes(take(&mut p, 4)?.try_into().ok()?);
+            research_rare.insert(code, n);
+        }
+    }
     Some(Progress {
         strata,
         codex,
@@ -1003,6 +1066,7 @@ fn parse_blob(b: &[u8]) -> Option<Progress> {
         comprehended_blocks,
         active_research,
         research_filled,
+        research_rare,
         carry,
         cache,
     })
@@ -1046,6 +1110,7 @@ impl PartialEq for Progress {
             && self.comprehended_blocks == other.comprehended_blocks
             && self.active_research == other.active_research
             && self.research_filled == other.research_filled
+            && self.research_rare == other.research_rare
             && self.carry == other.carry
             && self.cache == other.cache
     }
@@ -1417,6 +1482,86 @@ mod tests {
         assert!(!fresh.is_block_comprehended(Block::Seek));
     }
 
+    /// G19: the rare gate — a Relics-gated target demands **4 rare-tier own-domain pickups** on
+    /// top of its fill (Signals 8; shallow strata + faculties 0); commons alone can overfill the
+    /// bar without completing it; off-domain rares don't count; the gauge round-trips through
+    /// `pg=` v9 and a pre-v9 payload migrates to a zero gauge (owing its full requirement).
+    #[test]
+    fn rare_gate_holds_deep_research_until_rare_pickups() {
+        use crate::console::Block;
+        use crate::shards::Rarity;
+        let t = ResearchTarget::Block(Block::RunFoot); // Relics-gated
+        assert_eq!(rare_requirement(t), 4);
+        assert_eq!(rare_requirement(ResearchTarget::Block(Block::Seek)), 0);
+        assert_eq!(
+            rare_requirement(ResearchTarget::Faculty(Faculty::Sensing)),
+            0,
+            "faculties are general instrumentation — no rare evidence demanded"
+        );
+        let mut p = Progress::default();
+        p.apply(&Event::Discover {
+            block: Block::RunFoot,
+        });
+        assert!(p.allocate(t));
+        assert_eq!(p.research_rare_progress(t), (0, 4));
+        // Overfill with commons: fill ≥ cost, zero rares → must NOT complete (the gate).
+        let cost = p.research_cost(t);
+        for _ in 0..(cost * 2) {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Relics,
+                rarity: Rarity::Common,
+            });
+        }
+        assert!(p.research_progress(t).0 >= cost, "bar overfilled");
+        assert!(
+            !p.is_block_comprehended(Block::RunFoot),
+            "filled ≥ cost alone does not complete a Relics target"
+        );
+        // Three rares: still one short.
+        for _ in 0..3 {
+            p.apply(&Event::CollectShard {
+                domain: Stratum::Relics,
+                rarity: Rarity::Rare,
+            });
+        }
+        assert_eq!(p.research_rare_progress(t).0, 3);
+        assert!(!p.is_block_comprehended(Block::RunFoot));
+        // The in-progress gauge round-trips through pg= v9…
+        let back = Progress::decode(&p.encode());
+        assert_eq!(back, p, "v9 rare gauge round-trips");
+        assert_eq!(back.research_rare_progress(t).0, 3);
+        // …and a pre-v9 (v8) payload migrates append-only: the gauge loads zeroed, so the
+        // in-progress deep research owes its full rare requirement again (accepted + noted).
+        let v8_hex = {
+            let hex = p.encode();
+            let hex = hex.strip_prefix("pg=").unwrap();
+            let mut bytes = super::from_hex(hex).unwrap();
+            bytes.truncate(bytes.len() - 1 - 5); // the v9 tail: count byte + one (key, u32) entry
+            bytes[0] = 8;
+            super::to_hex(&bytes)
+        };
+        let v8 = Progress::decode(&format!("pg={v8_hex}"));
+        assert_eq!(v8.research_rare_progress(t).0, 0, "pre-v9 → zero gauge");
+        assert_eq!(v8.research_progress(t).0, p.research_progress(t).0);
+        // An off-domain rare doesn't count (the same own-domain rule as the fill)…
+        p.apply(&Event::CollectShard {
+            domain: Stratum::Records,
+            rarity: Rarity::Rare,
+        });
+        assert_eq!(p.research_rare_progress(t).0, 3);
+        // …the 4th own-domain rare satisfies the gate and (the bar already full) completes.
+        p.apply(&Event::CollectShard {
+            domain: Stratum::Relics,
+            rarity: Rarity::Rare,
+        });
+        assert!(p.is_block_comprehended(Block::RunFoot));
+        assert_eq!(
+            p.research_rare_progress(t).0,
+            0,
+            "the gauge clears with the fill on completion"
+        );
+    }
+
     /// G15b: a **faculty** is an ordinary research target — allocate it, **any-domain** shards fill
     /// it (faculties are general instrumentation), it levels up on fill (the tested multiplier
     /// applies), re-arms for the next level, and stops at the cap. Round-trips through `pg=`.
@@ -1534,8 +1679,9 @@ mod tests {
         });
         let v6_hex = {
             let mut b = q.encode().strip_prefix("pg=").unwrap().to_string();
-            // Rebuild as a v6 blob by truncating the v7 carry/cache tail (120 bytes = 240 hex).
-            b.truncate(b.len() - 240);
+            // Rebuild as a v6 blob by truncating the v9 rare tail (1 byte, empty) + the v8
+            // confirmed tail (1 byte, empty) + the v7 carry/cache tail (120 bytes) = 244 hex.
+            b.truncate(b.len() - 244);
             let mut bytes = super::from_hex(&b).unwrap();
             bytes[0] = 6; // stamp version 6
             super::to_hex(&bytes)
@@ -1646,7 +1792,10 @@ mod tests {
             let hex = hex.strip_prefix("pg=").unwrap();
             let mut bytes = super::from_hex(hex).unwrap();
             let conf = p.confirmed.len();
-            bytes.truncate(bytes.len() - 1 - conf); // the v8 tail: count byte + codes
+            // Strip the v9 rare tail (count byte; empty — RunFoot's gauge cleared on
+            // completion) then the v8 tail (count byte + codes).
+            assert!(p.research_rare.is_empty());
+            bytes.truncate(bytes.len() - 1 - 1 - conf);
             bytes[0] = 7;
             super::to_hex(&bytes)
         };

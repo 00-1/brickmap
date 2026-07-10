@@ -1949,14 +1949,21 @@ impl Console {
     /// affordable-unbought faculty. Exactly one line; nothing qualifying → `None` (never a quest log).
     pub fn lit_goal(&self, p: &crate::progress::Progress) -> Option<String> {
         // G15: a directed research target is the player's explicit focus — it's the lit goal.
+        // G19: the bar shows the raw fill and, when the target's stratum demands rare evidence,
+        // the rare-pickup gauge (`172/200 · r 1/4`) — structural numbers, not words.
         if let Some(b) = p.active_research() {
             let (filled, cost) = p.research_progress(b);
-            let pct = if cost > 0 {
-                (filled as f32 / cost as f32 * 100.0).min(100.0)
+            let (rh, rn) = p.research_rare_progress(b);
+            let rare = if rn > 0 {
+                format!(" · r {rh}/{rn}")
             } else {
-                100.0
+                String::new()
             };
-            return Some(format!("{}: research {pct:.0}%", b.glyphs()));
+            return Some(format!(
+                "{}: research {}/{cost}{rare}",
+                b.glyphs(),
+                filled.min(cost)
+            ));
         }
         let mut best: Option<(f32, String)> = None;
         let mut consider = |pct: f32, label: String| {
@@ -2827,6 +2834,22 @@ mod tests {
         assert!(
             !goal.contains("seek"),
             "no English block name in the goal: {goal}"
+        );
+        // G19: the bar shows fill/cost; a Schematics target shows no rare gauge…
+        assert!(
+            goal.contains("0/50") && !goal.contains("· r"),
+            "fill/cost, no rare gauge on a shallow target: {goal}"
+        );
+        // …while a Relics target carries its rare-pickup gauge (`· r 0/4`, structural UI).
+        let mut p3 = Progress::default();
+        p3.apply(&Event::Discover {
+            block: Block::RunFoot,
+        });
+        p3.allocate(crate::progress::ResearchTarget::Block(Block::RunFoot));
+        let goal = c.lit_goal(&p3).expect("active research is the lit goal");
+        assert!(
+            goal.contains("0/200") && goal.contains("r 0/4"),
+            "a deep target shows fill and the rare gauge: {goal}"
         );
     }
 

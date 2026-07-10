@@ -67,6 +67,10 @@ mod e2e;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod headless;
 pub mod model;
+/// G19: the pacing probe made permanent — a bounded envelope regression (always on) + the full
+/// multi-seed measurement probe behind `PACING_FULL=1`. Test-only.
+#[cfg(test)]
+mod pacing;
 pub mod share;
 pub mod structures;
 use gfx::{ChunkInstance, State, Toggles};

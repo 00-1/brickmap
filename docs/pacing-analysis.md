@@ -52,3 +52,27 @@
 Autopilot is a floor for attentive play, a ceiling for idle; biome-path drives the
 low-income seed (99999); headless measures mechanics, not felt pacing — the human's play
 pass remains the final word. Pre-G18 baseline (erosion will trim income slightly).
+
+## Post-truing addendum (G19b, 2026-07-10)
+
+Re-measured after the G19 truing landed (same probe, now permanent in
+`crates/scraped-again/src/pacing.rs`; release build, 6 seeds × 60 sim-min, at G19b-era main
+— i.e. *with* G18 erosion and the G19a nav fixes the baseline lacked).
+
+| Metric | Pre-truing | Post-truing | Verdict |
+|---|---|---|---|
+| First gated discovery | 0.9 min (0.3–1.8) | **0.55 min (0.1–1.8)** | still under the 2–6 min envelope — 1/6 + the flat table didn't slow the *first* find (monuments near the spawn dominate); variance did drop (see next row). Accepted for now; a further rate cut would fight the coverage guarantee. |
+| First comprehension | 15.3 min mean; 4× roulette (Relics-first seeds 25–26 min) | **6.2–11.9 min on 5/6 seeds (mean ≈ 9.5)**; the one Relics-first seed (555) ran past 60 min (fill 214/200 but `r 0/4` — the new rare gate holding, as designed) | shape fixed for Schematics-first seeds (envelope 5–15 ✓). The deep-first tail is now *rarer* (flat table) but *longer* (rare gate); a real player re-targets when a Schematics name lands minutes later (555 saw `circle` @ 5.0 min) — the probe's fixed first-pick policy can't. |
+| Shard income | 11.5 shards/min, 15.9 y/min (12.7–18.0) | **11.6 shards/min, 16.0 y/min (12.7–18.0, 1.41×)** | unchanged — truing moved costs, not income (and G18 erosion barely registers). |
+| Rarity mix | ≈85/13/2 | ≈85–88/11–13/1–2 | as designed; **rares now gate** Relics+ research. |
+| Faculty ladder | all-maxed 33–42 min | ≈ 4.5 h of any-domain intake (arithmetic: Σ [150,450,900] × 3 = 4500 at ~16/min; faster late as maxed faculties compound income) | the post-2 h dead zone is gone; faculties are now the long-tail sink. |
+| Full ladder (4 blocks + faculties) | 2.03 h | **5.3–6.3 h measured (mean ≈ 5.9)** across all 6 seeds (run 3, 8 h cap; `runfoot` lands at 205–293 min — the rare gate visible in every run) | **direction confirmed** — the predicted 5–6 h arc, slightly stretched on some seeds by the rare gate. |
+
+The **rare gate** changes the deep-tier arithmetic beyond the cost table: at ~2.3
+items/min/domain and ~2% rare, 4 own-domain rares ≈ 85 min expected for a Relics target
+(it dominates the 200-cost fill ≈ 60 min) — rare pickups, not raw yield, are now the
+Relics+ pacing lever. Tune the requirement (4/8), not the cost, to move it.
+
+Envelope regression now in CI (`pacing_envelope_seed_1337`, ~9 s debug): first discovery
+≤ 8 sim-min, first comprehension ≤ 35 sim-min, income within [6, 30] yield/min. Full probe:
+`PACING_FULL=1 cargo test --release -p scraped-again pacing -- --nocapture`.
