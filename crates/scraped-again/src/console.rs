@@ -246,9 +246,14 @@ impl Block {
     /// recognition loop), recognisable *as a symbol* though unreadable *as a word*. This is the
     /// player-facing identity (palette, routine rows, codex, discovery toast);
     /// [`name`](Self::name)/[`label`](Self::label) stay for internal codes/tests/the `co=` codec.
+    /// G20: the cluster is **cartouched** — the same enclosure marks the world inscription
+    /// carries, so the console teaches "that frame = a name" by pure recurrence.
     pub fn glyphs(self, seed: u32) -> String {
         let script = crate::structures::block_script(self);
-        crate::text::to_overlay(&crate::structures::name_text(seed, self), script)
+        crate::text::to_overlay(
+            &crate::structures::cartouche(&crate::structures::name_text(seed, self)),
+            script,
+        )
     }
 
     /// G12: the full player-facing form — the glyph-name plus, for a parameterised block, its
@@ -2213,11 +2218,17 @@ mod tests {
         for seed in [0u32, 42, 1337] {
             for b in Block::ALL {
                 let script = structures::block_script(b);
-                let world = structures::name_text(seed, b);
+                // The intact world inscription: the cartouched true-name cluster (G20).
+                let world = structures::cartouche(&structures::name_text(seed, b));
                 assert_eq!(
                     b.glyphs(seed),
                     crate::text::to_overlay(&world, script),
                     "console glyphs must be the overlay of the world inscription for {b:?}"
+                );
+                assert!(
+                    b.glyphs(seed).starts_with(crate::text::MARK_CARTOUCHE_OPEN)
+                        && b.glyphs(seed).ends_with(crate::text::MARK_CARTOUCHE_CLOSE),
+                    "a console name render is cartouched"
                 );
                 assert_eq!(b.glyphs(seed), b.glyphs(seed), "deterministic");
                 assert!(!b.glyphs(seed).is_empty());

@@ -1567,6 +1567,11 @@ impl App {
                     if ch == text::MARK_LACUNA {
                         line.push_str("[..]");
                         dots.push_str("    "); // a lacuna is loss, not doubt — no underdot
+                    } else if ch == text::MARK_CARTOUCHE_OPEN || ch == text::MARK_CARTOUCHE_CLOSE {
+                        // G20: the name-enclosure renders as itself (the same marks the world
+                        // billboard draws); it's structure, so the underdot row skips it.
+                        line.push(ch);
+                        dots.push(' ');
                     } else {
                         line.push_str(&text::to_overlay(&ch.to_string(), e.script));
                         dots.push(if ch.is_whitespace() { ' ' } else { '.' });

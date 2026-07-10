@@ -210,6 +210,7 @@ pub fn name_of_text(seed: u32, text: &str, script: Script) -> Option<crate::cons
     if is_erased_text(text) {
         return None;
     }
+    let text = strip_cartouche(text); // G20: the enclosure is structure, not content
     crate::console::Block::ALL.iter().copied().find(|b| {
         block_script(*b) == script && {
             let full = name_text(seed, *b);
@@ -227,6 +228,25 @@ pub fn name_of_text(seed: u32, text: &str, script: Script) -> Option<crate::cons
 /// world had its own tongue), deterministic, distinct across the vocabulary (lexicon-tested).
 pub fn display_name(seed: u32, b: crate::console::Block) -> String {
     crate::lexicon::block_name(seed, b)
+}
+
+/// G20: enclose a glyph run in the **cartouche** mark pair — the visual name-enclosure (the
+/// decipherment-research foothold: you learn to *spot* names before you can read anything).
+/// The same marks wrap world name-inscriptions and console/codex name renders.
+pub fn cartouche(inner: &str) -> String {
+    format!(
+        "{}{inner}{}",
+        crate::text::MARK_CARTOUCHE_OPEN,
+        crate::text::MARK_CARTOUCHE_CLOSE
+    )
+}
+
+/// G20: the text inside a cartouche (or the text unchanged if it isn't cartouched) — the
+/// content-reading inverse of [`cartouche`], used by [`name_of_text`].
+pub fn strip_cartouche(text: &str) -> &str {
+    text.strip_prefix(crate::text::MARK_CARTOUCHE_OPEN)
+        .and_then(|t| t.strip_suffix(crate::text::MARK_CARTOUCHE_CLOSE))
+        .unwrap_or(text)
 }
 
 /// G20: the exact glyph text a name-bearing inscription spells for block `b`: its true name
@@ -348,7 +368,8 @@ pub fn colossus_label(seed: u32, p: &Placement) -> Inscription {
         ),
         // Float a few blocks above the giant's feet so it reads as a plaque at the base.
         pos: p.pos + Vec3::new(0.0, 3.0, 0.0),
-        text: name_text(seed, block),
+        // G20: name-bearing text is always **cartouched** (the enclosure survives any wear).
+        text: cartouche(&name_text(seed, block)),
         script,
         height: 1.8,
         color,
@@ -413,6 +434,14 @@ pub fn inscriptions_near(
                 None
             } else {
                 name
+            };
+            // G20: a name-bearer's text is **cartouched** (after weathering, so the enclosure
+            // survives wear — the frame outlives its glyphs). Ambient text never; an erasure
+            // dropped its name above, so the gouge stays a bare gouge (G21's sensing tease).
+            let text = if name.is_some() {
+                cartouche(&text)
+            } else {
+                text
             };
             out.push(Inscription {
                 cell: (cx, cz),
@@ -546,12 +575,21 @@ mod tests {
                     block_script(b),
                     "name renders in its stratum script"
                 );
+                // G20: every name-bearer — intact or worn — keeps its cartouche enclosure.
+                assert!(
+                    m.text.starts_with(crate::text::MARK_CARTOUCHE_OPEN)
+                        && m.text.ends_with(crate::text::MARK_CARTOUCHE_CLOSE),
+                    "a name-bearer is cartouched: {:?}",
+                    m.text
+                );
                 // G18: an intact bearer spells the exact transliteration; a worn one keeps it
                 // recoverable from the surviving glyph positions (lacunae are wildcards).
                 match m.condition {
-                    Condition::Intact => {
-                        assert_eq!(m.text, name_text(1337, b), "stable name text")
-                    }
+                    Condition::Intact => assert_eq!(
+                        m.text,
+                        cartouche(&name_text(1337, b)),
+                        "stable cartouched name text"
+                    ),
                     // (Compared by *name*: parameterised families share one name, so the
                     // inverse read resolves to the family's first member.)
                     Condition::Worn(_) => assert_eq!(
@@ -649,7 +687,7 @@ mod tests {
                 b.required().is_some(),
                 "monuments name the gated vocabulary"
             );
-            assert_eq!(l.text, name_text(7, b));
+            assert_eq!(l.text, cartouche(&name_text(7, b)));
             seen.insert(b.code());
             // Deterministic per colossus.
             assert_eq!(colossus_label(7, p).name, l.name);
@@ -806,6 +844,19 @@ mod tests {
         for m in &erased {
             assert!(m.name.is_none(), "an erasure discovers nothing");
             assert!(is_erased_text(&m.text), "the billboard shows the gouge");
+            assert!(
+                !m.text.contains(crate::text::MARK_CARTOUCHE_OPEN),
+                "an erasure is a bare gouge — no cartouche (that tease is G21's)"
+            );
+        }
+        // G20: ambient (non-name) text is never cartouched.
+        for m in marks.iter().filter(|m| m.name.is_none()) {
+            assert!(
+                !m.text.contains(crate::text::MARK_CARTOUCHE_OPEN)
+                    && !m.text.contains(crate::text::MARK_CARTOUCHE_CLOSE),
+                "ambient text must not carry the name enclosure: {:?}",
+                m.text
+            );
         }
         // Worn inscriptions exist and render lacuna marks in-world.
         let worn: Vec<_> = marks
@@ -819,6 +870,53 @@ mod tests {
                 "a worn billboard renders its lacunae"
             );
         }
+    }
+
+    /// G20: the cartouche helpers — enclosure round-trip, strip is content-only, marks carry
+    /// no yield, and a cartouched worn name still reads via `name_of_text`.
+    #[test]
+    fn cartouche_wraps_strips_and_never_pays() {
+        use crate::console::Block;
+        let inner = name_text(1337, Block::Collect);
+        let wrapped = cartouche(&inner);
+        assert!(wrapped.starts_with(crate::text::MARK_CARTOUCHE_OPEN));
+        assert!(wrapped.ends_with(crate::text::MARK_CARTOUCHE_CLOSE));
+        assert_eq!(strip_cartouche(&wrapped), inner);
+        assert_eq!(
+            strip_cartouche(&inner),
+            inner,
+            "uncartouched text passes through"
+        );
+        // The enclosure is structure: it adds nothing to the data glyph count (no yield).
+        assert_eq!(
+            crate::progress::glyph_count(&wrapped),
+            crate::progress::glyph_count(&inner)
+        );
+        // A cartouched name reads; a cartouched *worn* name still reads.
+        let script = block_script(Block::Collect);
+        assert_eq!(
+            name_of_text(1337, &wrapped, script).map(|b| b.name()),
+            Some("collect")
+        );
+        let worn = cartouche(&weather_text(&inner, Condition::Worn(1)));
+        assert_eq!(
+            name_of_text(1337, &worn, script).map(|b| b.name()),
+            Some("collect")
+        );
+        // Monument labels are cartouched too.
+        let p = Placement {
+            pos: glam::Vec3::new(40.0, 18.0, -12.0),
+            yaw: 0.7,
+            voxel: 1.3,
+            seed: 12345,
+            solid: false,
+            human: false,
+        };
+        let l = colossus_label(1337, &p);
+        assert!(
+            l.text.starts_with(crate::text::MARK_CARTOUCHE_OPEN)
+                && l.text.ends_with(crate::text::MARK_CARTOUCHE_CLOSE)
+        );
     }
 
     /// BUG1 regression: huge cam coords must not overflow the colossi/inscription cell loops.

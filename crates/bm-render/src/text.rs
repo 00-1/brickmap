@@ -137,6 +137,11 @@ pub const MARK_LACUNA: char = '\u{E620}';
 pub const MARK_GOUGE: char = '\u{E621}';
 /// A low dot-row sub-mark (annotates the preceding/overlying glyph cluster).
 pub const MARK_UNDERDOT: char = '\u{E622}';
+/// An **enclosure-open** mark: the left end of a bracket-frame drawn around a glyph run
+/// (generic typography — callers decide what an enclosed run means).
+pub const MARK_CARTOUCHE_OPEN: char = '\u{E623}';
+/// The matching **enclosure-close** mark (right end of the bracket-frame).
+pub const MARK_CARTOUCHE_CLOSE: char = '\u{E624}';
 
 /// Bitmaps for the mark glyphs plus the standard epigraphic punctuation the overlay path should
 /// render rather than dot out: U+27E6/U+27E7 (white square brackets) and U+2014 (em dash).
@@ -154,6 +159,16 @@ fn mark_glyph(c: char) -> Option<[u8; 8]> {
         MARK_UNDERDOT => [
             "        ", "        ", "        ", "        ", "        ", " ##  ## ", " ##  ## ",
             "        ",
+        ],
+        // The enclosure pair: bracket-frame ends whose horizontal arms reach the cell edge, so
+        // consecutive cells read as one continuous frame around the enclosed run.
+        MARK_CARTOUCHE_OPEN => [
+            "   #####", "  #     ", " #      ", " #      ", " #      ", " #      ", "  #     ",
+            "   #####",
+        ],
+        MARK_CARTOUCHE_CLOSE => [
+            "#####   ", "     #  ", "      # ", "      # ", "      # ", "      # ", "     #  ",
+            "#####   ",
         ],
         '\u{27E6}' => [
             " ####   ", " # #    ", " # #    ", " # #    ", " # #    ", " # #    ", " # #    ",
@@ -254,13 +269,20 @@ pub fn runic_pua(c: char) -> char {
 /// `script`) into the **self-identifying overlay codepoints** the flat HUD renders identically.
 /// Greek/Hiragana/Latin already render by codepoint (identity); Galactic and Runic carry Latin
 /// stand-in letters that only render correctly *with* their script, so they're remapped to their
-/// PUA codepoints. This is what closes the world↔console recognition loop on the HUD.
+/// PUA codepoints. The generic [mark glyphs](MARK_PUA_BASE) are already self-identifying and pass
+/// through untouched in every script (a damage/enclosure cell must never remap to a stave).
+/// This is what closes the world↔console recognition loop on the HUD.
 pub fn to_overlay(s: &str, script: Script) -> String {
     s.chars()
-        .map(|c| match script {
-            Script::Galactic => galactic_pua(c).unwrap_or(c),
-            Script::Runic => runic_pua(c),
-            _ => c,
+        .map(|c| {
+            if mark_glyph(c).is_some() {
+                return c;
+            }
+            match script {
+                Script::Galactic => galactic_pua(c).unwrap_or(c),
+                Script::Runic => runic_pua(c),
+                _ => c,
+            }
         })
         .collect()
 }
@@ -628,7 +650,14 @@ mod tests {
     /// gouge). The epigraphic punctuation (⟦ ⟧ —) renders on the overlay path too.
     #[test]
     fn mark_glyphs_render_in_all_scripts_and_on_the_overlay() {
-        for mark in [MARK_LACUNA, MARK_GOUGE, MARK_UNDERDOT] {
+        let marks = [
+            MARK_LACUNA,
+            MARK_GOUGE,
+            MARK_UNDERDOT,
+            MARK_CARTOUCHE_OPEN,
+            MARK_CARTOUCHE_CLOSE,
+        ];
+        for mark in marks {
             let ov = overlay_glyph(mark).expect("mark renders on the overlay path");
             for script in Script::ALL {
                 assert_eq!(
@@ -639,13 +668,34 @@ mod tests {
             }
             assert!(ov.iter().any(|r| *r != 0), "mark {mark:?} lights pixels");
         }
-        assert_ne!(overlay_glyph(MARK_LACUNA), overlay_glyph(MARK_GOUGE));
-        assert_ne!(overlay_glyph(MARK_GOUGE), overlay_glyph(MARK_UNDERDOT));
+        // Pairwise distinct (a lacuna never reads as a gouge; the enclosure ends differ).
+        for i in 0..marks.len() {
+            for j in (i + 1)..marks.len() {
+                assert_ne!(
+                    overlay_glyph(marks[i]),
+                    overlay_glyph(marks[j]),
+                    "marks {:?} and {:?} must be distinct",
+                    marks[i],
+                    marks[j]
+                );
+            }
+        }
         for p in ['\u{27E6}', '\u{27E7}', '\u{2014}'] {
             assert!(
                 overlay_glyph(p).is_some_and(|g| g.iter().any(|r| *r != 0)),
                 "punctuation {p:?} renders on the overlay path"
             );
+        }
+        // The marks pass through `to_overlay` untouched in every script (never remapped to a
+        // stave/SGA rune) — the world and HUD draw the same enclosure/damage cells.
+        for script in Script::ALL {
+            for mark in marks {
+                assert_eq!(
+                    to_overlay(&mark.to_string(), script),
+                    mark.to_string(),
+                    "mark {mark:?} must survive to_overlay in {script:?}"
+                );
+            }
         }
     }
 }

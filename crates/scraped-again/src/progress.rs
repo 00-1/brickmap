@@ -313,10 +313,15 @@ pub fn find_id(cell: (i32, i32), script: Script, text: &str) -> u64 {
 /// Glyph count (non-space) of an inscription's text — the yield/length input. G18: the generic
 /// damage marks (a lacuna where a glyph eroded away, the gouge of a deliberate erasure) carry no
 /// data, so a **worn** inscription yields proportionally less (only its surviving glyphs pay).
+/// G20: the cartouche enclosure marks are structure, not content — they never pay either.
 pub fn glyph_count(text: &str) -> u32 {
     text.chars()
         .filter(|c| {
-            !c.is_whitespace() && *c != crate::text::MARK_LACUNA && *c != crate::text::MARK_GOUGE
+            !c.is_whitespace()
+                && *c != crate::text::MARK_LACUNA
+                && *c != crate::text::MARK_GOUGE
+                && *c != crate::text::MARK_CARTOUCHE_OPEN
+                && *c != crate::text::MARK_CARTOUCHE_CLOSE
         })
         .count() as u32
 }

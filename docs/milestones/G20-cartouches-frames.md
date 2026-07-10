@@ -1,6 +1,6 @@
 # G20 — Cartouches, formulaic frames & true names
 
-> **Status: in build (1/3 landed — true names).** The Archive tranche continues on G18's substrate. Three
+> **Status: in build (2/3 landed — true names, cartouches).** The Archive tranche continues on G18's substrate. Three
 > pieces that belong together because they all touch *naming and recognition*:
 > **(1) true names** — the fix for the G18-review finding that Records/Latin-script block
 > names leak readable English; **(2) cartouches** — the visual name-enclosure that was the
@@ -103,7 +103,7 @@ intact (marks content-agnostic); roadmap G20.
 - [x] No readable English anywhere in the vocabulary layer: block display names are seeded
       lexicon words in all five scripts (internal names/codecs unchanged; recognition
       invariant re-proven).
-- [ ] Cartouche marks enclose name renders in world + console + codex (same marks);
+- [x] Cartouche marks enclose name renders in world + console + codex (same marks);
       ambient never cartouched; worn keeps it; erased doesn't.
 - [ ] Frames: 3 sightings → known (codex skeleton + slot); worn matches restore
       (`[restored]` render distinct from `[..]`; full yield); ambiguous doesn't; erased out.
