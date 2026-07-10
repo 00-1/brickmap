@@ -1158,6 +1158,8 @@ impl App {
             .into_iter()
             .filter(|s| self.progress.is_sense_comprehended(*s))
             .collect();
+        // G22: the pending cognate candidates (the console's collation rows).
+        self.console.cognates = self.progress.cognate_candidates().collect();
         // G13: which agent the player is driving (ticker + "trace → routine" target).
         self.console.active_agent = self.active_agent();
     }
@@ -1243,6 +1245,38 @@ impl App {
                     log::info!(
                         "researching the {} instrument — its domain's shards now fill it",
                         s.label()
+                    );
+                }
+            }
+            // G22: collate the selected cognate candidate — the strata-data sink's one door
+            // (player-initiated only; a failed gate is an honest no-op).
+            console::Sel::Collate(i) => {
+                let Some((block, pair)) = self.console.cognates.get(i).copied() else {
+                    return;
+                };
+                if self
+                    .progress
+                    .apply(&progress::Event::Collate { block, pair })
+                {
+                    self.sync_console_unlock();
+                    let known = self.progress.correspondence_known(pair.0, pair.1);
+                    log::info!(
+                        "COLLATED — the pair confirms into the tree (-{} {} · -{} {}){}",
+                        progress::collation_cost(pair),
+                        pair.0.label(),
+                        progress::collation_cost(pair),
+                        pair.1.label(),
+                        if known {
+                            " — CORRESPONDENCE KNOWN: worn names now restore comparatively"
+                        } else {
+                            ""
+                        }
+                    );
+                } else {
+                    log::info!(
+                        "collate blocked: not enough banked {} / {} data",
+                        pair.0.label(),
+                        pair.1.label()
                     );
                 }
             }
@@ -1655,6 +1689,54 @@ impl App {
                     skel.join(" "),
                     self.progress.frame_sightings(f.id)
                 ));
+            }
+        }
+        // G22: the **family-tree panel** — glyphs + structure only, no translation, no prose.
+        // Each collated pair is one line: the proto slot (rendered in the Signals script — it
+        // IS the proto) branching to the two confirmed daughter forms, each cartouched in its
+        // own stratum's script. Below, the tree's edges: confirmed-pair gauges per stratum
+        // pair, marked known at the correspondence bar.
+        let collated: Vec<_> = self.progress.collated().collect();
+        if !collated.is_empty() {
+            out.push_str(&format!("TREE — {} collated\n", collated.len()));
+            let form = |b: console::Block, st: progress::Stratum| {
+                text::to_overlay(
+                    &structures::cartouche(&structures::cognate_text(self.seed, b, st)),
+                    progress::script_for(st),
+                )
+            };
+            for (b, pair) in &collated {
+                out.push_str(&format!(
+                    "     {}  \u{2192}  {} \u{00B7} {}\n",
+                    form(*b, progress::Stratum::Signals),
+                    form(*b, pair.0),
+                    form(*b, pair.1),
+                ));
+            }
+            let mut edges = String::new();
+            for i in 0..progress::Stratum::ALL.len() {
+                for j in (i + 1)..progress::Stratum::ALL.len() {
+                    let (a, b) = (progress::Stratum::ALL[i], progress::Stratum::ALL[j]);
+                    let n = self.progress.correspondence_pairs(a, b);
+                    if n > 0 {
+                        let mark = if self.progress.correspondence_known(a, b) {
+                            "\u{2713}" // ✓ — the edge is known (comparative restoration live)
+                        } else {
+                            ""
+                        };
+                        edges.push_str(&format!(
+                            "  {}\u{2194}{} {}/{}{}",
+                            a.label(),
+                            b.label(),
+                            n.min(progress::PAIRS_FOR_CORRESPONDENCE),
+                            progress::PAIRS_FOR_CORRESPONDENCE,
+                            mark
+                        ));
+                    }
+                }
+            }
+            if !edges.is_empty() {
+                out.push_str(&format!("   {edges}\n"));
             }
         }
         if c.is_empty() {
@@ -4031,7 +4113,21 @@ fn collect_event(
                 .as_deref()
                 .and_then(|p| structures::recover_worn(&c.text, p))
         })
-        .flatten();
+        .flatten()
+        // G22: **comparative restoration** — a worn NAME-bearer whose partner form is attested
+        // under a *known* correspondence restores (same Leiden machinery, full yield), and it
+        // works from the SHIP: the comparative method is knowledge, not an instrument
+        // (instruments walk, knowledge flies — the deliberate inversion of G21's on-foot rule).
+        // Precedence close-reading = comparative = frames: all recover the same composition,
+        // banked once (no double-pay — one full yield whichever fires first).
+        .or_else(|| {
+            if !c.name.is_some_and(|b| progress.comparative_restorable(b)) {
+                return None;
+            }
+            c.pristine
+                .as_deref()
+                .and_then(|p| structures::recover_worn(&c.text, p))
+        });
     // G20 fallback: a worn instance of a *known* frame restores from the skeleton.
     let text = recovered.unwrap_or_else(|| match c.frame {
         Some(id) if progress.frame_known(id) => {

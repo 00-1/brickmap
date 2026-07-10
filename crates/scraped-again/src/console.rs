@@ -706,6 +706,9 @@ pub enum Sel {
     Block(Block),
     /// G21: a discovered sensing instrument — Enter allocates its research (the remedy).
     Sense(crate::progress::Sense),
+    /// G22: a logged cognate candidate (index into [`Console::cognates`]) — Enter **collates**
+    /// it (the strata-data sink; the app applies the canonical `Event::Collate`).
+    Collate(usize),
 }
 
 /// Which screen the console is showing.
@@ -745,6 +748,10 @@ pub struct Console {
     pub senses_discovered: HashSet<crate::progress::Sense>,
     /// G21: **comprehended** sensing instruments (synced) — held ladder rungs (render clean).
     pub senses_comprehended: HashSet<crate::progress::Sense>,
+    /// G22: the logged, not-yet-collated **cognate candidates** (synced from `progress`, in
+    /// discovery order) — each renders as a collation row beside the research rows (structural:
+    /// the two cartouched cognate forms + the pair's data cost; Enter collates).
+    pub cognates: Vec<(Block, (Stratum, Stratum))>,
     /// G11: the app's clock (set each frame before `tick`) — drives last-fired age + yield rates.
     pub now: f32,
     /// G13: per-agent rolling memory of the player's last manual block actions (session-local,
@@ -817,6 +824,7 @@ impl Default for Console {
             confirmed: HashSet::new(),
             senses_discovered: HashSet::new(),
             senses_comprehended: HashSet::new(),
+            cognates: Vec::new(),
             now: 0.0,
             traces: std::collections::HashMap::new(),
             active_agent: Agent::Ship,
@@ -1299,9 +1307,14 @@ impl Console {
     }
 
     /// Home rows: routines (toggle/edit), a "new routine" row, a "trace → routine" row (G13),
-    /// then the visible block listing, then (G21) the discovered sensing instruments.
+    /// then the visible block listing, then (G21) the discovered sensing instruments, then
+    /// (G22) the pending cognate-candidate collation rows.
     pub fn home_rows(&self) -> usize {
-        self.routines.len() + 2 + self.visible_palette().len() + self.visible_senses().len()
+        self.routines.len()
+            + 2
+            + self.visible_palette().len()
+            + self.visible_senses().len()
+            + self.cognates.len()
     }
 
     /// Editor rows for routine `i`: the trigger row, each body step, then an "add step" row.
@@ -1370,11 +1383,14 @@ impl Console {
             Sel::TraceToRoutine
         } else {
             let pal = self.visible_palette();
+            let senses = self.visible_senses();
             let i = self.cursor - nr - 2;
             if i < pal.len() {
                 Sel::Block(pal[i])
+            } else if i < pal.len() + senses.len() {
+                Sel::Sense(senses[i - pal.len()]) // G21
             } else {
-                Sel::Sense(self.visible_senses()[i - pal.len()]) // G21
+                Sel::Collate(i - pal.len() - senses.len()) // G22
             }
         }
     }
@@ -2201,6 +2217,32 @@ impl Console {
             }
             row += 1;
         }
+        // G22: the pending cognate candidates — collation rows beside the research rows.
+        // Structural only: the two cartouched cognate forms (each in its own stratum's script —
+        // the same-but-shifted word the dual spelling showed) + the pair's data cost as gauges
+        // (`collate: REC 60 · SCH 60` is minimal-English instrumentation, like `research`).
+        // Enter collates (the app applies the canonical Event::Collate; the sink's only door).
+        for (b, pair) in &self.cognates {
+            let cur = if row == self.cursor { ">" } else { " " };
+            let form = |st: Stratum| {
+                let script = crate::progress::script_for(st);
+                crate::text::to_overlay(
+                    &crate::structures::cartouche(&crate::structures::cognate_text(
+                        self.seed, *b, st,
+                    )),
+                    script,
+                )
+            };
+            let cost = crate::progress::collation_cost(*pair);
+            s.push_str(&format!(
+                "{cur} ~ {} {}  (collate: {} {cost} · {} {cost})\n",
+                form(pair.0),
+                form(pair.1),
+                pair.0.label(),
+                pair.1.label(),
+            ));
+            row += 1;
+        }
         s.push_str("[↑↓ select · Enter run/toggle · E edit · C dup · X delete]");
         s
     }
@@ -2330,6 +2372,46 @@ mod tests {
             .map(|r| c2.routine_display_name(r))
             .collect();
         assert_ne!(a, b);
+    }
+
+    /// G22: the collation rows — a pending cognate candidate renders beside the research rows
+    /// (structural: the two cartouched daughter forms + the pair's per-side cost gauges), the
+    /// cursor reaches it after blocks + senses (`Sel::Collate`), and no English vocabulary
+    /// leaks (the forms are overlay glyphs; `collate`/stratum tags are instrumentation).
+    #[test]
+    fn cognate_collation_rows_render_and_select() {
+        use crate::progress::Stratum;
+        let mut c = Console {
+            seed: 1337,
+            ..Default::default()
+        };
+        c.cognates = vec![(Block::Collect, (Stratum::Records, Stratum::Schematics))];
+        // The row is reachable: it's the last home row.
+        c.cursor = c.home_rows() - 1;
+        assert_eq!(c.selected(), Sel::Collate(0));
+        let home = c.render();
+        assert!(
+            home.contains("collate: REC 60 · SCH 60"),
+            "the sink's price renders as per-side gauges:\n{home}"
+        );
+        // Both cartouched cognate forms render (own stratum + the sister's).
+        for st in [Stratum::Records, Stratum::Schematics] {
+            let form = crate::text::to_overlay(
+                &crate::structures::cartouche(&crate::structures::cognate_text(
+                    c.seed,
+                    Block::Collect,
+                    st,
+                )),
+                crate::progress::script_for(st),
+            );
+            assert!(home.contains(&form), "the {} form renders", st.label());
+        }
+        // The English key never leaks (the internal name stays internal).
+        assert!(!home.contains("collect"), "no English vocabulary:\n{home}");
+        // With no candidates the rows (and the Sel arm) vanish.
+        c.cognates.clear();
+        c.cursor = c.home_rows() - 1;
+        assert_ne!(c.selected(), Sel::Collate(0));
     }
 
     /// G12 (re-proven under G20's true names): a block's console glyph-name is the overlay form

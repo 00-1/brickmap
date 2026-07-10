@@ -130,6 +130,21 @@ impl Sense {
 /// (brief Decision 1); the feel pass tunes.
 pub const FRAME_KNOWN_SIGHTINGS: u8 = 3;
 
+/// G22: how many **collated (confirmed) cognate pairs** on one stratum pair make that
+/// correspondence **known** (the family-tree edge — comparative restoration unlocks for it).
+/// Pinned Decision 3 placeholder; the feel pass tunes.
+pub const PAIRS_FOR_CORRESPONDENCE: usize = 3;
+
+/// G22: the **collation cost** — the strata-data sink's price, paid from **each** side of the
+/// pair: `30 × (1 << deeper.byte())` (cost scales with the deeper stratum: a REC↔SCH pair runs
+/// 60+60, a …↔SIG pair 480+480). At the measured ~3.2/min per-domain income that's minutes-scale
+/// early, tens-of-minutes deep. Collation spends *data*; research spends *shards* — disjoint
+/// currencies, no competition (pinned Decision 5).
+pub fn collation_cost(pair: (Stratum, Stratum)) -> u64 {
+    let deeper = pair.0.byte().max(pair.1.byte());
+    30u64 << deeper
+}
+
 /// G15: what research can target — a discovered **block** (→ comprehend it, G15a), a **faculty**
 /// (→ level it, G15b), or (G21) a discovered **sensing instrument** (→ comprehend the ladder
 /// rung). The unified research pipe (no separate bank-then-spend subsystem).
@@ -481,6 +496,17 @@ pub enum Event {
         partner_text: String,
         pos: [f32; 3],
         block: crate::console::Block,
+    },
+    /// G22: **collate** a logged cognate candidate — the strata-data **sink**: comparative work
+    /// *consumes* banked data, [`collation_cost`] from **each** stratum of the pair. Gated: the
+    /// candidate must be logged and both sides affordable (else a no-op — the console reports
+    /// the block honestly). Confirmed pairs grow the family-tree codex panel; at
+    /// [`PAIRS_FOR_CORRESPONDENCE`] on one stratum pair the correspondence is **known**.
+    /// Player-initiated only (never fired by routines/autopilot — the no-softlock invariant:
+    /// collation is an enrichment layer, nothing gates on it).
+    Collate {
+        block: crate::console::Block,
+        pair: (Stratum, Stratum),
     },
 }
 
@@ -977,6 +1003,24 @@ impl Progress {
                 }
                 true
             }
+            // G22: the sink fires — both strata pay the pair's cost, the candidate confirms
+            // into the family tree. Gated on the candidate existing + both sides affordable
+            // (a failed gate is a clean no-op; the caller reports it).
+            Event::Collate { block, pair } => {
+                let key = (block.code(), pair_bytes(pair.0, pair.1));
+                let Some(idx) = self.cognate_candidates.iter().position(|k| *k == key) else {
+                    return false; // no such candidate (or already collated)
+                };
+                let cost = collation_cost(*pair);
+                if self.strata.get(pair.0) < cost || self.strata.get(pair.1) < cost {
+                    return false; // blocked: not enough banked data on one side
+                }
+                *self.strata.slot(pair.0) -= cost;
+                *self.strata.slot(pair.1) -= cost;
+                self.cognate_candidates.remove(idx);
+                self.collated.push(key);
+                true
+            }
             // G20: count an intact frame sighting; the third teaches the frame (append-only
             // knowledge — nothing un-knows a frame).
             Event::SightFrame { frame_id } => {
@@ -1139,6 +1183,43 @@ impl Progress {
         self.cognate_candidates.iter().filter_map(|(code, pair)| {
             crate::console::Block::from_code(*code)
                 .map(|b| (b, (Stratum::from_byte(pair.0), Stratum::from_byte(pair.1))))
+        })
+    }
+
+    /// G22: the **collated** (confirmed) cognate pairs in confirmation order — the family-tree
+    /// codex panel's entries. Unknown block codes skipped (lenient).
+    pub fn collated(
+        &self,
+    ) -> impl Iterator<Item = (crate::console::Block, (Stratum, Stratum))> + '_ {
+        self.collated.iter().filter_map(|(code, pair)| {
+            crate::console::Block::from_code(*code)
+                .map(|b| (b, (Stratum::from_byte(pair.0), Stratum::from_byte(pair.1))))
+        })
+    }
+
+    /// G22: how many confirmed pairs sit on the `(a, b)` stratum edge (order-free).
+    pub fn correspondence_pairs(&self, a: Stratum, b: Stratum) -> usize {
+        let key = pair_bytes(a, b);
+        self.collated.iter().filter(|(_, p)| *p == key).count()
+    }
+
+    /// G22: is the `(a, b)` correspondence **known** (≥ [`PAIRS_FOR_CORRESPONDENCE`] confirmed
+    /// pairs — the family-tree edge; comparative restoration works across it)?
+    pub fn correspondence_known(&self, a: Stratum, b: Stratum) -> bool {
+        self.correspondence_pairs(a, b) >= PAIRS_FOR_CORRESPONDENCE
+    }
+
+    /// G22: can this worn name-bearer restore **comparatively**? True iff some sister stratum
+    /// has (a) a **known** correspondence with the block's own stratum and (b) the block's
+    /// partner form **attested** there (its dual spelling collected — logged as a candidate or
+    /// already collated). Knowledge, not an instrument: works from the ship (pinned Decision 4).
+    pub fn comparative_restorable(&self, b: crate::console::Block) -> bool {
+        let own = b.required().unwrap_or(Stratum::Records);
+        Stratum::ALL.into_iter().any(|s| {
+            s != own && self.correspondence_known(own, s) && {
+                let key = (b.code(), pair_bytes(own, s));
+                self.cognate_candidates.contains(&key) || self.collated.contains(&key)
+            }
         })
     }
 
@@ -2667,6 +2748,103 @@ mod tests {
         let v11 = Progress::decode(&format!("pg={v11_hex}"));
         assert_eq!(v11.cognate_candidates().count(), 0, "pre-v12 → none");
         assert_eq!(v11.collected_count(), p.collected_count(), "codex intact");
+    }
+
+    /// G22: the collation **sink** — costs scale with the deeper stratum and are paid from
+    /// BOTH sides; the event is gated on a logged candidate + affordable balances (clean
+    /// no-ops otherwise); three confirmed pairs on one stratum edge make the correspondence
+    /// **known**; `comparative_restorable` demands a known edge AND an attested partner form;
+    /// collated pairs ride `pg=` v12.
+    #[test]
+    fn collate_gates_spends_and_teaches_the_correspondence() {
+        use crate::console::{Block, ScanItem};
+        // Costs: 30 << deeper.byte(), per side.
+        assert_eq!(collation_cost((Stratum::Records, Stratum::Schematics)), 60);
+        assert_eq!(collation_cost((Stratum::Schematics, Stratum::Records)), 60);
+        assert_eq!(collation_cost((Stratum::Records, Stratum::Rites)), 120);
+        assert_eq!(collation_cost((Stratum::Relics, Stratum::Signals)), 480);
+        assert_eq!(collation_cost((Stratum::Records, Stratum::Signals)), 480);
+
+        let mut p = Progress::default();
+        let pair = (Stratum::Records, Stratum::Schematics);
+        let blocks = [
+            Block::Collect,
+            Block::Scan(ScanItem::Shards),
+            Block::FireBeam,
+        ];
+        // No candidate → a Collate is a clean no-op.
+        assert!(!p.apply(&Event::Collate {
+            block: Block::Collect,
+            pair
+        }));
+        // Log three candidates (three dual spellings, three distinct words, one stratum pair).
+        for (i, b) in blocks.iter().enumerate() {
+            assert!(p.apply(&Event::CollectDual {
+                find_id: 100 + i as u64,
+                script: Script::Latin,
+                text: "ABCD".into(),
+                partner_script: Script::Greek,
+                partner_text: "ΑΒΓΔ".into(),
+                pos: [0.0; 3],
+                block: *b,
+            }));
+        }
+        assert_eq!(p.cognate_candidates().count(), 3);
+        // Unaffordable → gated (both sides must cover the cost); nothing spent, nothing moved.
+        let banked = p.strata;
+        assert!(banked.records < 60 || banked.schematics < 60);
+        assert!(!p.apply(&Event::Collate {
+            block: Block::Collect,
+            pair
+        }));
+        assert_eq!(p.strata, banked, "a blocked collate spends nothing");
+        assert_eq!(p.cognate_candidates().count(), 3);
+        // Fund both sides, collate all three — the balances visibly GO DOWN (the sink).
+        p.strata.records = 200;
+        p.strata.schematics = 190;
+        for (i, b) in blocks.iter().enumerate() {
+            assert!(
+                !p.correspondence_known(Stratum::Records, Stratum::Schematics),
+                "not known before the {i}th pair confirms"
+            );
+            assert!(p.apply(&Event::Collate { block: *b, pair }));
+        }
+        assert_eq!(p.strata.records, 200 - 3 * 60);
+        assert_eq!(p.strata.schematics, 190 - 3 * 60);
+        assert_eq!(p.cognate_candidates().count(), 0, "candidates consumed");
+        assert_eq!(p.collated().count(), 3);
+        assert_eq!(
+            p.correspondence_pairs(Stratum::Schematics, Stratum::Records),
+            3,
+            "the edge is order-free"
+        );
+        assert!(p.correspondence_known(Stratum::Records, Stratum::Schematics));
+        assert!(!p.correspondence_known(Stratum::Records, Stratum::Relics));
+        // A second collate of a consumed candidate is a no-op (it's confirmed, not pending).
+        assert!(!p.apply(&Event::Collate {
+            block: Block::Collect,
+            pair
+        }));
+        // Comparative restorability: a collated Records block restores across the known edge…
+        assert!(p.comparative_restorable(Block::Collect));
+        // …an unattested block does NOT (the edge alone is not enough — the form must be seen)…
+        assert!(!p.comparative_restorable(Block::Drift));
+        // …and an attested block on an UNKNOWN edge does not restore either.
+        assert!(p.apply(&Event::CollectDual {
+            find_id: 200,
+            script: Script::Runic,
+            text: "ᚠᚢᚦᚨ".into(),
+            partner_script: Script::Galactic,
+            partner_text: "ABCD".into(),
+            pos: [0.0; 3],
+            block: Block::RunFoot,
+        }));
+        assert!(!p.comparative_restorable(Block::RunFoot));
+        // The whole tree rides pg= v12.
+        let back = Progress::decode(&format!("s=1&{}", p.encode()));
+        assert_eq!(back, p, "v12 round-trips the collated tree");
+        assert!(back.correspondence_known(Stratum::Records, Stratum::Schematics));
+        assert!(back.comparative_restorable(Block::Collect));
     }
 
     #[test]
