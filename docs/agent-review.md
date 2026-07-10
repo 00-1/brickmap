@@ -8,7 +8,7 @@ the rest of the roadmap) **on `main`**, while this branch
 **Newest entry on top.** Critical where criticism is due; praise where earned. This branch
 only — never pushes to `main`.
 
-**Reviewed through:** `240724c` (G20 — cartouches/frames/true names complete).
+**Reviewed through:** `8ef6649` (G21 — sensing ladder complete; Archive tranche payoff landed).
 
 ---
 
@@ -36,6 +36,58 @@ green.**
 discipline failure (the builder *ran* the gate and believed it) — an environment skew. The
 fix is toolchain alignment, not vigilance. Keep CI (not local `--check`) as the green
 authority; I'll verify CI green on the fix commit before clearing G14.
+
+## 2026-07-10 · G21 — the sensing ladder (`8eeef78`→`8d4c1ca`→`5b908f1`→`8ef6649`)  ✅ PASSED (four-way green on tip; rendered)
+
+**Independently verified:** fmt/clippy clean · **424 tests, 0 failures** workspace-wide on
+the tip · golden voxel-hash unchanged · engine footprint = exactly one content-agnostic
+mark (`MARK_BASELINE` U+E625, bitmap + overlay-path test — the G18/G20 permitted pattern);
+boundary intact · **console rendered here**: the four given routines now read
+RAURKALIS / SORAURRAULAR / BANLIMAR / RAUNLAUR — **the Rosetta leak is closed**; locked
+research rows in Greek/Runic/Hiragana; no readable English left in the vocabulary layer ·
+envelope pacing test green **un-re-pinned** (verified reasoning, not just the claim: the CI
+probe's autopilot is pure ship = rung 0, and recovery raises *on-foot* yield only — the
+measured band can't move).
+
+**CI note:** the agent pushed all four commits in one push, so only tip `8ef6649` has
+workflow runs — **all four workflows green** there. Intermediates were gate-verified
+locally per the report; acceptable, but per-commit pushes remain the preference (a red
+intermediate is easier to bisect). Said so in the next brief's standing notes.
+
+**The design payoff, checked in code:** the rationality assert
+(`expedition_rationality_close_reading_earns_what_the_ship_cannot`) is a true
+differential, not an activity check — same worn site, faculty held on *both* sides, ship
+banks survivors-only with lacunae in its codex while the authored `run(foot)` expedition
+(the real Deploy→Harvest→Return machine) banks recovered-full text and yield. The pacing
+analysis's headline finding ("expeditions are income-negative") is answered qualitatively:
+three data classes are now walker-only. Frustration-event discovery lives in
+`Progress::apply`, so every collect route funnels it deterministically — no
+route-dependent discovery drift.
+
+**Deviations assessed (all four accepted):**
+1. **Palimpsests exclude frame cells** — right call; a second layer under a
+   verbatim-recurring frame would corrupt the sighting/restore semantics G20 just pinned.
+2. **A rung-0/1 palimpsest collect spends the site (under-text lost)** — accepted: the
+   doubled-baseline tell warns *before* collection, under-texts gate nothing (no-softlock
+   holds), and permanent loss is on-theme (the archive punishes haste). Flagged for the
+   feel pass: if it plays as cruel rather than melancholy, the erased-revisit machinery
+   generalises.
+3. **Sense comprehension folds in tier legibility** — consistent with the G15 rule
+   ("researching tier vocabulary cracks the tier") and gives Signals its first crackable
+   object; the brief simply hadn't pinned it.
+4. **No envelope re-pin** — verified, see above.
+
+**Quality notes:** `hidden_text`'s deep-weighting honestly acknowledges there is still no
+Signals-gated *block* ("deep names" = deepest existing vocabulary) rather than faking one —
+G22's vocabulary should close that; the blocklist rider landed with a 200-seed
+no-english sweep on top of the re-verified determinism/collision suite; erased-revisit
+re-listing (`update_inscriptions` re-lists logged-unresolved gouges once deep sensing is
+held) makes the G18 erasure log literally a destination list — the tease pays off exactly
+as briefed.
+
+**Verdict.** The Archive tranche's payoff milestone lands whole: the walker has an economic
+reason to exist, the empty Rites/Signals tiers are filled, and the G18 hooks are cashed.
+Next: **G22 — proto-language + script difficulty shapes (+ the strata-data sink)**.
 
 ## 2026-07-10 · G20 — true names, cartouches, frames (`26ed39e`→`52475b1`→`240724c`)  ✅ PASSED (3 commits, each four-way green; rendered)
 
